@@ -2302,6 +2302,79 @@ rendered at top). Six new `ci-check-render` cases — including four for the
 Director's Report Fast Track section, which **had no render coverage at all** —
 and the burn case re-verified to catch both a static flame and a resynced row.
 
+### Money left on the table, and the tab that could not show it (2026-08-27)
+
+Dan, on the Smyrna 154th Birthday Concert General Table (273 holds, 49
+converted, 223 pending, 98% fill): *"add another metric to the Fast Track
+recently launched cards — the amount of $$ left on the table due to no remaining
+capacity ... that's 30k of money left on the table, but we're not calling that
+out."* And: *"when clicking on it, you can't even find that section on the
+conversions tab. That tab should be sorted by most recently launched at the top,
+with all the conversion, revenue and missed revenue metrics."*
+
+It is **$39,025**, not 30k.
+
+**WHICH MONEY FIGURE — the two are different questions.** Measured against card
+17300 (smyrna), each EXACT on all 1,534 sections:
+
+```
+Over Demand $  === max(0, FT Total - Capacity) * Section Price
+Left on Table  === FT Pending      * Section Price
+```
+
+Dan asked for money lost to *no remaining capacity*, which is **Over Demand**.
+`Left on Table` is the value of every unconverted hold whether or not a seat is
+free — at Watertown **100 of the 138 sections carrying it still have empty
+seats**, so it is a follow-up figure and adding spots would capture none of it.
+Putting it under a capacity headline sends someone to enlarge sections that are
+already half empty. `ftBlockedRevenue()` is the single source, and the spec fails
+if a capacity label is fed from `leftOnTable`.
+
+Note the two **coincide on a section exactly at capacity** (273 − 50 == 223
+pending), so only a section with free seats can discriminate — both the spec
+fixture and the render fixture force them apart, the latter with a
+`Left on Table: 999999` sentinel.
+
+**WHY THE SECTION WAS MISSING FROM THE TAB.** This is the long-open `Reg Status`
+issue in this file finally biting a reader. Card 17300 computes it from
+`rw.default_opens` alone, so a section in **early access** with a later general
+window reports `pipeline` — and the Conversions tab filtered on
+`regStatus === 'open' || 'closed'`. All four concert tables were in that state,
+so the section carrying 273 holds and $39,025 of blocked demand **was not on the
+tab at all**, and `jumpToConversions` scrolled to an `#aq-<id>` that did not
+exist. Fixed client-side in `ftEffectiveStatus()` — the page already knows both
+windows — rather than with a card push, date-tag re-flip and heaviest-org
+sign-off.
+
+- **ONLY `pipeline` IS PROMOTED, and that restriction is the most important line
+  in the change.** The first version promoted anything whose go-live had passed,
+  which took Smyrna's post-registration set from **127 sections to 1,522** —
+  1,291 of its sections are `draft`, invisible to families entirely. Caught by
+  running the helper against the real feed before shipping, not by review.
+  Correct behaviour is **+4 sections**, exactly the four concert tables.
+- **The tab BADGE had the same bug** (`postRegPendingTotal` read the raw status),
+  so it would have undercounted by 561 pending holds and disagreed with the tab
+  it labels — the numbers-disagree-across-the-page trap again.
+- **Everything that asks "how recently did this open" reads `ftLaunchedAt()`**,
+  the go-live instant, not `regOpens`. Keying on `regOpens` puts an early-access
+  section in the future, which is what kept it off the flow board too.
+- The flow board now sorts **most recently launched first** (was hottest-first,
+  which buried a section that opened an hour ago beneath one that opened three
+  weeks ago and converted well). Blocked revenue is the tie-break.
+
+Worth stating plainly: on Smyrna's launched sections, **missed-for-want-of-
+capacity ($129,375) now exceeds collected FT revenue ($94,164)** — and all of it
+sits on four sections.
+
+Guards: `scripts/fasttrack-missed-revenue.spec.js` (30 assertions, in CI), which
+LIFTS AND RUNS the four helpers against fixed instants rather than regexing, and
+is mutation-tested six ways — drafts promoted, blocked reading `leftOnTable`, the
+board back to hottest-first, launch time keying on `regOpens`, a no-capacity
+section claiming nothing is blocked, and the tab reverting to the raw status. All
+six fail by name. Plus four `ci-check-render` cases, two of which were seen to
+fail on the real bug in a browser (the early-access section absent from the tab,
+and the board re-sorted).
+
 ### The flames actually burn (Dan, 2026-08-26)
 
 Dan, on an oversubscribed section: *"need more fire on these types of sections.

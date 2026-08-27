@@ -16646,6 +16646,12 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-08-27', title: '\uD83D\uDCB8 Fast Track now shows the money you could not seat', items: [
+    'Recently launched and upcoming sections carry a new figure: the revenue represented by Fast Track demand BEYOND the section\u2019s capacity. The Smyrna 154th Birthday Concert General Table has 273 families holding against 50 seats \u2014 $39,025 of demand with nowhere to sit, which the report did not previously mention anywhere.',
+    'The Conversions tab gains FT Revenue and a Missed \u2014 No Room total, and is now ordered MOST RECENTLY LAUNCHED FIRST. It used to lead with the best-converting section, which buried one that opened an hour ago beneath one that opened three weeks ago \u2014 and the section that just opened is the only one whose outcome you can still change.',
+    'THIS IS NOT THE SAME AS PENDING HOLDS, and the report keeps them apart on purpose. Money \u201Cleft on the table\u201D by families who have not finished registering is mostly waiting in sections that STILL HAVE SEATS \u2014 that needs a follow-up, not a bigger room. The new figure counts only demand that genuinely exceeded capacity, which is the part adding spots would capture.',
+    'FIXED: sections in EARLY ACCESS were missing from the Conversions tab entirely. Registration status is reported from the general window only, so a section whose early-access window had opened still read as \u201Cnot yet open\u201D and was filtered out \u2014 clicking through from a launch card landed on a tab that did not contain the section. Those sections now appear, and the tab\u2019s pending badge counts them too.',
+  ]},
   { date: '2026-08-26', title: '\u26A1 Fast Track gets its own section in the Director\u2019s Report', items: [
     'Fast Track was four small cards inside the Waitlist panel. It is now a section of its own: pre-registrations and households for the quarter with the change on last quarter, conversion, revenue, and how many families are still holding a place.',
     'Two panels either side of it. WHAT IT ABSORBED \u2014 the registrations that completed themselves the moment registration opened, with no family at a keyboard and nobody keying anything in. WHAT IT REVEALED \u2014 how many sections carried demand before they opened, how many were oversubscribed, and the revenue left on the table when families wanted a seat that was not there.',

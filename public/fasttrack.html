@@ -407,6 +407,17 @@ const basePath = '/' + parts.slice(0, 2).join('/');
 function fmtN(v) { const n = Number(v); return isNaN(n) ? 0 : n; }
 function fmtInt(v) { return fmtN(v).toLocaleString(); }
 function fmtPct(v) { const n = fmtN(v); return n === 0 ? '—' : n.toFixed(1) + '%'; }
+/* Compact money for a card stat sitting beside figures like "273" and "98%".
+   The EXACT amount goes in the title attribute and the data attribute — a
+   rounded headline is fine to read, but the number someone acts on has to be
+   available and has to be the card's own. */
+function fmtMoneyShort(v) {
+  const n = fmtN(v);
+  if (n === 0) return '$0';
+  if (Math.abs(n) >= 1000) return '$' + (n / 1000).toFixed(n >= 10000 ? 0 : 1).replace(/\.0$/, '') + 'k';
+  return '$' + Math.round(n).toLocaleString();
+}
+function fmtMoneyExact(v) { return '$' + Math.round(fmtN(v)).toLocaleString(); }
 
 function normalizeRow(raw) {
   return {
@@ -621,6 +632,52 @@ function fmtDateShort(d) { return d ? d.toLocaleDateString('en-US', { month: 'sh
    access IS registration — it just is not open to everyone — so go-live is the
    earlier of the two, and the label has to say which one it is or "opens
    tomorrow" becomes its own kind of wrong. */
+/* ── Money the section cannot take because it has no room ─────────────────
+   Dan, on the Smyrna 154th Birthday Concert General Table: "the amount of $$
+   left on the table due to no remaining capacity ... that's 30k of money left on
+   the table, but we're not calling that out." (It is $39,025.)
+
+   THIS IS `Over Demand $`, NOT `Left on Table`, and the two are different
+   questions. Measured against card 17300 (smyrna, 2026-08-27), exact on all
+   1,534 sections:
+
+     Over Demand $ === max(0, FT Total - Capacity) * Section Price
+     Left on Table === FT Pending * Section Price
+
+   Left on Table is the value of every unconverted hold, whether or not a seat is
+   available — at Watertown 100 of the 138 sections carrying it STILL HAVE EMPTY
+   SEATS, so it is a follow-up figure, not a capacity one. Over Demand is demand
+   past the size of the room, which is what "no remaining capacity" means and the
+   only one of the two that adding spots would capture.
+
+   Returned as null rather than 0 when the card cannot answer, so a section with
+   no capacity on file renders a dash instead of claiming nothing is blocked. */
+/* ── Has this section actually opened? ────────────────────────────────────
+   Dan: "when clicking on it, you can't even find that section on the
+   conversions tab."
+
+   THE CARD'S `Reg Status` IS WRONG FOR EARLY ACCESS, and this is the long-open
+   issue written up in CLAUDE.md finally biting a reader. Card 17300 computes it
+   from `rw.default_opens` alone:
+
+       WHEN rw.default_opens > now() THEN 'pipeline'
+
+   so a section whose EARLY ACCESS window is open but whose general window is
+   still ahead reports as `pipeline`. All four Smyrna 154th Birthday Concert
+   tables are in exactly that state right now — early access opened Aug 24-27,
+   general opens Aug 31-Sep 3 — and the Conversions tab filtered on
+   `regStatus === 'open' || 'closed'`, so the section carrying 273 holds and
+   $39,025 of blocked demand was not on the tab at all. 486 sections across 7
+   orgs are in this state.
+
+   Fixed HERE rather than in the card: the page already knows both windows
+   (`sectionGoLive` returns the earlier of the two), so the status can be
+   re-derived without a card push, a date-tag re-flip and heaviest-org sign-off.
+   The card's own value still wins wherever it is not the pipeline/early-access
+   disagreement, so nothing else on the page moves.
+
+   Returns 'open' | 'closed' | 'pipeline'. At module scope so a spec can RUN it
+   rather than regex over the component (the nightStateFrom lesson). */
 function sectionGoLive(s) {
   var general = s.regOpens ? new Date(s.regOpens) : null;
   var early   = s.earlyAccess ? new Date(s.earlyAccess) : null;
@@ -632,6 +689,46 @@ function sectionGoLive(s) {
   else if (general)     { at = general; kind = 'general'; }
   return { at: at, kind: kind, early: early, general: general };
 }
+
+/* When did this section actually go live, as a timestamp?
+   The EARLIER of early access and general registration, because early access is
+   a launch — its first families can register. Everything that asks "how recently
+   did this open" must use this rather than regOpens, or a section in early
+   access looks like it has not opened yet. Null when neither window is known. */
+function ftLaunchedAt(r) {
+  var go = sectionGoLive(r || {});
+  return go.at ? go.at.getTime() : null;
+}
+
+function ftEffectiveStatus(r, nowMs) {
+  var raw = r && r.regStatus ? String(r.regStatus) : '';
+  if (raw === 'open' || raw === 'closed') return raw;
+  // ONLY `pipeline` is eligible for promotion, and this restriction is
+  // load-bearing. The first version promoted anything whose go-live had passed,
+  // which took Smyrna's post-registration set from 127 sections to 1,522 —
+  // because 1,291 of its sections are `draft`. A draft is not visible to
+  // families at all, and a `published` section is not necessarily open either;
+  // only `pipeline` carries the specific lie this fixes ("registration has not
+  // opened" about a section already in early access).
+  if (raw !== 'pipeline' && raw !== '') return raw;
+  var now = nowMs == null ? Date.now() : nowMs;
+  var go = sectionGoLive(r || {});
+  // Only promote when a window has genuinely opened. A section with no windows
+  // at all stays whatever the card said — inventing a status is worse.
+  if (go.at && go.at.getTime() <= now) {
+    var closes = r && r.regCloses ? new Date(r.regCloses) : null;
+    if (closes && !isNaN(closes.getTime()) && closes.getTime() < now) return 'closed';
+    return 'open';
+  }
+  return raw || 'pipeline';
+}
+
+function ftBlockedRevenue(r) {
+  if (!r) return null;
+  if (r.overDemand == null || !(r.capacity > 0)) return null;
+  return r.overDemand > 0 ? r.overDemand : 0;
+}
+
 /* ── How many days until something opens ──────────────────────────────────
    CALENDAR days, in the reader's own timezone — not elapsed 24-hour spans.
 
@@ -1513,8 +1610,14 @@ function App() {
   }, [ftBookingRows]);
 
   var postRegPendingTotal = useMemo(function() {
+    /* Same effective status as the tab itself. Reading the card's raw value here
+       would leave the badge undercounting by every early-access section — at
+       Smyrna that is 561 pending holds across the four concert tables — so the
+       badge and the tab it labels would disagree. */
+    var nowMs = Date.now();
     return filtered.reduce(function(a, r) {
-      return a + ((r.regStatus === 'open' || r.regStatus === 'closed') ? r.ftPending : 0);
+      var st = ftEffectiveStatus(r, nowMs);
+      return a + ((st === 'open' || st === 'closed') ? r.ftPending : 0);
     }, 0);
   }, [filtered]);
 
@@ -2142,13 +2245,25 @@ function App() {
                     React.createElement('div', { className: 'launch-stat' }, React.createElement('div', { className: 'ls-v' }, fmtInt(r.ftSignups)), React.createElement('div', { className: 'ls-l' }, 'FT holds')),
                     React.createElement('div', { className: 'launch-stat' }, React.createElement('div', { className: 'ls-v', style: { color: r.ftPending > 0 ? '#f97316' : '#999' } }, fmtInt(r.ftPending)), React.createElement('div', { className: 'ls-l' }, 'Waiting')),
                     React.createElement('div', { className: 'launch-stat' }, React.createElement('div', { className: 'ls-v' }, r.capacity > 0 ? fmtInt(r.capacity) : '—'), React.createElement('div', { className: 'ls-l' }, 'Spots')),
-                    React.createElement('div', { className: 'launch-stat' }, React.createElement('div', { className: 'ls-v', style: { color: demandPct != null && demandPct >= 80 ? '#dc2626' : '#111' } }, demandPct != null ? demandPct + '%' : '—'), React.createElement('div', { className: 'ls-l' }, 'Of capacity'))
+                    React.createElement('div', { className: 'launch-stat' }, React.createElement('div', { className: 'ls-v', style: { color: demandPct != null && demandPct >= 80 ? '#dc2626' : '#111' } }, demandPct != null ? demandPct + '%' : '—'), React.createElement('div', { className: 'ls-l' }, 'Of capacity')),
+                    (function(){ var b = ftBlockedRevenue(r); return React.createElement('div', { className: 'launch-stat' },
+                      React.createElement('div', { className: 'ls-v', 'data-blocked-rev': b == null ? undefined : b,
+                        title: b == null ? 'No capacity on file for this section' : fmtMoneyExact(b) + ' of demand beyond capacity',
+                        style: { color: b > 0 ? '#b91c1c' : '#999' } }, b == null ? '—' : fmtMoneyShort(b)),
+                      React.createElement('div', { className: 'ls-l', title: 'FT demand beyond this section\u2019s capacity \u00D7 the section price \u2014 the money a bigger room would take. NOT the same as pending holds, which may still have seats free.' },
+                        b > 0 ? 'No room for' : 'Room for all')); })()
                   )
                 : React.createElement('div', { className: 'launch-stats' },
                     React.createElement('div', { className: 'launch-stat' }, React.createElement('div', { className: 'ls-v' }, fmtInt(r.ftSignups)), React.createElement('div', { className: 'ls-l' }, 'FT holds')),
                     React.createElement('div', { className: 'launch-stat' }, React.createElement('div', { className: 'ls-v', style: { color: '#059669' } }, fmtInt(r.ftConverted)), React.createElement('div', { className: 'ls-l' }, 'Converted')),
                     React.createElement('div', { className: 'launch-stat' }, React.createElement('div', { className: 'ls-v', style: { color: r.ftPending > 0 ? '#f97316' : '#999' } }, fmtInt(r.ftPending)), React.createElement('div', { className: 'ls-l' }, 'Pending')),
-                    React.createElement('div', { className: 'launch-stat' }, React.createElement('div', { className: 'ls-v' }, r.fillPct != null ? r.fillPct + '%' : '—'), React.createElement('div', { className: 'ls-l' }, 'Fill'))
+                    React.createElement('div', { className: 'launch-stat' }, React.createElement('div', { className: 'ls-v' }, r.fillPct != null ? r.fillPct + '%' : '—'), React.createElement('div', { className: 'ls-l' }, 'Fill')),
+                    (function(){ var b = ftBlockedRevenue(r); return React.createElement('div', { className: 'launch-stat' },
+                      React.createElement('div', { className: 'ls-v', 'data-blocked-rev': b == null ? undefined : b,
+                        title: b == null ? 'No capacity on file for this section' : fmtMoneyExact(b) + ' of demand beyond capacity',
+                        style: { color: b > 0 ? '#b91c1c' : '#999' } }, b == null ? '—' : fmtMoneyShort(b)),
+                      React.createElement('div', { className: 'ls-l', title: 'FT demand beyond this section\u2019s capacity \u00D7 the section price \u2014 the money a bigger room would take. NOT the same as pending holds, which may still have seats free.' },
+                        b > 0 ? 'No room for' : 'Room for all')); })()
                   )
             );
           }
@@ -2548,28 +2663,55 @@ function App() {
 
           /* Conversions KPI strip + post-launch flow board */
           (function() {
-            var postReg = filtered.filter(function(r){ return r.regStatus === 'open' || r.regStatus === 'closed'; });
+            /* Effective status, not the card's: a section in early access reports
+               as 'pipeline' and would otherwise be missing from the tab whose
+               whole job is watching Fast Track convert. See ftEffectiveStatus. */
+            var nowMs = Date.now();
+            var postReg = filtered.filter(function(r){
+              var st = ftEffectiveStatus(r, nowMs);
+              return st === 'open' || st === 'closed';
+            });
             var totalFT = postReg.reduce(function(a,r){ return a + r.ftSignups; }, 0);
             var totalConv = postReg.reduce(function(a,r){ return a + r.ftConverted; }, 0);
             var totalPend = postReg.reduce(function(a,r){ return a + r.ftPending; }, 0);
             var totalDrop = postReg.reduce(function(a,r){ return a + r.ftDropped; }, 0);
             var convRate = totalFT > 0 ? (totalConv / totalFT * 100).toFixed(1) : '0';
             var stalledCount = postReg.filter(function(r){ return r.ftSignups >= 3 && (r.convPct === 0 || r.convPct === null); }).length;
+            /* Money, on the tab whose job is watching Fast Track convert. Read
+               straight off the card's own columns — never re-derived — and kept
+               as TWO figures because they have different fixes: see
+               ftBlockedRevenue. Summing them would invite adding capacity to
+               sections that still have seats free. */
+            var totalFtRev  = postReg.reduce(function(a,r){ return a + (r.ftRevenue || 0); }, 0);
+            var totalBlocked = postReg.reduce(function(a,r){ return a + (ftBlockedRevenue(r) || 0); }, 0);
+            var blockedSecs  = postReg.filter(function(r){ return (ftBlockedRevenue(r) || 0) > 0; }).length;
 
             /* Flow board population: recent launches first (30 days), else the
                busiest post-reg sections, so the board is never empty. */
             var now = Date.now();
+            /* Membership and order both key on the GO-LIVE instant, not regOpens.
+               A section in early access has a regOpens still in the future, so
+               keying on regOpens dropped it from the board entirely — the same
+               root cause that kept it off the tab (see ftEffectiveStatus). */
             var flowSecs = postReg.filter(function(r) {
-              return r.regOpens && (now - new Date(r.regOpens).getTime()) <= 30 * 86400000 && new Date(r.regOpens).getTime() <= now;
+              var at = ftLaunchedAt(r);
+              return at != null && at <= now && (now - at) <= 30 * 86400000;
             });
             var flowFallback = flowSecs.length === 0;
             if (flowFallback) flowSecs = postReg.slice().sort(function(a,b){ return b.ftSignups - a.ftSignups; }).slice(0, 12);
+            /* MOST RECENTLY LAUNCHED FIRST (Dan: "That tab should be sorted by
+               most recently launched at the top"). It used to sort hottest-first,
+               which buried a section that opened an hour ago beneath one that
+               opened three weeks ago and converted well — and the one that just
+               opened is the only one whose outcome can still be changed.
+               Blocked revenue is the tie-break, then FT volume, so among
+               same-instant launches the costly ones surface first. */
             else flowSecs = flowSecs.slice().sort(function(a, b) {
-              /* hot to cold: conversion % desc, then pending desc, then recency */
-              var ca = a.convPct == null ? -1 : a.convPct, cb = b.convPct == null ? -1 : b.convPct;
-              if (cb !== ca) return cb - ca;
-              if (b.ftPending !== a.ftPending) return b.ftPending - a.ftPending;
-              return new Date(b.regOpens) - new Date(a.regOpens);
+              var ta = ftLaunchedAt(a) || 0, tb = ftLaunchedAt(b) || 0;
+              if (tb !== ta) return tb - ta;
+              var ba = ftBlockedRevenue(a) || 0, bb = ftBlockedRevenue(b) || 0;
+              if (bb !== ba) return bb - ba;
+              return b.ftSignups - a.ftSignups;
             });
             var flowTotal = flowSecs.length;
             flowSecs = flowSecs.slice(0, 30);  /* board cap; the table below has everything */
@@ -2581,7 +2723,7 @@ function App() {
               var isFull = r.fillPct != null && r.fillPct >= 100;
               var enrolledLbl = fmtInt(r.totalEnrolled) + (r.capacity > 0 ? ' / ' + fmtInt(r.capacity) : '');
               return React.createElement('div', {
-                key: 'fc' + r.sectionId, id: 'aq-' + r.sectionId,
+                key: 'fc' + r.sectionId, id: 'aq-' + r.sectionId, 'data-flow-section': r.sectionId,
                 className: 'flow-card' + (focusSectionId === r.sectionId ? ' focused' : ''),
                 style: { borderLeftColor: hb.color }
               },
@@ -2717,6 +2859,18 @@ function App() {
                   React.createElement('div', { className: 'kpi-label' }, React.createElement(KpiLabel, { label: 'Dropped', tip: 'FT users who canceled their Fast Track interest before or after registration opened.' })),
                   React.createElement('div', { className: 'kpi-val' }, fmtInt(totalDrop)),
                   React.createElement('div', { className: 'kpi-sub' }, totalFT > 0 ? ((totalDrop / totalFT * 100).toFixed(1) + '% drop rate') : '')
+                ),
+                React.createElement('div', { className: 'kpi', style: { '--accent': '#059669' } },
+                  React.createElement('div', { className: 'kpi-label' }, React.createElement(KpiLabel, { label: 'FT Revenue', tip: 'Dollars actually collected from registrations that started as Fast Track interest, on sections that have opened.' })),
+                  React.createElement('div', { className: 'kpi-val', 'data-conv-rev': Math.round(totalFtRev) }, fmtMoneyExact(totalFtRev)),
+                  React.createElement('div', { className: 'kpi-sub' }, 'collected on launched sections')
+                ),
+                React.createElement('div', { className: 'kpi', style: { '--accent': '#b91c1c' } },
+                  React.createElement('div', { className: 'kpi-label' }, React.createElement(KpiLabel, { label: 'Missed \u2014 No Room', tip: 'FT demand beyond each section\u2019s capacity \u00D7 its price. This is the money a bigger room would have taken, and the only figure here that adding spots would capture. It is NOT the value of pending holds \u2014 most of those still have seats available and need follow-up, not capacity.' })),
+                  React.createElement('div', { className: 'kpi-val', 'data-conv-blocked': Math.round(totalBlocked),
+                    style: { color: totalBlocked > 0 ? '#b91c1c' : undefined } }, fmtMoneyExact(totalBlocked)),
+                  React.createElement('div', { className: 'kpi-sub' },
+                    totalBlocked > 0 ? blockedSecs + ' section' + (blockedSecs === 1 ? '' : 's') + ' need more spots' : 'every section had room')
                 )
               ),
               stalledCount > 0 && React.createElement('div', { style: { background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 12, color: '#92400e' } },
@@ -2731,7 +2885,7 @@ function App() {
                     '🔥 Conversion Flow ',
                     React.createElement('span', { style: { fontWeight: 400, textTransform: 'none', color: '#9ca3af', letterSpacing: 0 } },
                       flowFallback ? '— top post-launch sections by FT volume (none launched in the last 30 days)'
-                                   : '— sections launched in the last 30 days, hottest conversion first')
+                                   : '— sections launched in the last 30 days, most recent first')
                   ),
                   /* heat legend: band + threshold, never color-alone */
                   React.createElement('div', { style: { display: 'flex', gap: 8, fontSize: 10, fontWeight: 700, marginLeft: 'auto', flexWrap: 'wrap' } },
