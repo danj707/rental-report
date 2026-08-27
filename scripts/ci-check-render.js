@@ -1063,6 +1063,37 @@ const CASES = [
   // 'pipeline', and the tab filtered it out — so clicking through landed on a
   // tab that did not contain it. #aq-<id> is the scroll target jumpToConversions
   // looks for, so its presence IS "you can find the section".
+  // SPACING. Dan: "small fix on the FT cards, see the spacing issues" — the fifth
+  // stat squeezed the row, clipping "$39,025" to "$3" and breaking a two-word
+  // label over three lines. Only a browser can measure this: it is not a value
+  // being wrong, it is a box being too small for the text inside it. Driven at a
+  // NARROW viewport, because the cards are a min-240px auto-fill grid and the
+  // bug only appears once they are actually narrow.
+  { name: "fasttrack · launch card stats do not clip", path: "/{org}/fasttrack",
+    needs: "body[data-stats-fit=\"1\"]", viewport: { width: 900, height: 1200 },
+    act: async page => {
+      await page.waitForSelector(".launch-stat .ls-v", { timeout: 45000 });
+      await page.evaluate(() => {
+        const bad = [];
+        document.querySelectorAll(".launch-stat").forEach(st => {
+          const v = st.querySelector(".ls-v"), l = st.querySelector(".ls-l");
+          [v, l].forEach(el => {
+            if (!el) return;
+            // horizontal clipping: the text is wider than the box showing it
+            if (el.scrollWidth > el.clientWidth + 1) bad.push("clipped: " + el.textContent.trim());
+            // a label that wrapped: taller than one line of its own font
+            const lh = parseFloat(getComputedStyle(el).fontSize) * 2.2;
+            if (el.getBoundingClientRect().height > lh) bad.push("wrapped: " + el.textContent.trim());
+          });
+        });
+        // ...and no card may overflow its own grid column.
+        document.querySelectorAll(".launch-card").forEach(c => {
+          if (c.scrollWidth > c.clientWidth + 1) bad.push("card overflows");
+        });
+        if (!bad.length) document.body.setAttribute("data-stats-fit", "1");
+        else console.error("STATS DO NOT FIT: " + bad.slice(0, 6).join(" | "));
+      });
+    } },
   { name: "fasttrack · conversions finds early-access section", path: "/{org}/fasttrack",
     needs: "#aq-sec-premier-early",
     act: async page => {
@@ -1201,7 +1232,9 @@ function waitForServer(started) {
   const only = process.argv.slice(2).join(" ").trim();
   for (const c of (only ? CASES.filter(c => c.name.includes(only)) : CASES)) {
     const page = await browser.newPage();
-    await page.setViewport({ width: 1280, height: 1000 });
+    // Per-case viewport: a layout bug that only appears in a narrow column
+    // cannot be reproduced at the default width.
+    await page.setViewport(c.viewport || { width: 1280, height: 1000 });
     const errs = [];
     page.on("pageerror", e => errs.push(String(e.message).split("\n")[0].slice(0, 200)));
     page.on("console", m => {

@@ -2366,6 +2366,19 @@ Worth stating plainly: on Smyrna's launched sections, **missed-for-want-of-
 capacity ($129,375) now exceeds collected FT revenue ($94,164)** — and all of it
 sits on four sections.
 
+**The fifth stat broke the card row, and only a browser could show it.** Dan:
+*"small fix on the FT cards, see the spacing issues."* `.launch-stats` was a
+non-wrapping flex row built for four stats, so the fifth squeezed every column —
+`$39,025` clipped to `$3` and a two-word label broke over three lines on the
+240px cards. The row now **wraps** (`flex-wrap` + `white-space: nowrap` on the
+value and label), so the fifth stat folds onto a second line instead of
+compressing. Mutation-testing the guard proved the wrap is the actual fix and the
+shorter label is only copy: with the row wrapping, a long label fits fine. The
+label is `Missed` on every card rather than changing wording per state — "No
+room" beside `$0` reads as a contradiction, and a stable label makes a grid of
+cards scannable. `ci-check-render` gained a per-case `viewport`, because this bug
+does not exist at the default width.
+
 Guards: `scripts/fasttrack-missed-revenue.spec.js` (30 assertions, in CI), which
 LIFTS AND RUNS the four helpers against fixed instants rather than regexing, and
 is mutation-tested six ways — drafts promoted, blocked reading `leftOnTable`, the
