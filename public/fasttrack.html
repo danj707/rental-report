@@ -292,9 +292,15 @@
     .launch-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; margin-bottom: 20px; }
     .launch-card { background: #fff; border: 1px solid #e0ddd8; border-radius: 10px; padding: 12px 14px; cursor: pointer; text-align: left; font-family: inherit; transition: box-shadow .15s, transform .15s; border-left-width: 5px; }
     .launch-card:hover { box-shadow: 0 3px 10px rgba(0,0,0,.08); transform: translateY(-1px); }
-    .launch-stats { display: flex; gap: 12px; margin-top: 8px; }
-    .launch-stat .ls-v { font-size: 16px; font-weight: 800; font-variant-numeric: tabular-nums; }
-    .launch-stat .ls-l { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: #999; }
+    /* WRAPS, and never shrinks a stat below its own text. This was a
+       non-wrapping flex row built for four stats; the fifth (blocked revenue)
+       squeezed every column, so "$39,025" clipped to "$3" and a two-word label
+       broke across three lines. Cards are as narrow as 240px in the grid, so the
+       row has to be allowed to fold onto a second line instead of compressing. */
+    .launch-stats { display: flex; flex-wrap: wrap; gap: 9px 12px; margin-top: 8px; }
+    .launch-stat { flex: 0 0 auto; min-width: 0; }
+    .launch-stat .ls-v { font-size: 16px; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .launch-stat .ls-l { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: #999; white-space: nowrap; }
     /* Pin toggle + email digest modal */
     .pin-toggle { border: 1px solid transparent; background: transparent; cursor: pointer; font-size: 13px; line-height: 1; padding: 3px 5px; border-radius: 6px; opacity: .35; transition: opacity .12s, background .12s; font-family: inherit; }
     /* The labelled form reads as a control at rest — the icon-only one is
@@ -2251,7 +2257,7 @@ function App() {
                         title: b == null ? 'No capacity on file for this section' : fmtMoneyExact(b) + ' of demand beyond capacity',
                         style: { color: b > 0 ? '#b91c1c' : '#999' } }, b == null ? '—' : fmtMoneyShort(b)),
                       React.createElement('div', { className: 'ls-l', title: 'FT demand beyond this section\u2019s capacity \u00D7 the section price \u2014 the money a bigger room would take. NOT the same as pending holds, which may still have seats free.' },
-                        b > 0 ? 'No room for' : 'Room for all')); })()
+                        'Missed')); })()
                   )
                 : React.createElement('div', { className: 'launch-stats' },
                     React.createElement('div', { className: 'launch-stat' }, React.createElement('div', { className: 'ls-v' }, fmtInt(r.ftSignups)), React.createElement('div', { className: 'ls-l' }, 'FT holds')),
@@ -2263,7 +2269,7 @@ function App() {
                         title: b == null ? 'No capacity on file for this section' : fmtMoneyExact(b) + ' of demand beyond capacity',
                         style: { color: b > 0 ? '#b91c1c' : '#999' } }, b == null ? '—' : fmtMoneyShort(b)),
                       React.createElement('div', { className: 'ls-l', title: 'FT demand beyond this section\u2019s capacity \u00D7 the section price \u2014 the money a bigger room would take. NOT the same as pending holds, which may still have seats free.' },
-                        b > 0 ? 'No room for' : 'Room for all')); })()
+                        'Missed')); })()
                   )
             );
           }

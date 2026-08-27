@@ -483,7 +483,9 @@ The mechanism lives in `server.js` under "Slack activity notifications":
 Wired so far: `created`, `org-deleted`, `pdf`, `excel`, `print`, `summary`
 (🧾 lite export), `game` (🕹️ hidden banner mini-game plays),
 `outdoor` (🎪 Outdoor Event Spaces tab opened, with the booking count), `view`, `insights`,
-feedback/votes, `email`, `munis`, `permits`, `map`, and three platform alerts —
+feedback/votes, `email`, `munis`, `permits`, `map`, `epact` (📤 a participant list
+exported for the ePACT camp-forms vendor, with the count and whether it was one
+class or the whole view), and three platform alerts —
 `report-down` (a report's card stopped answering, links straight to the report
 with its token), `schema-break` (a table or column the reports depend on is
 gone), `param-drift` (a date template tag is no longer typed Date). The three
@@ -2366,6 +2368,19 @@ Worth stating plainly: on Smyrna's launched sections, **missed-for-want-of-
 capacity ($129,375) now exceeds collected FT revenue ($94,164)** — and all of it
 sits on four sections.
 
+**The fifth stat broke the card row, and only a browser could show it.** Dan:
+*"small fix on the FT cards, see the spacing issues."* `.launch-stats` was a
+non-wrapping flex row built for four stats, so the fifth squeezed every column —
+`$39,025` clipped to `$3` and a two-word label broke over three lines on the
+240px cards. The row now **wraps** (`flex-wrap` + `white-space: nowrap` on the
+value and label), so the fifth stat folds onto a second line instead of
+compressing. Mutation-testing the guard proved the wrap is the actual fix and the
+shorter label is only copy: with the row wrapping, a long label fits fine. The
+label is `Missed` on every card rather than changing wording per state — "No
+room" beside `$0` reads as a contradiction, and a stable label makes a grid of
+cards scannable. `ci-check-render` gained a per-case `viewport`, because this bug
+does not exist at the default width.
+
 Guards: `scripts/fasttrack-missed-revenue.spec.js` (30 assertions, in CI), which
 LIFTS AND RUNS the four helpers against fixed instants rather than regexing, and
 is mutation-tested six ways — drafts promoted, blocked reading `leftOnTable`, the
@@ -2868,6 +2883,151 @@ Already shipped (PR #75, live on `main`): name-based site-type recovery so
 "court" excludes rinks/pools/gyms, specific-type revenue breakdown, Location
 filter, Ice sub-tab, court-name wrap. Display/scoping only — did not change the
 revenue math, so the gap above predates and survives it.
+
+## Export to ePACT on the Class Roster (2026-08-27)
+
+Dan: orgs export participant lists to upload into **ePACT**, an outside HIPAA
+vendor holding camp health forms. Melinda at Apex has been doing it by hand from
+a Metabase SQL — a date range, a partial section name, five columns, CSV — and
+*"if we could duplicate that functionality into our reporting system, that's a
+big unlock. I'd prefer it be the class roster, that's the easiest report and
+lift."* Emergency contacts and form questions are explicitly out of scope.
+
+Two buttons, **one builder**: `📤 ePACT` in the toolbar over the whole filtered
+view (the Export Permits shape), and a `📤 ePACT` on each section's header row
+for the single-class case. Both call `epactRows()` → `epactCsv()`.
+
+### THE MAPPING WAS THE WORK, and two of the five columns are traps
+
+Verified against card **17296** (`✅Class Roster`) and against her SQL on prod
+(apex, 2026-08-27) — measured, not read off column names.
+
+| her column | roster field | note |
+|---|---|---|
+| `Rec ID` | `Rec ID` | the 6-char code staff read out, not a uuid |
+| `First Name` / `Last Name` | same | |
+| **`Household Owner Email`** | **`Email`** | **NOT `Owner Email`** — see below |
+| **`Session Date - Section Name`** | `Session Date` + `Section` | `YYYY-MM-DD`, not the card's `MM/DD/YYYY` |
+
+- **`Household Owner Email` is the roster's `Email` column.** Both her query and
+  the card compute `COALESCE(NULLIF(participant.email,''), owner.email)`; the
+  roster's own `Owner Email` is `owner.email` **alone**. Her LABEL says Owner and
+  her SQL does not, so the mapping that reads right is the wrong one — **and it
+  is wrong silently**: most child participants have no email of their own, so the
+  two columns agree on the majority of rows and diverge only for the teenagers
+  who do. That is a wrong parent address in a camp health vendor for exactly the
+  families whose kid is old enough to have their own inbox.
+- **`SELECT DISTINCT` is load-bearing and is reproduced.** The roster feed is
+  participant × SESSION grain; her label is participant × section × DATE. At apex
+  DISTINCT collapses **82,244 rows to 82,127** — the same camper in the same
+  section on the same day, from two sessions that day. Without it those campers
+  are uploaded twice.
+- **Her `JOIN order_item` is a NO-OP.** All 82,244 qualifying apex bookings have
+  a live `order_item`, so it removes nothing. Checked rather than assumed,
+  because it is an INNER join and would have been a silent row filter.
+
+### Her cancellation filter is already the roster's `Status`, exactly
+
+Dan asked *"does the original sql exclude cancelled?"* — it does
+(`b.canceled_at IS NULL AND b.status = 'confirmed'`), and the export therefore
+always drops them, **ignoring the on-screen status pill**. The equivalence is not
+an assumption:
+
+- card 17296 derives `Status` purely from `canceled_at`
+  (`CASE WHEN b.canceled_at IS NOT NULL THEN 'Cancelled' ELSE 'Enrolled' END`), and
+- the card is already restricted to `b.status IN ('confirmed','cancelled')`, so
+  `planned` (7,103 not-cancelled at apex) and `pending` never reach the page, and
+- measured at apex: **0** bookings are `status='cancelled'` with a null
+  `canceled_at`. So roster `Enrolled` **IS** her confirmed-and-not-cancelled set
+  and the two cannot diverge. 16,831 are confirmed-then-cancelled; both sides
+  drop them.
+
+`section.is_rec_managed IS FALSE` is likewise already in the card (uniformly
+false at apex across 933 sections). The filter lives inside `epactRows()`, not at
+the call sites, so **no caller can opt out of it.**
+
+### A dateless row exports with an EMPTY label, and that is deliberate
+
+`TO_CHAR(NULL)` makes her whole concatenation NULL, so a section with no session
+to date it from has no group label in her output either. The tempting repair —
+printing the bare section name, or defaulting to today — puts an **invented camp
+date beside a real child's name in a vendor's system**. Same rule as the wizard's
+prose/number split. The row is still exported; only the label is empty.
+
+### Other decisions worth keeping
+
+- **The date conversion is string surgery, never `new Date()`.** The card emits
+  `MM/DD/YYYY` and `new Date(s).toISOString()` reads that as LOCAL midnight,
+  which is the previous day in UTC anywhere east of UTC. The fasttrack date bug,
+  one report over.
+- **The CSV is CRLF and properly quoted.** A section name with a comma
+  (`"Camp, Red"`) shifts every column after it otherwise, and some Windows
+  importers refuse a bare LF.
+- **No button where there is nobody to upload.** The section button is absent
+  (not disabled, not zeroed) when a section has only cancellations, and the
+  toolbar button is disabled rather than writing a header-only file — a control
+  that yields an empty CSV is a dead end.
+- **`saveTextViaPopup()` is new in `public/open-pdf.js`** and reuses that file's
+  ONE popup implementation via `deliver(build, opts)`. The sandbox-escape trick
+  is subtle enough that a second copy would drift the first time a browser
+  changed its mind about downloads. Its clipboard fallback converts the CSV to
+  TSV (`csvToTsv`, a minimal RFC4180 reader), because a comma-separated paste
+  lands the whole row in one cell.
+- Activity: **`epact` (📤)**, debounced by `scope|section` — an admin exporting
+  four camps in a row is four camps, and the whole-view export cannot be
+  swallowed by a per-class one. The count travels with it: 400 campers is a
+  different signal from testing the button on a class of six. Scope is
+  **normalised server-side**, not trusted from the query string.
+
+### The default window is now 14 days, not the calendar month
+
+Dan, same session: *"this class roster is huge by default. For apex it's like
+382 pages. Can we set the default date range to something tighter, like 14
+days?"* and *"the goal should be for an admin to start at a tightly filtered view
+so they can see what the options are, then set date ranges and type in partial
+section names, click 'run'."*
+
+`getDefaultRange()` replaces `getCurrentMonthRange()`: **today → today + 13**,
+inclusive, from a `ROSTER_DEFAULT_DAYS` constant. A `14 Days` button beside
+Last/This/Next Mo. returns to it, labelled from the same constant. The report
+header's `|| 'Current Month'` fallback is gone — it described a default that no
+longer exists.
+
+### Guards
+
+`scripts/roster-epact.spec.js` (**69 assertions, in CI**), which **lifts and
+RUNS** the five helpers rather than regexing over them, and has a live half that
+boots the server and requires a 200 **plus** a row in `events.jsonl` — the
+beacon-that-404s trap has now bitten this repo four times and a source assertion
+has never caught it.
+
+**The spec's timezone pin took two attempts, and the first one was decorative.**
+It re-execs under `Asia/Tokyo`, not `America/New_York`. Eastern does not
+discriminate for this input: `new Date("07/06/2026")` is local midnight, and
+local midnight in any US zone is still the same date in UTC — the broken
+implementation passed the whole spec under Eastern. A zone EAST of UTC is what
+separates them. The zone is chosen for that property, not because an org is in
+it.
+
+Mutation-tested fourteen ways, all failing by name: the email read from
+`ownerEmail`, the cancellation filter dropped, `SELECT DISTINCT` dropped, the
+date via `new Date().toISOString()`, a dateless row given the section name
+anyway, the default back to a month, `epact` dropped from `SLACK_NOTIFY`, `epact`
+dropped from the log route's `ALLOWED`, the debounce key reverted, the `rows`
+clamp removed (**only the live half sees that one**), a second popup
+implementation, the toolbar button exporting the unfiltered rows, the per-section
+button bypassing the shared builder, and the section button rendered with nothing
+to export.
+
+Plus six `ci-check-render.js` cases — **the Class Roster had no render case at
+all before this**, and it is the report an admin runs before every camp. Five of
+them are keyed on COUNTS or on absence rather than presence, because "a button
+rendered" passes on every one of the regressions above. The sixth,
+`roster · epact csv is her output`, **stubs `saveTextViaPopup`, clicks the real
+button and asserts on the bytes** — the header line, three data rows (Ana's two
+same-day sessions collapsed, Cass's cancellation dropped), the participant's own
+email present and the owner's absent. Every source assertion in the spec passes
+on a button wired to the wrong row set; that case is what proves the file.
 
 ## Add-ons moved into the note line; Forms took the column (2026-08-26)
 

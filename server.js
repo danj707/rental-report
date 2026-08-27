@@ -3607,7 +3607,7 @@ setTimeout(() => { checkCardParamTypes().catch(() => {}); }, 150 * 1000).unref?.
 // Inert if the env var is unset. Fire-and-forget — never blocks or breaks logging.
 // To change what pings Slack, edit SLACK_NOTIFY. High-frequency events (view/fetch)
 // are debounced per org+report so Slack isn't a firehose.
-const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "campmap-filter", "campmap-amenity", "pdf", "excel", "print", "summary", "game", "map", "outdoor", "fields", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email", "checkin-loc", "checkin-member", "checkin-failed", "form-open", "deadlink", "generate", "wizard-save"]);
+const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "campmap-filter", "campmap-amenity", "pdf", "excel", "print", "summary", "game", "map", "outdoor", "fields", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email", "checkin-loc", "checkin-member", "checkin-failed", "form-open", "epact", "deadlink", "generate", "wizard-save"]);
 const SLACK_DEBOUNCE_MS = { view: 30 * 60 * 1000, fetch: 30 * 60 * 1000,
   // A broken report stays broken. The health check only reports NEW failures,
   // but a flapping card would otherwise post every hour.
@@ -3644,6 +3644,10 @@ const SLACK_EVENT_META = {
   munis:   { emoji: "🏛️", verb: "pulled the Tyler/Munis GL Account Detail for" },
   permits: { emoji: "📋", verb: "printed rental permit sheets from" },
   "form-open": { emoji: "📄", verb: "opened rental Required Information from" },
+  // A participant list on its way to ePACT (an outside HIPAA vendor for camp
+  // health forms). Highest-signal export on the roster: it is a camp being set
+  // up, not someone reading a page.
+  epact:   { emoji: "\uD83D\uDCE4", verb: "exported an ePACT participant list from" },
   view:    { emoji: "👀", verb: "viewed" },
   // Pavilions, shelters, picnic areas and bounce houses — a new tab on the
   // Facilities hub, so its own event rather than a bare `view` of `facilities`.
@@ -3738,6 +3742,11 @@ function notifySlack(rec) {
     // checking three bookings' paperwork is three looks, not one.
     : rec.event === "form-open"
       ? `${rec.org}|${rec.report}|form-open|${rec.rental || ""}`
+    // Keyed by the SECTION, so an admin exporting four camps one after another
+    // reads as four camps. The whole-view export carries no section and keys on
+    // its own scope, so it cannot be swallowed by a per-class one either.
+    : rec.event === "epact"
+      ? `${rec.org}|${rec.report}|epact|${rec.scope || "view"}|${rec.section || ""}`
     // A wizard run keys by the PROMPT, not by the org. Someone exploring asks
     // three different questions in a couple of minutes, and that is three
     // reports built — the whole signal is which questions they ask, so the
@@ -3890,6 +3899,15 @@ function notifySlack(rec) {
     const skipped = (rec.rows || 0) - (rec.sheets || 0);
     text = `${meta.emoji} ${orgName} (\`${rec.org}\`) ${meta.verb} *${rec.report}* — ${rec.sheets || 0} sheet${rec.sheets === 1 ? "" : "s"}`
          + (skipped > 0 ? ` (${skipped} row${skipped === 1 ? "" : "s"} had no issued permit)` : "");
+  } else if (rec.event === "epact") {
+    // The count is the point — an org uploading 400 campers is a different
+    // signal from one testing the button on a class of six.
+    const n = Number(rec.rows);
+    const who = Number.isFinite(n) ? ` \u2014 ${n} participant${n === 1 ? "" : "s"}` : "";
+    const where = rec.scope === "section" && rec.section
+      ? ` from *${String(rec.section).slice(0, 90)}*`
+      : " across every section on screen";
+    text = `${meta.emoji} ${orgName} (\`${rec.org}\`) ${meta.verb} *${rec.report}*${who}${where}`;
   } else if (rec.event === "munis") {
     // The unmapped count is the whole point of watching this one — an export
     // that is mostly uncoded revenue is a conversation to have with the org.
@@ -6230,7 +6248,7 @@ app.post("/:org/:report/api/log", resolveOrg, (req, res) => {
   const { event, game, location, view } = req.query;
   // view-apply is events.jsonl-only by design — it is not in SLACK_NOTIFY, so
   // logEvent records it without pinging the feed (see the saved-views block).
-  const ALLOWED = ["excel", "print", "summary", "game", "map", "view-apply", "checkin-loc", "checkin-member", "checkin-failed", "form-open"];
+  const ALLOWED = ["excel", "print", "summary", "game", "map", "view-apply", "checkin-loc", "checkin-member", "checkin-failed", "form-open", "epact"];
   if (!ALLOWED.includes(event)) return res.status(400).json({ ok: false, error: "Unknown event" });
   const ciN = Number(req.query.n);
   const extra = event === "game" && game ? { game: String(game).slice(0, 60) }
@@ -6250,6 +6268,16 @@ app.post("/:org/:report/api/log", resolveOrg, (req, res) => {
               : event === "form-open"
                 ? { rental: req.query.rental ? String(req.query.rental).slice(0, 80) : "",
                     forms: Number.isFinite(ciN) && ciN >= 0 && ciN <= 999 ? Math.round(ciN) : undefined }
+              // An ePACT export is a participant list leaving for an outside
+              // vendor, so the SCOPE travels with it: a whole-view export is a
+              // bulk upload, a per-section one is a class about to start.
+              // `section` is also the debounce key (see notifySlack), so working
+              // down a list of classes reads as N exports rather than one.
+              : event === "epact"
+                ? { scope: req.query.scope === "section" ? "section" : "view",
+                    section: req.query.section ? String(req.query.section).slice(0, 120) : "",
+                    rows: (() => { const n = Number(req.query.rows);
+                      return Number.isFinite(n) && n >= 0 && n <= 9999999 ? Math.round(n) : undefined; })() }
               : undefined;
   logEvent(orgSlug, reportType, event, req, extra);
   res.json({ ok: true });

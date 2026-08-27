@@ -112,8 +112,14 @@
   if (window.saveWorkbookViaPopup) return;
 
   var XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+  var CSV_MIME  = "text/csv;charset=utf-8";
 
-  function popupDoc() {
+  function esc2(s) {
+    return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;")
+                    .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  }
+
+  function popupDoc(title, hint) {
     return '<!doctype html><html><head><meta charset="utf-8"><title>Export</title>'
       + '<style>'
       + 'html,body{margin:0;min-height:100%;background:#1a1a1a;color:#eee;'
@@ -131,15 +137,15 @@
       + '#note{font-size:12px;color:#7dd3a0;min-height:18px;}'
       + 'textarea{position:absolute;left:-9999px;top:0;}'
       + '</style></head><body><div class="w">'
-      + '<h1>Your spreadsheet is ready</h1>'
+      + '<h1>' + esc2(title || 'Your spreadsheet is ready') + '</h1>'
       + '<p><code id="fname"></code></p>'
       + '<div class="row">'
       + '<a class="btn primary" id="dl" href="#">Download</a>'
       + '<button class="btn secondary" id="copy" type="button">Copy for Excel</button>'
       + '</div>'
-      + '<p id="hint">If the download did not start on its own, use the button above — '
+      + '<p id="hint">' + esc2(hint || 'If the download did not start on its own, use the button above \u2014 '
       + 'some embedded views block automatic downloads. "Copy for Excel" puts the rows '
-      + 'on your clipboard instead, ready to paste into a sheet.</p>'
+      + 'on your clipboard instead, ready to paste into a sheet.') + '</p>'
       + '<div id="note"></div>'
       + '<textarea id="tsv" readonly></textarea>'
       + '</div><script>'
@@ -175,36 +181,94 @@
       + '<\/script></body></html>';
   }
 
-  window.saveWorkbookViaPopup = function (XLSX, wb, filename, opts) {
+  /* deliver(build, opts) — open the popup, THEN build the bytes, then hand them
+     over. ONE popup implementation for both the workbook and the plain-text
+     paths: the download-escape trick above is subtle enough that a second copy
+     would drift the first time a browser changed its mind about it.
+
+     The window is opened before any work so a blocked popup costs nothing, and
+     everything here is synchronous so the gesture is still live when it opens —
+     an await before window.open is exactly what gets a popup refused (rule 1).
+
+     opts.gesture      — what to click again if the popup was blocked
+     opts.title/.hint  — the popup's heading and its paragraph */
+  function deliver(build, opts) {
     opts = opts || {};
-    if (!XLSX || !wb) return false;
-    // Synchronously, before any work — see the PDF notes above.
     var w = null;
     try { w = window.open("", "_blank"); } catch (_) { w = null; }
     if (!w) {
-      alert("Your browser blocked the export window.\n\nAllow pop-ups for this page, then click Excel again.");
+      alert("Your browser blocked the export window.\n\nAllow pop-ups for this page, then click "
+            + (opts.gesture || "the button") + " again.");
       return false;
     }
     var payload;
-    try {
-      var sheet = wb.Sheets[wb.SheetNames[0]];
-      payload = {
-        bytes: XLSX.write(wb, { bookType: "xlsx", type: "array" }),
-        tsv: sheet ? XLSX.utils.sheet_to_csv(sheet, { FS: "\t" }) : "",
-        filename: filename || "export.xlsx",
-        mime: XLSX_MIME,
-      };
-    } catch (e) {
+    try { payload = build(); }
+    catch (e) {
       try { w.close(); } catch (_) {}
-      alert("Could not build the spreadsheet: " + e.message);
+      alert("Could not build the file: " + (e && e.message ? e.message : e));
       return false;
     }
     try {
-      w.document.write(popupDoc());
+      w.document.write(popupDoc(opts.title, opts.hint));
       w.document.close();
     } catch (_) { /* the payload + poller below still drive it */ }
     w.__recExport = payload;
     try { if (typeof w.__recExportStart === "function" && !w.__recStarted) { w.__recStarted = 1; w.__recExportStart(); } } catch (_) {}
     return true;
+  }
+
+  window.saveWorkbookViaPopup = function (XLSX, wb, filename, opts) {
+    opts = opts || {};
+    if (!XLSX || !wb) return false;
+    return deliver(function () {
+      var sheet = wb.Sheets[wb.SheetNames[0]];
+      return {
+        bytes: XLSX.write(wb, { bookType: "xlsx", type: "array" }),
+        tsv: sheet ? XLSX.utils.sheet_to_csv(sheet, { FS: "\t" }) : "",
+        filename: filename || "export.xlsx",
+        mime: XLSX_MIME,
+      };
+    }, { title: opts.title, hint: opts.hint, gesture: opts.gesture || "Excel" });
   };
+
+  /* saveTextViaPopup(text, filename, opts?)
+
+     The same escape, for a file the page already holds as text — a CSV built in
+     the page rather than by XLSX. The clipboard fallback carries the same rows
+     TAB-separated, because that is what pastes into a sheet as columns; pasting
+     comma-separated text drops the whole row into one cell.
+
+     opts.mime — defaults to text/csv
+     opts.tsv  — clipboard text; derived from the CSV when omitted */
+  window.saveTextViaPopup = function (text, filename, opts) {
+    opts = opts || {};
+    if (text == null) return false;
+    return deliver(function () {
+      return {
+        bytes: new TextEncoder().encode(String(text)),
+        tsv: opts.tsv != null ? opts.tsv : csvToTsv(String(text)),
+        filename: filename || "export.csv",
+        mime: opts.mime || CSV_MIME,
+      };
+    }, opts);
+  };
+
+  /* A minimal RFC4180 reader — enough to turn our own CSV back into columns for
+     the clipboard. Quoted fields may hold commas and newlines, so splitting on
+     /,/ would mangle exactly the rows a section name with a comma produces. */
+  function csvToTsv(csv) {
+    var rows = [], row = [], cur = "", q = false;
+    for (var i = 0; i < csv.length; i++) {
+      var c = csv[i];
+      if (q) {
+        if (c === '"') { if (csv[i + 1] === '"') { cur += '"'; i++; } else q = false; }
+        else cur += c;
+      } else if (c === '"') q = true;
+      else if (c === ",") { row.push(cur); cur = ""; }
+      else if (c === "\n") { row.push(cur); cur = ""; rows.push(row); row = []; }
+      else if (c !== "\r") cur += c;
+    }
+    if (cur !== "" || row.length) { row.push(cur); rows.push(row); }
+    return rows.map(function (r) { return r.join("\t"); }).join("\n");
+  }
 })();
