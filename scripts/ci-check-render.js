@@ -548,6 +548,48 @@ function addonFormRows() {
   ];
 }
 
+// The Class Roster, at the grain card 17296 actually emits: one row per
+// participant PER SESSION. Every row here is a case for the ePACT export:
+//
+//   - Ana appears TWICE on 07/06 (two sessions that day). Her SQL's SELECT
+//     DISTINCT collapses those, so the CSV must carry her once for that date.
+//   - Ana has her OWN email while her household owner has another. The export's
+//     `Household Owner Email` is COALESCE(participant, owner), so hers must win —
+//     and the owner's must not appear at all.
+//   - Cass is Cancelled: never uploaded to a camp health vendor.
+//   - Camp Cancelled has NOTHING but cancellations, so it gets a section header
+//     and no ePACT button. A button that yields an empty file is a dead end.
+function rosterRows() {
+  const r = (o) => Object.assign({
+    "Rec ID": "", "First Name": "", "Last Name": "", "Email": "", "Owner Email": "",
+    "Household Owner": "", "Section": "", "Class": "", "Session Date": "",
+    "Session Start": "09:00am", "Session End": "03:00pm", "Status": "Enrolled",
+  }, o);
+  return [
+    r({ "Rec ID": "5OLLPM", "First Name": "Ana", "Last Name": "Reyes",
+        "Email": "ana@example.com", "Owner Email": "parent-reyes@example.com",
+        "Section": "Camp Blue", "Class": "Summer Day Camp", "Session Date": "07/06/2026" }),
+    r({ "Rec ID": "5OLLPM", "First Name": "Ana", "Last Name": "Reyes",
+        "Email": "ana@example.com", "Owner Email": "parent-reyes@example.com",
+        "Section": "Camp Blue", "Class": "Summer Day Camp", "Session Date": "07/06/2026",
+        "Session Start": "01:00pm" }),
+    r({ "Rec ID": "5OLLPM", "First Name": "Ana", "Last Name": "Reyes",
+        "Email": "ana@example.com", "Owner Email": "parent-reyes@example.com",
+        "Section": "Camp Blue", "Class": "Summer Day Camp", "Session Date": "07/07/2026" }),
+    r({ "Rec ID": "9ZZQ21", "First Name": "Bo", "Last Name": "Adams",
+        "Email": "owner-adams@example.com", "Owner Email": "owner-adams@example.com",
+        "Section": "Camp Blue", "Class": "Summer Day Camp", "Session Date": "07/06/2026" }),
+    r({ "Rec ID": "3XCANCEL", "First Name": "Cass", "Last Name": "Nolan",
+        "Email": "nolan@example.com", "Owner Email": "nolan@example.com",
+        "Section": "Camp Blue", "Class": "Summer Day Camp", "Session Date": "07/06/2026",
+        "Status": "Cancelled" }),
+    r({ "Rec ID": "8ONLYX", "First Name": "Dev", "Last Name": "Marsh",
+        "Email": "marsh@example.com", "Owner Email": "marsh@example.com",
+        "Section": "Camp Cancelled", "Class": "Spring Clinic", "Session Date": "07/06/2026",
+        "Status": "Cancelled" }),
+  ];
+}
+
 // Set per case via `stubMode`, so a case can drive a feed's failure path. The
 // stubs see the API request URL, not the page's, so a query flag on the page
 // cannot reach them.
@@ -614,6 +656,8 @@ const STUBS = [
   { match: /\/directors-report\/api\/quarters/, body: () => ({ ok: true, quarters: [{ year: 2026, q: 2, key: "2026-Q2", label: "Q2 2026", stored: true }] }) },
   { match: /\/directors-report\/api\/quarter/,  body: () => directorsQuarter() },
   { match: /\/memberships\/api\/data/,  body: () => ({ rows: membershipRows(), meta: { org_id: "org-uuid-1" } }) },
+  // Must precede the catch-all /api/data below.
+  { match: /\/roster\/api\/data/,      body: () => ({ rows: rosterRows(), meta: {} }) },
   // `window` is what the real feed now echoes back: the date range it actually
   // covers, read off the parameters that were sent. The wizard prints it, so the
   // case below asserts the formatted string rather than merely that a chip drew.
@@ -850,6 +894,56 @@ const CASES = [
   // four bookings each start in a different hour and overlap at 11am, so
   // start-times-only reports 8a instead of 11a — and the timed count must exclude
   // the multi-day booking (5 instead of 4 if it leaks in).
+  // ── Class Roster: the ePACT export ──────────────────────────────────────
+  // This page had NO render case at all, and it is the one an admin runs before
+  // every camp.
+  { name: "roster · renders", path: "/{org}/roster", needs: ".section-hdr .sec-name" },
+  // The default window. `needs` reads the toolbar's own span, so a revert to the
+  // calendar month fails here — "a date input rendered" would pass on either.
+  { name: "roster · 14-day default", path: "/{org}/roster", needs: ".toolbar[data-roster-days=\"14\"]" },
+  // Three ePACT rows out of five enrolled feed rows for Camp Blue: Ana's two
+  // same-day sessions collapse and Cass's cancellation is dropped. The COUNT is
+  // the assertion — "a button rendered" passes on both regressions.
+  { name: "roster · epact per section", path: "/{org}/roster",
+    needs: "[data-epact-section=\"Camp Blue\"][data-epact-rows=\"3\"]" },
+  { name: "roster · epact toolbar count", path: "/{org}/roster",
+    needs: ".btn-epact[data-epact-rows=\"3\"]" },
+  // A section with nothing but cancellations gets its header and NO button.
+  // Asserted as ABSENT from the DOM: "renders a 0" and "renders nothing" are
+  // different claims, and a button that produces an empty file is a dead end.
+  { name: "roster · no epact where all cancelled", path: "/{org}/roster",
+    needs: ".section-hdr .sec-name",
+    absent: "[data-epact-section=\"Camp Cancelled\"]" },
+  // The CSV itself, built by the real click path in a real browser. Every
+  // source assertion in roster-epact.spec.js passes on a button wired to the
+  // wrong row set; this is what proves the bytes.
+  { name: "roster · epact csv is her output", path: "/{org}/roster",
+    needs: "body[data-ep-hdr=\"1\"][data-ep-lines=\"3\"][data-ep-email=\"1\"][data-ep-label=\"1\"][data-ep-nocancel=\"1\"]",
+    act: async page => {
+      await page.waitForSelector("[data-epact-section=\"Camp Blue\"]", { timeout: 45000 });
+      // Intercept the popup writer rather than letting it open a window: a
+      // headless browser has nowhere to put the file, and the bytes are the
+      // thing under test.
+      await page.evaluate(() => {
+        window.__csv = null;
+        window.saveTextViaPopup = (text) => { window.__csv = String(text); return true; };
+      });
+      await page.click("[data-epact-section=\"Camp Blue\"]");
+      await page.evaluate(() => {
+        const csv = window.__csv;
+        if (csv == null) return;   // the button did not reach the writer at all
+        const lines = csv.replace(/\r\n$/, "").split("\r\n");
+        const set = (k, v) => { if (v) document.body.setAttribute(k, v); };
+        set("data-ep-hdr", lines[0] === "Rec ID,First Name,Last Name,Household Owner Email,Session Date - Section Name" ? "1" : "");
+        document.body.setAttribute("data-ep-lines", String(lines.length - 1));
+        // Her COALESCE takes the participant's own address; the owner's must not
+        // appear for a participant who has one.
+        set("data-ep-email", csv.includes("ana@example.com") && !csv.includes("parent-reyes@example.com") ? "1" : "");
+        set("data-ep-label", csv.includes("2026-07-06 - Camp Blue") ? "1" : "");
+        set("data-ep-nocancel", csv.includes("3XCANCEL") ? "" : "1");
+      });
+    } },
+
   { name: "facilities · outdoor events",   path: "/{org}/facilities?tab=outdoor", needs: "[data-oe-heat]" },
   { name: "facilities · outdoor peak hour", path: "/{org}/facilities?tab=outdoor", needs: "[data-oe-peak=\"11a\"]" },
   { name: "facilities · outdoor multi-day", path: "/{org}/facilities?tab=outdoor", needs: "[data-oe-timed=\"4\"]" },

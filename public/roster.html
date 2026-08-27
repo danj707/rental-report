@@ -59,6 +59,11 @@
     .toolbar .btn-excel { background: #16803c; border-color: #16803c; font-weight: 600; }
     .toolbar .btn-excel:hover { background: #15692f; }
     .toolbar .btn-excel:disabled { opacity: .5; cursor: not-allowed; }
+    /* ePACT is an upload to an outside vendor, so it reads as its own action
+       rather than a third shade of the export buttons beside it. */
+    .toolbar .btn-epact { background: #6d28d9; border-color: #6d28d9; font-weight: 600; }
+    .toolbar .btn-epact:hover { background: #5b21b6; }
+    .toolbar .btn-epact:disabled { opacity: .5; cursor: not-allowed; }
     .toolbar .row-count { font-size: 11px; color: #aaa; }
 
     /* status filter pills */
@@ -138,6 +143,17 @@
     .section-hdr .sec-counts { font-size: 10px; color: #aaa; display: flex; gap: 8px; }
     .sec-counts .cnt-enrolled  { color: #4ade80; }
     .sec-counts .cnt-cancelled { color: #f87171; }
+    /* Legible at rest, not on hover — a control nobody can find is a control
+       that does not exist (the Fast Track pin, one report over). */
+    .btn-epact-sm {
+      font: inherit; font-size: 10px; line-height: 1;
+      padding: 4px 8px; margin-left: 2px;
+      background: #6d28d9; color: #fff; border: 1px solid #7c3aed;
+      border-radius: 4px; cursor: pointer; white-space: nowrap;
+    }
+    .btn-epact-sm:hover { background: #5b21b6; }
+    .btn-epact-sm:focus-visible { outline: 2px solid #c4b5fd; outline-offset: 1px; }
+    @media print { .btn-epact-sm { display: none; } }
 
     /* ── Session sub-header ── */
     .session-hdr {
@@ -355,10 +371,16 @@ function saveCols(v) { try { localStorage.setItem(LS_COLS, JSON.stringify(v)); }
 function toISO(d) {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
-function getCurrentMonthRange() {
-  const now = new Date();
-  return { start: toISO(new Date(now.getFullYear(), now.getMonth(), 1)),
-           end:   toISO(new Date(now.getFullYear(), now.getMonth()+1, 0)) };
+// The roster prints one block per session date, so a whole month at a big org
+// is hundreds of pages before the reader has chosen anything — apex opened at
+// ~382. The default is deliberately TIGHT: land on something small, see what the
+// sections ARE, then widen the dates or type a partial section name and Run.
+const ROSTER_DEFAULT_DAYS = 14;
+function getDefaultRange(today) {
+  const now = today || new Date();
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + ROSTER_DEFAULT_DAYS - 1);
+  return { start: toISO(start), end: toISO(end) };
 }
 function formatDisplayDate(iso) {
   if (!iso) return '';
@@ -450,12 +472,104 @@ function normalizeRow(raw) {
 }
 
 
+// ── ePACT export ─────────────────────────────────────────────────────────────
+// Orgs upload participant lists into ePACT, an outside HIPAA vendor that holds
+// camp health forms. Melinda at Apex has been producing that list by hand from a
+// Metabase SQL: a date range, a partial section name, five columns, CSV. This
+// reproduces that query's OUTPUT from the roster feed, so the file drops
+// straight into ePACT's importer.
+//
+// THE MAPPING, verified against card 17296 and against her SQL on prod
+// (apex, 2026-08-27) rather than read off column names:
+//
+//   Rec ID / First Name / Last Name → the same three roster columns.
+//   Household Owner Email           → the roster's `Email` column, NOT its
+//        `Owner Email`. Both her query and the card compute
+//        COALESCE(NULLIF(participant.email,''), owner.email); the roster's
+//        `Owner Email` is owner.email ALONE. Her label says "Owner" and her SQL
+//        does not, so the obvious-looking mapping is the wrong one.
+//   Session Date - Section Name     → YYYY-MM-DD of the card's Session Date,
+//        ' - ', then the section name. Both sides date a row from
+//        COALESCE(this session, the section's first session).
+//
+// HER FILTERS, and where each one already lives:
+//   b.status = 'confirmed' AND b.canceled_at IS NULL
+//        The card is already restricted to b.status IN ('confirmed','cancelled')
+//        and derives Status purely from canceled_at, so roster `Enrolled` IS her
+//        set. Measured at apex: 0 bookings are status='cancelled' with a null
+//        canceled_at, so the two cannot diverge; 16,831 are confirmed-then-
+//        cancelled and both sides drop them.
+//   section.is_rec_managed IS FALSE  → already in the card.
+//   the date range and the section name → the report's own toolbar.
+//   JOIN order_item ON booking_id    → a NO-OP. All 82,244 qualifying apex
+//        bookings have a live order_item, so it removes nothing.
+//   SELECT DISTINCT                  → NOT a no-op, and reproduced here: it
+//        collapsed 82,244 rows to 82,127 at apex — the same participant in the
+//        same section on the same DATE, from two sessions that day.
+const EPACT_HEADERS = ['Rec ID', 'First Name', 'Last Name', 'Household Owner Email',
+                       'Session Date - Section Name'];
+
+// 'MM/DD/YYYY' -> 'YYYY-MM-DD'. String surgery, deliberately not new Date():
+// the card emits a bare date and new Date() reads that as UTC midnight, which
+// renders as the previous day across the US — the Fast Track date bug, one
+// report over.
+function epactIsoDate(s) {
+  const t = String(s == null ? '' : s).trim();
+  const us = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(t);
+  if (us) return us[3] + '-' + us[1].padStart(2, '0') + '-' + us[2].padStart(2, '0');
+  const iso = /^(\d{4})-(\d{2})-(\d{2})/.exec(t);
+  return iso ? iso[1] + '-' + iso[2] + '-' + iso[3] : '';
+}
+
+// Her label is NULL when a section has no session to date it from — TO_CHAR(NULL)
+// makes the whole concatenation NULL. So a dateless row exports with an EMPTY
+// label rather than a guessed date: putting an invented camp date beside a real
+// child's name in a vendor's system is the fabrication this repo keeps refusing.
+function epactLabel(r) {
+  const d = epactIsoDate(r && r.sessionDate);
+  return d ? d + ' - ' + ((r && r.section) || '') : '';
+}
+
+function epactRows(rows) {
+  const seen = new Set(), out = [];
+  (rows || []).forEach(r => {
+    // Her SQL takes confirmed, not-cancelled bookings only, and the on-screen
+    // status pill does NOT loosen that: uploading a child who cancelled hands a
+    // camp health vendor a roster with the wrong children on it.
+    if (r.status === 'Cancelled') return;
+    const tuple = [r.recId || '', r.firstName || '', r.lastName || '',
+                   r.email || '', epactLabel(r)];
+    // A separator no field can contain. Joining on a space would collapse two
+    // genuinely different people ("Ana Lee Smith" / "Ana Lee" "Smith").
+    const key = tuple.join('\u001f');
+    if (seen.has(key)) return;               // her SELECT DISTINCT
+    seen.add(key);
+    out.push(tuple);
+  });
+  // ORDER BY the concatenated field, then last name, then first — hers exactly.
+  out.sort((a, b) => a[4].localeCompare(b[4]) || a[2].localeCompare(b[2]) || a[1].localeCompare(b[1]));
+  return out;
+}
+
+function epactCsv(tuples) {
+  const cell = v => {
+    const s = v == null ? '' : String(v);
+    return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  };
+  return [EPACT_HEADERS].concat(tuples).map(r => r.map(cell).join(',')).join('\r\n') + '\r\n';
+}
+
+// A section name goes into a filename, so it has to survive being one.
+function epactFileSlug(s) {
+  return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48);
+}
+
 // ── App ──────────────────────────────────────────────────────────────────────
 function App() {
   const p = useMemo(() => new URLSearchParams(window.location.search), []);
   const isPrint = p.get('_print') === '1';
 
-  const defaults = useMemo(() => getCurrentMonthRange(), []);
+  const defaults = useMemo(() => getDefaultRange(), []);
   const [startDate, setStartDate] = useState(p.get('start_date') || defaults.start);
   const [endDate, setEndDate]     = useState(p.get('end_date')   || defaults.end);
   const [sectionFilter, setSectionFilter] = useState(p.get('section_name') || '');
@@ -563,6 +677,15 @@ function App() {
 
   function handleRun() { fetchData(startDate, endDate, sectionFilter); }
 
+  function setDays(n) {
+    const r = getDefaultRange();
+    if (n === ROSTER_DEFAULT_DAYS) { setStartDate(r.start); setEndDate(r.end); return; }
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    setStartDate(toISO(start));
+    setEndDate(toISO(new Date(start.getFullYear(), start.getMonth(), start.getDate() + n - 1)));
+  }
+
   function setMonth(offset) {
     const now = new Date();
     const target = new Date(now.getFullYear(), now.getMonth() + offset, 1);
@@ -624,10 +747,18 @@ function App() {
   const sortedSections = useMemo(() => Object.keys(grouped).sort(), [grouped]);
 
   // Fire-and-forget log to server for client-side events (excel, print)
-  function logClientEvent(event) {
+  function logClientEvent(event, extra) {
     try {
       const parts = window.location.pathname.split('/').filter(Boolean);
-      if (parts.length >= 2) fetch(withToken(`/${parts[0]}/${parts[1]}/api/log?event=${event}`), { method: 'POST' }).catch(() => {});
+      if (parts.length < 2) return;
+      // The convention is ?event=<name> in the QUERY STRING — a JSON body is
+      // read by nothing on the server and comes back 400 Unknown event, which a
+      // fire-and-forget beacon never complains about. See the memberships note.
+      const qs = new URLSearchParams({ event });
+      Object.keys(extra || {}).forEach(k => {
+        if (extra[k] !== undefined && extra[k] !== null && extra[k] !== '') qs.set(k, String(extra[k]));
+      });
+      fetch(withToken(`/${parts[0]}/${parts[1]}/api/log?${qs}`), { method: 'POST', keepalive: true }).catch(() => {});
     } catch {}
   }
 
@@ -687,13 +818,40 @@ function App() {
     logClientEvent('excel');
   }
 
+  // ── ePACT export ──
+  // Two entry points, ONE builder: the toolbar button over everything on screen,
+  // and a button on each section's header row for the single-class case. Two
+  // copies of the column list would drift the first time ePACT wanted a field,
+  // and a vendor import is the last place to discover that.
+  const epactAll = useMemo(() => epactRows(displayRows), [displayRows]);
+
+  function exportEpact(rowSet, sectionName) {
+    const tuples = epactRows(rowSet);
+    if (!tuples.length) return;
+    const scope = sectionName ? 'section' : 'view';
+    const name = ['epact', orgSlug || 'org', sectionName ? epactFileSlug(sectionName) : '',
+                  loadedStart || startDate].filter(Boolean).join('-') + '.csv';
+    saveTextViaPopup(epactCsv(tuples), name, {
+      gesture: 'ePACT',
+      title: 'Your ePACT file is ready',
+      hint: tuples.length + ' participant' + (tuples.length === 1 ? '' : 's')
+          + ' \u2014 upload this CSV in ePACT. If the download did not start on its own, use the '
+          + 'button above; "Copy for Excel" puts the same rows on your clipboard instead.',
+    });
+    // The SCOPE is the interesting half: a whole-view export is a bulk upload,
+    // a per-section one is a class about to start. Sections are the debounce key
+    // (below), so working down a list of classes reads as N exports, not one.
+    logClientEvent('epact', { rows: tuples.length, scope, section: sectionName || '' });
+  }
+
   function ColToggle({ k, label }) {
     return <button className={`col-toggle${cols[k] ? ' on' : ''}`} onClick={() => toggleCol(k)}>{label}</button>;
   }
 
   const now = new Date();
   const runDate = `${(now.getMonth()+1).toString().padStart(2,'0')}/${now.getDate().toString().padStart(2,'0')}/${now.getFullYear()} @ ${now.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true}).toLowerCase()}`;
-  const dateRangeLabel = [loadedStart && formatDisplayDate(loadedStart), loadedEnd && formatDisplayDate(loadedEnd)].filter(Boolean).join(' – ') || 'Current Month';
+  const dateRangeLabel = [loadedStart && formatDisplayDate(loadedStart), loadedEnd && formatDisplayDate(loadedEnd)].filter(Boolean).join(' – ')
+    || [startDate && formatDisplayDate(startDate), endDate && formatDisplayDate(endDate)].filter(Boolean).join(' – ');
 
   function downloadPdf() {
     const parts = window.location.pathname.split('/').filter(Boolean);
@@ -714,10 +872,19 @@ function App() {
     openReportPdf(withToken(pdfUrl), { label: 'Class Roster' });
   }
 
+  // Inclusive day count of the window on screen. Built from the date STRINGS
+  // rather than new Date(a) - new Date(b): both are UTC midnight there, which is
+  // right by luck and wrong the moment one of them is a local date.
+  const rangeDays = (() => {
+    const d = t => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(t || ''); return m ? Date.UTC(+m[1], +m[2] - 1, +m[3]) : null; };
+    const a = d(startDate), b = d(endDate);
+    return a != null && b != null ? Math.round((b - a) / 86400000) + 1 : 0;
+  })();
+
   function renderToolbar() {
     if (isPrint) return null;
     return (
-      <div className="toolbar">
+      <div className="toolbar" data-roster-days={rangeDays}>
         <span className="toolbar-title">Class Roster</span>
         <div className="toolbar-divider" />
 
@@ -729,6 +896,8 @@ function App() {
 
         <label>Start<input type="date" value={startDate} onChange={e => setStartDate(e.target.value)} /></label>
         <label>End<input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} /></label>
+        <button onClick={() => setDays(ROSTER_DEFAULT_DAYS)} style={{fontSize:10,padding:'3px 7px'}}
+          title={'Back to the default window \u2014 the next ' + ROSTER_DEFAULT_DAYS + ' days'}>{ROSTER_DEFAULT_DAYS} Days</button>
         <button onClick={() => setMonth(-1)} style={{fontSize:10,padding:'3px 7px'}}>Last Mo.</button>
         <button onClick={() => setMonth(0)}  style={{fontSize:10,padding:'3px 7px'}}>This Mo.</button>
         <button onClick={() => setMonth(1)}  style={{fontSize:10,padding:'3px 7px'}}>Next Mo.</button>
@@ -810,6 +979,14 @@ function App() {
           {pdfLoading ? 'Generating…' : '📄 PDF'}
         </button>
         <button className="btn-excel" onClick={exportExcel} disabled={!rows || !rows.length}>📊 Excel</button>
+        <button className="btn-epact" data-epact-rows={epactAll.length}
+          onClick={() => exportEpact(displayRows, '')}
+          disabled={!epactAll.length}
+          title={epactAll.length
+            ? `Export ${epactAll.length} participant${epactAll.length === 1 ? '' : 's'} across every section on screen, ready to upload into ePACT. Cancelled registrations are always excluded.`
+            : 'Nothing to export \u2014 no enrolled participants in this view.'}>
+          {'\uD83D\uDCE4 ePACT'}{epactAll.length ? ` (${epactAll.length})` : ''}
+        </button>
 
       </div>
     );
@@ -937,8 +1114,10 @@ function App() {
         {sortedSections.map(secName => {
           const sec = grouped[secName];
           const sortedDates = Object.keys(sec.sessions).sort();
-          const secEnrolled  = Object.values(sec.sessions).flatMap(s => s.rows).filter(r => r.status === 'Enrolled').length;
-          const secCancelled = Object.values(sec.sessions).flatMap(s => s.rows).filter(r => r.status === 'Cancelled').length;
+          const secRows = Object.values(sec.sessions).flatMap(s => s.rows);
+          const secEnrolled  = secRows.filter(r => r.status === 'Enrolled').length;
+          const secCancelled = secRows.filter(r => r.status === 'Cancelled').length;
+          const secEpact = epactRows(secRows).length;
 
           return (
             <div className="section-group" key={secName}>
@@ -950,6 +1129,18 @@ function App() {
                 <div className="sec-counts">
                   {secEnrolled  > 0 && <span className="cnt-enrolled">{secEnrolled} enrolled</span>}
                   {secCancelled > 0 && <span className="cnt-cancelled">{secCancelled} cancelled</span>}
+                  {/* One class at a time is the common case — Melinda exports the
+                      camp that is about to start, not the quarter. No button
+                      where there is nobody to upload: a control that produces an
+                      empty file is a dead end. */}
+                  {!isPrint && secEpact > 0 && (
+                    <button className="btn-epact-sm" data-epact-section={secName}
+                      data-epact-rows={secEpact}
+                      onClick={() => exportEpact(secRows, secName)}
+                      title={`Export ${secEpact} participant${secEpact === 1 ? '' : 's'} from ${secName} for ePACT`}>
+                      {'\uD83D\uDCE4 ePACT'}
+                    </button>
+                  )}
                 </div>
               </div>
 
