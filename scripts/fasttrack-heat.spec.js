@@ -185,7 +185,7 @@ test("every visual cue on the card reads from the tier, not from the clock", () 
   assert.ok(/'data-heat': heat\.name/.test(src), "and exposes it for the render check");
   assert.ok(/heat\.rail \+ 'px solid ' \+ accent/.test(src), "rail weight from the tier");
   assert.ok(/heat\.blaze \? 'ft-blaze'/.test(src), "animation from the tier");
-  assert.ok(/heat\.flames/.test(src), "flames from the tier");
+  assert.ok(/heat\.flameCount/.test(src), "flame COUNT from the tier");
   assert.ok(!/d != null && d <= 1\) \? '#dc2626'/.test(src),
     "the old clock-only accent ladder must be gone");
 });
@@ -193,6 +193,55 @@ test("every visual cue on the card reads from the tier, not from the clock", () 
 test("reduced motion is honoured", () => {
   assert.ok(/prefers-reduced-motion/.test(src) && /\.ft-blaze/.test(src),
     "a report someone prints or reads with motion off still needs to be readable");
+  // The flames move too, so they have to stop as well — an emoji dancing under
+  // prefers-reduced-motion is exactly what that setting exists to prevent.
+  assert.ok(/\.ft-flame \{ animation: none/.test(src.replace(/\s+/g, " ")) ||
+            /ft-ember, \.ft-flame \{ animation: none/.test(src),
+    "the flicker must stop under prefers-reduced-motion");
+});
+
+// ── the flames actually burn ────────────────────────────────────────────────
+
+test("each flame flickers on its own clock, anchored at its base", () => {
+  // Same-phase flames read as one object flashing rather than as fire, so each
+  // position gets its own duration and a NEGATIVE delay (which also means they
+  // are mid-flicker on first paint instead of all starting together).
+  assert.ok(/@keyframes ftFlicker/.test(src), "there should be a flicker keyframe");
+  assert.ok(/transform-origin: 50% 92%/.test(src),
+    "a flame pinned at its centre wobbles like a balloon — the origin is its base");
+  const delays = src.match(/\.ft-flame:nth-child\(\d\) \{[^}]*animation-delay: (-[\d.]+)s/g) || [];
+  assert.ok(delays.length >= 3, "at least three flame positions should be individually timed");
+  const durs = (src.match(/\.ft-flame:nth-child\(\d\) \{[^}]*animation-duration: ([\d.]+)s/g) || [])
+    .map(x => /animation-duration: ([\d.]+)s/.exec(x)[1]);
+  // The BASE .ft-flame duration is flame #1's, so it belongs in the set too —
+  // an nth-child that matches it collides with the first flame, not with a
+  // sibling, and checking only the nth-child rules misses exactly that.
+  const base = /animation: ftFlicker ([\d.]+)s/.exec(src);
+  assert.ok(base, "the base .ft-flame rule should set a flicker duration");
+  const all = [base[1]].concat(durs);
+  assert.ok(all.length >= 4, "at least four flame positions should be individually timed");
+  assert.strictEqual(new Set(all).size, all.length,
+    "two flames sharing a duration drift back into sync — every one must differ, flame #1 included");
+});
+
+test("the flames are rendered as spans, not as one string", () => {
+  assert.ok(/function FlameRow\(props\)/.test(src), "there should be a FlameRow renderer");
+  assert.ok(/className: 'ft-flame'/.test(src), "each flame needs its own class to animate");
+  assert.ok(/'aria-hidden': 'true'/.test(src),
+    "a screen reader reading 'fire fire fire fire' is noise — the words beside it carry the meaning");
+});
+
+test("the heat haze is reserved for the top tier", () => {
+  // If everything glows, the glow stops meaning oversubscribed.
+  assert.ok(/blazing: heat\.tier >= 4/.test(src),
+    "the countdown pill should only haze at the top tier");
+  assert.ok(/\.ft-flames\.blazing::before/.test(src), "the haze should be a blazing-only pseudo-element");
+});
+
+test("the oversubscribed sentence carries live flames", () => {
+  // This is the line Dan pointed at: it had a single static emoji on it.
+  assert.ok(/FlameRow, \{ n: 3, blazing: true/.test(src),
+    "the 'oversubscribed before it opens' line should carry a burning row");
 });
 
 console.log(`\n${passed}/${passed} passing`);

@@ -192,6 +192,270 @@ first, as the timing caveat in the health-check section says.
   threw `ReferenceError` before asserting anything. Deps injected, 7/7 passing,
   and it is in CI now.
 
+## Absent and Failed check-ins (2026-08-26) — one log, two grains
+
+Dan: add 'absent' and 'failed' to the check-in reporting, "pulled directly from
+the visitor log". **There is no `visitor_log` table** — that is the product's
+name for `public.attendance_event`, which carries SEVEN types, not two:
+
+| type | rows | target_type |
+|---|---|---|
+| `check_in` | 556,431 | session |
+| `check_out` | 37,754 | session |
+| `check_in_undone` | 1,200 | session |
+| `check_out_undone` | 469 | session |
+| **`marked_absent`** | 432 | **session** |
+| **`check_in_denied`** | 58 | **organization** |
+| `marked_absent_undone` | 22 | session |
+
+**The grains differ, and that decided where each one goes** (Dan's call, after the
+measurement): `marked_absent` is session-scoped so it attributes to a section →
+**Absent column on the Programs Check-Ins band** (card 18547).
+`check_in_denied` is scoped to the ORGANIZATION — all 58 are membership (52) or
+pass (6) scans, none has a `target_id` resolving to a session — so a per-section
+Failed column could only ever be a dash on every row, forever. It goes on the
+**Memberships Check-Ins tab** (card 18151), which is already org-grain.
+
+### THE LOG IS APPEND-ONLY — an undo does not delete anything
+
+`attendance_event` has **no `deleted_at`**. Undoing a mark writes a
+`marked_absent_undone` row and the original stays. So a naive
+`COUNT(*) FILTER (WHERE type='marked_absent')` counts absences an admin took
+back: measured, **Chico 13 instead of 12 and Apex 6 instead of 5**.
+
+Absence is therefore a **STATE**: `DISTINCT ON (target_id, participant_user_id)
+… ORDER BY created_at DESC, id DESC`, keeping the pairs whose latest event is the
+mark. Two details are load-bearing:
+
+- **The state is resolved over ALL history, then the surviving mark's own date is
+  windowed.** Resolving inside the window would count a mark whose undo happens
+  to fall the other side of the range.
+- **`id` is the tie-break**, so two events in the same millisecond cannot resolve
+  differently between runs.
+
+**The same gap still exists for CHECK-INS** — 1,200 `check_in_undone` events are
+not netted out of the 556k (~0.2%). Deliberately left alone: Dan said keep the
+program check-ins and check-outs as they are, and changing them would move
+figures orgs have been reading. Worth revisiting as its own decision.
+
+### Absences on ARCHIVED sections are dropped, and that is correct
+
+The card already excludes `archived_at`/`canceled_at`/`deleted_at` sections, so
+those sections have no row for an absence to sit in. Measured: **Reading loses 16
+of 66, Jurupa 1 of 13, Apex all 5.** Consistency with the table beats completeness
+here — the alternative is a count with nowhere to display it.
+
+### Card 18547 v2 — restructured WITHOUT moving an existing number
+
+The check-in/check-out aggregate is lifted into its own `att` CTE unchanged, the
+absence state into `absent_state`/`abs`, and the section list is the **UNION** of
+both — so a section where everyone was marked absent and nobody scanned still
+gets a row. Verified before pushing, per org, against the deployed card:
+
+| org | sections | check-ins | rows differing on any existing column | Absent |
+|---|---|---|---|---|
+| Apex | 67 = 67 | 1246 = 1246 | **0** | 0 (all on archived sections) |
+| Watertown | 69 = 69 | 7734 = 7734 | **0** | 40 marks / 32 people |
+
+### Card 18151 v3 — a denial is shaped exactly like a check-in, which is the trap
+
+Denials share the card's own `check_in_method_type IN ('membership','pass')`
+filter, and all 58 carry a `participant_user_id` whose `users` row survives the
+deleted/`[DELETED]` filter, plus a `desk_location_id` and a `check_in_method_id`.
+So the card change is only a widened type filter plus a `Status` column
+(`'Checked In'` | `'Failed'`).
+
+**But that widens the row set of an existing feed** — the facility Summary bug
+verbatim (invoice fee lines arrived shaped like bookings and every row count
+became a booking count). The defence is that `ciView` was *already* the single
+funnel every panel reads, so excluding failures there fixed every panel at once:
+
+- `ciIsFailed()` is at **module scope**, not inside the component, so
+  `checkins-view.spec.js` can RUN it rather than regex over it (the
+  `nightStateFrom` lesson).
+- **A row with NO `Status` is a SUCCESS.** Testing `=== 'Checked In'` instead
+  would make `ciOk` empty against any pre-card feed — including every warm 4-hour
+  cache entry — and take the whole tab down. That is the single most dangerous
+  line in this change.
+- The desk-location counts, the "All locations (N)" label and the empty-state
+  message all read successes now.
+- **A window with only failures is a new empty state.** With `ciLoc === 'all'`,
+  `ciView` used to BE the feed and could not be empty; now it can, and the old
+  message would have said "No check-ins at all" — naming a location the reader
+  never chose.
+
+### The Failed COUNT was not enough — you have to be able to open it (2026-08-26)
+
+Dan, on the preview: *"i'm seeing the absent people on the program check in
+section, but how about the membership check ins, no failed? need a way to filter
+failed memberships here."*
+
+Two separate things, and it is worth keeping them apart:
+
+1. **The card and column were working.** Clarkstown's 13 denials are all on
+   **2026-08-04**, and the default window is the last 7 days, which holds 15
+   check-ins and no refusals. Verified on the preview: Aug 19–26 → 15/0,
+   Aug 1–26 → 49 accepted / **13 Failed**, Jan 1–26 Aug → 75/13.
+2. **The tile was a dead end.** It reported a count with nowhere to go, so
+   "how many were turned away" was answerable and "*who*" was not.
+
+So the Recent Check-Ins list gained an **Accepted / Failed** toggle, and the
+**tile itself is now the way in** (it is what prompted the question).
+
+- **IT SCOPES THE LIST ONLY, and that is the whole design.** Every aggregate —
+  check-in counts, peak hour, avg per day, time of day, top members, the desk
+  counts and the tab badge — stays successes-only, because a refused scan is not
+  attendance and folding one in would report a member who was turned away as
+  having attended. That is the facility-Summary error (fee lines counted as
+  bookings) one field over. It is therefore a **per-panel view toggle**, exactly
+  like the All/Weekdays/Weekends slice already on the time-of-day chart, and the
+  panel title names the set it is showing. `checkins-view.spec.js` asserts that
+  **no panel above `id="ciRecent"` reads `ciListView`** — the mechanical form of
+  that invariant.
+- **A `failed` selection must not survive a window or desk with no failures.**
+  The toggle is hidden in that state, so holding the selection strands the reader
+  on an empty table with no way back — and `?ci_rows=failed` is a shareable link,
+  so it *will* be opened against a window that has none.
+  **`ciEffectiveRowSet(set, failCount)` is at module scope**, read by both the
+  render and the reset effect, so the two cannot disagree and a spec can RUN it
+  (the `nightStateFrom` lesson again).
+- **No toggle where there are no failures** — a Failed button over an empty list
+  is a dead end, and the tile already says "every scan accepted". The render case
+  asserts the toggle is **ABSENT from the DOM**, via a `nofail` stub mode that
+  keeps the `Status` column but drops the denials. That is a different state from
+  a feed with no `Status` column at all, which hides the tile entirely.
+- **THERE IS NO "WHY", AND NONE IS GUESSED.** `attendance_event.side_effects` is
+  `[]` on **all 58** denials — no reason is stored. And it is not inferable
+  either: of the 52 membership refusals only **2 were expired, 1 not yet started,
+  2 canceled**, so **47 of 52 were refused while the membership looks valid on
+  its own dates**. A "Reason" column would be invention sitting beside real rows
+  — the same fabrication the wizard's prose/number split exists to prevent. The
+  list says who, when, where and which product, and the note on it says the log
+  records no reason. The spec fails if a `Reason` column appears.
+- Activity: `checkin-failed` (🚫), debounced **by desk** like `checkin-loc` —
+  checking the north desk's refusals then the south's is two questions. Carries
+  the count, because an org opening a list of refused scans is the signal.
+
+### Two bugs the RENDER CHECK caught that nothing else would have
+
+Both were in my own patch, both passed every source assertion, and both are the
+same family as things already written down here.
+
+- **`?ci_rows=failed` could never work.** The resolver ran on mount, when
+  `ciRows` is still null and there are therefore no failures *yet* — which is
+  not the same fact as "this window has none" — so it flipped the link to the
+  accepted list and the write-back effect then destroyed the state. **A feed that
+  has not answered is not an empty answer**, exactly as with the permits column
+  and the campmap's `POS_OK`; `ciEffectiveRowSet` takes a `loaded` argument for
+  it. (Two independent gates gate this now — the argument and the effect's own
+  `ciRows &&` — so the render case only fails when BOTH are removed, which is
+  how the bug actually shipped. The unit assertions catch each one alone.)
+- **`getParams()` is an explicit whitelist and I did not add `ci_rows` to it**,
+  so `params.ci_rows` was silently `undefined` and the deep link did nothing.
+  Nothing about that is visible in source review — the code reads correctly.
+
+**A window where EVERY scan failed showed no list at all.** `ciView.length > 0`
+gates the whole aggregate block, so with nothing accepted the reader got
+"11 scans were turned away" and no table under it — the count-with-nowhere-to-go
+bug in its sharpest form, inside the change meant to fix it. So the list is now
+`ciListPanel()`, **one function called from two places** (the aggregate block and
+the failures-only branch) rather than two copies of a table that would drift the
+first time a column changed, and the resolver defaults to the refusals when
+nothing was accepted. No toggle renders there — there is nothing to switch back
+to. A desk misconfigured for a day looks exactly like this.
+
+**And extracting the list broke the tab, exactly as the coding rule predicts.**
+`recOrgId` (the org uuid the member links are built from) was a `var` declared
+*inside* the aggregate IIFE, so lifting the table into a function above that
+block threw **`recOrgId is not defined`** and blanked the Check-Ins tab — the
+blank-page class this repo has shipped twice. It is now one `const` at component
+scope, above the list that reads it. Two things to take from it: **a refactor
+that moves JSX moves what it can see**, and the render check is what turned it
+into a caught error instead of a blank tab in production. `node --check`, the
+HTML parse check and all 28 specs passed on the broken version.
+
+Guards: `checkins-view.spec.js` 53 → 86 assertions, mutation-tested ten ways
+(the list reading raw state instead of the resolved set, the reducer dropping the
+strand resolution, the load gate removed, the write-back ungated, an aggregate
+reading `ciListView`, the toggle offered with zero failures, the tile no longer
+opening the list, an invented `Reason` column, the scroll target removed, and `recOrgId` put back inside the aggregate block) —
+all ten fail by name.
+`checkin-beacons.spec.js` 12 → 16, mutation-tested three ways (dropped from
+`SLACK_NOTIFY`, dropped from `ALLOWED`, debounce key reverted). Plus nine
+`ci-check-render.js` cases over two new stub modes (`nofail` — the `Status`
+column with no refusals in it, distinct from a feed with no column at all; and
+`failonly`), including the strand driven as a real link and the deep-link bug
+reproduced in a browser.
+
+### Both cards CAST their date bounds — which kills one failure mode, NOT the re-flip
+
+Found by dry-running the new SQL with a Text-style substitution before pushing,
+which is the whole reason to do that. The original 18547 wrote:
+
+```sql
+AND ae.created_at < {{end_date}} + INTERVAL '1 day'
+```
+
+That only parses while the tag is **typed Date** — Metabase then substitutes
+`CAST('2026-08-26' AS date)`. An API push regenerates every tag as **Text**, and
+Postgres reads the bare string as an interval literal:
+
+```
+ERROR: invalid input syntax for type interval: "2026-08-26"
+```
+
+…so the card stays broken until someone flips the tags by hand. **Both cards now
+cast explicitly** (`{{end_date}}::date + INTERVAL '1 day'`), which works under
+either tag type — the same reason `sql/facility-permits.sql` and
+`sql/gl-account-detail.sql` have never needed a re-flip. `checkin-status.spec.js`
+fails on an uncast date tag in either file (comments are stripped first, since
+they quote the broken form on purpose).
+
+**But the push→flip dance STILL APPLIES — I got this wrong once, so read on.**
+Casting removes ONE of two independent failure modes. The other is that an API
+push leaves each card registering **SIX** parameters: the three original
+`date/single` plus three new `string/=` for the same slugs. The app binds by
+slug, so it then sends two values per variable and Metabase answers
+`An error occurred.` — nothing in the SQL can fix that, only a human flipping the
+tags in the UI clears the duplicates. Confirmed on both cards immediately after
+this push: 6 params, HTTP 400, and 3 params + 200 after Dan's flip.
+
+So: **cast the bounds anyway** (it kills the interval-parse failure and is worth
+copying to other cards as they are touched), but still expect the flip. Verified
+separately that the cast SQL returns identical figures — Watertown 69 sections /
+7734 check-ins / 40 absent / 32 people — with an uncast string standing in for a
+Text tag.
+
+**And do not hand-roll the verification probe.** A `{type,target,value}` shape
+without the registered parameter's `id` returns `An error occurred.` for EVERY
+card — proven against card 17293, which serves fine in production. That looks
+exactly like a broken card and cost time here. Use
+`scripts/verify-report-live.js`, which merges values onto the card's own
+registered parameters by slug.
+
+### Both pages are correct BEFORE and after the cards ship
+
+`hasAbsent` / `ciHasStatus` are **presence**, not counts: the Absent column and
+the Failed tile are hidden, not zeroed, on a feed without the column. A 0 there
+says "nobody was marked absent" when the truth is "this feed cannot tell us".
+`r['Absent']` reads to **null**, never 0 — `fmtNum(undefined)` is 0, which is how
+that lie gets told.
+
+Guards: `scripts/checkin-status.spec.js` (10 assertions, in CI) pins the SQL rules
+and the null-not-zero handling, mutation-tested five ways (naive count, section
+list back to attendance-only, undo type dropped, absent read as a number,
+denials dropped from the memberships feed). `checkins-view.spec.js` 41 → 53,
+mutation-tested four ways including the inverted `ciIsFailed` that blanks the tab.
+Plus seven `ci-check-render.js` cases — **the Programs page had no render case at
+all before this** — including `programs · absent column hidden pre-card`, which
+drives the no-column feed via `stubMode` and asserts the tile is ABSENT from the
+DOM (`ci-check-render` gained an `absent:` selector for that: "renders a 0" and
+"renders nothing" are different claims).
+
+**Repo SQL mirrors now exist** for both cards (`sql/program-checkins.sql`,
+`sql/memberships-checkins.sql`) — there were none before, so the live card was
+the only copy. The live card is still the source of truth; read it first.
+
 ## Slack activity notifications — wire every new surface (IMPORTANT)
 
 Standing rule (see Working preferences): any new button, export, download, or
@@ -1968,6 +2232,106 @@ under the threshold, so the capacity test never fired and `fasttrack · launchin
 soon` passed happily on the broken build. A second program, `prog-birthday`, now
 carries the real proportions (336 FT / 295 capacity = 113.9%, two thirds of that
 capacity spent), and its spent sections are load-bearing.
+
+### Fast Track reaches the Director's Report, and Launching Soon leads (2026-08-26)
+
+Dan, on a mockup: *"love it, lets add that to the current directors report"*, and
+separately *"lets add an option to pin the upcoming launches. That section should
+be at the top, above the 'just launched'."*
+
+**The Fast Track section.** It was four small cards tucked inside the Waitlist
+panel; it is now its own section between Waitlist and Facilities. Mockup:
+https://claude.ai/code/artifact/56759609-e038-4e4a-9693-d3559470561b
+
+- **Zero extra Metabase time** — `buildDirectorsQuarter()` already fetched the
+  fasttrack feed for `dirFastTrack()`. Same argument as `dirOutdoor`/`dirFields`.
+- **`dirFastTrack()` cuts the quarter itself.** The card is all-time by design,
+  so quarterly figures come from `ft_booking` rows (which carry `Signup Date`)
+  joined back to their section by `Section ID`. Section-grain columns — revenue,
+  capacity, price — stay all-time.
+- **Quarterly revenue is DERIVED and labelled as such.** The card has no
+  per-quarter revenue, so it is `converted × Section Price`. Measured against the
+  card's own all-time total that lands **$571 high on $187,620 (~0.3%)** —
+  discounts and price changes. The all-time figure beside it is read from the
+  card, never re-derived.
+- **Conversion leads with the capacity-aware rate** (90.5% at Watertown) with
+  of-signups (76.6%) greyed beneath — the `ftConvPct` reasoning, one report over.
+- **`DIR_FT_MINUTES_PER_REG` is the one dial for "time saved".** Nothing in Rec
+  measures how long a registration takes to process, so the hours are an INPUT.
+  The page states the rate on screen inside a dashed warning box that nothing
+  else on the report uses, because an assumed figure must never look like a
+  measured one. Set the constant to 0 and the box disappears, leaving the count.
+- The section self-hides where there is no Fast Track, and the quarter slice
+  falls back to all-time when the quarter holds no bookings — a quarter of zeros
+  reads as a verdict rather than as an empty window.
+
+**Launching Soon now leads the Overview**, above Just Launched: what has not
+opened yet is the only thing on the page whose outcome can still change.
+
+- **`triageBuckets(programs, now)` moved to MODULE SCOPE.** Two callers read it
+  now (the Overview for Launching Soon, `TriagePanel` for the rest), and two
+  copies would drift the first time a bucket rule changed — the `triageBucket()`
+  lesson one level up.
+- **`readyToOpen` no longer counts toward `TriagePanel`'s own emptiness test**,
+  or a pipeline-only org renders an empty panel under the section that moved out.
+- **The pin already existed and was invisible.** Dan asked for "an option to pin
+  the upcoming launches" for a control shipped in PR #152 — a bare 📌 at
+  `opacity: .35` that only appeared on hover. It is now a labelled
+  **📌 Pin / 📌 Pinned** button, opaque at rest, with `aria-pressed`. Cold
+  Sections keeps the icon-only form (`label: false`) where the row is tight.
+  Worth generalising: *a control nobody can find is a control that does not
+  exist*, and the bug report for it arrives as a feature request.
+
+**Two render cases of mine were wrong in ways only the browser showed**, both in
+the `act` hooks rather than the page:
+
+- The order case scraped `div`s for the heading text, but the Launching Soon
+  heading is a `<span>` — never found, so the case silently proved nothing. Both
+  headings now carry `data-launch-heading` / `data-justlaunched-heading` and the
+  case compares `compareDocumentPosition`.
+- The flame case asserted **globally distinct durations**. Durations repeat
+  ACROSS rows by design (every row runs the same 1..n ladder), so it failed on a
+  perfectly good page — 11 flames, 4 durations. It is per-ROW now. The first
+  version was worse still: it compared `currentTime % 10`, which two flames can
+  collide on by chance, so it passed one run and failed the next. **A flaky
+  assertion is not a guard**; make the invariant something computed and stable.
+
+Guards: `fasttrack-launching-soon.spec.js` 22 → 34, mutation-tested four ways
+(order reverted, `readyToOpen` recounted, the pin back to 35%, the section not
+rendered at top). Six new `ci-check-render` cases — including four for the
+Director's Report Fast Track section, which **had no render coverage at all** —
+and the burn case re-verified to catch both a static flame and a resynced row.
+
+### The flames actually burn (Dan, 2026-08-26)
+
+Dan, on an oversubscribed section: *"need more fire on these types of sections.
+like flaming. can you do an animation on this."*
+
+The heat scale already carried flame EMOJI as one string per tier. They are now
+individual `.ft-flame` spans rendered by `FlameRow`, so each can flicker on its
+own clock.
+
+- **Each position has its own duration AND a negative delay.** Same-phase flames
+  read as one object flashing, not as fire; the negative delay also means they
+  are mid-flicker on first paint instead of all starting together.
+- **`transform-origin: 50% 92%`** — the base of the glyph. A flame pinned at its
+  centre wobbles like a balloon.
+- **The heat haze (`.ft-flames.blazing::before`) is top-tier only**, same
+  asymmetry as the rest of the scale: if everything glows, the glow stops
+  meaning oversubscribed.
+- `aria-hidden` on the row — the number and words beside it already say this, and
+  a screen reader reading "fire fire fire fire" is noise.
+- `flames` (the string) is KEPT alongside the new `flameCount`, because it is the
+  no-JS/print fallback and what the older assertions pin.
+
+**The guard that matters is the browser one, and it was seen to discriminate.**
+`fasttrack · flames actually burn` reads `getAnimations()` and requires every
+flame running AND their `currentTime`s out of phase. Disabling the animation was
+verified to leave `fasttrack · flames are spans` PASSING while that case FAILS —
+a static flame renders the same glyphs, so no source assertion can tell the two
+apart. `fasttrack-heat.spec.js` 14 → 20, mutation-tested five ways; note the
+duration-uniqueness assertion must include the BASE `.ft-flame` duration (flame
+#1's), or an `nth-child` colliding with it slips through — it did, first time.
 
 ## Never ship a page without rendering it (IMPORTANT — cost us two blank pages)
 

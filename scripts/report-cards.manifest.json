@@ -94,6 +94,12 @@
       "card": "926cefe5-78dd-4bdd-a1c9-58aef3f45827",
       "org": "aeba47d0-c97f-49cb-a0e9-93c5af3a68fa",
       "timeout": 30
+    },
+    {
+      "label": "program-checkins / watertown (the Absent column shipped 2026-08-26; watertown is the org with real absence data — 40 surviving marks over 32 people on live sections, so a lost column or a re-Texted date tag fails here rather than showing an empty Absent column on the Programs Check-Ins band)",
+      "card": "cb6fd909-72d3-446b-930b-c0382da02d62",
+      "org": "d781690b-c5a0-43c5-8443-9ae43899528c",
+      "timeout": 120
     }
   ]
 }

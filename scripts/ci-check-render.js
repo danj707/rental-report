@@ -368,7 +368,7 @@ function fasttrackRows() {
 //     out at the desk) and "User ID" is users.id, the only one the Rec admin URL
 //     accepts.
 function checkinRows() {
-  const at = (date, hour, min, who, desk, type) => ({
+  const at = (date, hour, min, who, desk, type, status) => ({
     "Member ID": who.rec, "User ID": who.id, "First Name": who.first, "Last Name": who.last,
     "Email": who.first.toLowerCase() + "@example.com",
     "Date": date, "Time": ((hour % 12) || 12) + ":" + String(min).padStart(2, "0") + (hour < 12 ? "am" : "pm"),
@@ -376,6 +376,10 @@ function checkinRows() {
       +date.slice(0, 4), +date.slice(5, 7) - 1, +date.slice(8, 10)).getDay()],
     "Day Type": [0, 6].includes(new Date(+date.slice(0, 4), +date.slice(5, 7) - 1, +date.slice(8, 10)).getDay()) ? "Weekend" : "Weekday",
     "Desk Location": desk, "Check-In Type": type,
+    // Card 18151 v3 tags every row. A FAILED row is a denied membership/pass
+    // scan: same shape as a success, which is why it has to be filtered out of
+    // every count rather than trusted to look different.
+    "Status": status || "Checked In",
     "Product Name": type === "pass" ? "10-Visit Pool Pass" : "Annual Family Membership",
     "Recorded By": "Front Desk",
   });
@@ -392,6 +396,48 @@ function checkinRows() {
     at("2026-08-23", 16, 40, alan, "North Desk", "pass"),
     at("2026-08-22", 17, 8,  ada,  "North Desk", "membership"),
     at("2026-08-22",  9, 55, emmy, "North Desk", "membership"),
+    // Two denials, on DIFFERENT desks. Nine successes + two failures: a tab that
+    // counts rows reports 11 check-ins, which is the regression. The split across
+    // desks is what makes the Failed tile's location scoping observable.
+    at("2026-08-24", 18, 2,  alan, "North Desk", "membership", "Failed"),
+    at("2026-08-23", 11, 47, emmy, "South Desk", "pass",       "Failed"),
+  ];
+}
+
+// ── Programs report ────────────────────────────────────────────────────────
+// The Programs page had NO render case before 2026-08-26, so its Check-Ins band
+// was never driven in a browser. Two feeds: the section-grain programs card, and
+// the per-section attendance card.
+function programRows() {
+  const sec = (prog, name, sid, enrolled, capacity) => ({
+    "Program": prog, "Program Id": "prog-" + prog.toLowerCase().replace(/\W+/g, "-"),
+    "Section": name, "Section Id": sid, "Section Status": "Open",
+    "Start Date": "2026-08-01", "End Date": "2026-09-30",
+    "Enrolled": enrolled, "Capacity": capacity, "Utilized": enrolled,
+    "Charged": enrolled * 40, "Received": enrolled * 40, "Refunds": 0,
+    "Activity": "Aquatics", "Category": "Fitness",
+  });
+  return [
+    sec("Aquatic Exercise",  "Aquatic Stations with Pearlena", "sec-aq-1", 21, 24),
+    sec("Aquatic Exercise",  "Water Waves with Yvette",        "sec-aq-2", 20, 24),
+    sec("Water Walking",     "Water Walking August 24",        "sec-ww-1", 12, 16),
+  ];
+}
+
+// Per-section attendance. Card 18547 v2 also emits Absent/Absentees, resolved by
+// "latest mark or undo wins" — so a section whose only mark was UNDONE reads 0
+// here, not 1. sec-ww-1 is that case; sec-aq-2 carries no absences at all.
+function programCheckinRows() {
+  return [
+    { "Program": "Aquatic Exercise", "Section Id": "sec-aq-1", "Section": "Aquatic Stations with Pearlena",
+      "Section Code": "AQ1", "Check Ins": 21, "Check Outs": 1, "Attendees In": 21, "Attendees Out": 1,
+      "Absent": 4, "Absentees": 3 },
+    { "Program": "Aquatic Exercise", "Section Id": "sec-aq-2", "Section": "Water Waves with Yvette",
+      "Section Code": "AQ2", "Check Ins": 17, "Check Outs": 0, "Attendees In": 17, "Attendees Out": 0,
+      "Absent": 0, "Absentees": 0 },
+    { "Program": "Water Walking", "Section Id": "sec-ww-1", "Section": "Water Walking August 24",
+      "Section Code": "WW1", "Check Ins": 12, "Check Outs": 0, "Attendees In": 12, "Attendees Out": 0,
+      "Absent": 2, "Absentees": 2 },
   ];
 }
 
@@ -429,6 +475,21 @@ function directorsQuarter() {
           accounts: [{ name: "Facility Rentals", net: 120000, prevNet: 100000 }],
           prev: { gross: 380000, refunds: 7000, net: 373000, payments: 2900 } },
     transactions: { cur: 3100, prev: 2900 },
+    // Fast Track, in the shape dirFastTrack() returns. Proportions are
+    // Watertown's real ones so the case is meaningful: the capacity-aware rate
+    // (90.5%) and the of-signups rate (76.6%) DIFFER, which is what makes the
+    // "which denominator" assertion discriminating — equal values would pass
+    // either way round. 219 converted x 2 min = 7.3 hours.
+    fasttrack: {
+      total: 1523, converted: 1318, revenue: 187620, rate: 76.6, capRate: 90.5,
+      leftOnTable: 25398, oversub: 2, minutesPerReg: 2,
+      quarter:     { signups: 286, converted: 219, pending: 67, households: 107, sections: 93, revenue: 14073, repeatHh: 50 },
+      prevQuarter: { signups: 125, converted: 106, pending: 19, households: 74,  sections: 72, revenue: 14712, repeatHh: 21 },
+      top: [
+        { program: "Adult Pickleball Open Play", section: "Intermediate", signups: 67, converted: 61, capacity: 144, share: 46.5 },
+        { program: "Adult Pickleball Skills", section: "Advanced Beginner", signups: 14, converted: 8, capacity: 8, share: 175 },
+      ],
+    },
     facility: { n: 1840, rev: 262000, residentPct: 71.2, managed: 1500, instant: 340,
                 topLocs: [{ name: "Community Park", n: 900, rev: 140000 }],
                 prevN: 1700, prevRev: 240000 },
@@ -516,7 +577,33 @@ const STUBS = [
   { match: /\/court-utilization\/api\/data/, body: () => ({ rows: racketRows(), meta: {} }) },
   // org_id is what the member links are built from — without it the cells fall
   // back to plain text, which is the behaviour before the card ships the uuid.
-  { match: /\/checkins\/api\/data/,     body: () => ({ rows: checkinRows(), meta: { org_id: "org-uuid-1" } }) },
+  // `nofail` keeps the Status column but drops the two denials — a real window
+  // where nobody was turned away. Distinct from a feed with NO Status column
+  // (which hides the tile entirely): here the tile shows 0 and the toggle must
+  // still not render, because a Failed button over an empty list is a dead end.
+  { match: /\/checkins\/api\/data/,     body: () => ({
+      rows: STUB_MODE === "nofail"
+        ? checkinRows().filter(r => r["Status"] !== "Failed")
+        // `failonly` is a window where EVERY scan was refused. There are no
+        // successful check-ins, so the aggregate block does not render at all —
+        // the list has to come from somewhere else, which is why it is its own
+        // function. A desk misconfigured for a day looks exactly like this.
+        : STUB_MODE === "failonly"
+        ? checkinRows().map(r => ({ ...r, "Status": "Failed" }))
+        : checkinRows(),
+      meta: { org_id: "org-uuid-1" } }) },
+  // Must precede /api/data. `stubMode` lets one case ask for the feed WITHOUT
+  // the Absent column — the shape every warm 4-hour cache entry still has — so
+  // the degradation is driven in a browser rather than reasoned about.
+  { match: /\/program-checkins\/api\/data/, body: () => ({
+      rows: STUB_MODE === "noabsent"
+        ? programCheckinRows().map(r => { const c = Object.assign({}, r); delete c["Absent"]; delete c["Absentees"]; return c; })
+        : programCheckinRows(), meta: {} }) },
+  // The window matters here too: the Report Wizard reads `programs` as a source
+  // and prints the range the feed covers, so a stub without one silently breaks
+  // that case rather than this one.
+  { match: /\/programs\/api\/data/,   body: () => ({ rows: programRows(),
+      meta: { window: { start: "2026-08-19", end: "2026-08-26" } } }) },
   { match: /\/directors-report\/api\/quarters/, body: () => ({ ok: true, quarters: [{ year: 2026, q: 2, key: "2026-Q2", label: "Q2 2026", stored: true }] }) },
   { match: /\/directors-report\/api\/quarter/,  body: () => directorsQuarter() },
   { match: /\/memberships\/api\/data/,  body: () => ({ rows: membershipRows(), meta: { org_id: "org-uuid-1" } }) },
@@ -599,6 +686,20 @@ function serveVendored(req) {
                        headers: cors, body: fs.readFileSync(file) });
 }
 
+// Reaching the Programs Check-Ins band. The tab is a div with an onClick, not a
+// link, and the page resets `tab` to 'summary' when its data lands — so the click
+// has to come after the summary has rendered.
+const clickCheckinsTab = async page => {
+  await page.waitForSelector(".tab", { timeout: 45000 });
+  await page.waitForFunction(
+    () => [...document.querySelectorAll(".tab")].some(t => /Check-Ins/.test(t.textContent)),
+    { timeout: 45000 });
+  await page.evaluate(() => {
+    const t = [...document.querySelectorAll(".tab")].find(x => /Check-Ins/.test(x.textContent));
+    if (t) t.click();
+  });
+};
+
 // ── Pages to prove ──────────────────────────────────────────────────────────
 // `needs` is a selector that only exists once the page has really rendered, so
 // a blank page fails instead of passing on "no errors thrown".
@@ -648,14 +749,65 @@ const CASES = [
   // the card named its launching sections, so the old program-level test fails
   // this case rather than passing on "nothing threw".
   { name: "fasttrack · launching soon", path: "/{org}/fasttrack",         needs: "[data-launch-section]" },
-  // PRE-LAUNCH BEATS CAPACITY, AND THE BIGGEST COHORT LEADS. Birthday Concert
-  // trips "demand over 90% with more pending than spots left" on program-wide
-  // figures two thirds of which are spent sections, and while `_launch` was
-  // tested third that filed it under Needs Capacity — so 314 fast-trackers, 203
-  // of them on a 45-seat table opening in fifteen minutes, never reached the
-  // panel that exists to show them. It is also the soonest thing in the fixture,
-  // so it must be the FIRST card, not merely present: that is the difference
-  // between "flagged #1 up top" and "findable if you scroll".
+  // The flames are individual spans so each can flicker on its own clock. A
+  // static string renders the same glyphs and would pass "a flame is present",
+  // so the case keys on the SPAN, and the one below proves it is actually
+  // moving — getAnimations() is the only thing that can tell those apart.
+  // Launching Soon leads the Overview. Asserted by DOM ORDER, not by presence:
+  // both sections existed before, and "both render" passed on the old order.
+  // Launching Soon leads the Overview. Asserted by DOM ORDER, not presence:
+  // both sections existed before and "both render" passed on the old order.
+  // Keyed on data attributes rather than scraping text — the two headings are
+  // different element types, which is exactly what broke the first version.
+  { name: "fasttrack · launching soon leads", path: "/{org}/fasttrack",
+    needs: "body[data-launch-first=\"1\"]",
+    act: async page => {
+      await page.waitForSelector("[data-launch-heading]", { timeout: 45000 });
+      await page.evaluate(() => {
+        const soon = document.querySelector("[data-launch-heading]");
+        const just = document.querySelector("[data-justlaunched-heading]");
+        if (!soon) return;
+        // No Just Launched in this window still proves nothing regressed.
+        if (!just || (soon.compareDocumentPosition(just) & Node.DOCUMENT_POSITION_FOLLOWING)) {
+          document.body.setAttribute("data-launch-first", "1");
+        }
+      });
+    } },
+  { name: "fasttrack · pin is a real control", path: "/{org}/fasttrack",
+    needs: "[data-launch-list] .pin-toggle.pin-labelled[data-pinned=\"0\"] .pin-word" },
+  { name: "fasttrack · flames are spans", path: "/{org}/fasttrack",
+    needs: "[data-heat=\"inferno\"] .ft-flames .ft-flame" },
+  // ...and they are RUNNING, with the positions out of phase. getAnimations()
+  // reads the live animation from the browser, so this fails on a flame that is
+  // present but static and on a row whose flames all share a clock — neither of
+  // which any source assertion can tell apart from real fire.
+  // ...and they are RUNNING, each on its own clock. Deterministic on purpose:
+  // the first version compared currentTime % 10, which two flames can collide
+  // on by chance — it passed one run and failed the next. Computed duration is
+  // stable, and "all durations distinct" IS the invariant (same-duration flames
+  // drift back into sync and read as one object flashing).
+  { name: "fasttrack · flames actually burn", path: "/{org}/fasttrack",
+    needs: "body[data-flames-burning=\"1\"]",
+    act: async page => {
+      await page.waitForSelector("[data-heat=\"inferno\"] .ft-flame", { timeout: 45000 });
+      await page.evaluate(() => {
+        // PER ROW. Durations repeat ACROSS rows by design — every row runs the
+        // same 1..n ladder — so a global uniqueness test is wrong and fails on
+        // a perfectly good page (it did: 11 flames, 4 durations).
+        const rows = [...document.querySelectorAll('[data-heat="inferno"] .ft-flames')];
+        const ok = rows.filter(row => {
+          const els = [...row.querySelectorAll(".ft-flame")];
+          if (els.length < 2) return false;
+          const running = els.filter(e => (e.getAnimations ? e.getAnimations() : [])
+            .some(a => a.playState === "running" && a.animationName === "ftFlicker"));
+          const durs = new Set(els.map(e => getComputedStyle(e).animationDuration));
+          return running.length === els.length && durs.size === els.length;
+        });
+        if (rows.length > 0 && ok.length === rows.length) {
+          document.body.setAttribute("data-flames-burning", "1");
+        }
+      });
+    } },
   { name: "fasttrack · pre-launch beats capacity", path: "/{org}/fasttrack",
     needs: "[data-launch-list] > *:first-child[data-launch-program=\"prog-birthday\"]" },
   // ...and go-live must come from the EARLY-ACCESS window when that is the one
@@ -736,6 +888,18 @@ const CASES = [
   // behind its peak hour, because "busiest at 7pm" means two different things
   // depending on whether hours are counted as covered or started.
   { name: "directors · outdoor panel", path: "/{org}/directors-report", needs: "[data-dr-outdoor]" },
+  // ── Fast Track section (Dan, 2026-08-26: "lets add that to the current
+  // directors report"). The section had NO render coverage before this.
+  { name: "directors · fast track section", path: "/{org}/directors-report", needs: "[data-dir-ft]" },
+  // The capacity-aware rate leads, not the of-signups one. Both are in the
+  // fixture and they differ, so this fails if the wrong one is promoted.
+  { name: "directors · ft conversion denominator", path: "/{org}/directors-report",
+    needs: "[data-ft-conv=\"90.5\"]" },
+  // An assumed figure must be visibly assumed. 219 x 2min = 7.3h.
+  { name: "directors · ft hours marked assumed", path: "/{org}/directors-report",
+    needs: ".ft-assumed[data-ft-hours=\"7.3\"]" },
+  { name: "directors · ft quarter delta", path: "/{org}/directors-report",
+    needs: "[data-ft-delta=\"signups\"]" },
   { name: "directors · fields panel",  path: "/{org}/directors-report", needs: "[data-dr-fields]" },
   // The hub's verticals are two clicks deep behind a card that just says
   // "Facilities". The chips are how Fields and Outdoor Events are findable at
@@ -815,6 +979,70 @@ const CASES = [
   // formatting is where the bug lives: new Date("2026-08-19") is UTC midnight and
   // renders as Aug 18 in every US timezone. A report with no period on it is not
   // a document a finance office can check, which is how this was found.
+  // ── Programs · Check-Ins band ──────────────────────────────────────────────
+  // This page had no render case at all before 2026-08-26.
+  // fetchData() calls setTab('summary') on mount, so ?tab=checkins is overridden
+  // and the band can only be reached by clicking — which is what `act` is for.
+  { name: "programs · check-ins band", path: "/{org}/programs", needs: "[data-ci-checkins-total=\"50\"]", act: clickCheckinsTab },
+  // The Absent column, keyed to a section's own figure — 4 marks on sec-aq-1.
+  // "a column rendered" would pass on a column of zeros, which is the failure
+  // mode when the feed's Absent is read as a number instead of as maybe-absent.
+  { name: "programs · absent column",  path: "/{org}/programs", needs: "[data-ci-absent=\"4\"]", act: clickCheckinsTab },
+  // Undone marks must not count: 6 total marks across the fixture, 6 surviving,
+  // and the tile is the sum the SQL's latest-wins rule produces.
+  { name: "programs · absent total",   path: "/{org}/programs", needs: "[data-ci-absent-total=\"6\"]", act: clickCheckinsTab },
+  // And against a feed with NO Absent column — every warm cache entry, until the
+  // card ships — the band must render its old self rather than a wall of dashes
+  // or a confident zero. Asserting the total is ABSENT from the DOM.
+  { name: "programs · absent column hidden pre-card", path: "/{org}/programs",
+    stubMode: "noabsent", needs: "[data-ci-checkins-total=\"50\"]", absent: "[data-ci-absent-total]", act: clickCheckinsTab },
+  // ── Memberships · failed check-ins ─────────────────────────────────────────
+  // 9 successes + 2 denials in the fixture. The tile reads 2; Total Check-Ins
+  // must still read 9, or denials are being counted as attendance.
+  { name: "memberships · failed tile", path: "/{org}/memberships?tab=checkins", needs: "[data-ci-failed=\"2\"]" },
+  { name: "memberships · failures excluded from total", path: "/{org}/memberships?tab=checkins",
+    needs: "[data-ci-total=\"9\"]" },
+  // The two denials sit on different desks, so picking one must move the tile.
+  { name: "memberships · failed scoped to desk", path: "/{org}/memberships?tab=checkins&ci_loc=South%20Desk",
+    needs: "[data-ci-failed=\"1\"]" },
+  // ── The refused-scan list (Dan: "no failed? need a way to filter failed
+  // memberships here"). The tile was a count with nowhere to go.
+  //
+  // Driven through the TILE, because the tile being the way in is the fix. The
+  // toggle is asserted separately below.
+  { name: "memberships · failed list via tile", path: "/{org}/memberships?tab=checkins",
+    needs: "[data-ci-list-set=\"failed\"]",
+    act: async page => {
+      await page.waitForSelector("[data-ci-failed-tile=\"clickable\"]", { timeout: 45000 });
+      await page.click("[data-ci-failed-tile=\"clickable\"]");
+    } },
+  // ...and the list really holds the 2 denials, not the 9 successes. Keyed on the
+  // row count so a title that flips while the rows do not still fails.
+  { name: "memberships · failed rows", path: "/{org}/memberships?tab=checkins&ci_rows=failed",
+    needs: "[data-ci-row=\"failed\"]:nth-of-type(2)",
+    absent: "[data-ci-row=\"failed\"]:nth-of-type(3)" },
+  { name: "memberships · failed note", path: "/{org}/memberships?tab=checkins&ci_rows=failed",
+    needs: "[data-ci-failed-note=\"1\"]" },
+  // The toggle exists where there are failures...
+  { name: "memberships · rowset toggle", path: "/{org}/memberships?tab=checkins",
+    needs: "[data-ci-rowset-toggle] [data-ci-rowset=\"failed\"]" },
+  // ...and is ABSENT on a feed with none, rather than a button leading nowhere.
+  // "renders a disabled button" and "renders nothing" are different claims.
+  { name: "memberships · no toggle without failures", path: "/{org}/memberships?tab=checkins",
+    stubMode: "nofail", needs: "[data-ci-total=\"9\"]", absent: "[data-ci-rowset-toggle]" },
+  // THE STRAND. A ci_rows=failed link into a window with no failures must land
+  // on the accepted list, not an empty table whose toggle is gone.
+  { name: "memberships · failed link cannot strand", path: "/{org}/memberships?tab=checkins&ci_rows=failed",
+    stubMode: "nofail", needs: "[data-ci-list-set=\"ok\"]" },
+  // A window where every scan failed: the reader used to be told "11 scans were
+  // turned away" with no table under it, because the aggregates never render.
+  { name: "memberships · failures only shows the list", path: "/{org}/memberships?tab=checkins",
+    stubMode: "failonly", needs: "[data-ci-list-set=\"failed\"]" },
+  { name: "memberships · failures only has rows", path: "/{org}/memberships?tab=checkins",
+    stubMode: "failonly", needs: "[data-ci-row=\"failed\"]:nth-of-type(11)" },
+  // ...and no toggle there, because there is nothing to switch back to.
+  { name: "memberships · failures only hides the toggle", path: "/{org}/memberships?tab=checkins",
+    stubMode: "failonly", needs: "[data-ci-list-set=\"failed\"]", absent: "[data-ci-rowset-toggle]" },
   { name: "wizard · feed date window", path: "/{org}/report-wizard",
     needs: "[data-rw-window=\"Aug 19 \u2013 Aug 26\"]",
     act: async page => { await page.click(".example-chip"); await page.click(".btn-generate"); } },
@@ -951,6 +1179,14 @@ function waitForServer(started) {
         await c.act(page);
       }
       try { await page.waitForSelector(c.needs, { timeout: PAGE_TIMEOUT_MS }); found = true; } catch (_) {}
+      // `absent` asserts a selector is NOT in the DOM. Needed for the cases that
+      // prove a figure is HIDDEN rather than zeroed — "renders a 0" and "renders
+      // nothing" are different claims and only one of them is honest when the
+      // feed cannot answer.
+      if (found && c.absent) {
+        const stillThere = await page.$(c.absent);
+        if (stillThere) { found = false; errs.push('"' + c.absent + '" should NOT be present, but it is'); }
+      }
       bodyLen = await page.evaluate(() => document.body.innerText.trim().length);
     } catch (e) {
       errs.push("navigation: " + e.message.split("\n")[0].slice(0, 160));

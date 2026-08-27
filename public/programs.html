@@ -1750,12 +1750,22 @@ function App() {
       const attendOut  = fmtNum(r['Attendees Out']);
       const enrolled   = enrollmentBySection[sid];
       const hasEnroll  = enrolled != null && enrolled > 0;
+      // Sessions an admin marked someone absent for. NULL — not 0 — when the
+      // feed has no Absent column: card 18547 gained it on 2026-08-26 and a warm
+      // 4-hour cache entry from before that still answers without it. A 0 there
+      // would read as "nobody was marked absent", which is a different and wrong
+      // statement from "this feed cannot tell us".
+      const absentRaw  = r['Absent'];
+      const absent     = absentRaw == null || absentRaw === '' ? null : fmtNum(absentRaw);
+      const absenteesRaw = r['Absentees'];
+      const absentees  = absenteesRaw == null || absenteesRaw === '' ? null : fmtNum(absenteesRaw);
       return {
         sectionId: sid,
         program: r['Program'] || '',
         section: r['Section'] || '',
         sectionCode: r['Section Code'] || '',
         checkIns, checkOuts, attendIn, attendOut,
+        absent, absentees,
         enrolled: hasEnroll ? enrolled : null,
         checkInPct:  hasEnroll ? Math.round(attendIn / enrolled * 1000) / 10 : null,
         checkOutPct: (checkOuts > 0 && attendIn > 0) ? Math.round(attendOut / attendIn * 1000) / 10 : null,
@@ -1772,10 +1782,16 @@ function App() {
   const checkinSummary = useMemo(() => {
     if (!checkinRows || checkinRows.length === 0) return null;
     let totIn = 0, totOut = 0, totAttendIn = 0, totAttendOut = 0, enrollTracked = 0, sectionsTracked = 0;
+    // hasAbsent is presence, not a count: it stays false against a feed that
+    // predates the Absent column, and the panel hides the figure rather than
+    // showing a zero it cannot stand behind.
+    let totAbsent = 0, totAbsentees = 0, hasAbsent = false;
     checkinRows.forEach(r => {
       if (r.checkIns > 0 || r.checkOuts > 0) sectionsTracked++;
       totIn += r.checkIns; totOut += r.checkOuts;
       totAttendIn += r.attendIn; totAttendOut += r.attendOut;
+      if (r.absent != null)    { hasAbsent = true; totAbsent += r.absent; }
+      if (r.absentees != null) { totAbsentees += r.absentees; }
       if (r.enrolled != null && r.checkIns > 0) enrollTracked += r.enrolled;
     });
     return {
@@ -1785,6 +1801,9 @@ function App() {
       totalAttendOut: totAttendOut,
       sectionsTracked,
       enrollTracked,
+      hasAbsent,
+      totalAbsent: totAbsent,
+      totalAbsentees: totAbsentees,
       // Attendance rate across sections that actually track attendance
       checkInPct:  enrollTracked > 0 ? Math.round(totAttendIn / enrollTracked * 1000) / 10 : null,
       checkOutPct: (totOut > 0 && totAttendIn > 0) ? Math.round(totAttendOut / totAttendIn * 1000) / 10 : null,
@@ -3343,13 +3362,25 @@ function App() {
             {!ciLoading && !ciError && checkinRows && checkinRows.length > 0 && (
               <div style={{maxWidth:1100,margin:'0 auto'}}>
                 <div className="sum-cards">
-                  <div className="sum-card"><div className="sc-label">Total Check-Ins</div><div className="sc-val sc-green">{checkinSummary.totalCheckIns.toLocaleString()}</div><div className="sc-sub">{checkinSummary.totalCheckOuts.toLocaleString()} check-outs</div></div>
+                  <div className="sum-card"><div className="sc-label">Total Check-Ins</div><div className="sc-val sc-green" data-ci-checkins-total={checkinSummary.totalCheckIns}>{checkinSummary.totalCheckIns.toLocaleString()}</div><div className="sc-sub">{checkinSummary.totalCheckOuts.toLocaleString()} check-outs</div></div>
+                  {/* Marked absent. Its own tile rather than a sub-line on
+                      Total Check-Ins, because it is a different act by a
+                      different person: a scan is the member arriving, a mark is
+                      an admin recording that they did not. Hidden entirely on a
+                      feed with no Absent column — see hasAbsent. */}
+                  {checkinSummary.hasAbsent && (
+                    <div className="sum-card"><div className="sc-label">Marked Absent</div>
+                      <div className="sc-val" data-ci-absent-total={checkinSummary.totalAbsent} style={{color: checkinSummary.totalAbsent > 0 ? '#b45309' : undefined}}>{checkinSummary.totalAbsent.toLocaleString()}</div>
+                      <div className="sc-sub">{checkinSummary.totalAbsentees.toLocaleString()} {checkinSummary.totalAbsentees === 1 ? 'person' : 'people'} · undone marks excluded</div>
+                    </div>
+                  )}
                   <div className="sum-card"><div className="sc-label">Sections Tracked</div><div className="sc-val sc-blue">{checkinSummary.sectionsTracked}</div><div className="sc-sub">with attendance scanned</div></div>
                   <div className="sum-card"><div className="sc-label">Check-In Rate</div><div className="sc-val sc-green">{checkinSummary.checkInPct != null ? checkinSummary.checkInPct + '%' : '\u2014'}</div><div className="sc-sub">attended ÷ enrolled</div></div>
                   <div className="sum-card"><div className="sc-label">Check-Out Rate</div><div className="sc-val sc-amber">{checkinSummary.checkOutPct != null ? checkinSummary.checkOutPct + '%' : '\u2014'}</div><div className="sc-sub">checked out ÷ in</div></div>
                 </div>
                 <div style={{fontSize:11,color:'#94a3b8',margin:'2px 2px 14px',lineHeight:1.5}}>
                   Check-in rate is distinct attendees scanned in vs. enrolled, across sections that track attendance. Check-out rate is those checked back out vs. checked in. Sections without an enrollment match or without check-outs show —.
+                  {checkinSummary && checkinSummary.hasAbsent ? ' Absent counts sessions an admin marked someone absent for; a mark that was later undone is not counted.' : ''}
                 </div>
                 <div style={{overflowX:'auto',border:'1px solid #e5e7eb',borderRadius:10}}>
                   <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
@@ -3363,6 +3394,13 @@ function App() {
                         <th style={{padding:'9px 12px',fontWeight:600,textAlign:'right'}}>Check-In %</th>
                         <th style={{padding:'9px 12px',fontWeight:600,textAlign:'right'}}>Check-Outs</th>
                         <th style={{padding:'9px 12px',fontWeight:600,textAlign:'right'}}>Check-Out %</th>
+                        {/* Sessions an admin marked someone absent for. The header
+                            appears only when the feed carries the column, so an
+                            older cached feed shows the table it always did rather
+                            than a column of dashes. */}
+                        {checkinSummary && checkinSummary.hasAbsent && (
+                          <th style={{padding:'9px 12px',fontWeight:600,textAlign:'right'}} title="Marked absent by an admin. Excludes marks that were later undone.">Absent</th>
+                        )}
                       </tr>
                     </thead>
                     <tbody>
@@ -3378,6 +3416,13 @@ function App() {
                             <td style={{padding:'8px 12px',textAlign:'right',fontWeight:700,color:pctColor(r.checkInPct)}}>{r.checkInPct != null ? r.checkInPct + '%' : '\u2014'}</td>
                             <td style={{padding:'8px 12px',textAlign:'right',color:'#64748b'}}>{r.checkOuts.toLocaleString()}</td>
                             <td style={{padding:'8px 12px',textAlign:'right',fontWeight:600,color:r.checkOutPct != null ? '#475569' : '#cbd5e1'}}>{r.checkOutPct != null ? r.checkOutPct + '%' : '\u2014'}</td>
+                            {checkinSummary && checkinSummary.hasAbsent && (
+                              <td style={{padding:'8px 12px',textAlign:'right',fontWeight:r.absent ? 600 : 400,color:r.absent ? '#b45309' : '#cbd5e1'}}
+                                  data-ci-absent={r.absent != null ? r.absent : undefined}
+                                  title={r.absentees != null && r.absent ? r.absentees + (r.absentees === 1 ? ' person' : ' people') : undefined}>
+                                {r.absent != null ? r.absent.toLocaleString() : '\u2014'}
+                              </td>
+                            )}
                           </tr>
                         );
                       })}

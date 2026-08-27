@@ -95,6 +95,20 @@
   table.mini td.b { font-weight:600; color:#1c1917; }
   .tiny { font-size:10.5px; color:#a8a29e; }
 
+  /* Fast Track: a figure, then what it means. */
+  .ftstat { display:flex; align-items:baseline; gap:9px; padding:7px 0; border-bottom:1px solid #f5f4f1; }
+  .ftstat:last-of-type { border-bottom:0; }
+  .ftstat .n { font-size:17px; font-weight:800; font-variant-numeric:tabular-nums; min-width:74px; letter-spacing:-.01em; }
+  .ftstat .w { font-size:12px; color:#57534e; line-height:1.45; }
+  .ftstat .w b { color:#1c1917; font-weight:700; }
+  /* An assumed figure must never look like a measured one — hence the dashed
+     rule and the warning ground, which nothing else on this page uses. */
+  .ft-assumed { background:#fffbeb; border:1px dashed #fde68a; border-radius:7px; padding:9px 11px; margin-top:10px;
+    -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  .ft-assumed .ah { font-size:9.5px; font-weight:800; letter-spacing:.1em; text-transform:uppercase; color:#92400e; margin-bottom:4px; }
+  .ft-assumed .av { font-size:15px; font-weight:800; color:#92400e; font-variant-numeric:tabular-nums; }
+  .ft-assumed .as { font-size:11px; color:#92400e; margin-top:3px; line-height:1.45; opacity:.92; }
+
   /* Bar lists + stacks */
   .bar-row { display:grid; grid-template-columns: 170px 1fr 92px; gap:9px; align-items:center; padding:4px 0; border-radius:5px; }
   .bar-row:hover { background:#faf9f7; }
@@ -297,6 +311,38 @@ function App() {
   const ssTotal = d && d.selfservice ? d.selfservice.self.orders + d.selfservice.staff.orders : 0;
   const ssPct = ssTotal > 0 ? Math.round(d.selfservice.self.orders / ssTotal * 1000) / 10 : null;
   const revMixTotal = d && d.users ? d.users.revMix.program + d.users.revMix.facility + d.users.revMix.fee + d.users.revMix.product : 0;
+
+  // ── Fast Track. Defined here, after everything it reads and immediately
+  // before the return, per the coding rule in CLAUDE.md: Babel compiles
+  // const->var, so a helper placed above its inputs is silently `undefined`
+  // rather than a throw that names it.
+  const ft = d && d.fasttrack ? d.fasttrack : null;
+  // The quarter slice, or null when the feed produced no bookings inside it —
+  // in which case the cards fall back to the all-time figures and the subtitle
+  // says so, rather than showing a quarter of zeros.
+  const ftq = ft && ft.quarter && ft.quarter.signups > 0 ? ft.quarter : null;
+  // Hours are DERIVED FROM AN ASSUMED RATE. Rendered only where there is a
+  // count to multiply, and always beside the rate that produced it.
+  const ftHours = ft && ft.minutesPerReg > 0
+    ? Math.round((ftq ? ftq.converted : ft.converted) * ft.minutesPerReg / 60 * 10) / 10
+    : null;
+  // QoQ pill for a Fast Track figure. Suppressed on a partial quarter for the
+  // same reason every other comparison on this page is: two months of a quarter
+  // against three of the last one is not a change, it is a shorter window.
+  const ftDelta = (key) => {
+    if (hideCmp || !ft || !ftq || !ft.prevQuarter) return null;
+    const prev = ft.prevQuarter[key], cur = ftq[key];
+    if (!prev || prev <= 0 || cur == null) return null;
+    const pct = Math.round((cur - prev) / prev * 100);
+    if (!isFinite(pct) || pct === 0) return null;
+    return (
+      <React.Fragment>
+        <span className={"dpill " + (pct > 0 ? "dp-up" : "dp-down")} data-ft-delta={key}>
+          <span className="arw">{pct > 0 ? "\u25B2" : "\u25BC"}</span>{Math.abs(pct)}%
+        </span>{" vs "}{fmtNum(prev)}{" in "}{d.prevLabel}<br />
+      </React.Fragment>
+    );
+  };
 
   return (
     <div>
@@ -541,17 +587,6 @@ function App() {
                     <div className="card"><div className="lbl">Median claim</div><div className="val" style={{ fontSize: 19 }}>{d.waitlist.medianClaimH != null ? d.waitlist.medianClaimH + "h" : "—"}</div><div className="sub">{fmtNum(d.waitlist.expired)} offers expired</div></div>
                   </div>
                   <div className="panel-note">People queued with no offer possible until capacity opens. See the Waitlist Demand report for section-level detail.</div>
-                  {d.fasttrack && (
-                    <div style={{ borderTop: "1px solid #f5f4f1", marginTop: 12, paddingTop: 12 }}>
-                      <div className="panel-h">&#9889; Fast Track pre-registration <span className="tiny" style={{ textTransform: "none", letterSpacing: 0 }}>all-time demand signal</span></div>
-                      <div className="cards" style={{ marginBottom: 0, gridTemplateColumns: "repeat(auto-fit,minmax(120px,1fr))" }}>
-                        <div className="card"><div className="lbl">Signups</div><div className="val" style={{ fontSize: 19 }}>{fmtNum(d.fasttrack.total)}</div><div className="sub">pre-registered interest</div></div>
-                        <div className="card"><div className="lbl">Converted</div><div className="val" style={{ fontSize: 19 }}>{fmtNum(d.fasttrack.converted)}</div><div className="sub">became enrollments</div></div>
-                        <div className="card"><div className="lbl">Conversion</div><div className="val" style={{ fontSize: 19 }}>{d.fasttrack.rate}%</div><div className="sub">signup &rarr; enrolled</div></div>
-                        {d.fasttrack.revenue > 0 && <div className="card"><div className="lbl">FT Revenue</div><div className="val" style={{ fontSize: 19 }}>{fmtMoney(d.fasttrack.revenue)}</div><div className="sub">from converted signups</div></div>}
-                      </div>
-                    </div>
-                  )}
                 </div>
                 {d.waitlist.top.length > 0 && (
                   <div className="panel">
@@ -571,6 +606,163 @@ function App() {
                   </div>
                 )}
               </div>
+            </div>
+          )}
+
+          {/* ── Fast Track ──
+               Promoted out of the Waitlist panel (Dan, 2026-08-26): for a city
+               that leans on Fast Track this is a headline, not a footnote. Reads
+               the feed buildDirectorsQuarter already fetches, so it costs no
+               extra Metabase time — same argument as Outdoor Spaces and Fields.
+               Self-hides where there is no Fast Track rather than printing a
+               page of zeros. */}
+          {d.fasttrack && (
+            <div data-dir-ft="1">
+              <div className="vsec" style={{ borderLeft: "3px solid #ea580c", paddingLeft: 11, marginLeft: -14 }}>
+                <div className="vsec-t"><span>&#9889;</span> Fast Track</div>
+                <div className="vsec-s">
+                  Families pre-register interest; the enrollment completes itself the moment registration opens.
+                  {ftq ? " Signups counted by signup date inside the quarter." : " All-time figures."}
+                </div>
+              </div>
+
+              <div className="cards" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(158px,1fr))" }}>
+                <div className="card" style={{ background: "#fff7ed", borderColor: "#fed7aa" }}>
+                  <div className="lbl">Pre-registrations</div>
+                  <div className="val" style={{ color: "#b45309" }}>{fmtNum(ftq ? ftq.signups : d.fasttrack.total)}</div>
+                  <div className="sub">
+                    {ftDelta("signups")}
+                    {ftq ? <React.Fragment>from {fmtNum(ftq.households)} household{ftq.households === 1 ? "" : "s"}</React.Fragment> : "pre-registered interest"}
+                  </div>
+                </div>
+                <div className="card">
+                  <div className="lbl">Converted</div>
+                  <div className="val">{fmtNum(ftq ? ftq.converted : d.fasttrack.converted)}</div>
+                  <div className="sub">{ftDelta("converted")}became enrollments</div>
+                </div>
+                {/* Measured against the seats Fast Track could WIN. Holds chasing
+                    fewer seats than exist cannot convert above that ceiling, so
+                    converted/holds grades a sellout against a target that does
+                    not exist. The of-signups figure is kept, quietly, beneath. */}
+                <div className="card">
+                  <div className="lbl">Conversion</div>
+                  <div className="val" data-ft-conv={d.fasttrack.capRate != null ? d.fasttrack.capRate : undefined}>
+                    {d.fasttrack.capRate != null ? d.fasttrack.capRate + "%" : d.fasttrack.rate + "%"}
+                  </div>
+                  <div className="sub">
+                    {d.fasttrack.capRate != null
+                      ? <React.Fragment>of the seats Fast Track could win<br /><span style={{ color: "#c4bfba" }}>{d.fasttrack.rate}% of all signups</span></React.Fragment>
+                      : "signup \u2192 enrolled"}
+                  </div>
+                </div>
+                {(ftq ? ftq.revenue : d.fasttrack.revenue) > 0 && (
+                  <div className="card">
+                    <div className="lbl">Revenue</div>
+                    <div className="val">{fmtMoney(ftq ? ftq.revenue : d.fasttrack.revenue)}</div>
+                    <div className="sub">
+                      from converted signups
+                      {ftq ? <React.Fragment><br /><span style={{ color: "#c4bfba" }}>{fmtMoney(d.fasttrack.revenue)} all-time</span></React.Fragment> : null}
+                    </div>
+                  </div>
+                )}
+                {ftq && ftq.pending > 0 && (
+                  <div className="card">
+                    <div className="lbl">Still holding</div>
+                    <div className="val">{fmtNum(ftq.pending)}</div>
+                    <div className="sub">signed up, not yet converted<br />across {fmtNum(ftq.sections)} section{ftq.sections === 1 ? "" : "s"}</div>
+                  </div>
+                )}
+              </div>
+
+              <div className="two-col">
+                <div className="panel">
+                  <div className="panel-h">Registrations that handled themselves <span className="tiny" style={{ textTransform: "none", letterSpacing: 0 }}>what Fast Track absorbed</span></div>
+                  <div className="ftstat">
+                    <div className="n">{fmtNum(ftq ? ftq.converted : d.fasttrack.converted)}</div>
+                    <div className="w">enrollments completed <b>at the moment registration opened</b> &mdash; no family at a keyboard, no staff keying anything in.</div>
+                  </div>
+                  {ftq && ftq.households > 0 && (
+                    <div className="ftstat">
+                      <div className="n">{fmtNum(ftq.households)}</div>
+                      <div className="w">household{ftq.households === 1 ? "" : "s"} served{ftq.repeatHh > 0 ? <React.Fragment>, <b>{fmtNum(ftq.repeatHh)} of them in two or more sections</b> &mdash; the repeat users who would otherwise queue every time</React.Fragment> : null}.</div>
+                    </div>
+                  )}
+                  {/* An ASSUMED figure must never look like a measured one. */}
+                  {ftHours != null && (
+                    <div className="ft-assumed" data-ft-hours={ftHours}>
+                      <div className="ah">&#9888; Assumption &mdash; not measured</div>
+                      <div className="av">&asymp; {ftHours} staff-hours</div>
+                      <div className="as">
+                        {fmtNum(ftq ? ftq.converted : d.fasttrack.converted)} registrations &times; {d.fasttrack.minutesPerReg} minutes each.
+                        Nothing in the data measures how long a registration takes to process, so this rate is an input rather than a finding.
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="panel">
+                  <div className="panel-h">Demand you could see coming <span className="tiny" style={{ textTransform: "none", letterSpacing: 0 }}>what Fast Track revealed</span></div>
+                  {ftq && ftq.sections > 0 && (
+                    <div className="ftstat">
+                      <div className="n">{fmtNum(ftq.sections)}</div>
+                      <div className="w">section{ftq.sections === 1 ? "" : "s"} carried pre-registered demand <b>before they opened</b> &mdash; capacity decisions made with the numbers in hand.</div>
+                    </div>
+                  )}
+                  {d.fasttrack.oversub > 0 && (
+                    <div className="ftstat">
+                      <div className="n">{fmtNum(d.fasttrack.oversub)}</div>
+                      <div className="w">section{d.fasttrack.oversub === 1 ? " was" : "s were"} <b>oversubscribed before opening</b> &mdash; more families waiting than seats existed.</div>
+                    </div>
+                  )}
+                  {d.fasttrack.leftOnTable > 0 && (
+                    <div className="ftstat">
+                      <div className="n">{fmtMoney(d.fasttrack.leftOnTable)}</div>
+                      <div className="w"><b>left on the table</b> all-time &mdash; revenue from families who wanted a seat that was not there.</div>
+                    </div>
+                  )}
+                  {d.waitlist && d.waitlist.waiting > 0 && (
+                    <div className="ftstat">
+                      <div className="n">{fmtNum(d.waitlist.waiting)}</div>
+                      <div className="w">on waitlists now &mdash; the demand that arrived <b>after</b> the seats were gone.</div>
+                    </div>
+                  )}
+                  <div className="panel-note">
+                    The waitlist counts people who missed out; Fast Track counts people who told you in advance.
+                    Read together they size the gap between what was offered and what was wanted.
+                  </div>
+                </div>
+              </div>
+
+              {d.fasttrack.top && d.fasttrack.top.length > 0 && (
+                <div className="panel" style={{ marginTop: 13 }}>
+                  <div className="panel-h">Where the demand was <span className="tiny" style={{ textTransform: "none", letterSpacing: 0 }}>top sections by pre-registration this quarter</span></div>
+                  <div style={{ overflowX: "auto" }}>
+                    <table className="mini">
+                      <thead><tr>
+                        <th>Program</th><th>Section</th>
+                        <th className="r">Signups</th><th className="r">Converted</th><th className="r">Capacity</th>
+                        <th style={{ width: 110 }}>Share of capacity</th>
+                      </tr></thead>
+                      <tbody>
+                        {d.fasttrack.top.map((t, i) => (
+                          <tr key={i}>
+                            <td className="b">{t.program}</td>
+                            <td>{t.section}</td>
+                            <td className="r">{fmtNum(t.signups)}</td>
+                            <td className="r">{fmtNum(t.converted)}</td>
+                            <td className="r">{t.capacity > 0 ? fmtNum(t.capacity) : "\u2014"}</td>
+                            <td>
+                              {t.share != null
+                                ? <div className="track"><div className="fill" style={{ width: Math.min(100, t.share) + "%", background: t.share >= 100 ? "#dc2626" : "#ea580c" }} /></div>
+                                : <span className="tiny">&mdash;</span>}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
@@ -814,7 +1006,7 @@ function App() {
           <div className="panel" style={{ marginTop: 20, background: "#faf9f7" }}>
             <div className="panel-h">&#128203; Data notes</div>
             <div className="panel-note" style={{ marginTop: 0 }}>
-              Revenue and transactions from GL Code Rollup (payment-date basis). Enrollment counts sections with sessions in the quarter; program revenue is in-period receipts. Waitlist funnel covers offers sent in the quarter. Facility figures exclude canceled reservations; court utilization assumes {d.court ? d.court.hrsPerDay : 11} open hrs/day per court. Community demographics are all-time; &ldquo;new&rdquo; means accounts created inside the quarter. Fast Track and retention are all-time cumulative.
+              Revenue and transactions from GL Code Rollup (payment-date basis). Enrollment counts sections with sessions in the quarter; program revenue is in-period receipts. Waitlist funnel covers offers sent in the quarter. Facility figures exclude canceled reservations; court utilization assumes {d.court ? d.court.hrsPerDay : 11} open hrs/day per court. Community demographics are all-time; &ldquo;new&rdquo; means accounts created inside the quarter. Fast Track signups are counted by signup date inside the quarter; its conversion, revenue-to-date, oversubscription and left-on-table figures are all-time from the card, and the quarterly revenue figure is derived (converted signups × section price) because the card carries no per-quarter revenue. Staff-hours are an estimate at {d.fasttrack ? d.fasttrack.minutesPerReg : 2} minutes per registration, not a measurement. Retention is all-time cumulative.
               {d.fromSnapshot ? " This report is an archived snapshot generated at quarter close." : ""}
             </div>
           </div>

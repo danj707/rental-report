@@ -3607,7 +3607,7 @@ setTimeout(() => { checkCardParamTypes().catch(() => {}); }, 150 * 1000).unref?.
 // Inert if the env var is unset. Fire-and-forget — never blocks or breaks logging.
 // To change what pings Slack, edit SLACK_NOTIFY. High-frequency events (view/fetch)
 // are debounced per org+report so Slack isn't a firehose.
-const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "campmap-filter", "campmap-amenity", "pdf", "excel", "print", "summary", "game", "map", "outdoor", "fields", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email", "checkin-loc", "checkin-member", "form-open", "deadlink", "generate", "wizard-save"]);
+const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "campmap-filter", "campmap-amenity", "pdf", "excel", "print", "summary", "game", "map", "outdoor", "fields", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email", "checkin-loc", "checkin-member", "checkin-failed", "form-open", "deadlink", "generate", "wizard-save"]);
 const SLACK_DEBOUNCE_MS = { view: 30 * 60 * 1000, fetch: 30 * 60 * 1000,
   // A broken report stays broken. The health check only reports NEW failures,
   // but a flapping card would otherwise post every hour.
@@ -3654,6 +3654,7 @@ const SLACK_EVENT_META = {
   // Which desk someone narrows the check-in report to is a planning fact about
   // that building, not just a click — so the location travels with the ping.
   "checkin-loc":    { emoji: "\uD83C\uDFE2", verb: "filtered check-ins by location on" },
+  "checkin-failed": { emoji: "\uD83D\uDEAB", verb: "opened the failed check-ins on" },
   // A staff member jumping from a check-in row into that member's Rec account is
   // the report handing off to the product, which is the whole point of the link.
   "checkin-member": { emoji: "\uD83D\uDC64", verb: "opened a member in Rec from" },
@@ -3731,6 +3732,8 @@ function notifySlack(rec) {
     // member working down a list of regulars is one session, not twenty pings.
     : rec.event === "checkin-loc"
       ? `${rec.org}|${rec.report}|checkin-loc|${rec.location || ""}`
+    : rec.event === "checkin-failed"
+      ? `${rec.org}|${rec.report}|checkin-failed|${rec.location || ""}`
     // Keyed by rental, same reasoning as map pins and campsite opens: staff
     // checking three bookings' paperwork is three looks, not one.
     : rec.event === "form-open"
@@ -3795,6 +3798,14 @@ function notifySlack(rec) {
     const where = rec.location ? `*${rec.location}*` : "*all locations*";
     const n = Number.isFinite(rec.checkins) ? ` \u00B7 ${rec.checkins.toLocaleString()} check-in${rec.checkins === 1 ? "" : "s"}` : "";
     text = `${meta.emoji} ${orgName} (\`${rec.org}\`) filtered check-ins to ${where}${n}`;
+  } else if (rec.event === "checkin-failed") {
+    // The COUNT is the signal: someone looking at a list of refused scans is the
+    // org noticing members being turned away, which is worth seeing in the feed.
+    const where = rec.location ? ` at *${rec.location}*` : "";
+    const n = Number.isFinite(rec.failed)
+      ? `${rec.failed.toLocaleString()} refused scan${rec.failed === 1 ? "" : "s"}`
+      : "the refused scans";
+    text = `${meta.emoji} ${orgName} (\`${rec.org}\`) opened ${n}${where}`;
   } else if (rec.event === "campmap-site") {
     // Say whether the site was actually free for the stay they were looking at —
     // "opened Site 12" is trivia; "opened Site 12, free for their 3 nights" is a
@@ -6219,7 +6230,7 @@ app.post("/:org/:report/api/log", resolveOrg, (req, res) => {
   const { event, game, location, view } = req.query;
   // view-apply is events.jsonl-only by design — it is not in SLACK_NOTIFY, so
   // logEvent records it without pinging the feed (see the saved-views block).
-  const ALLOWED = ["excel", "print", "summary", "game", "map", "view-apply", "checkin-loc", "checkin-member", "form-open"];
+  const ALLOWED = ["excel", "print", "summary", "game", "map", "view-apply", "checkin-loc", "checkin-member", "checkin-failed", "form-open"];
   if (!ALLOWED.includes(event)) return res.status(400).json({ ok: false, error: "Unknown event" });
   const ciN = Number(req.query.n);
   const extra = event === "game" && game ? { game: String(game).slice(0, 60) }
@@ -6228,6 +6239,12 @@ app.post("/:org/:report/api/log", resolveOrg, (req, res) => {
               : event === "checkin-loc"
                 ? { location: location ? String(location).slice(0, 80) : "",
                     checkins: Number.isFinite(ciN) && ciN >= 0 && ciN <= 9999999 ? Math.round(ciN) : undefined }
+              // Opening the refused-scan list. `location` is the debounce key for
+              // the same reason it is on checkin-loc — checking the north desk
+              // then the south is two questions, not one.
+              : event === "checkin-failed"
+                ? { location: location ? String(location).slice(0, 80) : "",
+                    failed: Number.isFinite(ciN) && ciN >= 0 && ciN <= 9999999 ? Math.round(ciN) : undefined }
               // `rental` is the debounce key, so opening three bookings' forms
               // reads as three looks rather than whichever was clicked first.
               : event === "form-open"
@@ -6414,7 +6431,7 @@ Respond ONLY with a valid JSON array of 4\u20136 objects. Each object: {"type":"
 
 Focus on: household composition patterns (family size, age mix between parents and children), youth vs adult programming balance based on actual member ages, data quality issues worth addressing, growth patterns, residency implications for pricing, grade-level program opportunities (which grades are most represented), geographic reach, and underserved demographic segments. Be specific with numbers from the data. Do not invent numbers not in the input.`;
 
-const DIRECTORS_SYS_PROMPT = `You are an executive analyst for US municipal parks & recreation departments. You receive one quarter's pre-computed operational metrics for one department: GL revenue with prior-quarter comparison, program enrollment with top and low-fill programs, waitlist demand and the offer funnel, facility rentals and court usage, outdoor event spaces (pavilions, picnic areas, bounce houses) and athletic fields by the hour, community demographics, self-service vs staff order mix, and instructor-led program figures. Some metric families may be absent — never mention missing data.
+const DIRECTORS_SYS_PROMPT = `You are an executive analyst for US municipal parks & recreation departments. You receive one quarter's pre-computed operational metrics for one department: GL revenue with prior-quarter comparison, program enrollment with top and low-fill programs, waitlist demand and the offer funnel, facility rentals and court usage, outdoor event spaces (pavilions, picnic areas, bounce houses) and athletic fields by the hour, Fast Track pre-registration (families who register interest before a section opens, which then converts itself at open), community demographics, self-service vs staff order mix, and instructor-led program figures. Some metric families may be absent — never mention missing data.
 
 Return EXACTLY 4 insights as a JSON array and nothing else — no prose, no preamble, no markdown code fences. Each element is an object with exactly these keys:
 {
@@ -9508,13 +9525,123 @@ function dirPayout(rows) {
   };
 }
 
-function dirFastTrack(rows) {
+/* Minutes of staff handling a Fast Track conversion avoids. THIS IS AN
+   ASSUMPTION AND THE PAGE SAYS SO — nothing in Rec measures how long a
+   registration takes to process, so this is an input Dan can set, not a
+   finding. Change it here and every surface that shows hours follows. */
+const DIR_FT_MINUTES_PER_REG = 2;
+
+/* Fast Track for the Director's Report.
+ *
+ * The feed is fetched with NO dates (the card is all-time by design), so the
+ * quarter has to be cut here — from the ft_booking rows, which carry a
+ * "Signup Date". Section-grain columns (revenue, capacity, price) are all-time,
+ * so anything quarterly is derived by joining a booking to its section.
+ *
+ * Costs no extra Metabase time: buildDirectorsQuarter already fetches this feed.
+ */
+function dirFastTrack(rows, cur, prev) {
   if (!Array.isArray(rows) || !rows.length) return null;
   const secs = rows.filter(r => (r["Row Type"] || "section") === "section");
-  let total = 0, converted = 0, revenue = 0;
-  for (const r of secs) { total += dnum(r["FT Total"]); converted += dnum(r["FT Converted"]); revenue += dnum(r["FT Revenue"]); }
+  const books = rows.filter(r => r["Row Type"] === "ft_booking");
+  const byId = Object.create(null);
+  for (const r of secs) if (r["Section ID"]) byId[r["Section ID"]] = r;
+
+  // ── All-time, straight off the card. Revenue in particular: the card's own
+  // "FT Revenue" is authoritative and is NOT re-derived here.
+  let total = 0, converted = 0, revenue = 0, leftOnTable = 0;
+  for (const r of secs) {
+    total       += dnum(r["FT Total"]);
+    converted   += dnum(r["FT Converted"]);
+    revenue     += dnum(r["FT Revenue"]);
+    leftOnTable += dnum(r["Left on Table"]);
+  }
   if (!total) return null;
-  return { total, converted, rate: Math.round(converted / total * 1000) / 10, revenue: Math.round(revenue) };
+
+  // ── Conversion measured against the seats Fast Track could actually WIN.
+  // Holds chasing fewer seats than exist cannot convert above that ceiling, so
+  // converted/holds grades a sellout against a target that does not exist —
+  // the same fix ftConvPct() made on the Fast Track report itself.
+  let denom = 0, won = 0;
+  for (const r of secs) {
+    const holds = dnum(r["FT Total"]); if (!holds) continue;
+    const cap = dnum(r["Capacity"]);
+    if (cap <= 0) { denom += holds; won += dnum(r["FT Converted"]); continue; }
+    const avail = Math.max(0, cap - dnum(r["Direct Enrolled"]));
+    const d = Math.min(holds, avail);
+    if (d <= 0) continue;                       // no seats left for FT to win
+    denom += d; won += Math.min(dnum(r["FT Converted"]), d);
+  }
+  const capRate = denom > 0 ? Math.round(won / denom * 1000) / 10 : null;
+
+  // Oversubscribed before opening — more pre-registered than seats.
+  const oversub = secs.filter(r => dnum(r["Capacity"]) > 0 && dnum(r["FT Total"]) >= dnum(r["Capacity"])).length;
+
+  // ── Quarter slice, by signup date.
+  const slice = (range) => {
+    if (!range) return null;
+    const inQ = books.filter(b => {
+      const d = b["Signup Date"];
+      return d && d >= range.start && d <= range.end;
+    });
+    if (!inQ.length) return { signups: 0, converted: 0, pending: 0, households: 0, sections: 0, revenue: 0, repeatHh: 0 };
+    let conv = 0, rev = 0;
+    const hh = Object.create(null), sec = new Set();
+    for (const b of inQ) {
+      if (b["Section ID"]) sec.add(b["Section ID"]);
+      const h = b["User HH ID"]; if (h) hh[h] = (hh[h] || 0) + 1;
+      if (b["FT Status"] === "Converted") {
+        conv++;
+        const s = byId[b["Section ID"]];
+        if (s) rev += dnum(s["Section Price"]);
+      }
+    }
+    const hhKeys = Object.keys(hh);
+    return {
+      signups: inQ.length, converted: conv, pending: inQ.length - conv,
+      households: hhKeys.length, sections: sec.size,
+      // DERIVED, not read: the card carries no per-quarter revenue. Measured
+      // against the card's own all-time total this lands ~0.3% high (discounts
+      // and price changes), so the page labels it as derived.
+      revenue: Math.round(rev),
+      repeatHh: hhKeys.filter(k => hh[k] > 1).length,
+    };
+  };
+  const q = slice(cur), qPrev = slice(prev);
+
+  // Top sections by pre-registration inside the quarter.
+  let top = [];
+  if (cur) {
+    const agg = Object.create(null);
+    for (const b of books) {
+      const d = b["Signup Date"];
+      if (!d || d < cur.start || d > cur.end || !b["Section ID"]) continue;
+      const a = agg[b["Section ID"]] || (agg[b["Section ID"]] = { n: 0, c: 0 });
+      a.n++; if (b["FT Status"] === "Converted") a.c++;
+    }
+    top = Object.keys(agg).map(id => {
+      const s = byId[id] || {};
+      const cap = dnum(s["Capacity"]);
+      return {
+        program: s["Program"] || "\u2014", section: s["Section"] || "\u2014",
+        signups: agg[id].n, converted: agg[id].c, capacity: cap,
+        share: cap > 0 ? Math.round(agg[id].n / cap * 1000) / 10 : null,
+      };
+    }).sort((a, b) => b.signups - a.signups || b.converted - a.converted).slice(0, 5);
+  }
+
+  return {
+    total, converted, revenue: Math.round(revenue),
+    rate: Math.round(converted / total * 1000) / 10,   // of signups (kept: the old figure)
+    capRate,                                            // of winnable seats
+    leftOnTable: Math.round(leftOnTable), oversub,
+    quarter: q, prevQuarter: qPrev,
+    // Minutes per registration is an INPUT, not a measurement — nothing in the
+    // data times a registration. The page states it on screen beside the figure
+    // it produces, so the reader can see the assumption and discount it.
+    minutesPerReg: DIR_FT_MINUTES_PER_REG,
+    top,
+  };
 }
 
 function dirRetention(rows) {
@@ -9574,7 +9701,7 @@ async function buildDirectorsQuarter(slug, year, q) {
     users: dirUsers(usr, cur),
     selfservice: dirSelfService(ss),
     payout: dirPayout(pay),
-    fasttrack: dirFastTrack(ft),
+    fasttrack: dirFastTrack(ft, cur, prev),
     retention: dirRetention(ret),
   };
 }
@@ -16519,6 +16646,31 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-08-26', title: '\u26A1 Fast Track gets its own section in the Director\u2019s Report', items: [
+    'Fast Track was four small cards inside the Waitlist panel. It is now a section of its own: pre-registrations and households for the quarter with the change on last quarter, conversion, revenue, and how many families are still holding a place.',
+    'Two panels either side of it. WHAT IT ABSORBED \u2014 the registrations that completed themselves the moment registration opened, with no family at a keyboard and nobody keying anything in. WHAT IT REVEALED \u2014 how many sections carried demand before they opened, how many were oversubscribed, and the revenue left on the table when families wanted a seat that was not there.',
+    'The staff-hours figure is an ESTIMATE and says so on the page. Nothing in Rec measures how long a registration takes to process, so the minutes-per-registration rate is an input we set rather than something measured \u2014 the figure is shown in a marked box with the rate printed beside it.',
+    'Signups are counted by signup date inside the quarter. Conversion is measured against the seats Fast Track could actually win rather than against every signup: holds chasing fewer seats than exist cannot convert above that ceiling, and grading a sellout against a target that does not exist reads as a failure.',
+    'The section only appears for departments that use Fast Track.',
+  ]},
+  { date: '2026-08-26', title: '\uD83D\uDE80 Launching Soon now leads the Fast Track overview', items: [
+    'Sections that have NOT opened yet now appear at the top of the overview, above Just Launched. A section that opened three days ago is a report; one opening tomorrow is still a decision you can act on.',
+    'Pinning an upcoming launch is now a labelled Pin button rather than a faint icon that only appeared when you hovered over it. Pinned sections stay at the top of the overview for everyone on your team.',
+    'Sections that are oversubscribed before they open now visibly burn \u2014 the flames flicker instead of sitting still, and the line reporting demand past capacity carries them too. Turned off automatically for anyone who has asked for reduced motion.',
+  ]},
+  { date: '2026-08-26', title: '\uD83D\uDEAB Failed check-ins: open the list, not just the count', items: [
+    'The Failed Check-Ins figure on the Memberships Check-Ins tab is now something you can open. Click it, or use the Accepted / Failed switch on the check-in list, and the list shows the scans that were turned away \u2014 who, when, at which desk, and which membership or pass they presented. Every member still links through to their Rec account.',
+    'The switch changes the LIST ONLY. Every figure on the tab \u2014 total check-ins, busiest hour, average per day, time of day, top members, the per-desk counts \u2014 continues to count accepted scans and nothing else. Someone who was turned away did not attend, and counting them as attendance would overstate usage everywhere on the page.',
+    'The switch appears only where there is something to see, and a link to the failed list opens on the accepted list when the window has no refusals \u2014 rather than an empty table.',
+    'THE LOG DOES NOT RECORD WHY A SCAN WAS REFUSED, and the report does not guess. There is no reason stored against a denial, and it is not reliably inferable either: across the platform only 5 of 52 membership refusals are even explained by the membership\u2019s own dates. So the list tells you who to look at and leaves the reason to their account in Rec.',
+    'Worth knowing when a window looks empty: refusals are rare and cluster on particular days. Clarkstown\u2019s 13 all fall on one date, so the default last-7-days view shows none \u2014 widen the dates before concluding there are none.',
+  ]},
+  { date: '2026-08-26', title: '\u2705 Check-ins: who was marked absent, and whose scan was turned away', items: [
+    'The Programs Check-Ins band gains an ABSENT column, per section, plus a Marked Absent total \u2014 sessions an admin recorded someone as absent for. A mark that was later undone does NOT count: the attendance log is append-only, so undoing writes a second row rather than removing the first, and counting the marks directly would report absences staff had already taken back.',
+    'The Memberships Check-Ins tab gains FAILED CHECK-INS \u2014 a membership or pass refused at the desk \u2014 with the rate as a share of attempts, and it follows the desk-location filter like everything else on the tab.',
+    'Failed check-ins are deliberately NOT on the program report. They are recorded against the organisation, not a class session, so there is no section to attribute them to; a per-section column could only ever be blank. They live where membership check-ins live.',
+    'Existing check-in and check-out figures are unchanged \u2014 verified per section against the current report before shipping, on two orgs, with zero differences.',
+  ]},
   { date: '2026-08-26', title: '🪄 Report Wizard: says what it built, and the feed can finally see it', items: [
     'A generated report now opens with a few lines of prose \u2014 what the report answers, what one row of each source means, and how to read the widgets \u2014 plus a "Worth knowing" list of the caveats (what is excluded, what a count is really counting). Before this it was a title and a stack of charts, which leaves the reader guessing.',
     'The write-up is deliberately split in two. The prose comes from the AI, which is designing the report BEFORE any data is fetched \u2014 so it is forbidden from stating a figure, because it cannot know one. The "Built from" line beside it is measured here: the sources used, the rows that actually arrived, and the grain of each. A source that answered with nothing now says so, instead of rendering as widgets full of dashes.',
