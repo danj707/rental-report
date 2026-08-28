@@ -410,6 +410,21 @@ const parts = window.location.pathname.split('/').filter(Boolean);
 const orgSlug = parts[0] || '';
 const basePath = '/' + parts.slice(0, 2).join('/');
 
+/* ── Which tab a ?tab= link may land on ──────────────────────────────────
+   The org dashboard's Fast Track card carries a chip per tab (CARD_TABS in
+   public/org.html), and a chip is a link. Overview has no chip — the card
+   already lands there, so one would be noise — but it stays ACCEPTED here,
+   because a link someone was handed must not stop working.
+
+   At module scope so a spec can RUN it rather than regex over the component
+   (the nightStateFrom lesson). Falls back to the page's own default rather
+   than rendering nothing: an unknown tab must not blank the body. */
+const FT_URL_TABS = ['overview', 'revenue', 'conversions', 'demographics'];
+function ftEffectiveTab(urlTab) {
+  var t = String(urlTab == null ? '' : urlTab);
+  return FT_URL_TABS.indexOf(t) >= 0 ? t : 'overview';
+}
+
 function fmtN(v) { const n = Number(v); return isNaN(n) ? 0 : n; }
 function fmtInt(v) { return fmtN(v).toLocaleString(); }
 function fmtPct(v) { const n = fmtN(v); return n === 0 ? '—' : n.toFixed(1) + '%'; }
@@ -1496,7 +1511,7 @@ function App() {
   var [openSecs, setOpenSecs]         = useState(function() { return new Set(); });
   var [pdfLoading, setPdfLoading]     = useState(false);
   var [showExplainer, setShowExplainer] = useState(false);
-  var [activeTab, setActiveTab] = useState('overview');
+  var [activeTab, setActiveTab] = useState(function(){ return ftEffectiveTab(SP.get('tab')); });
   var [tabLoading, setTabLoading] = useState(false);
   var [ftUserRows, setFtUserRows] = useState([]);
   var [ftBookingRows, setFtBookingRows] = useState([]);
@@ -1789,14 +1804,25 @@ function App() {
       .catch(function(e){ setCiError(e.message); setCiLoading(false); });
   }
 
-  function switchTab(t) {
-    setActiveTab(t);
+  /* THE FEED IS FETCHED FROM switchTab, WHICH A URL NEVER CALLS. Revenue,
+     Conversions and Demographics all read the Community Intel feed, and a
+     deep-linked tab would sit on an empty body forever — the programs.html
+     bug verbatim. One function, called from the click and from mount. */
+  function ensureTabData(t) {
     if (t === 'demographics' || t === 'revenue' || t === 'conversions') {
       setTabLoading(true);
       fetchCiData();
       setTimeout(function(){ setTabLoading(false); }, 1500);
     }
   }
+
+  function switchTab(t) {
+    setActiveTab(t);
+    ensureTabData(t);
+  }
+
+  /* Mount only: a ?tab= link has to ask for its own feed. */
+  useEffect(function(){ ensureTabData(activeTab); }, []);
 
   /* ── FT Demographics analytics (ported from CI cross-tab) ── */
   var ftAnalytics = useMemo(function(){
@@ -1974,14 +2000,20 @@ function App() {
     if (URL_TOKEN) p.set('token', URL_TOKEN);
     if (seasonFilter) p.set('season', seasonFilter);
     if (searchTerm.trim()) p.set('search', searchTerm.trim());
+    /* THIS EFFECT REBUILDS THE WHOLE QUERY STRING AND RUNS ON MOUNT, so a tab
+       it does not write is a tab it DESTROYS a millisecond after the deep link
+       set it — the ?ci_rows=failed write-back bug, one report over. The default
+       tab clears the parameter rather than writing ?tab=overview. */
+    if (activeTab !== 'overview') p.set('tab', activeTab);
     window.history.replaceState(null, '', window.location.pathname + '?' + p.toString());
-  }, [seasonFilter, searchTerm]);
+  }, [seasonFilter, searchTerm, activeTab]);
 
   window.recShareLink = function() {
     var p = new URLSearchParams();
     if (URL_TOKEN) p.set('token', URL_TOKEN);
     if (seasonFilter) p.set('season', seasonFilter);
     if (searchTerm.trim()) p.set('search', searchTerm.trim());
+    if (activeTab !== 'overview') p.set('tab', activeTab);
     return window.location.origin + window.location.pathname + '?' + p.toString();
   };
 

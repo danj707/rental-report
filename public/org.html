@@ -486,6 +486,15 @@
       { tab: 'fillrate',     icon: '\u{1F4CA}', label: 'Fill Rate' },
       { tab: 'checkins',     icon: '\u2705',   label: 'Check-Ins' },
     ],
+    /* Fast Track. Overview is the card itself, so it gets no chip — same
+       reasoning as Programs' Summary. All three of the others read the
+       Community Intel feed and fetch it lazily, which is why fasttrack.html
+       needed `ensureTabData` before these chips could work. */
+    fasttrack: [
+      { tab: 'revenue',      icon: '\u{1F4B0}', label: 'Revenue' },
+      { tab: 'conversions',  icon: '\u{1F525}', label: 'Conversions' },
+      { tab: 'demographics', icon: '\u{1F465}', label: 'Demographics' },
+    ],
     /* Community Intel. Only the three tabs every org has: `guests` appears only
        when the org HAS guests and `products` only when it has that report, so a
        chip for either would be a dead end — and the page falls back to
