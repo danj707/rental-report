@@ -2933,6 +2933,16 @@ data. That is the point, and the TTL still governs how stale it may be.
 
 ### What a setting is, and what it is not
 
+- **PER ORG, proven against a second org rather than inferred from the store's
+  shape.** `report-settings.spec.js` changes every field for org A and then
+  requires org B to read the platform defaults field by field, in the API *and*
+  in the injected `ORG_CONFIG` that decides its first render. An org nobody has
+  configured has **no record at all**, which is also why reset DROPS the record
+  instead of writing the defaults into it — a later change to a platform default
+  still has to reach every org that never customised. The one thing deliberately
+  not contained is the shared-card total: org A shortening its cache moves the
+  figure org B is priced against, which is the entire reason the budget exists,
+  and org B's panel names org A as the one running short.
 - **A setting SEEDS; it never overrides.** Precedence is
   `platform default → the org's setting → this person's own choice`. Column
   toggles still live in each reader's `localStorage` and still win. An org
@@ -3111,7 +3121,7 @@ label, so it now looks the columns up **by name**.
 
 ### Guards
 
-`scripts/report-settings.spec.js` (**154 assertions, in CI**) lifts and RUNS the
+`scripts/report-settings.spec.js` (**171 assertions, in CI**) lifts and RUNS the
 registry and its validator, and has a live half that boots the server, saves,
 clamps, resets and reads the settings back **out of the page's injected
 `ORG_CONFIG`** — they decide the first render, so a page that fetched them would
@@ -3120,8 +3130,9 @@ the live half can be shown to catch a regression on its own — a regex over our
 patch is not evidence the server behaves, and all five cookie/flag-notice
 mutations below were verified against the live half alone.
 
-Mutation-tested twenty-seven ways, all failing by
-name: a refusal announced as a DEAD LINK (the alert Dan saw), `settings-open`
+Mutation-tested twenty-eight ways, all failing by
+name: one org's settings leaking to another, a refusal announced as a DEAD LINK
+(the alert Dan saw), `settings-open`
 missing from the log route's `ALLOWED` list, the `custom` flag dropped on the way
 through, sign-in leaving no cookie (the bug exactly as Dan hit it), the cookie
 carrying the password instead of the derived key, `SameSite` dropped, the admin

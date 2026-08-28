@@ -396,12 +396,15 @@ ok(/ePACT columns no longer the verified set/.test(SERVER),
   child.stdout.on("data", d => { log += d; });
   child.stderr.on("data", d => { log += d; });
 
-  const { org, token } = (() => {
+  // TWO orgs, because "per org" is the guarantee this whole feature rests on and
+  // it was not pinned by anything.
+  const { org, token, org2, token2 } = (() => {
     const i = SERVER.indexOf("const ORGS = {");
     const j = SERVER.indexOf("\nconst REPORT_TYPES", i);
     const ORGS = vm.runInNewContext("(" + SERVER.slice(SERVER.indexOf("{", i), j).trim().replace(/;$/, "") + ")");
-    const slug = Object.keys(ORGS).find(k => ORGS[k] && ORGS[k].token);
-    return { org: slug, token: ORGS[slug].token };
+    const slugs = Object.keys(ORGS).filter(k => ORGS[k] && ORGS[k].token);
+    return { org: slugs[0], token: ORGS[slugs[0]].token,
+             org2: slugs[1], token2: ORGS[slugs[1]].token };
   })();
 
   const call = (method, p, body, extraHeaders) => new Promise((res, rej) => {
@@ -541,6 +544,52 @@ ok(/ePACT columns no longer the verified set/.test(SERVER),
        + "so the in-handler token check is a backstop for the day that exemption list grows");
     r = await call("GET", S);
     is(r.json.settings.defaultDays, 14, "…and the refused write changed nothing");
+
+    // ── PER ORG, and proven by looking at a SECOND one ───────────────────
+    // Everything above changed org A. A settings feature that leaked across orgs
+    // would let one org's admin reshape every other org's report, and the store
+    // being keyed by slug is not by itself evidence that every reader honours it.
+    const S2 = `/${org2}/roster/api/settings?token=${encodeURIComponent(token2)}&admin=${ADMIN_KEY}`;
+    r = await call("PUT", S, { defaultDays: 60, defaultStatus: "enrolled", autoRun: false,
+                               cacheTtlMin: 30, showStamp: true, warmDefaultWindow: true,
+                               hide: { views: true, excel: true },
+                               epactColumns: ["Rec ID", "First Name"], epactLabel: "section",
+                               epactBom: false });
+    is(r.status, 200, "org A takes a full set of non-default settings");
+
+    const b = (await call("GET", S2)).json.settings;
+    const dflt = R.reportSettingsDefaults("roster");
+    for (const k of Object.keys(dflt)) {
+      is(JSON.stringify(b[k]), JSON.stringify(dflt[k]),
+         `org B's "${k}" is untouched by org A's save — the settings are per ORG, and every reader `
+         + `has to honour that, not just the store's shape`);
+    }
+
+    // And the PAGE, which is what a reader actually gets.
+    let pgB = await call("GET", `/${org2}/roster?token=${encodeURIComponent(token2)}`);
+    const cfgB = JSON.parse(/window\.ORG_CONFIG=(\{.*?\});<\/script>/.exec(pgB.body)[1]);
+    is(cfgB.settings.defaultDays, dflt.defaultDays,
+       "…including the injected ORG_CONFIG, which decides org B's first render");
+    is(JSON.stringify(cfgB.settings.hide), "{}",
+       "and a control org A removed is still on org B's toolbar");
+
+    // An org nobody has touched has NO RECORD, which is why reset drops the
+    // record rather than writing the defaults into it: a later change to a
+    // platform default still has to reach every org that never customised.
+    const store = JSON.parse(fs.readFileSync(path.join(dataDir, "report-settings.json"), "utf8"));
+    is(Object.keys(store), [org],
+       "the store holds a record for the ONE org that was configured and nobody else");
+
+    // The one thing that is deliberately NOT contained: the cache is shared, so
+    // org A shortening its lifetime moves the platform total org B is priced
+    // against. That is the whole reason the budget exists.
+    const scB = (await call("GET", S2)).json.sharedCard;
+    ok(scB && scB.total > scB.baseline,
+       "org A's shorter cache DOES move the shared-card total — per-org settings, one shared card, "
+       + "which is exactly what the budget is for");
+    ok(scB.heaviest.some(h => h.org === org),
+       "…and org B's panel names org A as the one running short, so the refusal is actionable by "
+       + "whoever is looking at it");
 
     // ── The dead end that started this ───────────────────────────────────
     // Flag off, credential good: the surface is closed, and the page has to SAY
