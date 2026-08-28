@@ -998,11 +998,56 @@ function dashboardAuth(req, res, next) {
   if (auth.startsWith('Basic ')) {
     const decoded  = Buffer.from(auth.slice(6), 'base64').toString('utf-8');
     const password = decoded.includes(':') ? decoded.split(':').slice(1).join(':') : decoded;
-    if (password === DASHBOARD_PASSWORD) return next();
+    if (password === DASHBOARD_PASSWORD) {
+      // Signing in here is what makes the report-settings gear appear on the org
+      // reports you then navigate to. Basic auth is scoped to "/" by the browser,
+      // so without this a super-admin had to paste &admin=<key> onto every report
+      // URL by hand — which is also the worse credential: a URL leaks through
+      // history, referrers and copy-paste, a cookie does not.
+      //
+      // The VALUE IS THE DERIVED KEY, NEVER THE PASSWORD. If this cookie leaks it
+      // opens the settings panel and nothing else, and rotating the password
+      // rotates it. HttpOnly because no page ever reads it (the server injects
+      // settingsAdmin into ORG_CONFIG); SameSite=Lax so it rides a normal click
+      // through from the dashboard but is NOT sent on a cross-site PUT.
+      setReportSettingsCookie(req, res);
+      return next();
+    }
   }
 
   res.set('WWW-Authenticate', 'Basic realm="Rec Reports", charset="UTF-8"');
   return res.status(401).send('Password required');
+}
+
+// One cookie, read by hand — the app has no cookie middleware and one name does
+// not justify adding one.
+const RS_ADMIN_COOKIE = 'rs_admin';
+const RS_ADMIN_COOKIE_MAX_AGE = 12 * 60 * 60; // seconds
+
+function readCookie(req, name) {
+  const raw = req.headers && req.headers.cookie;
+  if (!raw) return '';
+  for (const part of String(raw).split(';')) {
+    const i = part.indexOf('=');
+    if (i < 0) continue;
+    if (part.slice(0, i).trim() === name) {
+      try { return decodeURIComponent(part.slice(i + 1).trim()); }
+      catch (_) { return part.slice(i + 1).trim(); }
+    }
+  }
+  return '';
+}
+
+function setReportSettingsCookie(req, res) {
+  const key = reportSettingsAdminKey();
+  if (!key) return; // fails closed: no password, no key, no cookie
+  // Secure only over https, or the cookie is dropped on http://localhost in dev
+  // and the gear silently never appears there.
+  const https = req.secure || String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim() === 'https';
+  res.append('Set-Cookie',
+    RS_ADMIN_COOKIE + '=' + key +
+    '; Path=/; Max-Age=' + RS_ADMIN_COOKIE_MAX_AGE +
+    '; HttpOnly; SameSite=Lax' + (https ? '; Secure' : ''));
 }
 
 // ── Org config ───────────────────────────────────────────────────────
@@ -8760,15 +8805,36 @@ function reportSettingsAdminKey() {
   return crypto.createHash("sha256")
     .update(DASHBOARD_PASSWORD + "|report-settings|v1").digest("hex").slice(0, 32);
 }
-function isReportSettingsAdmin(req) {
-  if (!getFlags().reportSettings) return false;
+function reportSettingsKeyMatches(got, want) {
+  if (!want || String(got).length !== want.length) return false;
+  try {
+    return crypto.timingSafeEqual(Buffer.from(String(got)), Buffer.from(want));
+  } catch (_) { return false; }
+}
+// Three ways in, one credential. The COOKIE is the ordinary one — signing into
+// the admin dashboard sets it, so navigating to an org report just works. The
+// query parameter and the header stay for a link someone was handed and for the
+// specs, which drive the routes without a browser.
+function reportSettingsKeyOk(req) {
   const want = reportSettingsAdminKey();
   if (!want) return false;
-  const got = String((req.query && req.query.admin) || req.headers["x-admin-key"] || "");
-  if (got.length !== want.length) return false;
-  try {
-    return crypto.timingSafeEqual(Buffer.from(got), Buffer.from(want));
-  } catch (_) { return false; }
+  const offered = [
+    req.query && req.query.admin,
+    req.headers && req.headers["x-admin-key"],
+    readCookie(req, RS_ADMIN_COOKIE),
+  ];
+  return offered.some(v => v && reportSettingsKeyMatches(v, want));
+}
+function isReportSettingsAdmin(req) {
+  return !!getFlags().reportSettings && reportSettingsKeyOk(req);
+}
+// A PROVEN super-admin with the feature switched off is a different state from
+// an org staffer, and rendering both as "no gear" is what made this look broken:
+// you sign in, navigate to the report, and nothing tells you the switch exists.
+// Absent-not-greyed is the rule for someone who may never have the control; for
+// someone who holds the credential it is a dead end with no exit.
+function reportSettingsFlagOff(req) {
+  return !getFlags().reportSettings && reportSettingsKeyOk(req);
 }
 
 function reportSettingsDefaults(report) {
@@ -8893,7 +8959,8 @@ app.get("/api/admin/report-settings-key", (req, res) => {
   res.json({
     enabled: !!getFlags().reportSettings,
     key: reportSettingsAdminKey(),
-    usage: "append &admin=<key> to a report URL you already have a token for",
+    usage: "sign in to this dashboard and the gear appears on the reports you navigate to; " +
+           "&admin=<key> on a report URL is the fallback for a link you were handed",
   });
 });
 
@@ -9701,9 +9768,11 @@ app.get("/:org/roster", (req, res) => {
   // The settings themselves are injected for EVERY reader — they decide the
   // first render. Only the gear that edits them is gated.
   const settingsAdmin = isReportSettingsAdmin(req);
+  const settingsFlagOff = reportSettingsFlagOff(req);
   const orgConfig = {
     slug, token: org.token || "",
     settingsAdmin,
+    settingsFlagOff,
     adminKey: settingsAdmin ? String(req.query.admin || "") : "",
     savedViewRanges: SAVED_VIEW_RELATIVE_OFFER.roster,
     settings,

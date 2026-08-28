@@ -41,6 +41,11 @@ const SERVER = fs.readFileSync(path.join(ROOT, "server.js"), "utf8");
 const PAGE = fs.readFileSync(path.join(ROOT, "public", "roster.html"), "utf8");
 
 let n = 0;
+// A regex over our own patch is not evidence the server behaves. SKIP_SOURCE=1
+// takes the source assertions out so the LIVE half can be shown to catch a
+// regression on its own — the campmap-pin-persistence pattern.
+const SKIP_SOURCE = process.env.SKIP_SOURCE === "1";
+const src = (c, w) => { if (SKIP_SOURCE) return; n++; assert.ok(c, w); };
 const ok = (c, w) => { n++; assert.ok(c, w); };
 const is = (a, b, w) => { n++; assert.deepStrictEqual(a, b, w); };
 
@@ -219,8 +224,8 @@ ok(R.reportSettingsEnabled("roster") && !R.reportSettingsEnabled("gl"),
      "the feature flag defaults OFF — Dan: 'this power is too much for an org user to handle'");
   ok(/function isReportSettingsAdmin\(req\)/.test(SERVER),
      "…and the flag is only half of it: there is a super-admin check as well");
-  ok(/if \(!getFlags\(\)\.reportSettings\) return false;/.test(SERVER),
-     "the admin check reads the flag, so turning the flag off closes the surface for everyone");
+  ok(/return !!getFlags\(\)\.reportSettings && reportSettingsKeyOk\(req\);/.test(SERVER),
+     "the admin check is flag AND key, so turning the flag off closes the surface for everyone");
   ok(/if \(!DASHBOARD_PASSWORD\) return "";/.test(SERVER),
      "NO PASSWORD MEANS NO KEY — it fails closed. dashboardAuth opens the root page when no password "
      + "is set; a control that spends a shared resource must do the opposite");
@@ -236,8 +241,59 @@ ok(R.reportSettingsEnabled("roster") && !R.reportSettingsEnabled("gl"),
 
   ok(/\{rsIsAdmin\(\) && \(/.test(PAGE),
      "the page renders the gear for a super-admin only");
-  ok(/settingsAdmin,\n\s+adminKey: settingsAdmin \? String\(req\.query\.admin \|\| ""\) : "",/.test(SERVER),
-     "…and the key is echoed back to the page only when the request already proved admin");
+  ok(/adminKey: settingsAdmin \? String\(req\.query\.admin \|\| ""\) : "",/.test(SERVER),
+     "…and the key is echoed back to the page only when the request already proved admin. It stays "
+     + "empty for a cookie session, which needs no echo — the cookie rides the page's own fetches");
+}
+
+// ── 4ef. Signing in to the dashboard is what carries you to the report ───────
+// Dan, on the preview: "the settings should show if I login as a super admin,
+// then navigate to the org page and reports, no? Not seeing it." Right — and
+// nothing carried the credential. Basic auth is scoped to "/" by the browser, so
+// the only way in was pasting &admin=<key> onto every report URL by hand.
+{
+  src(/function setReportSettingsCookie\(req, res\)/.test(SERVER),
+     "a successful dashboard sign-in has to leave something behind, or navigating to a report "
+     + "starts from nothing");
+  src(/if \(password === DASHBOARD_PASSWORD\) \{[\s\S]{0,900}?setReportSettingsCookie\(req, res\);/.test(SERVER),
+     "…and it is set on the PASSWORD MATCH inside dashboardAuth, not on every request to /");
+  src(/const key = reportSettingsAdminKey\(\);\n\s*if \(!key\) return;/.test(SERVER),
+     "THE COOKIE CARRIES THE DERIVED KEY, NEVER THE PASSWORD — if it leaks it opens the settings "
+     + "panel and nothing else, and rotating the password rotates it. No password, no cookie: "
+     + "the same fail-closed direction as the key itself");
+  const setter = /function setReportSettingsCookie\(req, res\) \{[\s\S]*?\n\}/.exec(SERVER)[0];
+  src(/HttpOnly/.test(setter),
+     "HttpOnly — no page ever reads it, the server injects settingsAdmin into ORG_CONFIG");
+  src(/SameSite=Lax/.test(setter),
+     "SameSite=Lax is the CSRF defence: it rides a normal click through from the dashboard but is "
+     + "not sent on a cross-site PUT to the settings route");
+  src(/https \? '; Secure' : ''/.test(setter),
+     "Secure over https only, or the cookie is dropped on http://localhost and the gear silently "
+     + "never appears in dev");
+  src(/readCookie\(req, RS_ADMIN_COOKIE\)/.test(SERVER),
+     "and the admin check has to actually read it");
+
+  // The three ways in are one credential — the query parameter and the header
+  // stay for a handed-over link and for this spec, which drives the routes
+  // without a browser.
+  const gate = /function reportSettingsKeyOk\(req\) \{[\s\S]*?\n\}/.exec(SERVER)[0];
+  src(/req\.query && req\.query\.admin/.test(gate) && /x-admin-key/.test(gate),
+     "the URL key and the header still work — a link someone was handed must not stop working");
+  src(/reportSettingsKeyMatches/.test(gate) && /crypto\.timingSafeEqual/.test(SERVER),
+     "…and every one of them goes through the same constant-time compare");
+
+  // A PROVEN admin with the flag off is a different state from an org staffer,
+  // and rendering both as "no gear" is exactly what made this look broken.
+  src(/function reportSettingsFlagOff\(req\) \{\n\s*return !getFlags\(\)\.reportSettings && reportSettingsKeyOk\(req\);/.test(SERVER),
+     "settingsFlagOff is gated on the KEY, so it can never appear for a staffer holding the org "
+     + "token — otherwise it would advertise the surface the 404s exist to hide");
+  src(/\{!rsIsAdmin\(\) && rsFlagOff\(\) && \(/.test(PAGE),
+     "the page renders a disabled gear in that state — absent-not-greyed is the right rule for "
+     + "someone who may never have the control, but for someone holding the key it is a dead end "
+     + "with no exit");
+  const offBtn = /\{!rsIsAdmin\(\) && rsFlagOff\(\) && \([\s\S]*?\)\}/.exec(PAGE)[0];
+  src(/disabled/.test(offBtn) && /Feature Flags/.test(offBtn),
+     "…and it says where the switch is, or it is one more control that does not explain itself");
 }
 
 // ── 4f. The flag has a switch a human can reach ──────────────────────────────
@@ -322,12 +378,12 @@ ok(/ePACT columns no longer the verified set/.test(SERVER),
     return { org: slug, token: ORGS[slug].token };
   })();
 
-  const call = (method, p, body) => new Promise((res, rej) => {
+  const call = (method, p, body, extraHeaders) => new Promise((res, rej) => {
     const req = http.request({ host: "127.0.0.1", port: PORT, method, path: p, timeout: 20000,
-      headers: body ? { "Content-Type": "application/json" } : {} },
+      headers: Object.assign({}, body ? { "Content-Type": "application/json" } : {}, extraHeaders || {}) },
       r => { let b = ""; r.on("data", d => b += d); r.on("end", () => {
         let j = null; try { j = JSON.parse(b); } catch {}
-        res({ status: r.statusCode, body: b, json: j });
+        res({ status: r.statusCode, body: b, json: j, headers: r.headers });
       }); });
     req.on("error", rej);
     req.on("timeout", () => { req.destroy(); rej(new Error("timeout")); });
@@ -377,6 +433,42 @@ ok(/ePACT columns no longer the verified set/.test(SERVER),
     r = await call("GET", `/api/admin/report-settings-key?password=nope`);
     is(r.status, 403, "and looking it up needs the password");
 
+    // ── Signing in, then navigating ──────────────────────────────────────
+    // The whole point: no &admin= anywhere below this line.
+    const basic = "Basic " + Buffer.from("admin:spec-password").toString("base64");
+    let dash = await call("GET", "/", null, { Authorization: basic });
+    is(dash.status, 200, "the dashboard accepts the password");
+    const setCookie = [].concat(dash.headers["set-cookie"] || []).find(c => /^rs_admin=/.test(c));
+    ok(setCookie, "signing in leaves a session behind — without it, navigating to a report starts "
+       + "from nothing and the gear can only be reached by pasting a key onto the URL");
+    ok(setCookie.includes("HttpOnly") && setCookie.includes("SameSite=Lax") && setCookie.includes("Path=/"),
+       "…HttpOnly, SameSite=Lax and site-wide, so it rides a click through to /:org/roster but not "
+       + "a cross-site write");
+    is(/^rs_admin=([^;]*)/.exec(setCookie)[1], ADMIN_KEY,
+       "the cookie carries the DERIVED key, not the password");
+    ok(!setCookie.includes("spec-password"), "the password itself never leaves in a cookie");
+
+    const asAdmin = { Cookie: "rs_admin=" + ADMIN_KEY };
+    r = await call("GET", Sbare, null, asAdmin);
+    is(r.status, 200, "the cookie alone opens the settings route — signing in and navigating is the "
+       + "flow, the URL key is the fallback");
+
+    r = await call("GET", Sbare, null, { Cookie: "rs_admin=wrongkeywrongkeywrongkeywrongke" });
+    is(r.status, 404, "…and a wrong cookie is refused like any other wrong key");
+
+    let pg = await call("GET", `/${org}/roster?token=${encodeURIComponent(token)}`, null, asAdmin);
+    let pcfg = JSON.parse(/window\.ORG_CONFIG=(\{.*?\});<\/script>/.exec(pg.body)[1]);
+    is(pcfg.settingsAdmin, true,
+       "and the ROSTER PAGE reached by navigation renders the gear — this is the bug Dan hit: he "
+       + "signed in as super-admin, navigated to the report, and there was nothing there");
+
+    pg = await call("GET", `/${org}/roster?token=${encodeURIComponent(token)}`);
+    pcfg = JSON.parse(/window\.ORG_CONFIG=(\{.*?\});<\/script>/.exec(pg.body)[1]);
+    is(pcfg.settingsAdmin, false, "a reader with only the org token still gets no gear");
+    is(pcfg.settingsFlagOff, false,
+       "…and is not told a switched-off surface exists either — that would advertise exactly what "
+       + "the 404s hide");
+
     r = await call("GET", S);
     is(r.status, 200, "with the flag on AND the key, the settings route answers: " + r.body.slice(0, 120));
     is(r.json.settings.defaultDays, 14, "an org with no stored record reads the platform defaults");
@@ -423,6 +515,30 @@ ok(/ePACT columns no longer the verified set/.test(SERVER),
        + "so the in-handler token check is a backstop for the day that exemption list grows");
     r = await call("GET", S);
     is(r.json.settings.defaultDays, 14, "…and the refused write changed nothing");
+
+    // ── The dead end that started this ───────────────────────────────────
+    // Flag off, credential good: the surface is closed, and the page has to SAY
+    // so rather than looking identical to "you are not an admin".
+    r = await call("POST", "/api/admin/flags",
+                   { password: "spec-password", key: "reportSettings", value: false });
+    is(r.status, 200, "the flag flips back off");
+    pg = await call("GET", `/${org}/roster?token=${encodeURIComponent(token)}`, null, asAdmin);
+    pcfg = JSON.parse(/window\.ORG_CONFIG=(\{.*?\});<\/script>/.exec(pg.body)[1]);
+    is(pcfg.settingsAdmin, false, "with the flag off even a proven super-admin gets no working gear");
+    is(pcfg.settingsFlagOff, true,
+       "…but IS told the feature is switched off and where the switch is. Signing in, navigating, "
+       + "and finding nothing is indistinguishable from the feature not existing");
+    r = await call("GET", Sbare, null, asAdmin);
+    is(r.status, 404, "and the route stays closed — the notice is presentation, not a way in");
+
+    // The notice must be gated on the KEY, not merely on the flag. Checked here
+    // rather than above because with the flag ON both readers get false anyway,
+    // so only this state can tell the two implementations apart.
+    pg = await call("GET", `/${org}/roster?token=${encodeURIComponent(token)}`);
+    pcfg = JSON.parse(/window\.ORG_CONFIG=(\{.*?\});<\/script>/.exec(pg.body)[1]);
+    is(pcfg.settingsFlagOff, false,
+       "a staffer with only the org token is NOT told a switched-off super-admin surface exists — "
+       + "that would advertise exactly what the 404s are there to hide");
 
     const events = fs.readFileSync(path.join(dataDir, "events.jsonl"), "utf8")
       .trim().split("\n").map(l => { try { return JSON.parse(l); } catch { return {}; } });

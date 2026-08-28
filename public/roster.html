@@ -71,6 +71,8 @@
       padding: 4px 8px; background: rgba(255,255,255,.08);
     }
     .toolbar .btn-settings:hover { background: rgba(255,255,255,.18); }
+    .toolbar .btn-settings.is-off { opacity: .4; cursor: not-allowed; }
+    .toolbar .btn-settings.is-off:hover { background: rgba(255,255,255,.08); }
     .rs-back {
       position: fixed; inset: 0; z-index: 9998; background: rgba(0,0,0,.55);
       display: flex; align-items: flex-start; justify-content: center; padding: 4vh 16px;
@@ -580,6 +582,14 @@ function rsIsAdmin() {
 }
 function rsAdminKey() {
   try { return (window.ORG_CONFIG || {}).adminKey || ''; } catch (_) { return ''; }
+}
+// A super-admin whose credential checked out but whose FEATURE FLAG is off. The
+// server only ever sets this for a proven admin, so it can never appear for a
+// staffer holding the org token. Absent-not-greyed is the right rule for someone
+// who may never have the control; for someone who holds the key it is a dead end
+// with no exit — you sign in, navigate here, and nothing says a switch exists.
+function rsFlagOff() {
+  try { return !!(window.ORG_CONFIG || {}).settingsFlagOff; } catch (_) { return false; }
 }
 
 const LS_COLS = 'roster_cols_v2';
@@ -2085,6 +2095,11 @@ function App() {
         <button className="btn-settings" onClick={openSettings} data-rs-open
           title="Report settings — what this report opens on for everyone in this organization"
           aria-label="Report settings">⚙</button>
+        )}
+        {!rsIsAdmin() && rsFlagOff() && (
+        <button className="btn-settings is-off" disabled data-rs-flagoff
+          title={'Report settings are switched off. Turn on \u2699\uFE0F Report Settings in the admin dashboard\u2019s Feature Flags block, then reload this page.'}
+          aria-label="Report settings are switched off">⚙</button>
         )}
 
       </div>

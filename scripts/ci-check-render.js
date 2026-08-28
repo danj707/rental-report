@@ -1149,6 +1149,49 @@ const CASES = [
       }, at2h);
     } },
 
+  // SIGN IN, THEN NAVIGATE — the flow Dan actually used, and the one that was
+  // broken: basic auth is scoped to "/" by the browser, so nothing carried the
+  // credential to a report and the gear could only be reached by pasting a key
+  // onto the URL. No ?admin= on this path; the cookie is the whole test.
+  { name: "roster · signed in, then navigated", path: "/{org}/roster",
+    needs: "[data-rs-open]",
+    pre: async page => {
+      await page.setCookie({ name: "rs_admin", value: RENDER_ADMIN_KEY,
+                             domain: "127.0.0.1", path: "/" });
+    } },
+
+  // Flag off, credential good. Absent-not-greyed is right for someone who may
+  // never hold the control; for a proven super-admin it is a dead end with no
+  // exit — which is exactly how "not seeing it" got reported. Runs LAST of the
+  // settings cases and restores the flag in a finally, because the flag is
+  // server state every earlier case depends on.
+  { name: "roster · flag off says where the switch is", path: "/{org}/roster?admin=" + RENDER_ADMIN_KEY,
+    needs: "[data-rs-flagoff]", absent: "[data-rs-open]",
+    pre: async page => {
+      await page.setCookie({ name: "rs_admin", value: RENDER_ADMIN_KEY,
+                             domain: "127.0.0.1", path: "/" });
+    },
+    act: async page => {
+      // Flipped from NODE, not from the page: every /api/ request the browser
+      // makes is intercepted and answered from STUBS, so an in-page fetch would
+      // return a stub and never reach the server.
+      const flip = (v) => new Promise((res, rej) => {
+        const body = JSON.stringify({ password: RENDER_ADMIN_PW, key: "reportSettings", value: v });
+        const req = http.request({ host: "127.0.0.1", port: PORT, method: "POST",
+          path: "/api/admin/flags", headers: { "Content-Type": "application/json" } },
+          r => { r.resume(); r.on("end", res); });
+        req.on("error", rej);
+        req.end(body);
+      });
+      await flip(false);
+      await page.reload({ waitUntil: "domcontentloaded" });
+      try {
+        await page.waitForSelector("[data-rs-flagoff]", { timeout: 45000 });
+      } finally {
+        await flip(true);
+      }
+    } },
+
   { name: "facilities · outdoor events",   path: "/{org}/facilities?tab=outdoor", needs: "[data-oe-heat]" },
   { name: "facilities · outdoor peak hour", path: "/{org}/facilities?tab=outdoor", needs: "[data-oe-peak=\"11a\"]" },
   { name: "facilities · outdoor multi-day", path: "/{org}/facilities?tab=outdoor", needs: "[data-oe-timed=\"4\"]" },
@@ -1566,6 +1609,9 @@ function waitForServer(started) {
     });
 
     STUB_MODE = c.stubMode || "";
+    // Optional: set up the BROWSER before the first navigation. A cookie set in
+    // `act` is set too late — the page it decides has already been served.
+    if (c.pre) await c.pre(page);
     const url = `http://127.0.0.1:${PORT}` + c.path.replace("{org}", org)
       + (c.path.includes("?") ? "&" : "?") + "token=" + encodeURIComponent(token);
     let found = false, bodyLen = 0;

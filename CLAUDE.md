@@ -2960,6 +2960,48 @@ data. That is the point, and the TTL still governs how stale it may be.
 - Registry-driven like `SAVED_VIEW_PARAMS`: `REPORT_SETTINGS_SCHEMA` registers
   `roster` alone and every other report 404s.
 
+### The credential had no way to travel — sign in, navigate, nothing there
+
+Dan, on the preview: *"the settings should show if I login as a super admin, then
+navigate to the org page and reports, no? Not seeing it on the PR."* Right, and
+the first build had no answer for it. **Basic auth is scoped to `/` by the
+browser**, so signing into the admin dashboard left nothing behind, and the only
+way into the panel was pasting `&admin=<key>` onto every report URL by hand.
+
+A successful password match in `dashboardAuth` now sets **one cookie**, and the
+details are the design:
+
+- **It carries the DERIVED KEY, never the password.** If it leaks it opens the
+  settings panel and nothing else, and rotating `DASHBOARD_PASSWORD` rotates it.
+  No password ⇒ no key ⇒ no cookie, the same fail-closed direction as the key.
+- **A cookie is the better credential here, not merely the more convenient one.**
+  A URL key leaks through history, referrers and copy-paste — the same reasoning
+  that keeps the org token off the campmap card link.
+- `HttpOnly` (no page ever reads it — the server injects `settingsAdmin` into
+  `ORG_CONFIG`), **`SameSite=Lax`** (rides a click through from the dashboard,
+  **not** sent on a cross-site PUT, which is the CSRF defence), `Secure` only
+  over https or the cookie is dropped on `http://localhost` and the gear silently
+  never appears in dev, 12h.
+- The query parameter and `x-admin-key` still work — a link someone was handed
+  must not stop working, and the specs drive the routes without a browser. All
+  three go through one `reportSettingsKeyMatches()` constant-time compare.
+- **The app has no cookie middleware and one name does not justify adding one**,
+  so `readCookie()` parses the single header by hand.
+
+**And a proven super-admin with the flag OFF is a different state from an org
+staffer.** Rendering both as "no gear" is exactly what made this look broken.
+`reportSettingsFlagOff(req)` is `!flag && keyOk` — **gated on the KEY**, so it can
+never appear for a token holder, which would advertise the surface the 404s exist
+to hide. In that state the page renders a **disabled** gear naming the switch and
+where it lives. Absent-not-greyed stays the rule for someone who may never hold
+the control; for someone holding the key it is a dead end with no exit. Same
+lesson as the Fast Track pin: *a control nobody can find is a control that does
+not exist, and the bug report for it arrives as a feature request.*
+
+Worth knowing when a preview looks dead: **each PR preview is a fresh volume, so
+`feature-flags.json` starts empty and `reportSettings` defaults OFF there** — the
+flag has to be switched on in that environment before anything appears.
+
 ### The three groups
 
 | group | blast radius | settings |
@@ -3031,12 +3073,21 @@ label, so it now looks the columns up **by name**.
 
 ### Guards
 
-`scripts/report-settings.spec.js` (**115 assertions, in CI**) lifts and RUNS the
+`scripts/report-settings.spec.js` (**142 assertions, in CI**) lifts and RUNS the
 registry and its validator, and has a live half that boots the server, saves,
 clamps, resets and reads the settings back **out of the page's injected
 `ORG_CONFIG`** — they decide the first render, so a page that fetched them would
-flash the platform defaults first. Mutation-tested nineteen ways, all failing by
-name: the flag's switch never driven by `applyFlags`, the feature flag defaulting ON, no-password falling open instead of
+flash the platform defaults first. `SKIP_SOURCE=1` drops the source assertions so
+the live half can be shown to catch a regression on its own — a regex over our own
+patch is not evidence the server behaves, and all five cookie/flag-notice
+mutations below were verified against the live half alone.
+
+Mutation-tested twenty-four ways, all failing by
+name: sign-in leaving no cookie (the bug exactly as Dan hit it), the cookie
+carrying the password instead of the derived key, `SameSite` dropped, the admin
+gate ignoring the cookie, the flag-off notice not gated on the key (so it would
+advertise the surface to a staffer),
+the flag's switch never driven by `applyFlags`, the feature flag defaulting ON, no-password falling open instead of
 closed, the admin gate removed from either route, the budget check dropped, the
 panel multiplying by the org count again, the gear rendering for everyone,
 pre-warm hand-building its key again, the TTL floor removed,
@@ -3059,7 +3110,16 @@ drops the key and asserts the gear is **ABSENT from the DOM** — "renders a gre
 button" and "renders nothing" are different claims, and only one of them keeps
 the power away from an org user.
 
-Five `ci-check-render.js` cases, two of them seen to fail on a real
+**`ci-check-render.js` gained a per-case `pre(page)` hook** for the two cookie
+cases: a cookie set in `act` is set too late, because the page it decides has
+already been served. `roster · signed in, then navigated` carries **no `?admin=`**
+— the cookie is the whole test — and `roster · flag off says where the switch is`
+flips the flag **from Node, not from the page**, since every `/api/` request the
+browser makes is answered from `STUBS` and an in-page fetch would never reach the
+server; it runs last of the settings cases and restores the flag in a `finally`,
+because the flag is server state every earlier case depends on.
+
+Seven `ci-check-render.js` cases, four of them seen to fail on a real
 regression in a browser: the gear is **last** in the toolbar (moving it fails),
 the panel opens with all three groups, the drift banner flips when a column is
 added (pinning it green fails), and the cache dial's platform total **goes up**
