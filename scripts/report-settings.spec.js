@@ -233,10 +233,11 @@ ok(R.reportSettingsEnabled("roster") && !R.reportSettingsEnabled("gl"),
   ok(/DASHBOARD_PASSWORD \+ "\|report-settings\|v1"/.test(SERVER),
      "the key is DERIVED from the password rather than being it, so a URL carrying it cannot open "
      + "the admin dashboard, and rotating the password rotates the key");
-  ok(/if \(!isReportSettingsAdmin\(req\)\) return res\.status\(404\)/.test(SERVER),
+  ok(/if \(!isReportSettingsAdmin\(req\)\) return refuse404\(res\);/.test(SERVER),
      "the routes 404 rather than 403 — an org staffer with a valid token should not learn the "
-     + "surface exists");
-  is((SERVER.match(/if \(!isReportSettingsAdmin\(req\)\) return res\.status\(404\)/g) || []).length, 2,
+     + "surface exists. Through refuse404 so the dead-link watch does not then announce the path "
+     + "in Slack");
+  is((SERVER.match(/if \(!isReportSettingsAdmin\(req\)\) return refuse404\(res\);/g) || []).length, 2,
      "…on BOTH the read and the write");
 
   ok(/\{rsIsAdmin\(\) && \(/.test(PAGE),
@@ -294,6 +295,31 @@ ok(R.reportSettingsEnabled("roster") && !R.reportSettingsEnabled("gl"),
   const offBtn = /\{!rsIsAdmin\(\) && rsFlagOff\(\) && \([\s\S]*?\)\}/.exec(PAGE)[0];
   src(/disabled/.test(offBtn) && /Feature Flags/.test(offBtn),
      "…and it says where the switch is, or it is one more control that does not explain itself");
+}
+
+// ── 4eg. A refusal is not a dead link, and opening the panel is a ping ───────
+{
+  src(/function refuse404\(res, body\) \{\n\s*res\.locals\.deliberate404 = true;/.test(SERVER),
+     "a deliberate 404 has to be able to SAY so — noteDeadLink keys on 'a 404 that arrived with a "
+     + "valid-looking token', which is exactly the shape of every refusal here");
+  src(/if \(res\.locals && res\.locals\.deliberate404\) return;/.test(SERVER),
+     "…and the dead-link watch has to honour the marker, or every refused request posts a DEAD LINK "
+     + "alert naming the very path the 404 exists to keep quiet");
+  is((SERVER.match(/return refuse404\(res/g) || []).length, 4,
+     "both settings routes refuse through it, on both the admin gate and the unregistered report");
+
+  src(/"epact", "settings-open", "settings-save"/.test(SERVER),
+     "opening the panel posts to Slack — the standing rule is that a new surface ships with its "
+     + "activity ping, and a LOOK is the earlier signal than a change");
+  src(/"epact", "settings-open"\]/.test(SERVER),
+     "…and the event has to be on the log route's ALLOWED list or the beacon 400s silently");
+  src(/"settings-open":\s*\{ emoji/.test(SERVER), "and it needs a message meta entry");
+  src(/logClientEvent\('settings-open', \{ custom: rsCustomised\(\) \? 1 : 0 \}\)/.test(PAGE),
+     "the beacon carries whether this org is already off the platform defaults — browsing and "
+     + "revisiting are different signals");
+  src(/function rsCustomised\(\)[\s\S]*?JSON\.stringify\(cur\[k\]\) !== JSON\.stringify\(def\[k\]\)/.test(PAGE),
+     "…compared field by field, not by 'is there a stored record' — a record holding nothing but "
+     + "defaults is not a customised org");
 }
 
 // ── 4f. The flag has a switch a human can reach ──────────────────────────────
@@ -540,8 +566,28 @@ ok(/ePACT columns no longer the verified set/.test(SERVER),
        "a staffer with only the org token is NOT told a switched-off super-admin surface exists — "
        + "that would advertise exactly what the 404s are there to hide");
 
+    // THE BEACON, DRIVEN FOR REAL. A fire-and-forget beacon never complains, and
+    // a wrong event name or a report missing from REPORT_TYPES comes back 400/404
+    // in silence — that trap has bitten this repo four times. A 200 alone is not
+    // enough either: the row has to land.
+    r = await call("POST", `/${org}/roster/api/log?event=settings-open&custom=1`
+                           + `&token=${encodeURIComponent(token)}`);
+    is(r.status, 200, "the settings-open beacon is accepted: " + r.body.slice(0, 120));
+
+    // A REFUSAL MUST NOT LOOK LIKE A STALE LINK. Every 404 above arrived with a
+    // valid org token, which is precisely what noteDeadLink() watches for.
+    const evAll = fs.readFileSync(path.join(dataDir, "events.jsonl"), "utf8")
+      .trim().split("\n").map(l => { try { return JSON.parse(l); } catch { return {}; } });
+    const dead = evAll.filter(e => e.event === "deadlink" && /api\/settings/.test(String(e.path || "")));
+    is(dead.length, 0,
+       "a refused settings request must not post a DEAD LINK alert — the path is real and the "
+       + "caller was told no, and the alert would name in Slack exactly what the 404 hides");
+
     const events = fs.readFileSync(path.join(dataDir, "events.jsonl"), "utf8")
       .trim().split("\n").map(l => { try { return JSON.parse(l); } catch { return {}; } });
+    const opened = events.find(e => e.event === "settings-open");
+    ok(opened, "…and reaches events.jsonl rather than being dropped");
+    is(String(opened.custom), "1", "carrying whether the org is already off the platform defaults");
     ok(events.some(e => e.event === "settings-save"), "a save reaches events.jsonl");
     ok(events.some(e => e.event === "settings-reset"), "and so does a reset");
 

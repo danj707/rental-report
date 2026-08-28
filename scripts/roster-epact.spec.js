@@ -379,8 +379,13 @@ ok(!/\uFEFF/.test(epactCsv([["a", "b", "c", "d", "e"]])),
    + "in the builder would carry it into the clipboard copy too");
 
 // ── 11. The Slack beacon ─────────────────────────────────────────────────
-ok(/"form-open", "epact"\]/.test(SERVER),
-   "`epact` must be on the generic log route's ALLOWED list, or every beacon 400s silently");
+ok((() => {
+     const m = /const ALLOWED = \[([^\]]*)\];\n\s*if \(!ALLOWED\.includes\(event\)\) return res\.status\(400\)[\s\S]{0,400}?const ciN/.exec(SERVER);
+     return !!m && /"epact"/.test(m[1]);
+   })(),
+   "`epact` must be on the generic log route's ALLOWED list, or every beacon 400s silently. "
+   + "Pinned as MEMBERSHIP rather than as the last entry — an event appended after it is not a "
+   + "regression, and an assertion that breaks on one is a false alarm waiting to happen");
 ok(/"epact",[^\]]*"deadlink"/.test(SERVER),
    "…and in SLACK_NOTIFY, or it is recorded and never posted (the fourth instance of that trap)");
 ok(/epact:\s*\{ emoji:/.test(SERVER), "and it needs its own emoji/verb");

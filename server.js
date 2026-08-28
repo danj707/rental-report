@@ -3707,7 +3707,7 @@ setTimeout(() => { checkCardParamTypes().catch(() => {}); }, 150 * 1000).unref?.
 // Inert if the env var is unset. Fire-and-forget — never blocks or breaks logging.
 // To change what pings Slack, edit SLACK_NOTIFY. High-frequency events (view/fetch)
 // are debounced per org+report so Slack isn't a firehose.
-const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "campmap-filter", "campmap-amenity", "pdf", "excel", "print", "summary", "game", "map", "outdoor", "fields", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email", "checkin-loc", "checkin-member", "checkin-failed", "form-open", "epact", "settings-save", "settings-reset", "deadlink", "generate", "wizard-save"]);
+const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "campmap-filter", "campmap-amenity", "pdf", "excel", "print", "summary", "game", "map", "outdoor", "fields", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email", "checkin-loc", "checkin-member", "checkin-failed", "form-open", "epact", "settings-open", "settings-save", "settings-reset", "deadlink", "generate", "wizard-save"]);
 const SLACK_DEBOUNCE_MS = { view: 30 * 60 * 1000, fetch: 30 * 60 * 1000,
   // A broken report stays broken. The health check only reports NEW failures,
   // but a flapping card would otherwise post every hour.
@@ -3750,6 +3750,7 @@ const SLACK_EVENT_META = {
   epact:   { emoji: "\uD83D\uDCE4", verb: "exported an ePACT participant list from" },
   // A settings change alters what EVERY reader of that report sees on their next
   // open, so it belongs in the feed the way an org-level change does.
+  "settings-open":  { emoji: "\uD83D\uDD0D", verb: "opened the report settings for" },
   "settings-save":  { emoji: "\u2699\uFE0F", verb: "changed the report settings for" },
   "settings-reset": { emoji: "\u267B\uFE0F", verb: "reset the report settings for" },
   view:    { emoji: "👀", verb: "viewed" },
@@ -4003,6 +4004,15 @@ function notifySlack(rec) {
     const skipped = (rec.rows || 0) - (rec.sheets || 0);
     text = `${meta.emoji} ${orgName} (\`${rec.org}\`) ${meta.verb} *${rec.report}* — ${rec.sheets || 0} sheet${rec.sheets === 1 ? "" : "s"}`
          + (skipped > 0 ? ` (${skipped} row${skipped === 1 ? "" : "s"} had no issued permit)` : "");
+  } else if (rec.event === "settings-open") {
+    // Opening the panel is a LOOK, not a change — so the useful extra is whether
+    // this org is already off the platform defaults. "Someone opened settings"
+    // and "someone opened settings on an org that has already changed them" are
+    // different signals, and the second is the one worth reading twice.
+    const state = rec.custom === "1" || rec.custom === 1
+      ? " \u00B7 this org already has custom settings"
+      : " \u00B7 currently on the platform defaults";
+    text = `${meta.emoji} ${orgName} (\`${rec.org}\`) ${meta.verb} *${rec.report}*${state}`;
   } else if (rec.event === "settings-save") {
     // Name the fields, and call out the two that carry real consequence: a cache
     // floor spent on a shared card, and an ePACT template that no longer matches
@@ -5366,9 +5376,22 @@ app.use(express.json({ limit: "50mb" }));
 // which is the point of a guard.
 const DEADLINK_IGNORE = /\.(php|env|git|aspx?|jsp|cgi|ini|ya?ml|sql|bak|zip|tar|gz)$|^\/(wp-|\.well-known|cgi-bin|vendor|admin\/config)/i;
 
+// A 404 that is a REFUSAL, not a missing page. noteDeadLink() below watches for
+// stale internal links and keys on "a 404 that arrived with a valid-looking
+// token" — which is EXACTLY the shape of a deliberate refusal, so without this
+// marker every refused request posts a DEAD LINK alert naming the very path the
+// 404 exists to keep quiet. Found by Dan clicking into settings and getting the
+// alert in Slack.
+function refuse404(res, body) {
+  res.locals.deliberate404 = true;
+  return res.status(404).json(body || { error: "Not found" });
+}
+
 function noteDeadLink(req, res) {
   try {
     if (res.statusCode !== 404) return;
+    // A refusal is not a dead link: the path is real, the caller was told no.
+    if (res.locals && res.locals.deliberate404) return;
     // No token, no signal — see above.
     const tok = req.query && req.query.token;
     if (!tok || typeof tok !== "string" || tok.length < 8) return;
@@ -6369,7 +6392,7 @@ app.post("/:org/:report/api/log", resolveOrg, (req, res) => {
   const { event, game, location, view } = req.query;
   // view-apply is events.jsonl-only by design — it is not in SLACK_NOTIFY, so
   // logEvent records it without pinging the feed (see the saved-views block).
-  const ALLOWED = ["excel", "print", "summary", "game", "map", "view-apply", "checkin-loc", "checkin-member", "checkin-failed", "form-open", "epact"];
+  const ALLOWED = ["excel", "print", "summary", "game", "map", "view-apply", "checkin-loc", "checkin-member", "checkin-failed", "form-open", "epact", "settings-open"];
   if (!ALLOWED.includes(event)) return res.status(400).json({ ok: false, error: "Unknown event" });
   const ciN = Number(req.query.n);
   const extra = event === "game" && game ? { game: String(game).slice(0, 60) }
@@ -6394,6 +6417,11 @@ app.post("/:org/:report/api/log", resolveOrg, (req, res) => {
               // bulk upload, a per-section one is a class about to start.
               // `section` is also the debounce key (see notifySlack), so working
               // down a list of classes reads as N exports rather than one.
+              // Opening the settings panel. `custom` says whether this org has
+              // already moved off the platform defaults — clamped to "1"/"0"
+              // server-side rather than echoed, like every other extra here.
+              : event === "settings-open"
+                ? { custom: String(req.query.custom) === "1" ? "1" : "0" }
               : event === "epact"
                 ? { scope: req.query.scope === "section" ? "section" : "view",
                     section: req.query.section ? String(req.query.section).slice(0, 120) : "",
@@ -8971,9 +8999,9 @@ app.get("/:org/:report/api/settings", (req, res) => {
   if (ORGS[org].token && supplied !== ORGS[org].token) return res.status(403).json({ error: "Invalid token" });
   // 404 rather than 403: an org staffer with a valid token should not learn that
   // a settings surface exists at all.
-  if (!isReportSettingsAdmin(req)) return res.status(404).json({ error: "Not found" });
+  if (!isReportSettingsAdmin(req)) return refuse404(res);
   if (!reportSettingsEnabled(report)) {
-    return res.status(404).json({ error: `Settings aren't enabled for the "${report}" report` });
+    return refuse404(res, { error: `Settings aren't enabled for the "${report}" report` });
   }
   const settings = reportSettings(org, report);
   res.json({
@@ -8992,9 +9020,9 @@ app.put("/:org/:report/api/settings", (req, res) => {
   if (!ORGS[org]) return res.status(404).json({ error: "Unknown org" });
   const supplied = req.query.token || req.headers["x-token"] || (req.body && req.body.token) || "";
   if (ORGS[org].token && supplied !== ORGS[org].token) return res.status(403).json({ error: "Invalid token" });
-  if (!isReportSettingsAdmin(req)) return res.status(404).json({ error: "Not found" });
+  if (!isReportSettingsAdmin(req)) return refuse404(res);
   if (!reportSettingsEnabled(report)) {
-    return res.status(404).json({ error: `Settings aren't enabled for the "${report}" report` });
+    return refuse404(res, { error: `Settings aren't enabled for the "${report}" report` });
   }
   const body = Object.assign({}, req.body || {});
   delete body.token;

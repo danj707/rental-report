@@ -483,7 +483,8 @@ The mechanism lives in `server.js` under "Slack activity notifications":
 Wired so far: `created`, `org-deleted`, `pdf`, `excel`, `print`, `summary`
 (🧾 lite export), `game` (🕹️ hidden banner mini-game plays),
 `outdoor` (🎪 Outdoor Event Spaces tab opened, with the booking count), `view`, `insights`,
-feedback/votes, `email`, `munis`, `permits`, `map`, `epact`, `settings-save`/
+feedback/votes, `email`, `munis`, `permits`, `map`, `epact`, `settings-open` (🔍 the report-settings panel was opened, saying whether the org
+is already off the platform defaults), `settings-save`/
 `settings-reset` (⚙️ a per-org report default changed, naming the fields and
 flagging an ePACT template that left the verified set) (📤 a participant list
 exported for the ePACT camp-forms vendor, with the count and whether it was one
@@ -3002,6 +3003,43 @@ Worth knowing when a preview looks dead: **each PR preview is a fresh volume, so
 `feature-flags.json` starts empty and `reportSettings` defaults OFF there** — the
 flag has to be switched on in that environment before anything appears.
 
+### A DELIBERATE 404 looked exactly like a dead link (2026-08-28)
+
+Dan clicked into settings and got a Slack alert: *"DEAD LINK — someone opened
+`/apex/roster/api/settings` with a valid-looking token and got a 404 (no such
+report)"*. The route was working perfectly; **that 404 IS the refusal.**
+
+`noteDeadLink()` watches for stale internal links and its whole discriminator is
+*"a 404 that arrived with a valid-looking token"* — which is byte-identical to
+the shape of every deliberate refusal on this surface. So each refused request
+posted an alert, and the alert **named in Slack exactly the path the 404 exists
+to keep quiet**. It also misclassified: `apex` and `roster` both exist, so it
+reported `unknown-report` about a report that is very much real.
+
+`refuse404(res, body)` sets `res.locals.deliberate404` and both settings routes
+go through it; the watch skips a marked response. **A refusal is not a dead
+link: the path is real and the caller was told no.** Worth copying to any other
+route that 404s on purpose behind a token — `saved-views`, the lessons and munis
+gates and the per-report "not configured" 404s all have the same shape and were
+left alone here rather than widened into this change.
+
+### Opening the panel is its own signal
+
+Dan: *"make sure we're tagging when the settings option is clicked into for any
+org in slack, that way I can see and track it."* `settings-open` (🔍) fires from
+`openSettings()`, alongside the existing `settings-save` / `settings-reset`.
+
+- **A LOOK is the earlier signal than a change** — most opens will not end in a
+  save, and those are the ones that say the surface is being used.
+- It carries `custom`, whether this org has already moved off the platform
+  defaults, because browsing and revisiting are different things.
+  **`rsCustomised()` compares field by field, not "is there a stored record"** —
+  a record holding nothing but defaults is not a customised org.
+- Default debounce (`org|report|event`, 60s): opening and closing the panel
+  twice while editing is one look.
+- The value is clamped to `"1"`/`"0"` server-side like every other extra on that
+  route, never echoed from the query string.
+
 ### The three groups
 
 | group | blast radius | settings |
@@ -3073,7 +3111,7 @@ label, so it now looks the columns up **by name**.
 
 ### Guards
 
-`scripts/report-settings.spec.js` (**142 assertions, in CI**) lifts and RUNS the
+`scripts/report-settings.spec.js` (**154 assertions, in CI**) lifts and RUNS the
 registry and its validator, and has a live half that boots the server, saves,
 clamps, resets and reads the settings back **out of the page's injected
 `ORG_CONFIG`** — they decide the first render, so a page that fetched them would
@@ -3082,8 +3120,10 @@ the live half can be shown to catch a regression on its own — a regex over our
 patch is not evidence the server behaves, and all five cookie/flag-notice
 mutations below were verified against the live half alone.
 
-Mutation-tested twenty-four ways, all failing by
-name: sign-in leaving no cookie (the bug exactly as Dan hit it), the cookie
+Mutation-tested twenty-seven ways, all failing by
+name: a refusal announced as a DEAD LINK (the alert Dan saw), `settings-open`
+missing from the log route's `ALLOWED` list, the `custom` flag dropped on the way
+through, sign-in leaving no cookie (the bug exactly as Dan hit it), the cookie
 carrying the password instead of the derived key, `SameSite` dropped, the admin
 gate ignoring the cookie, the flag-off notice not gated on the key (so it would
 advertise the surface to a staffer),

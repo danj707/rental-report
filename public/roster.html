@@ -588,6 +588,15 @@ function rsAdminKey() {
 // staffer holding the org token. Absent-not-greyed is the right rule for someone
 // who may never have the control; for someone who holds the key it is a dead end
 // with no exit — you sign in, navigate here, and nothing says a switch exists.
+// Has this org actually moved off the platform defaults? Compared field by
+// field rather than by "is there a stored record", because a record holding
+// nothing but defaults is not a customised org.
+function rsCustomised() {
+  try {
+    const cur = RS(), def = RSMeta().defaults || {};
+    return Object.keys(def).some(k => JSON.stringify(cur[k]) !== JSON.stringify(def[k]));
+  } catch (_) { return false; }
+}
 function rsFlagOff() {
   try { return !!(window.ORG_CONFIG || {}).settingsFlagOff; } catch (_) { return false; }
 }
@@ -1486,6 +1495,14 @@ function App() {
     setSetErr(null);
     setSetDraft(Object.assign({}, RSMeta().defaults || {}, RS()));
     setSetOpen(true);
+    // Opening the panel is worth a ping in its own right — a change already
+    // posts settings-save, but someone LOOKING at an org's report defaults is
+    // the earlier signal, and the one that says the surface is being used.
+    // Whether this org is already off the platform defaults travels with it:
+    // browsing and revisiting are different things. Computed here rather than
+    // sent as a flag from the server, because the page already holds both
+    // halves — the org's settings and the defaults they are measured against.
+    logClientEvent('settings-open', { custom: rsCustomised() ? 1 : 0 });
   }
 
   async function saveSettings(patch) {
