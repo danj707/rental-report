@@ -249,6 +249,136 @@ const rowsFor = (spec) => {
   ok(typedText.length >= S.WIZARD_PROMPT_TARGET.typed, "…same for the typed pool");
 }
 
+// ── 5b. NO PROMPT MAY PROMISE A PERIOD ──────────────────────────────────────
+// The wizard sends no dates, so buildMetabaseParams defaults to SEVEN DAYS.
+// Measured: "Monthly product sales breakdown" for clarksville was answered with
+// ONE row — a single $200 donation, window Aug 21-28. A prompt naming a month or
+// a quarter is a promise the system cannot keep, and the wording is mine, so it
+// is mine to get right.
+{
+  const PERIOD = /\b(monthly|weekly|quarterly|annual(ly)?|this (month|quarter|year|fall|spring|summer|winter)|last (month|quarter|year|week)|year[- ]over[- ]year|month[- ]over[- ]month|ytd)\b/i;
+  for (const p of S.WIZARD_PROMPTS) {
+    ok(!PERIOD.test(p.text),
+       `"${p.text}" names a period. The wizard requests no dates, so every report is a 7-day `
+       + `window — the prompt would be answered for a week and read as a month`);
+  }
+  for (const [name, re] of [["typed floor", /var TYPING_PROMPTS_FALLBACK = \[([\s\S]*?)\];/],
+                            ["chip floor", /var EXAMPLES_FALLBACK = \[([\s\S]*?)\];/]]) {
+    const m = re.exec(WIZARD);
+    ok(m && !PERIOD.test(m[1]), `the ${name} must not name a period either:\n` + (m ? m[1].trim() : "?"));
+  }
+}
+
+// ── 5c. A source with almost nothing does not justify a prompt ──────────────
+{
+  src(/const WIZARD_SOURCE_MIN_ROWS = Number\(process\.env\.WIZARD_SOURCE_MIN_ROWS \|\| 5\)/.test(SERVER),
+     "a source row floor exists");
+  const fn = /function wizardKnownSources\([\s\S]*?\n\}/.exec(SERVER)[0];
+  src(/warm\.length >= WIZARD_SOURCE_MIN_ROWS/.test(fn),
+     "…applied to warm rows — clarksville's products feed returned ONE row and still justified a "
+     + "'top sellers' prompt");
+  src(/\(remembered\.rowCount \|\| 0\) >= WIZARD_SOURCE_MIN_ROWS/.test(fn),
+     "…and to the remembered row count, or the store reintroduces what the floor just excluded");
+}
+
+// ── 5d. THE FIELD NAMES THE MODEL IS TAUGHT MUST BE REAL ───────────────────
+// Root cause of the 8 wrong figures: the system prompt's own worked examples
+// used "Net Amount", "Program Name" and "Registrations" against source
+// "programs", whose real columns are net_total, program and enrolled. The model
+// copied the examples exactly as instructed. Measured column names below.
+{
+  const PROGRAMS_REAL = ["net_total", "enrolled", "capacity", "fill_pct", "program", "section"];
+  const PROGRAMS_FAKE = ["Net Amount", "Program Name", "Registrations", "Section Name"];
+  const prompt = (() => {
+    const i = SERVER.indexOf("WIDGET TYPES:");
+    const j = SERVER.indexOf("app.post(\"/:org/report-wizard/api/generate\"", i);
+    return SERVER.slice(i, j);
+  })();
+  const progLines = prompt.split("\n").filter(l => /"source":\s*"programs"/.test(l));
+  ok(progLines.length > 0, "the prompt has worked examples that use the programs source");
+  for (const fake of PROGRAMS_FAKE) {
+    for (const line of progLines) {
+      ok(!line.includes('"' + fake + '"'),
+         `the system prompt uses "${fake}" on a line that names source "programs" — it is not a `
+         + `column in that feed (real: net_total, enrolled, capacity, program, section), and the `
+         + `model copies the examples character-for-character as told:\n    ${line.trim().slice(0, 160)}`);
+    }
+  }
+  // The programs table example is the one the model reproduces most often.
+  ok(progLines.some(l => l.includes("net_total") && l.includes("enrolled")),
+     "…and at least one programs example names the real revenue and enrolment columns");
+  ok(PROGRAMS_REAL.some(r => prompt.includes(r)),
+     "…and the examples should name columns that DO exist (net_total, enrolled, program)");
+  ok(/COLUMN NAMING IS NOT CONSISTENT BETWEEN SOURCES/.test(SERVER),
+     "the prompt says out loud that programs is snake_case while the others are Title Case — the "
+     + "old text taught the opposite with 'WRONG: net_total  RIGHT: Net Revenue'");
+  ok(!/WRONG: "field": "net_total"\s+RIGHT/.test(SERVER),
+     "…and that instruction, which is what produced $0 revenue on Apex, is gone");
+}
+
+// ── 5e. A field the feed lacks is dropped, never rendered as zero ───────────
+{
+  const R = (() => {
+    const m = /function wizardNormalizeKey\(k\) \{[\s\S]*?\nfunction wizardRepairConfigFields\(config, schemas\) \{[\s\S]*?\n\}/.exec(SERVER);
+    assert.ok(m, "could not lift wizardRepairConfigFields");
+    return vm.runInThisContext("(function(){" + m[0] + "\nreturn { wizardRepairConfigFields };})")();
+  })();
+  const schemas = { programs: { fields: [
+    { name: "net_total" }, { name: "enrolled" }, { name: "capacity" }, { name: "program" },
+  ] } };
+
+  // Case/underscore differences are REPAIRED, because the column is really there.
+  const cfg = { widgets: [{ type: "kpi-row", source: "programs", items: [
+    { label: "Revenue", field: "Net Total", compute: "sum" },
+    { label: "Enrolled", field: "ENROLLED", compute: "sum" },
+    { label: "Programs", field: "Program", compute: "countDistinct" },
+  ] }] };
+  const dropped1 = R.wizardRepairConfigFields(cfg, schemas);
+  is(dropped1, [], "a name differing only by case or underscores is repaired, not dropped");
+  is(cfg.widgets[0].items.map(i => i.field), ["net_total", "enrolled", "program"],
+     "…rewritten to the column the feed actually has");
+
+  // A name the feed has nothing like is DROPPED. This is the Apex case exactly.
+  const cfg2 = { widgets: [{ type: "kpi-row", source: "programs", items: [
+    { label: "Total Net Revenue", field: "Net Amount", compute: "sum" },
+    { label: "Total Enrollments", field: "Registrations", compute: "sum" },
+    { label: "Total Capacity", field: "capacity", compute: "sum" },
+  ] }] };
+  const dropped2 = R.wizardRepairConfigFields(cfg2, schemas);
+  is(cfg2.widgets[0].items.map(i => i.field), ["capacity"],
+     "THE APEX CASE: 'Net Amount' and 'Registrations' are not columns in programs, so they are "
+     + "dropped rather than rendering $0 and 0 beside real figures");
+  is(dropped2.length, 2, "…and both are reported");
+  ok(dropped2.every(d => /not a column in programs/.test(d)),
+     "…naming the source, so the reason is actionable");
+
+  // A widget with nothing left to draw goes entirely.
+  const cfg3 = { widgets: [
+    { type: "kpi-row", source: "programs", items: [{ label: "x", field: "Nonsense" }] },
+    { type: "table", source: "programs", columns: [{ field: "program", label: "P" }] },
+  ] };
+  R.wizardRepairConfigFields(cfg3, schemas);
+  is(cfg3.widgets.length, 1, "an empty widget is removed — worse than no widget");
+  is(cfg3.widgets[0].type, "table", "…and the one that still has columns survives");
+
+  // A filter on a missing column would match nothing, so the FILTER goes and the
+  // widget stays: unfiltered is meaningful, empty is not.
+  const cfg4 = { widgets: [{ type: "table", source: "programs",
+    columns: [{ field: "program", label: "P" }],
+    filter: [{ field: "Ghost", op: "eq", value: "x" }] }] };
+  R.wizardRepairConfigFields(cfg4, schemas);
+  is(cfg4.widgets.length, 1, "the widget survives a bad filter");
+  is(cfg4.widgets[0].filter, null, "…with the filter removed rather than matching zero rows");
+
+  // An UNKNOWN source is left alone — the repair only knows about sources it was
+  // given a schema for, and guessing there would delete good widgets.
+  const cfg5 = { widgets: [{ type: "kpi-row", source: "somethingelse",
+    items: [{ label: "x", field: "Whatever" }] }] };
+  is(R.wizardRepairConfigFields(cfg5, schemas), [],
+     "a source with no schema is not second-guessed");
+  is(cfg5.widgets[0].items.length, 1, "…and its widget is untouched");
+}
+
 // ── 6. The page reads them, and its floor is safe ───────────────────────────
 {
   src(/prompts: wizardPromptsFor\(wizardKnownSources\(slug, org\), wizardVerticalsFor\(slug\),\n\s*wizardConfiguredSources\(org\)\)/.test(SERVER),

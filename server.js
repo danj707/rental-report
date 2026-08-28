@@ -7697,9 +7697,10 @@ function wizardKnownSources(orgSlug, orgConfig) {
     if (NON_ADDABLE_REPORTS.has(rt)) continue;
     if (!(orgConfig[rt]?.mbUuid || SHARED_UUIDS[rt])) continue;
     const warm = warmestRowsFor(orgSlug, rt);
-    if (warm && warm.length) { out[rt] = true; continue; }
+    if (warm && warm.length >= WIZARD_SOURCE_MIN_ROWS) { out[rt] = true; continue; }
     const remembered = store[rt];
-    if (remembered && Array.isArray(remembered.fields) && remembered.fields.length) out[rt] = true;
+    if (remembered && Array.isArray(remembered.fields) && remembered.fields.length
+        && (remembered.rowCount || 0) >= WIZARD_SOURCE_MIN_ROWS) out[rt] = true;
   }
   return out;
 }
@@ -7816,6 +7817,81 @@ function wizardSourceState(orgSlug) {
   return hit ? { configured: hit.configured || 0, answered: hit.answered || 0 } : { configured: 0, answered: 0 };
 }
 
+// ── A field the feed does not have renders as ZERO, not as an error ──────────
+// Measured 2026-08-28 across 13 generated reports: 52 of 60 KPI figures named a
+// real column and 8 did not — all 8 on `programs`, which is the one source with
+// snake_case columns. The model named "Net Amount", "Registrations" and
+// "Program Name"; the feed has net_total, enrolled and program. It was not
+// guessing: THE SYSTEM PROMPT'S OWN WORKED EXAMPLES used those three names
+// against source "programs". Both are fixed, but a prompt instruction is
+// guidance and this needs a guarantee, because the failure is silent: "Total Net
+// Revenue $0" on an Apex report that has $213k of it.
+//
+// So every field a config names is checked against the schema the model was
+// actually shown. Resolvable by case/underscore differences → rewritten to the
+// real column. Not resolvable → the item is DROPPED and named in the response.
+// A dropped KPI is honest; a zero is a lie.
+function wizardNormalizeKey(k) {
+  return String(k == null ? "" : k).toLowerCase().replace(/[\s_]+/g, "");
+}
+
+function wizardRepairConfigFields(config, schemas) {
+  const cols = {};            // source -> { normalisedName: realName }
+  for (const [rt, sch] of Object.entries(schemas || {})) {
+    cols[rt] = {};
+    for (const f of (sch.fields || [])) cols[rt][wizardNormalizeKey(f.name)] = f.name;
+  }
+  const dropped = [];
+
+  // Returns the real column name, or null when the feed has nothing like it.
+  const resolve = (src, field) => {
+    if (!field) return null;
+    const map = cols[src];
+    if (!map) return null;                       // unknown source: leave alone
+    if (Object.values(map).includes(field)) return field;
+    return map[wizardNormalizeKey(field)] || null;
+  };
+
+  const fixOne = (holder, key, src, what) => {
+    const field = holder[key];
+    if (!field || !cols[src]) return true;
+    const real = resolve(src, field);
+    if (real) { holder[key] = real; return true; }
+    dropped.push(`${what} "${field}" (not a column in ${src})`);
+    return false;
+  };
+
+  for (const w of (config.widgets || [])) {
+    const wsrc = w.source;
+    if (Array.isArray(w.items)) {
+      w.items = w.items.filter(it => fixOne(it, "field", it.source || wsrc, it.label || "metric"));
+    }
+    if (Array.isArray(w.columns)) {
+      w.columns = w.columns.filter(c => fixOne(c, "field", wsrc, c.label || "column"));
+    }
+    if (w.metric) fixOne(w.metric, "field", wsrc, (w.title || "chart") + " metric");
+    if (w.groupBy) fixOne(w, "groupBy", wsrc, (w.title || "chart") + " grouping");
+    if (w.sort) fixOne(w.sort, "field", wsrc, (w.title || "table") + " sort");
+    // A filter on a column that does not exist would silently match nothing, so
+    // the filter goes rather than the widget — the widget is still meaningful
+    // unfiltered, and an empty panel is not.
+    if (w.filter) {
+      const list = Array.isArray(w.filter) ? w.filter : [w.filter];
+      const kept = list.filter(f => fixOne(f, "field", wsrc, "filter"));
+      w.filter = kept.length ? kept : null;
+    }
+  }
+
+  // A widget with nothing left to draw is worse than no widget.
+  config.widgets = (config.widgets || []).filter(w => {
+    if (Array.isArray(w.items)) return w.items.length > 0;
+    if (Array.isArray(w.columns)) return w.columns.length > 0;
+    if (w.metric) return !!w.metric.field;
+    return true;
+  });
+  return dropped;
+}
+
 // ── Which prompts is this org allowed to be shown? ───────────────────────────
 // Dan: "if we ask org x about a set of data we don't have live for them, or they
 // don't use something, like campgrounds, then that suggestion won't even
@@ -7872,6 +7948,13 @@ function wizardRefineSiteType(rawType, facility) {
 // source is missing.
 const WIZARD_VERTICAL_MIN_ROWS = Number(process.env.WIZARD_VERTICAL_MIN_ROWS || 20);
 
+// Same reasoning one level up: a SOURCE with almost nothing in it does not
+// justify a prompt about it. Clarksville's products feed returned ONE row in the
+// wizard's 7-day window — a single $200 donation — and "Product sales with top
+// sellers" over one row is a working report that tells you nothing. Low, because
+// the window is only a week and a genuinely used source clears it easily.
+const WIZARD_SOURCE_MIN_ROWS = Number(process.env.WIZARD_SOURCE_MIN_ROWS || 5);
+
 function wizardVerticalsFrom(rows) {
   const seen = {};
   for (const r of rows || []) {
@@ -7894,11 +7977,17 @@ function wizardVerticalsFrom(rows) {
 // `needs` is a list of sources that must ALL have answered. `vertical` adds the
 // facility-data requirement. `generic: true` marks the ones used to top a thin
 // org's list up — they ask for nothing an org with a programs card lacks.
+//
+// NO PROMPT MAY NAME A PERIOD. The wizard sends no dates, so buildMetabaseParams
+// defaults to SEVEN DAYS — measured: a "Monthly product sales breakdown" for
+// clarksville was answered with one row, a single $200 donation, over Aug 21-28.
+// A prompt that says "monthly" or "this quarter" is a promise the system cannot
+// keep, and wizard-prompts.spec.js fails on the words.
 const WIZARD_PROMPTS = [
   // ── generic: any org with programs, which is every org ──
   { kind: "chip",  text: "Top 10 programs by revenue with enrollment details", needs: ["programs"], generic: true },
   { kind: "chip",  text: "Which programs are filling up and which are half empty", needs: ["programs"], generic: true },
-  { kind: "typed", text: "Compare this fall\u2019s enrollment against last year", needs: ["programs"], generic: true },
+  { kind: "typed", text: "Where is enrollment strongest, and where is it soft?", needs: ["programs"], generic: true },
   { kind: "typed", text: "Which programs are filling up and which are half empty?", needs: ["programs"], generic: true },
   { kind: "typed", text: "Which sections should we add another of?", needs: ["programs", "waitlist"] },
 
@@ -7912,8 +8001,8 @@ const WIZARD_PROMPTS = [
 
   // ── memberships / products / fast track ──
   { kind: "chip",  text: "Membership plans by active members and renewal dates", needs: ["memberships"] },
-  { kind: "typed", text: "How many memberships are up for renewal this quarter?", needs: ["memberships"] },
-  { kind: "chip",  text: "Monthly product sales breakdown with top sellers", needs: ["products"] },
+  { kind: "typed", text: "Which membership plans have the most active members?", needs: ["memberships"] },
+  { kind: "chip",  text: "Product sales with top sellers by revenue", needs: ["products"] },
   { kind: "typed", text: "Which products actually sell, and which are dead stock?", needs: ["products"] },
   { kind: "chip",  text: "Fast Track conversion funnel \u2014 holds vs registrations", needs: ["fasttrack"] },
   { kind: "typed", text: "Fast Track demand by program, highest first", needs: ["fasttrack"] },
@@ -8071,22 +8160,22 @@ THE WRITE-UP ("summary" and "notes") IS REQUIRED, AND IT MUST NOT CONTAIN FIGURE
 WIDGET TYPES:
 
 1. kpi-row: Row of summary metric cards (use 3-5 items)
-{"type":"kpi-row","items":[{"label":"Total Revenue","source":"programs","field":"Net Amount","compute":"sum","format":"currency"}]}
+{"type":"kpi-row","items":[{"label":"Total Revenue","source":"programs","field":"net_total","compute":"sum","format":"currency"}]}
 
 2. bar-chart: Grouped bar chart
-{"type":"bar-chart","title":"Revenue by Gender","source":"program-demographics","groupBy":"Gender","metric":{"field":"Net Amount","compute":"sum"},"format":"currency","limit":10}
+{"type":"bar-chart","title":"Net Revenue by Program","source":"programs","groupBy":"program","metric":{"field":"net_total","compute":"sum"},"format":"currency","limit":10}
 
 3. pie-chart: Donut/pie chart
-{"type":"pie-chart","title":"Enrollment by Gender","source":"program-demographics","groupBy":"Gender","metric":{"field":"Gender","compute":"count"},"format":"number"}
+{"type":"pie-chart","title":"Sections by Status","source":"programs","groupBy":"section_status","metric":{"field":"section_status","compute":"count"},"format":"number"}
 
 4. table: Sortable data table
-{"type":"table","title":"Program Details","source":"programs","columns":[{"field":"Program Name","label":"Program"},{"field":"Net Amount","label":"Revenue","format":"currency"},{"field":"Registrations","label":"Enrolled","format":"number"}],"sort":{"field":"Net Amount","dir":"desc"},"limit":20}
+{"type":"table","title":"Program Details","source":"programs","columns":[{"field":"program","label":"Program"},{"field":"net_total","label":"Revenue","format":"currency"},{"field":"enrolled","label":"Enrolled","format":"number"}],"sort":{"field":"net_total","dir":"desc"},"limit":20}
 
 Tables can also aggregate with groupBy + compute:
-{"type":"table","title":"Revenue by Gender","source":"program-demographics","groupBy":"Gender","columns":[{"field":"Gender","label":"Gender"},{"field":"Net Amount","label":"Revenue","format":"currency"}],"compute":"sum"}
+{"type":"table","title":"Net by GL Account","source":"gl","groupBy":"GL Code","columns":[{"field":"GL Code","label":"Account"},{"field":"Net Amount","label":"Revenue","format":"currency"}],"compute":"sum"}
 
 AVAILABLE FILTER in any widget (optional):
-"filter": [{"field":"Gender","op":"neq","value":"Unknown"}]
+"filter": [{"field":"section_status","op":"neq","value":"cancelled"}]
 Ops: eq, neq, contains, gt, lt
 
 COMPUTE METHODS: sum, avg, count, countDistinct, min, max
@@ -8095,8 +8184,13 @@ FORMAT OPTIONS: currency (no decimals), currency2 (2 decimals), number, percent
 
 CRITICAL DATA SOURCE RULES:
 - ONLY reference field names that ACTUALLY APPEAR in the schema for that specific source
-- "program-demographics" has participant rows (gender, age, city) but NO revenue fields — use "programs" for revenue
-- "programs" has section-level aggregates (Net Amount, Registrations, Capacity) but NO gender/age fields — use "program-demographics" for demographics
+- "programs" has section-level aggregates — net_total, enrolled, capacity, fill_pct, charged,
+  refunds, waitlist_active — one row per section. It has NO participant-level fields: no gender,
+  no age, no city. Do not attempt a demographic breakdown from it.
+- Participant-level demographics are only available if a source in the schema list above actually
+  carries those columns (the "users" source carries Gender, age and city at HOUSEHOLD/person grain).
+  If no listed source has the field the request needs, say so in "notes" rather than substituting a
+  column that does not exist.
 - "gl" has accounting data — use for revenue-by-account breakdowns
 - Read the DESCRIPTION line for each source to understand what data it contains
 - If a field doesn't exist in a source, DO NOT reference it — the widget will show 0/blank
@@ -8106,37 +8200,45 @@ PII RULES (CRITICAL — NEVER VIOLATE):
 - Tables should show AGGREGATED data (grouped by program, gender, city, etc.) — never individual person rows
 
 COUNTING ROWS — THIS IS CRITICAL:
-- program-demographics has ONE ROW PER PARTICIPANT. There is NO "Enrollment Count" or "Total Enrolled" field.
-- To count enrollments: use compute:"count" with field set to ANY field that exists (e.g. "Gender")
-- To count by category: use groupBy + compute:"count" with field = the groupBy field
-- NEVER reference fields that don't exist in the schema. If you need a count, use "count" compute on a real field.
+- Some sources have ONE ROW PER THING rather than a count column. The roster source is one row per
+  participant-session; the facility source is one row per reservation-date. There is no
+  "Total Enrolled" or "Booking Count" field on those.
+- To count rows: use compute:"count" with field set to ANY field that exists on that source.
+- To count by category: use groupBy + compute:"count" with field = the groupBy field.
+- To count distinct things: compute:"countDistinct" on the id column (e.g. "Reservation ID").
+- NEVER reference fields that don't exist in the schema. If you need a count, use "count" compute
+  on a real field.
 
-COMPLETE WORKING EXAMPLE — gender enrollment report:
+COMPLETE WORKING EXAMPLE — program revenue and fill, with GL context.
+NOTE THE TWO NAMING CONVENTIONS: the programs source uses snake_case (net_total, enrolled) and the
+gl source uses Title Case With Spaces (Net Amount, Total Refunds). Both are copied exactly as their
+own schema shows them. Do not make them consistent with each other.
 {
-  "title": "Gender Enrollment Report",
-  "description": "Enrollment by gender across all programs",
-  "summary": "This report shows how enrollment is distributed by gender across every program in the current window, and pairs it with the section-level revenue and capacity behind those registrations. Each row of the demographics source is one enrolled participant, so the counts here are registrations rather than unique people \u2014 someone in two programs is counted twice. The pie and bar charts split the same total two ways; the tables drill from program down to section so you can see which offerings drive the mix.",
+  "title": "Program Revenue & Fill Rate",
+  "description": "Revenue, enrollment and capacity by program, with the GL breakdown behind it",
+  "summary": "This report shows section-level enrollment and revenue alongside the general-ledger view of the same window, so you can see which programs are filling and where the money lands by account. Each row of the programs source is one section, so a program running four sections contributes four rows; the table aggregates them back up. Fill rate is enrolled against capacity, and a section with no capacity set is excluded from that ratio rather than counted as full.",
   "notes": [
-    "Counts are registrations, not distinct people \u2014 one participant enrolled in two programs appears twice.",
-    "Gender is self-reported at registration and is often left blank; those rows group under Unknown.",
-    "Revenue comes from the section-level source, which carries no gender field, so revenue cannot be split by gender here."
+    "One row per section, so programs with several sections appear once per section before aggregation.",
+    "Sections with no capacity recorded are left out of the fill-rate figures rather than shown as 100%.",
+    "GL amounts cover every transaction in the window, including non-program revenue, so the two totals are not expected to match."
   ],
-  "dataSources": ["program-demographics", "programs"],
+  "dataSources": ["programs", "gl"],
   "widgets": [
     {"type": "kpi-row", "items": [
-      {"label": "Total Enrolled", "source": "program-demographics", "field": "Gender", "compute": "count", "format": "number"},
-      {"label": "Female", "source": "program-demographics", "field": "Gender", "compute": "count", "format": "number", "filter": [{"field": "Gender", "op": "eq", "value": "female"}]},
-      {"label": "Male", "source": "program-demographics", "field": "Gender", "compute": "count", "format": "number", "filter": [{"field": "Gender", "op": "eq", "value": "male"}]},
-      {"label": "Total Programs", "source": "programs", "field": "Program Name", "compute": "countDistinct", "format": "number"}
+      {"label": "Net Revenue", "source": "programs", "field": "net_total", "compute": "sum", "format": "currency"},
+      {"label": "Enrolled", "source": "programs", "field": "enrolled", "compute": "sum", "format": "number"},
+      {"label": "Capacity", "source": "programs", "field": "capacity", "compute": "sum", "format": "number"},
+      {"label": "Programs", "source": "programs", "field": "program", "compute": "countDistinct", "format": "number"},
+      {"label": "GL Net", "source": "gl", "field": "Net Amount", "compute": "sum", "format": "currency"}
     ]},
-    {"type": "pie-chart", "title": "Gender Distribution", "source": "program-demographics", "groupBy": "Gender", "metric": {"field": "Gender", "compute": "count"}, "format": "number"},
-    {"type": "bar-chart", "title": "Enrollment by Gender", "source": "program-demographics", "groupBy": "Gender", "metric": {"field": "Gender", "compute": "count"}, "format": "number"},
-    {"type": "table", "title": "Gender Enrollment by Program", "source": "program-demographics", "groupBy": "Program", "columns": [{"field": "Program", "label": "Program"}, {"field": "Gender", "label": "Participants", "format": "number"}], "compute": "count", "sort": {"field": "Gender", "dir": "desc"}, "limit": 25},
-    {"type": "table", "title": "Program Details", "source": "programs", "columns": [{"field": "Program Name", "label": "Program"}, {"field": "Section Name", "label": "Section"}, {"field": "Registrations", "label": "Enrolled", "format": "number"}, {"field": "Capacity", "label": "Capacity", "format": "number"}, {"field": "Net Amount", "label": "Revenue", "format": "currency"}], "sort": {"field": "Registrations", "dir": "desc"}, "limit": 25}
+    {"type": "bar-chart", "title": "Net Revenue by Program", "source": "programs", "groupBy": "program", "metric": {"field": "net_total", "compute": "sum"}, "format": "currency", "limit": 10},
+    {"type": "bar-chart", "title": "Net by GL Account", "source": "gl", "groupBy": "GL Code", "metric": {"field": "Net Amount", "compute": "sum"}, "format": "currency", "limit": 10},
+    {"type": "table", "title": "Section Detail", "source": "programs", "columns": [{"field": "program", "label": "Program"}, {"field": "section", "label": "Section"}, {"field": "enrolled", "label": "Enrolled", "format": "number"}, {"field": "capacity", "label": "Capacity", "format": "number"}, {"field": "fill_pct", "label": "Fill %", "format": "percent"}, {"field": "net_total", "label": "Net Revenue", "format": "currency"}], "sort": {"field": "net_total", "dir": "desc"}, "limit": 25}
   ]
 }
 
-Adapt this pattern for other requests. The key insight: program-demographics rows ARE the enrollments — count them, don't look for a count field.
+Adapt this pattern for other requests. The key insight: copy each source's column names exactly as
+its own schema shows them, and where a source has no count column, count its rows.
 
 LAYOUT RULES:
 - ALWAYS include "summary" and "notes" — a page of bare charts makes the reader
@@ -8150,12 +8252,18 @@ LAYOUT RULES:
 - Return ONLY the JSON object, nothing else
 
 CRITICAL — FIELD NAMES:
-- You MUST use the EXACT field names from the schema provided. Copy them character-for-character, including capitalization and spaces.
-- WRONG: "field": "program"     RIGHT: "field": "Program"
-- WRONG: "field": "net_total"   RIGHT: "field": "Net Revenue"  (or whatever the schema shows)
-- WRONG: "field": "section"     RIGHT: "field": "Section"
-- If a field name has spaces like "Net Revenue" or "Fill %", use that exact string.
-- Never guess, abbreviate, or normalize field names. The renderer matches them against raw data columns.
+- You MUST use the EXACT field names from the schema provided. Copy them character-for-character.
+- COLUMN NAMING IS NOT CONSISTENT BETWEEN SOURCES, and you must not "tidy" it. The programs
+  source uses snake_case (net_total, enrolled, capacity, fill_pct, program, section); most others
+  use Title Case With Spaces (Total Payments, Net Collected, FT Converted, Site Type). Copy
+  whichever form the schema shows for THAT source.
+- WRONG: "field": "Net Amount"    when the schema for that source says "net_total"
+- WRONG: "field": "net_total"     when the schema for that source says "Net Revenue"
+- WRONG: "field": "Registrations" when the schema for that source says "enrolled"
+- If a field name has spaces like "Net Collected" or "Fill %", use that exact string. If it has
+  underscores like "net_total", keep the underscores.
+- Never guess, abbreviate, re-case, or normalize field names. The renderer matches them against
+  raw data columns, and a name that does not match renders as ZERO rather than as an error.
 - For "contains" filter VALUES: use the shortest distinctive substring that uniquely identifies the target. Data often has spelling variations (e.g. "Pequossette" vs "Pequosette"). Using "Pequos" instead of the full name catches both. Prefer 5-8 character substrings over full names.
 
 SECTION/PROGRAM BREAKDOWN RULES:
@@ -8274,6 +8382,30 @@ app.post("/:org/report-wizard/api/generate", async (req, res) => {
     if (!config.title || !config.widgets || !Array.isArray(config.widgets)) {
       return res.status(502).json({ error: "AI returned incomplete config - try rephrasing" });
     }
+    // EVERY FIELD THE MODEL NAMED, CHECKED AGAINST THE SCHEMA IT WAS SHOWN.
+    // Runs before the write-up is normalised so the note it may add goes through
+    // the same clamp as every other note, and before dataSources is derived so a
+    // dropped widget's source is not listed as something the report was built
+    // from.
+    const droppedFields = wizardRepairConfigFields(config, schemas);
+    if (droppedFields.length) {
+      console.warn(`[wizard] ${slug}: dropped ${droppedFields.length} unresolvable field(s): ${droppedFields.join("; ")}`);
+      const prior = Array.isArray(config.notes) ? config.notes : (config.notes ? [config.notes] : []);
+      // LEADING, because "some figures are missing" outranks any caveat the model
+      // thought of — and the normaliser keeps only the first four.
+      config.notes = [
+        "Some requested figures were left out because this org's data does not have those columns: "
+        + droppedFields.slice(0, 3).join("; ")
+        + (droppedFields.length > 3 ? `, and ${droppedFields.length - 3} more.` : ""),
+      ].concat(prior);
+    }
+    if (!config.widgets.length) {
+      return res.status(502).json({
+        error: "The generated report referenced columns this org's data does not have. Try rephrasing.",
+        retryable: true,
+      });
+    }
+
     // Normalise the write-up. The page renders these, and a model that returns a
     // string where an array belongs (or 400 words where three sentences belong)
     // must not be able to blank the report or push the widgets off screen.

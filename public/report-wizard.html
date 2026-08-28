@@ -501,8 +501,12 @@
     // answering — so the floor itself could surface a prompt that fails. It is
     // the last resort, and it has to be the safest list on the page, not the
     // most interesting one.
+    //
+    // AND NO PERIOD WORDS. The wizard sends no dates, so every report covers a
+    // 7-day window; "Compare this fall's enrollment against last year" was here
+    // for months and could only ever have been answered for a week.
     var TYPING_PROMPTS_FALLBACK = [
-      'Compare this fall\u2019s enrollment against last year',
+      'Where is enrollment strongest, and where is it soft?',
       'Which programs are filling up and which are half empty?',
       'Top programs by revenue, highest first',
       'Which sections cancelled the most registrations?',
