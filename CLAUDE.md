@@ -3031,7 +3031,7 @@ label, so it now looks the columns up **by name**.
 
 ### Guards
 
-`scripts/report-settings.spec.js` (**85 assertions, in CI**) lifts and RUNS the
+`scripts/report-settings.spec.js` (**115 assertions, in CI**) lifts and RUNS the
 registry and its validator, and has a live half that boots the server, saves,
 clamps, resets and reads the settings back **out of the page's injected
 `ORG_CONFIG`** — they decide the first render, so a page that fetched them would
