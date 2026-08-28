@@ -956,6 +956,15 @@ service **rental-report** (`7ee6e149-bd03-41db-bd42-aa8a751b1000`).
 
 - **Production** deploys automatically from `main`. Never deploy untested code to
   production — pushing to `main` is a live release to all orgs.
+- **The production URL is `https://rental-report-production-a046.up.railway.app`.**
+  **There is no `reports.rec.us`** (Dan, 2026-08-28) — it does not resolve, and
+  the `BASE_URL=https://reports.rec.us` in the README is a placeholder, as its own
+  comment says. Worth knowing because curling it does NOT fail cleanly from this
+  sandbox: it returned a plausible-looking 200 page (a real `ORG_CONFIG`, for the
+  wrong org) and then `HTTP 000`, which reads as a broken deploy rather than as a
+  hostname that was never registered. Verify production against the Railway
+  domain above, and `getent hosts` a host before believing a strange response
+  from it.
 - **PR previews** are created automatically when a PR is opened: an isolated
   environment named `rental-report-pr-<PR#>` with its own URL. This does NOT
   touch production.
