@@ -13,6 +13,40 @@
   into what's being used (and enjoys the vanity of seeing plays/exports roll in).
   See the section below for the exact mechanism.
 
+## overview and annual-report — RETIRED (Dan, 2026-08-28)
+
+*"do 4, nuke that."* Usage over the whole life of `events.jsonl`: **`overview` 8
+opens ever, none in three months; `annual-report` 3.**
+
+Neither drew a card already — `annual-report` is in `NON_ADDABLE_REPORTS` and
+`overview` is not in `REPORT_TYPES` — so the work was the routes. Both are in
+`RETIRED_REPORTS` now, and `reportRetired()` gates `/:org/annual-report` plus its
+**generate** route, which calls the model and was the expensive surface to leave
+open on a report with three opens.
+
+**A DELETED ROUTE CANNOT SAY "THIS WAS ON PURPOSE", and that was a live bug.**
+`/:org/overview` had been removed outright with a comment saying so, which left it
+falling through to the generic 404 — **unmarked**. `noteDeadLink()` alerts on *"a
+404 that arrived with a valid-looking token"*, so every stale overview link has
+been paging someone since the day the route was deleted. `retired-reports.spec.js`
+asserts zero `deadlink` events and got one, which is how it surfaced. There is now
+an explicit refusing route that sets `res.locals.deliberate404`.
+
+**Generalise it:** when retiring a route, *refuse* rather than delete. A refusal
+can be marked deliberate; an absence cannot.
+
+Nothing is deleted — `public/overview.html`, `public/annual-report.html`, the
+generate route and `ANNUAL_REPORT_SYS_PROMPT` all stay. **Both stay in
+`REPORT_DEPENDENCIES` on purpose**: that map is what `splitBreakageByActivity()`
+reads to decide a dropped table under a dead report must not page anyone, and
+removing them would lose exactly that.
+
+Guard: `scripts/retired-reports.spec.js` (**18 assertions, in CI**), which boots
+the server, requires both reports to 404 and the four reports people actually use
+to still serve, and asserts **zero `deadlink` events** despite every request
+carrying a real token. Mutation-tested three ways, all failing by name — including
+the unmarked overview 404, i.e. the bug it found.
+
 ## Report Wizard — DISABLED for every org (Dan, 2026-08-28)
 
 Dan: *"we need to disable it for all orgs... they should not be able to see or

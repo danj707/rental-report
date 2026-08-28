@@ -2034,7 +2034,27 @@ const DEFAULT_HIDDEN_REPORTS = new Set([]);
 // schemas. Nothing was deleted when it was retired — the page, the generate
 // route and the feedback route all stayed — so bringing it back is removing it
 // from this Set, not a rebuild.
-const RETIRED_REPORTS = new Set(["court-utilization", "chat", "campmap", "report-wizard"]);
+const RETIRED_REPORTS = new Set(["court-utilization", "chat", "campmap", "report-wizard", "overview", "annual-report"]);
+
+// ── overview and annual-report: RETIRED (Dan, 2026-08-28) ────────────────────
+// Measured from events.jsonl over the log's whole life: `overview` had EIGHT
+// opens ever and none in three months; `annual-report` had THREE, the last 51
+// days before it was checked. Neither renders a card already — annual-report is
+// in NON_ADDABLE_REPORTS and overview is not in REPORT_TYPES — and overview's
+// route was removed some time ago ("report dormant, may revisit later"), so it
+// has been 404ing on its own.
+//
+// What was still live is /:org/annual-report and its generate route, which calls
+// the model. Both are gated now, and their 404s are MARKED DELIBERATE for the
+// same reason the wizard's are: noteDeadLink() alerts on "a 404 that arrived
+// with a valid-looking token", which is the shape of any stale link to either.
+//
+// Nothing is deleted: public/overview.html, public/annual-report.html, the
+// generate route, ANNUAL_REPORT_SYS_PROMPT and the REPORT_DEPENDENCIES entries
+// all stay. Both remain in REPORT_DEPENDENCIES on purpose — that map is what
+// splitBreakageByActivity() reads to decide a dropped table under a dead report
+// must not page anyone, and removing them would lose that.
+function reportRetired(rt) { return RETIRED_REPORTS.has(rt); }
 
 // ── Report Wizard: OFF for every org (Dan, 2026-08-28) ───────────────────────
 // "we need to disable it for all orgs... they should not be able to see or click
@@ -10529,7 +10549,19 @@ async function directorsQuarterlyJob() {
 setTimeout(() => { directorsQuarterlyJob().catch(() => {}); }, 2 * 60 * 1000);
 setInterval(() => { directorsQuarterlyJob().catch(() => {}); }, 6 * 60 * 60 * 1000);
 
-// overview route removed — report dormant, may revisit later
+// ── overview: RETIRED, and the refusal is EXPLICIT ───────────────────────────
+// The route used to be deleted outright with a comment saying so, which left it
+// falling through to the generic 404 — unmarked. noteDeadLink() alerts on "a 404
+// that arrived with a valid-looking token", so every stale /:org/overview link
+// has been paging someone since the day the route was removed. Found by
+// retired-reports.spec.js, which asserts zero deadlink events and got one.
+//
+// A deleted route cannot say "this was on purpose". A refusing one can.
+app.get("/:org/overview", (req, res) => {
+  if (!ORGS[req.params.org]) return res.status(404).send("Unknown org");
+  res.locals.deliberate404 = true;
+  return res.status(404).send("The Facility Overview report has been retired.");
+});
 
 app.get("/:org/products", (req, res) => {
   const slug = req.params.org;
@@ -10671,6 +10703,12 @@ app.get("/:org/annual-report", (req, res) => {
   const slug = req.params.org;
   const org  = ORGS[slug];
   if (!org) return res.status(404).send("Unknown org");
+  // RETIRED — 3 opens ever. Marked deliberate so a stale link does not page
+  // anyone; see the note on RETIRED_REPORTS.
+  if (reportRetired("annual-report")) {
+    res.locals.deliberate404 = true;
+    return res.status(404).send("The Annual Report has been retired.");
+  }
   logEvent(slug, "annual-report", "view", req);
   res.type("html").send(require("fs").readFileSync(path.join(__dirname, "public", "annual-report.html"), "utf8"));
 });
@@ -10723,6 +10761,9 @@ const _annualReportCache = new Map();
 const AR_CACHE_TTL = 30 * 60 * 1000; // 30min
 
 app.post("/:org/annual-report/api/generate", async (req, res) => {
+  // RETIRED. This one calls the model, so it is the expensive surface to leave
+  // open on a report nobody opens.
+  if (reportRetired("annual-report")) return refuse404(res, { error: "The Annual Report has been retired." });
   const slug = req.params.org;
   const org = ORGS[slug];
   if (!org) return res.status(404).json({ error: "Unknown org" });
