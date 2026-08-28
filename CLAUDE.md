@@ -456,6 +456,63 @@ DOM (`ci-check-render` gained an `absent:` selector for that: "renders a 0" and
 `sql/memberships-checkins.sql`) — there were none before, so the live card was
 the only copy. The live card is still the source of truth; read it first.
 
+## Tab chips on the Programs and Community Intel cards (2026-08-28)
+
+Dan: *"i like what you did here with the tabs being directly clickable. can you
+roll that out for the programs report and the community intelligence report cards
+too?"*
+
+Three lines of `CARD_TABS` config. **Neither page could honour the link those
+chips produce**, and both failures were silent.
+
+- **`programs.html` read `?tab=` and then DESTROYED it.** The value went into
+  initial state, and `fetchData` — which runs on mount — called
+  `setTab('summary')` a millisecond later. So every chip would have landed on
+  Summary. Same shape as the `?ci_rows=failed` deep link the check-ins
+  write-back used to wipe. The reset is right for **re-running** a report and is
+  kept; `fetchData(sd, ed, initial)` skips it on the first load only, and the Run
+  Report button deliberately does not pass the flag.
+- **A deep-linked tab never asked for its feed.** Participants, Retention and
+  Fill Rate fetch lazily from `switchTab`, which a URL never calls — and
+  `{tab === 'participants' && …}` with `demoRows` null and `demoLoading` false
+  renders **NOTHING**: no loader, no error, no empty state. `ensureTabData(t)` is
+  now one function called from the click AND from mount; two copies would drift
+  the first time a tab gained a feed.
+- **`users.html` did not read `?tab=` at all**, so every Community Intel chip
+  would have landed on Demographics. It also now mirrors the tab back into the
+  URL on switch (`replaceState`, and the default tab CLEARS the parameter rather
+  than writing `?tab=demo`), so the address bar is shareable the way the chips
+  are.
+
+### Which tabs get a chip, and why the omissions matter
+
+| card | chips | left off |
+|---|---|---|
+| `programs` | Revenue, Participants, Retention, Fill Rate, Check-Ins | **Summary** (the card already lands there — a chip would be noise) and **Detail** (a section drill-down with nothing to drill into from here) |
+| `users` | Revenue, Strategy | **Guests** and **Products** |
+
+- **`guests` is not a URL destination.** It renders only when
+  `s.guestCount > 0`, and the feed has not answered at mount — so honouring
+  `?tab=guests` would assert something unknowable, and a guest-less org would get
+  a **blank body with no tab button to come back from**. Same load-vs-empty rule
+  as the permits column and the campmap's `POS_OK`.
+- **`products` is gated on the org HAVING that report**, so a chip would be a dead
+  end for everyone else.
+- Both resolvers fall back to the page's default rather than rendering nothing,
+  and **both are at module scope** (`progEffectiveTab`, `usersEffectiveTab`) so
+  the spec can RUN them — the `nightStateFrom` lesson again.
+
+Guards: `scripts/report-tabs.spec.js` (69 assertions, in CI) lifts and runs both
+resolvers and asserts **every chip resolves to its own tab** — the invariant a
+config-only change breaks silently. Mutation-tested six ways: the mount fetch
+clobbering the tab again, the deep link not fetching its feed, `users.html` back
+to ignoring `?tab=`, `users` accepting any tab, `detail` accepted with no
+`section_id`, and a chip naming a tab the page would rewrite.
+
+Plus six `ci-check-render.js` cases keyed on **which tab is LIT**, not on "a tab
+strip rendered" — landing on the wrong tab looks identical otherwise. Three of
+them were seen to fail in a real browser on the real regression.
+
 ## Slack activity notifications — wire every new surface (IMPORTANT)
 
 Standing rule (see Working preferences): any new button, export, download, or
