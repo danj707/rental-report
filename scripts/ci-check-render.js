@@ -346,9 +346,29 @@ function fasttrackRows() {
     "Program": "Birthday Concert", "Program ID": "prog-birthday",
     "Section ID": "sec-birthday-" + name.replace(/\W+/g, "-").toLowerCase(),
   });
+  /* ── THE CACHE INVARIANT, in a browser ────────────────────────────────────
+     Card 17300 v18 emits 'early-access' directly; every pre-v18 response — and
+     every warm 4-hour cache entry holding one — still says 'pipeline' with an
+     open early window. Both shapes are live at once, so the page must render
+     them IDENTICALLY. launchedEarly is the pre-v18 shape; this is the same
+     section as v18 describes it, and the render case requires both to print
+     Early Access. Nothing but a browser proves the two agree once the value has
+     been through normalizeRow, ftEffectiveStatus and the table cell. */
+  const launchedEarlyV18 = Object.assign(table("Premier Table Early v18", 62, 37, 25, -1), {
+    "Section ID": "sec-premier-early-v18",
+    "Early Access Opens": iso(-1), "Reg Opens": iso(6), "Reg Closes": iso(45),
+    "Reg Status": "early-access",   // what the v18 card reports for this shape
+    "FT Converted": 25, "FT Pending": 37, "Capacity": 25,
+    "Direct Enrolled": 0, "Total Enrolled": 25, "Fill %": 100, "Conversion %": 40.3,
+    // Deliberately carries NO blocked revenue: this row exists to pin the status
+    // LABEL, and giving it money would silently double the Conversions KPI that
+    // `conversions missed-revenue KPI` asserts is 925.
+    "Over Demand $": 0, "Left on Table": 0,
+  });
   return [
     launchedSmall,
     launchedEarly,
+    launchedEarlyV18,
     birthday("Select Table 45", 203, 45, 0.01),
     birthday("General Table 50", 111, 50, 1),
     birthdaySpent("Birthday Summer: June", 14, 10),
@@ -1512,6 +1532,48 @@ const CASES = [
         if (t) t.click();
       });
       await new Promise(r => setTimeout(r, 2200));
+    } },
+  /* EARLY ACCESS IS ITS OWN LABEL, and both feed shapes must print it.
+     Dan: "A new label, I like 'Early Access' if one group can register but
+     others cant."
+
+     The case asserts THREE things a source check cannot: that the pre-v18 row
+     (Reg Status 'pipeline' + an open early window) and the v18 row (Reg Status
+     'early-access') land on the SAME label — the cache invariant, end to end —
+     that both rows are on the tab at all, and that a genuinely closed section
+     still reads Closed. Keyed on the resolved status via data-conv-status
+     rather than on the text, so a relabel fails in the spec and a MIS-resolve
+     fails here. Before this change the cell printed "Open" for both rows, which
+     is what makes the assertion discriminating rather than decorative. */
+  { name: "fasttrack · early access has its own label", path: "/{org}/fasttrack",
+    needs: "body[data-ea-ok=\"1\"]",
+    act: async page => {
+      await page.waitForSelector(".tab-btn", { timeout: 45000 });
+      await page.evaluate(() => {
+        const t = [...document.querySelectorAll(".tab-btn")].find(b => /Conversion/i.test(b.textContent));
+        if (t) t.click();
+      });
+      await new Promise(r => setTimeout(r, 2200));
+      await page.evaluate(() => {
+        // The status cell is in the Conversion Detail TABLE. `#aq-<id>` is the
+        // FLOW CARD's id — querying that finds no cell and the case would fail
+        // on a perfectly good page.
+        const cell = id => {
+          const row = document.querySelector("[data-conv-row='" + id + "']");
+          return row && row.querySelector("[data-conv-status]");
+        };
+        const pre = cell("sec-premier-early");        // 'pipeline' + open early window
+        const v18 = cell("sec-premier-early-v18");    // the card's own 'early-access'
+        const closed = [...document.querySelectorAll("[data-conv-status='closed']")];
+        if (pre && v18 &&
+            pre.dataset.convStatus === "early-access" &&
+            v18.dataset.convStatus === "early-access" &&
+            pre.textContent.trim() === "Early Access" &&
+            v18.textContent.trim() === pre.textContent.trim() &&
+            closed.length > 0) {
+          document.body.setAttribute("data-ea-ok", "1");
+        }
+      });
     } },
   // Most recently launched first. sec-tiny opened ~30 min ago, sec-premier-early
   // a day ago, so tiny leads — and asserting the FIRST card is what makes this

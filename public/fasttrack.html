@@ -708,7 +708,7 @@ function ftLaunchedAt(r) {
 
 function ftEffectiveStatus(r, nowMs) {
   var raw = r && r.regStatus ? String(r.regStatus) : '';
-  if (raw === 'open' || raw === 'closed') return raw;
+  if (raw === 'open' || raw === 'closed' || raw === 'early-access') return raw;
   // ONLY `pipeline` is eligible for promotion, and this restriction is
   // load-bearing. The first version promoted anything whose go-live had passed,
   // which took Smyrna's post-registration set from 127 sections to 1,522 —
@@ -724,9 +724,50 @@ function ftEffectiveStatus(r, nowMs) {
   if (go.at && go.at.getTime() <= now) {
     var closes = r && r.regCloses ? new Date(r.regCloses) : null;
     if (closes && !isNaN(closes.getTime()) && closes.getTime() < now) return 'closed';
-    return 'open';
+    /* THE PAGE MUST READ THE SAME BEFORE AND AFTER THE CARD SHIPS. raw is
+       'pipeline', i.e. the card says the GENERAL window is still ahead, and a
+       window has nonetheless opened — so the one that opened is the early one.
+       Card 17300 v18 now says 'early-access' for exactly this state and returns
+       above; a pre-v18 feed (and every warm 4-hour cache entry for one) lands
+       here and must resolve to the same value, or the report changes what it
+       says about a section the moment a cache expires. */
+    return 'early-access';
   }
   return raw || 'pipeline';
+}
+
+/* Has registration happened for this section — to anyone?
+   Early access IS registration; it is just not open to everyone. So the
+   Conversions tab, the badge that labels it, and the flow board all count an
+   early-access section. ONE helper because the badge and the tab disagreeing is
+   the specific bug that shipped when the tab read the card's raw status: it
+   would have undercounted by 561 pending holds at Smyrna alone. */
+function ftIsPostReg(st) {
+  return st === 'open' || st === 'closed' || st === 'early-access';
+}
+
+/* Dan: "A new label, I like 'Early Access' if one group can register but others
+   cant. Pretty typical that lots of users will FT sections like this, so you can
+   have two 'phases' of FT."
+
+   Its own colour, deliberately not the green of 'open': a reader scanning the
+   column has to be able to see that most families still cannot register. */
+var FT_STATUS_META = {
+  'open':         { label: 'Open',         color: '#059669' },
+  'closed':       { label: 'Closed',       color: '#999'    },
+  'early-access': { label: 'Early Access', color: '#7c3aed' },
+  'pipeline':     { label: 'Pipeline',     color: '#f59e0b' },
+  'scheduled':    { label: 'Scheduled',    color: '#888'    },
+  'published':    { label: 'Published',    color: '#888'    },
+  'draft':        { label: 'Draft',        color: '#bbb'    },
+  'upcoming':     { label: 'Upcoming',     color: '#888'    }
+};
+function ftStatusMeta(st) {
+  var m = FT_STATUS_META[st];
+  /* A COPY, never the map entry itself — a caller that stamps the key onto the
+     returned object would otherwise write into the shared map. */
+  return m ? { key: st, label: m.label, color: m.color }
+           : { key: st || '', label: st ? String(st) : 'Unknown', color: '#888' };
 }
 
 function ftBlockedRevenue(r) {
@@ -1076,7 +1117,12 @@ function ColdPipelineStrip(props) {
   var pipelineRows = props.pipelineRows || [];
   var now = new Date();
   var seen = {};
-  var cold = sections.filter(function(r){ return r.regStatus === 'pipeline'; })
+  /* EFFECTIVE status, not the card's raw one. A section in early access is not
+     cold — its first families can already register — and it reports 'pipeline'
+     on a pre-v18 feed. Reading the raw value would list it as cold on a warm
+     cache and not on a fresh one. */
+  var coldNow = now.getTime();
+  var cold = sections.filter(function(r){ return ftEffectiveStatus(r, coldNow) === 'pipeline'; })
     .concat(pipelineRows)
     .filter(function(r) {
       if (r.ftSignups > 0) return false;
@@ -1623,7 +1669,7 @@ function App() {
     var nowMs = Date.now();
     return filtered.reduce(function(a, r) {
       var st = ftEffectiveStatus(r, nowMs);
-      return a + ((st === 'open' || st === 'closed') ? r.ftPending : 0);
+      return a + (ftIsPostReg(st) ? r.ftPending : 0);
     }, 0);
   }, [filtered]);
 
@@ -2675,7 +2721,7 @@ function App() {
             var nowMs = Date.now();
             var postReg = filtered.filter(function(r){
               var st = ftEffectiveStatus(r, nowMs);
-              return st === 'open' || st === 'closed';
+              return ftIsPostReg(st);
             });
             var totalFT = postReg.reduce(function(a,r){ return a + r.ftSignups; }, 0);
             var totalConv = postReg.reduce(function(a,r){ return a + r.ftConverted; }, 0);
@@ -2739,8 +2785,19 @@ function App() {
                   React.createElement('span', { className: 'flow-band', style: { background: hb.bg, color: hb.color } }, hb.icon, ' ', hb.label),
                   React.createElement('span', { className: 'flow-title' }, r.section || r.program),
                   React.createElement('span', { className: 'flow-sub' }, r.program,
-                    r.regOpens ? ' · ' + hoursAgoLabel(r.regOpens) : '',
-                    r.regStatus === 'closed' ? ' · reg closed' : ''),
+                    /* The GO-LIVE instant, not regOpens. An early-access section's
+                       general window is still in the future, so hoursAgoLabel
+                       returned '' for exactly the sections that just launched —
+                       the ones this board now sorts to the top. */
+                    (function(){
+                      var at = ftLaunchedAt(r);
+                      return at ? ' · ' + hoursAgoLabel(new Date(at).toISOString()) : '';
+                    })(),
+                    (function(){
+                      var st = ftEffectiveStatus(r, Date.now());
+                      return st === 'closed' ? ' · reg closed'
+                           : st === 'early-access' ? ' · early access only' : '';
+                    })()),
                   React.createElement('span', { style: { marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' } },
                     React.createElement('button', {
                       className: 'pin-toggle' + (isPinned(r.sectionId) ? ' pinned' : ''),
@@ -2909,7 +2966,7 @@ function App() {
 
               /* Conversion funnel table */
               React.createElement('div', { style: { fontSize: 12, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '.04em', color: '#059669', marginBottom: 12, marginTop: 8 } },
-                'Conversion Detail ', React.createElement('span', { style: { fontWeight: 400, textTransform: 'none', color: '#9ca3af', letterSpacing: 0 } }, '— sections where registration is open or closed')
+                'Conversion Detail ', React.createElement('span', { style: { fontWeight: 400, textTransform: 'none', color: '#9ca3af', letterSpacing: 0 } }, '— sections where registration is open, in early access, or closed')
               ),
               React.createElement('div', { className: 'table-scroll' },
                 React.createElement('table', { className: 'ft-table' },
@@ -2930,9 +2987,13 @@ function App() {
                     postReg.sort(function(a,b){ return b.ftSignups - a.ftSignups; }).map(function(r, i) {
                       var convColor = r.convPct >= 70 ? '#059669' : r.convPct >= 40 ? '#f59e0b' : r.convPct > 0 ? '#dc2626' : '#999';
                       var fillColor = r.fillPct >= 90 ? '#059669' : r.fillPct >= 50 ? '#f59e0b' : '#999';
-                      var statusLabel = r.regStatus === 'closed' ? 'Closed' : 'Open';
-                      var statusColor = r.regStatus === 'closed' ? '#999' : '#059669';
-                      return React.createElement('tr', { key: 'c' + i },
+                      /* The tab now holds three states, not two. Reading the
+                         card's raw value here would print 'Open' over a section
+                         only one member group can register for. */
+                      var stMeta = ftStatusMeta(ftEffectiveStatus(r, Date.now()));
+                      var statusLabel = stMeta.label;
+                      var statusColor = stMeta.color;
+                      return React.createElement('tr', { key: 'c' + i, 'data-conv-row': r.sectionId || '' },
                         React.createElement('td', { className: 'left' },
                           React.createElement('div', { style: { fontWeight: 600, color: '#111' } }, r.program,
                             r.sectionId && React.createElement('a', { href: adminSectionUrl(r.orgId, r.sectionId), target: '_blank', rel: 'noopener', style: { color: '#3b82f6', fontWeight: 600, fontSize: 10, textDecoration: 'none', marginLeft: 8 } }, 'Admin →')
@@ -2945,7 +3006,7 @@ function App() {
                         React.createElement('td', { style: { color: '#999' } }, fmtInt(r.ftDropped)),
                         React.createElement('td', { title: convExplain(r) }, React.createElement('span', { style: { fontWeight: 600, color: convColor } }, r.convPct != null ? r.convPct + '%' : '—')),
                         React.createElement('td', null, React.createElement('span', { style: { fontWeight: 600, color: fillColor } }, r.fillPct != null ? r.fillPct + '%' : '—')),
-                        React.createElement('td', null, React.createElement('span', { style: { fontSize: 11, fontWeight: 600, color: statusColor } }, statusLabel)),
+                        React.createElement('td', null, React.createElement('span', { 'data-conv-status': stMeta.key, style: { fontSize: 11, fontWeight: 600, color: statusColor } }, statusLabel)),
                         React.createElement('td', null,
                           r.ftPending > 0 && r.convPct < 30 && React.createElement('span', { style: { fontSize: 10, background: '#fef2f2', color: '#991b1b', padding: '2px 6px', borderRadius: 4, fontWeight: 600 } }, 'Follow up')
                         )
