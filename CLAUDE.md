@@ -13,6 +13,77 @@
   into what's being used (and enjoys the vanity of seeing plays/exports roll in).
   See the section below for the exact mechanism.
 
+## Report Wizard — DISABLED for every org (Dan, 2026-08-28)
+
+Dan: *"we need to disable it for all orgs... they should not be able to see or
+click it."* And, on why: *"This report wizard is nice in concept, but really needs
+direct db connectivity via an api."*
+
+**SEE and CLICK are two different gates, and either alone is a half-measure:**
+
+- **SEE** — `report-wizard` is in `RETIRED_REPORTS`, which removes the card from
+  the org dashboard and the admin portal.
+- **CLICK** — `WIZARD_ENABLED_ORGS` (empty) makes all four wizard routes 404.
+  The comment on `RETIRED_REPORTS` explains why hiding is not enough: it controls
+  whether a report is **SURFACED**, not whether it works, and campmap served ~24
+  visitors a month through direct links the whole time it was listed there. Every
+  wizard link already bookmarked or emailed still resolves.
+
+Empty set ⇒ off everywhere. Same shape as `MUNIS_EXPORT_ORGS`:
+`WIZARD_ENABLED_ORGS=slug,slug` re-enables the routes for those orgs alone,
+without un-hiding the card for anyone.
+
+**THE 404s ARE MARKED DELIBERATE, and this is the part to remember.**
+`noteDeadLink()` alerts on *"a 404 that arrived with a valid-looking token"* —
+exactly the shape of every stale wizard link from now on. Without `refuse404()` /
+`res.locals.deliberate404`, disabling the feature posts one DEAD LINK alert per
+stale link, naming a path we turned off on purpose. That is the settings-route
+false alarm, at scale. A refused page also logs no `view`, so the report does not
+keep looking "active" to the watchdogs that gate alerting on usage.
+
+**Why it is off, with the measurements** (so nobody re-derives them):
+
+- **The shape is wrong for Metabase as middleware.** The schema probe pulls the
+  WHOLE card to read five rows — the `users` card returned **104,340 rows in
+  52s** — and the page then pulls whole feeds to compute sums a
+  `SELECT sum(...) GROUP BY` would answer in milliseconds. Production, warm:
+  apex facility **42.7s**, roster 16.9s, programs 15.7s.
+- **Direct DB is the right direction but not sufficient alone.** Every table in
+  the `materialized` schema has exactly one index — its primary key — so going
+  direct inherits the same seq scans *without* the 4-hour cache hiding them.
+  Direct DB **plus** the `(organization_id, datetime_at_primary_timezone)` index
+  already spec'd in this file is the combination that pays.
+- **SOURCE SUBSTITUTION was never fixed and is the finding that outlives this.**
+  When a source that justified a prompt has not answered at generate time, the
+  model builds from what it does have — measured across 13 generated reports,
+  *"Facility rentals by location"* was answered from `gl` and *"Class roster by
+  section"* from `calendar`. Both produced **arithmetically correct reports
+  answering a question nobody asked**, and no field-level guard can catch it
+  because those fields are all genuine for the substituted source.
+
+**The improvement work is PARKED, not lost** — schema resilience (warm-cache and
+last-known-good schemas, a bounded probe, and never caching an empty result),
+org-derived prompts gated on what each org actually has, and a field-name repair
+pass that drops a column the feed lacks instead of rendering `$0`. All of it is on
+the `claude/report-wizard-improvements-cc9vbm` branch, kept as a **draft PR
+(#169)** with the measurements in a comment.
+
+**Nothing is deleted here.** `public/report-wizard.html`, the
+generate/feedback/log routes and the wizard specs all stay and keep running, so
+re-enabling is configuration rather than a rebuild — which is what made
+un-retiring this in August a one-line change.
+
+Guards: `scripts/wizard-disabled.spec.js` (**29 assertions, in CI**) boots with an
+empty allowlist and requires all four routes to 404, `wizardVisible: false` in the
+injected config, **zero `deadlink` events** despite every request carrying a real
+token, and — with one slug in `WIZARD_ENABLED_ORGS` — the page back at 200, so
+this is provably a switch and not a deletion. Plus the
+`org landing · no wizard card` render case, which asserts the card is **ABSENT
+from the DOM**: `org.html` builds its cards client-side, so the card BUILDER is in
+the served JS on every load and grepping HTML proves nothing. Un-retiring the
+report makes that case fail in a real browser with *"should NOT be present, but it
+is"* — verified.
+
 ## Report Wizard (2026-08-26) — three things worth knowing
 
 ### The wizard's own runs were invisible in Slack — FOURTH instance of the trap
