@@ -1,4 +1,15 @@
--- Card 17300: ✅ Fast Track Utilization Report — v17 TIMEZONE FIX
+-- Card 17300: ✅ Fast Track Utilization Report — v18 EARLY ACCESS STATUS
+-- v18 (2026-08-28): "Reg Status" gains 'early-access'. A section whose GROUP
+-- registration window has opened while its DEFAULT window has not is a real,
+-- distinct phase: some families can register and others cannot yet. It used to
+-- report 'pipeline' (registration has not started), which is false for everyone
+-- in the group and kept those sections off every surface gated on open/closed.
+-- Measured before pushing, live: 179 sections move pipeline -> early-access and
+-- NOTHING else changes (draft 32942, open 14647, closed 2545, scheduled 560,
+-- pipeline 518, published 503 all identical). Both UNION arms carry the rule —
+-- the second arm's WHERE already scopes to default_opens > now(), so its test is
+-- the short form. They must agree or one section reads two ways.
+--
 -- v17 (2026-08-24): section_start / section_end / section_day / section_time are
 -- now computed in the SECTION'S timezone (session location) instead of Metabase's
 -- report timezone. See the comment on the schedule block below for the numbers.
@@ -340,6 +351,14 @@ SELECT
     WHEN sb.publish_at IS NULL                   THEN 'draft'
     WHEN sb.publish_at > now()                   THEN 'scheduled'
     WHEN rw.default_opens IS NULL                THEN 'published'
+    /* EARLY ACCESS IS ITS OWN PHASE (2026-08-28). A group window that has opened
+       means some families can register while others cannot yet. Calling that
+       'pipeline' says registration has not started, which is false for everyone
+       in the group; calling it 'open' hides that a second phase is still to
+       come. Fast Track sections routinely have both. */
+    WHEN rw.group_opens IS NOT NULL
+      AND rw.group_opens <= now()
+      AND rw.default_opens > now()               THEN 'early-access'
     WHEN rw.default_opens > now()                THEN 'pipeline'
     WHEN rw.default_closes IS NULL
       OR rw.default_closes >= now()              THEN 'open'
@@ -436,6 +455,11 @@ SELECT
   rw.default_closes                                      AS "Reg Closes",
   rw.group_opens                                         AS "Early Access Opens",
   CASE
+    /* Same rule as the main branch — this arm is sections with no Fast Track
+       interest, and the two must agree or one section reads two ways depending
+       on which side of the UNION it came down. */
+    WHEN rw.group_opens IS NOT NULL
+      AND rw.group_opens <= now()                THEN 'early-access'
     WHEN rw.default_opens > now()                THEN 'pipeline'
     WHEN sb.publish_at > now()                   THEN 'scheduled'
     ELSE 'upcoming'

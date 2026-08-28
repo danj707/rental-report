@@ -2229,21 +2229,68 @@ row `· early access` so the bucket never implies general registration is open.
 Guarded by the `fasttrack · just launched` render case
 (`[data-launched-kind="early"]`), mutation-tested against the old filter.
 
-**STILL OPEN, and it is in the CARD, not the client.** Card 17300's
-`Reg Status` is computed from `rw.default_opens` only:
+### CLOSED 2026-08-28 — 'early-access' is now its own Reg Status (card 17300 v18)
 
-```sql
-WHEN rw.default_opens > now() THEN 'pipeline'
-```
+Dan: *"A new label, I like 'Early Access' if one group can register but others
+cant. Pretty typical that lots of users will FT sections like this, so you can
+have two 'phases' of FT."*
 
-so a section in early access is reported as `pipeline`. **486 sections across 7
-orgs are in that state right now** (measured 2026-08-24). Consequence: the
-Conversions tab's `postReg` set is gated on `regStatus === 'open' || 'closed'`,
-so those sections are missing from the tab whose entire job is watching Fast
-Track convert — and no client-side fix reaches it without either re-deriving
-status from the two windows in the page or editing the card. A card edit means
-the usual API/date-tag re-flip dance plus heaviest-org sign-off, so it is Dan's
-call rather than a drive-by.
+Card 17300 used to compute `Reg Status` from `rw.default_opens` alone, so a
+section already registering its early-access families reported `pipeline` —
+"registration has not started", which is false for everyone in that group. The
+page had patched it since 2026-08-27 (`ftEffectiveStatus` promoted `pipeline` to
+`open`), which kept the Conversions tab correct but could only ever say **Open**
+about a section most families cannot register for. A label needs the card to
+carry the phase, so v18 emits `'early-access'`.
+
+- **Both UNION arms carry the rule**, or one section reads two ways depending on
+  which side it came down. The pipeline arm's `WHERE` already scopes to
+  `default_opens > now()`, so its test is the short form.
+- **Order inside the CASE is load-bearing**: after draft/scheduled/published,
+  before `pipeline`. Test it after `pipeline` and it is unreachable.
+- **Dry-run before pushing — exactly one transition, nothing else moves:**
+  `pipeline → early-access` **179**; draft 32942, open 14647, closed 2545,
+  scheduled 560, pipeline 518, published 503 all identical.
+
+**THE CACHE INVARIANT IS THE HARD PART, and it is what the guard is really
+for.** Feeds cache for 4 hours, so a pre-v18 response (`pipeline` + an open early
+window) and a v18 one (`early-access`) are **both live at once**.
+`ftEffectiveStatus` resolves them to the same value, or the report changes what
+it says about a section the moment a cache entry expires. The pre-v18 branch that
+used to return `'open'` now returns `'early-access'`.
+
+**A third status is exactly how the tab lost these sections the first time** — it
+gated on `open || closed`. `ftIsPostReg(st)` is now ONE module-scope helper read
+by the Conversions tab, the badge that labels it and the flow board; the badge
+and tab disagreeing would have undercounted by 561 pending holds at Smyrna alone.
+`ColdPipelineStrip` reads the EFFECTIVE status too — a section in early access is
+not cold, and says `pipeline` on a pre-v18 feed.
+
+`FT_STATUS_META` holds label + colour per status. Early Access is violet,
+**deliberately not the green of Open**: a reader scanning the column has to see
+that most families still cannot register. `ftStatusMeta()` returns a **copy**,
+because a caller stamping a key onto it would write into the shared map.
+
+**The transcription slip worth remembering:** the first push landed byte-perfect
+except that the card's trailing `ORDER BY 1, 2, 3, 9 DESC, 4` was dropped — `wc
+-l` counts newlines, and the file's last line had none, so reading "lines 501-641"
+silently stopped one line short. Caught by diffing the pushed SQL back, which is
+the whole reason that step exists; re-pushed and re-diffed to byte-identical. The
+repo mirror `sql/report-cards/17300-fast-track.sql` matched the live card exactly
+before the push (no drift) and now holds v18.
+
+Guards: `scripts/fasttrack-early-access.spec.js` (**38 assertions, in CI**),
+which lifts and RUNS the helpers and reads the repo SQL mirror. Mutation-tested
+ten ways, all failing by name: the card value not passed through, the pre-v18
+promotion reverted to `open` (the cache invariant), `ftIsPostReg` dropping early
+access, the table labelling from the raw column, Cold Pipeline back to the raw
+column, the label reworded, early access painted the same green as open, the rule
+in only one UNION arm, `early-access` tested after `pipeline`, and the trailing
+`ORDER BY` dropped. Plus the `fasttrack · early access has its own label` render
+case, whose fixture carries the SAME section in **both** feed shapes
+(`sec-premier-early` pre-v18, `sec-premier-early-v18`) and requires them to print
+the same label — seen to fail in a real browser on both the raw-column relabel
+and on `ftIsPostReg` dropping early access.
 
 ## FT conversion is measured against the spots FT could win (2026-08-24)
 

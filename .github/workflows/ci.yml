@@ -104,6 +104,15 @@ jobs:
       - name: Fast Track missed-revenue spec (over-demand, not pending value; early access counts as launched)
         run: node scripts/fasttrack-missed-revenue.spec.js
 
+      # Card 17300 v18 emits 'early-access' as its own Reg Status. A pre-v18
+      # response — and every warm 4-hour cache entry holding one — still says
+      # 'pipeline' with an open early window, so BOTH shapes are live at once and
+      # must resolve identically, or the report changes what it says about a
+      # section when a cache expires. Also pins that early access still counts as
+      # post-registration (one helper, so the tab and its badge cannot drift).
+      - name: Fast Track early-access spec (its own phase; both feed shapes agree)
+        run: node scripts/fasttrack-early-access.spec.js
+
       - name: Outdoor events hour spec (hours covered, not hours started; multi-day excluded)
         run: node scripts/outdoor-hours.spec.js
 

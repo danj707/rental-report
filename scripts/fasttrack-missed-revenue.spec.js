@@ -73,13 +73,9 @@ function cut(name) {
   assert.ok(end > i, 'could not bound ' + name);
   return src.slice(i, end);
 }
-const api = {};
-new Function(['fmtN', 'sectionGoLive', 'ftLaunchedAt', 'ftEffectiveStatus', 'ftBlockedRevenue']
-  .map(cut).join('\n') + '\nreturn { fmtN, sectionGoLive, ftLaunchedAt, ftEffectiveStatus, ftBlockedRevenue };')
-  .call(null) && Object.assign(api, new Function(
-    ['fmtN', 'sectionGoLive', 'ftLaunchedAt', 'ftEffectiveStatus', 'ftBlockedRevenue'].map(cut).join('\n') +
-    '\nreturn { fmtN, sectionGoLive, ftLaunchedAt, ftEffectiveStatus, ftBlockedRevenue };')());
-const { ftEffectiveStatus, ftBlockedRevenue, ftLaunchedAt } = api;
+const NAMES = ['fmtN', 'sectionGoLive', 'ftLaunchedAt', 'ftEffectiveStatus', 'ftIsPostReg', 'ftBlockedRevenue'];
+const api = new Function(NAMES.map(cut).join('\n') + '\nreturn { ' + NAMES.join(', ') + ' };')();
+const { ftEffectiveStatus, ftIsPostReg, ftBlockedRevenue, ftLaunchedAt } = api;
 
 // Fixed instants: 2026-08-27T15:00Z, an hour after the General Table's early
 // access opened. Never Date.now(), or the spec's meaning changes daily.
@@ -119,9 +115,17 @@ const NO_CAP = { section: 'No capacity on file', regStatus: 'open',
   ftSignups: 7, ftConverted: 2, ftPending: 5, capacity: 0, overDemand: 0, ftRevenue: 300 };
 
 // ── 1. Early access counts as launched ────────────────────────────────────
-is(ftEffectiveStatus(GENERAL, NOW), 'open',
+// 2026-08-28: this now resolves to 'early-access' rather than 'open'. Card
+// 17300 v18 says 'early-access' itself; a pre-v18 feed (and every warm 4-hour
+// cache entry for one) still says 'pipeline' and must land on the SAME value,
+// or the report changes what it says about a section when a cache expires.
+is(ftEffectiveStatus(GENERAL, NOW), 'early-access',
    'a section whose EARLY ACCESS window has opened is post-registration, whatever the card says');
-is(ftEffectiveStatus(PREMIER, NOW), 'open', 'and so is one that opened three days ago');
+is(ftEffectiveStatus(PREMIER, NOW), 'early-access', 'and so is one that opened three days ago');
+is(ftEffectiveStatus(Object.assign({}, GENERAL, { regStatus: 'early-access' }), NOW), 'early-access',
+   "the v18 card's own 'early-access' is passed straight through");
+ok(ftIsPostReg(ftEffectiveStatus(GENERAL, NOW)),
+   'and it still counts as post-registration, or the Conversions tab loses it again');
 is(ftEffectiveStatus(FUTURE, NOW), 'pipeline',
    'a section whose windows are both still ahead stays pipeline — promotion needs a window that has actually opened');
 
