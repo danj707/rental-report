@@ -51,6 +51,90 @@ was recorded, and nothing reached the channel. Now wired:
   (event dropped from `SLACK_NOTIFY`, either debounce key reverted, the thumbs
   branch reverted, the route moved below the generic one); all five fail by name.
 
+### "No data sources available for this org" — from an org with TWELVE (2026-08-28)
+
+Dan tried to build a report and got **Report generation failed / No data sources
+available for this org**, with a Try Again button that could not work.
+
+**The cards were SLOW, not missing.** The wizard's own probe, replayed against
+production with its original 15s budget and all-in-parallel fan-out:
+
+| source | | source | |
+|---|---|---|---|
+| facility | **timeout** | programs | **timeout** |
+| calendar | 7.4s | court-utilization | **timeout** |
+| fasttrack | 12.3s | waitlist | 14.4s |
+| roster | **timeout** | memberships | 13.3s |
+| products | 13.0s | instructor-payout | **timeout** |
+| users | **timeout** | gl | 9.0s |
+
+**6 of 12 usable — and the six that answered sat at 12–14.4s, on the cliff
+edge.** At 40s, sequentially, 10 of 12 answered. So a slightly busier minute
+takes all twelve, which is what Dan hit.
+
+Three defects, and the third is what made it unrecoverable:
+
+- **15s against cards this repo has measured between 8s and past 90s.** Now
+  `WIZARD_PROBE_TIMEOUT_MS` (20s), **clamped by whatever is left of a total
+  `WIZARD_SCHEMA_BUDGET_MS` (35s)** — a per-probe timeout does not bound the sum,
+  and without the clamp the last probe runs 20s past a 35s deadline.
+- **Twelve heavy queries at once — the wizard as its own load source**, the same
+  shape as the health check firing ~28 redundant probes and pushing cards over
+  their timeouts. Now `WIZARD_PROBE_CONCURRENCY` (3). Note **one at a time is the
+  other failure**: measured 64s for a cold sweep at concurrency 3, so serialising
+  all twelve is minutes of somebody watching a spinner. **Partial is fine** — the
+  wizard needs one source, not twelve.
+- **THE EMPTY RESULT WAS CACHED FOR 30 MINUTES.** `_wizardSchemaCache.set` ran
+  unconditionally, `{}` included, so one slow window poisoned the org for half an
+  hour and **the Try Again button re-read the poisoned entry**. That is the
+  campmap's `POS_OK` bug in the one place where the recovery button is on screen
+  and inert. A run that produced nothing is now remembered for
+  `WIZARD_SCHEMA_FAIL_TTL` (20s) — long enough to stop a double-click stampeding
+  twelve cards, short enough that Try Again retries.
+
+**Two sources of schema that are not Metabase**, and together they mean a slow
+Metabase can no longer take the wizard down:
+
+1. **The app's own warm data, tried FIRST.** A schema is field names, types and
+   five sample values, so **any** warm window for that card answers it.
+   `warmestRowsFor()` scans the cache by `org:report:` prefix — **deliberately
+   not a key built from one guessed parameter set**, because the data route keys
+   on the window the reader asked for and pre-warm keys on this month, so a
+   lookup guessing the default 7-day window matches neither. That is the pre-warm
+   key bug, and a fallback that never hits looks exactly like one that is absent.
+2. **Last-known-good schemas on the volume** (`wizard-schemas.json`). A card's
+   COLUMN SET changes rarely — rarely enough that this repo has `FEED_VERSION`
+   and a schema-drift alert for the event. A source that was there yesterday has
+   not stopped existing because a query timed out. Marked `stale: true`, and the
+   log says `last-known-good`, so it is never a silent substitution. **An empty
+   result is never written** — that would be the 30-minute bug with a longer
+   memory. And the store is written BEFORE the fallback fills the gaps, or a
+   remembered schema is re-stored as though it had just been measured.
+
+**The message itself was false and is now two messages.** An org with no cards is
+a configuration fact; an org whose cards did not answer is a "press it again".
+The route returns **503 + `retryable: true`** and names the count for the second,
+and only says "no data sources are configured" when there genuinely are none.
+
+Worth knowing: **the probe pulls the WHOLE card to read five rows** — the `users`
+card returned **104,340 rows in 52s**. That is why a cold sweep is expensive, and
+why the store matters more than tuning the timeout.
+
+Guards: `scripts/wizard-schema-resilience.spec.js` (**49 assertions, in CI**),
+which lifts and RUNS `warmestRowsFor`/`wizardSchemaFromRows` and has a live half
+that **stands up a stub Metabase** so the whole arc is real: sources answer →
+the store is written → Metabase dies → the wizard still builds, on remembered
+columns. `SKIP_SOURCE=1` drops the source assertions, and four of five mutations
+fail on the live half alone — nothing remembered, the store never read, an empty
+result written to the store, and the 30-minute cache restored (which fails with
+`rounds 1 → 1`, i.e. Try Again not retrying, exactly as Dan experienced it).
+
+Two spec traps re-encountered: `vm.runInNewContext` gives the lifted code its own
+`Array`/`Object` prototypes so `deepStrictEqual` fails on correct values (use
+`runInThisContext` with deps as IIFE parameters), and an assertion that the old
+wording is gone finds it **in the fix's own comment** — strip comments first, as
+`checkin-status.spec.js` does.
+
 ### The report write-up: the AI writes the prose, the PAGE writes the numbers
 
 A generated report was a title and a stack of charts. It now opens with a

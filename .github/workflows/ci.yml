@@ -134,6 +134,9 @@ jobs:
       - name: Tab chips (a chip never lands on a tab the page will not honour)
         run: node scripts/report-tabs.spec.js
 
+      - name: Wizard schemas (a failed probe is not "this org has no data")
+        run: node scripts/wizard-schema-resilience.spec.js
+
       - name: ePACT export (her five columns, her DISTINCT, cancellations out; 14-day default)
         run: node scripts/roster-epact.spec.js
 

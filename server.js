@@ -7572,41 +7572,182 @@ const WIZARD_MODEL = process.env.WIZARD_MODEL || "claude-sonnet-4-6";
 const WIZARD_MAX_TOKENS = 4000;
 const _wizardSchemaCache = new Map();
 const WIZARD_SCHEMA_TTL = 30 * 60 * 1000;
+// A run that produced NOTHING is remembered for seconds, not half an hour: it is
+// a failure to answer, not a fact about the org, and the Try Again button has to
+// be able to retry. Long enough to stop a double-click stampeding 12 cards.
+const WIZARD_SCHEMA_FAIL_TTL = Number(process.env.WIZARD_SCHEMA_FAIL_TTL_MS || 20 * 1000);
+// Cards in this repo have been measured between 8s and past 90s (see the health
+// check notes), so 15s was well inside the range where a healthy card loses.
+const WIZARD_PROBE_TIMEOUT_MS = Number(process.env.WIZARD_PROBE_TIMEOUT_MS || 20000);
+// A few at a time, under a total budget. Twelve at once is a stampede the wizard
+// then loses to; one at a time is a minute of somebody watching a spinner.
+const WIZARD_PROBE_CONCURRENCY = Number(process.env.WIZARD_PROBE_CONCURRENCY || 3);
+const WIZARD_SCHEMA_BUDGET_MS = Number(process.env.WIZARD_SCHEMA_BUDGET_MS || 35000);
+
+// The freshest warm rows for an org+report under ANY parameter set. Used only
+// for schema derivation, where the date window is irrelevant — never to answer a
+// report, which must serve the window it was asked for (see getCachedEntry's
+// deliberately narrow base-key fallback).
+function warmestRowsFor(orgSlug, reportType) {
+  const prefix = `${orgSlug}:${reportType}:`;
+  let best = null;
+  for (const [key, entry] of dataCache) {
+    if (!key.startsWith(prefix) || !entry) continue;
+    const ttl = reportTtlMs(orgSlug, entry.rt || reportType, entry.hist);
+    if (Date.now() - entry.ts > ttl) continue;
+    const rows = entry.data && Array.isArray(entry.data.rows) ? entry.data.rows
+               : (Array.isArray(entry.data) ? entry.data : null);
+    if (!rows || !rows.length) continue;
+    if (!best || entry.ts > best.ts) best = { ts: entry.ts, rows };
+  }
+  return best ? best.rows : null;
+}
+
+// Derive a source's schema from rows. Only the field names, their types and a
+// few sample values ever reach the model — never the data itself.
+function wizardSchemaFromRows(rows) {
+  const sample = rows.slice(0, 5);
+  const fields = Object.keys(sample[0]).map(k => {
+    const vals = sample.map(r => r[k]).filter(v => v != null);
+    const isNum = vals.length > 0 && vals.every(v => typeof v === 'number' || /^-?[d,.]+%?$/.test(String(v).replace(/[$,]/g, '')));
+    const unique = [...new Set(vals.map(v => String(v).slice(0, 40)))].slice(0, 3);
+    return { name: k, type: isNum ? 'number' : 'string', samples: unique };
+  });
+  return { fields, rowCount: rows.length };
+}
+
+// LAST-KNOWN-GOOD SCHEMAS, on the volume.
+//
+// A card's COLUMN SET changes rarely — rarely enough that this repo has a
+// FEED_VERSION constant and a schema-drift alert for the event. The rows behind
+// it are slow and sometimes unavailable; the column names are neither. So the
+// wizard remembers the last schema each source successfully reported and falls
+// back to it, which is the difference between "the wizard is down because
+// Metabase is busy" and "the wizard works".
+//
+// Measured 2026-08-28 against production, which is the argument for this: the
+// probe pulls the WHOLE card to read five rows (the users card returned 104,340
+// rows in 52s), so a full cold sweep is a minute of somebody's afternoon even
+// when nothing is wrong.
+const WIZARD_SCHEMA_FILE = path.join(DATA_DIR, "wizard-schemas.json");
+let _wizardSchemaStore = null;
+function readWizardSchemaStore() {
+  if (!_wizardSchemaStore) _wizardSchemaStore = readJSON(WIZARD_SCHEMA_FILE, {}) || {};
+  return _wizardSchemaStore;
+}
+function rememberWizardSchemas(orgSlug, schemas) {
+  if (!Object.keys(schemas).length) return;
+  const all = readWizardSchemaStore();
+  const org = all[orgSlug] || (all[orgSlug] = {});
+  for (const [rt, sch] of Object.entries(schemas)) {
+    org[rt] = { fields: sch.fields, rowCount: sch.rowCount, ts: Date.now() };
+  }
+  _wizardSchemaStore = all;
+  try { writeJSON(WIZARD_SCHEMA_FILE, all); } catch (e) { console.warn("[wizard] schema store write failed:", e.message); }
+}
 
 async function fetchWizardSchemas(orgSlug, orgConfig) {
   const hit = _wizardSchemaCache.get(orgSlug);
-  if (hit && Date.now() - hit.ts < WIZARD_SCHEMA_TTL) return hit.schemas;
+  if (hit && Date.now() - hit.ts < hit.ttl) return hit.schemas;
   const reportTypes = REPORT_TYPES.filter(r =>
     !NON_ADDABLE_REPORTS.has(r) && (orgConfig[r]?.mbUuid || SHARED_UUIDS[r])
   );
   const schemas = {};
-  await Promise.allSettled(reportTypes.map(async (rt) => {
-    try {
-      const useShared = rt === "gl" ? (!orgConfig.gl?.mbUuid && !!SHARED_UUIDS.gl) : !!SHARED_UUIDS[rt];
-      const mbUuid = useShared ? SHARED_UUIDS[rt] : (orgConfig[rt]?.mbUuid || SHARED_UUIDS[rt]);
-      if (!mbUuid) return;
-      const orgId = useShared ? orgConfig.orgId : null;
-      const params = buildMetabaseParams({}, rt, orgId);
-      const paramStr = params.length > 0 ? `?parameters=${encodeURIComponent(JSON.stringify(params))}` : "";
-      const url = `${METABASE_URL}/api/public/card/${mbUuid}/query/json${paramStr}`;
-      const resp = await fetch(url, { signal: AbortSignal.timeout(15000) });
-      if (!resp.ok) return;
-      const rows = await resp.json();
-      if (!Array.isArray(rows) || !rows.length) return;
-      const sample = rows.slice(0, 5);
-      const fields = Object.keys(sample[0]).map(k => {
-        const vals = sample.map(r => r[k]).filter(v => v != null);
-        const isNum = vals.length > 0 && vals.every(v => typeof v === 'number' || /^-?[d,.]+%?$/.test(String(v).replace(/[$,]/g, '')));
-        const unique = [...new Set(vals.map(v => String(v).slice(0, 40)))].slice(0, 3);
-        return { name: k, type: isNum ? 'number' : 'string', samples: unique };
-      });
-      schemas[rt] = { fields, rowCount: rows.length };
-      console.log(`[wizard] schema ${orgSlug}/${rt}: ${fields.length} fields, ${rows.length} rows`);
-    } catch (e) { console.error(`[wizard] schema ${orgSlug}/${rt}: ${e.message}`); }
+  const toProbe = [];
+  let configured = 0, fromCache = 0, fromStore = 0, fromProbe = 0;
+
+  for (const rt of reportTypes) {
+    const useShared = rt === "gl" ? (!orgConfig.gl?.mbUuid && !!SHARED_UUIDS.gl) : !!SHARED_UUIDS[rt];
+    const mbUuid = useShared ? SHARED_UUIDS[rt] : (orgConfig[rt]?.mbUuid || SHARED_UUIDS[rt]);
+    if (!mbUuid) continue;
+    configured++;
+
+    // 1. THE APP'S OWN WARM DATA — free, and current. A schema is field names,
+    //    types and five sample values, so ANY warm window for this card answers
+    //    it, and an org that opened a report today already has one.
+    //
+    //    ANY window, deliberately: the columns do not depend on the dates, and a
+    //    lookup built from one guessed parameter set would miss nearly always —
+    //    the data route keys on the window the reader asked for and pre-warm
+    //    keys on this month. That is the pre-warm key bug, and it fails just as
+    //    silently, because a fallback that never hits looks like one that is not
+    //    there.
+    const warm = warmestRowsFor(orgSlug, rt);
+    if (warm && warm.length) {
+      schemas[rt] = wizardSchemaFromRows(warm);
+      fromCache++;
+      continue;
+    }
+    toProbe.push({ rt, mbUuid, useShared });
+  }
+
+  // 2. PROBE what is left, a few at a time and under a TOTAL deadline. All
+  //    twelve at once made the wizard its own load source — measured, six of
+  //    twelve timed out and the survivors sat at 12-14.4s — and one at a time
+  //    put a cold sweep at over a minute of somebody waiting on a spinner. The
+  //    deadline is what keeps this bounded: whatever has answered when it
+  //    expires is what the report is built from, and PARTIAL IS FINE. The wizard
+  //    needs one source, not twelve.
+  const deadline = Date.now() + WIZARD_SCHEMA_BUDGET_MS;
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(WIZARD_PROBE_CONCURRENCY, toProbe.length) }, async () => {
+    while (next < toProbe.length) {
+      const { rt, mbUuid, useShared } = toProbe[next++];
+      const left = deadline - Date.now();
+      if (left <= 0) { console.log(`[wizard] schema ${orgSlug}/${rt}: skipped, budget spent`); continue; }
+      try {
+        const orgId = useShared ? orgConfig.orgId : null;
+        const params = buildMetabaseParams({}, rt, orgId);
+        const paramStr = params.length > 0 ? `?parameters=${encodeURIComponent(JSON.stringify(params))}` : "";
+        const url = `${METABASE_URL}/api/public/card/${mbUuid}/query/json${paramStr}`;
+        const resp = await fetch(url, { signal: AbortSignal.timeout(Math.min(WIZARD_PROBE_TIMEOUT_MS, left)) });
+        if (!resp.ok) { console.error(`[wizard] schema ${orgSlug}/${rt}: HTTP ${resp.status}`); continue; }
+        const rows = await resp.json();
+        if (!Array.isArray(rows) || !rows.length) continue;
+        schemas[rt] = wizardSchemaFromRows(rows);
+        fromProbe++;
+        console.log(`[wizard] schema ${orgSlug}/${rt}: ${schemas[rt].fields.length} fields, ${rows.length} rows`);
+      } catch (e) { console.error(`[wizard] schema ${orgSlug}/${rt}: ${e.message}`); }
+    }
   }));
+
+  // Anything fresh is worth remembering, before the fallback fills the gaps —
+  // or a stored schema would be re-stored as though it had just been measured.
+  rememberWizardSchemas(orgSlug, schemas);
+
+  // 3. LAST KNOWN GOOD for whatever still did not answer. A source that was
+  //    there yesterday has not stopped existing because a query timed out, and
+  //    the alternative is telling an org with twelve sources that it has none.
+  const storeForOrg = readWizardSchemaStore()[orgSlug] || {};
+  for (const { rt } of toProbe) {
+    if (schemas[rt]) continue;
+    const remembered = storeForOrg[rt];
+    if (remembered && Array.isArray(remembered.fields) && remembered.fields.length) {
+      schemas[rt] = { fields: remembered.fields, rowCount: remembered.rowCount, stale: true };
+      fromStore++;
+    }
+  }
+
   if (_wizardSchemaCache.size > 50) { const oldest = _wizardSchemaCache.keys().next().value; _wizardSchemaCache.delete(oldest); }
-  _wizardSchemaCache.set(orgSlug, { ts: Date.now(), schemas });
+  const answered = Object.keys(schemas).length;
+  // A FAILED PROBE IS NOT AN EMPTY ANSWER, AND MUST NOT BE CACHED AS ONE. The
+  // old code cached whatever it got for 30 minutes, {} included — so one slow
+  // window poisoned the org for half an hour and the Try Again button on screen
+  // re-read the poisoned entry, which is why it could not work. That is the
+  // campmap's POS_OK bug in the one place where the recovery button is visible
+  // and inert.
+  const ttl = answered > 0 ? WIZARD_SCHEMA_TTL : WIZARD_SCHEMA_FAIL_TTL;
+  _wizardSchemaCache.set(orgSlug, { ts: Date.now(), ttl, schemas, configured, answered });
+  console.log(`[wizard] schemas ${orgSlug}: ${answered}/${configured} sources `
+    + `(${fromCache} warm, ${fromProbe} probed, ${fromStore} last-known-good), ttl ${Math.round(ttl / 1000)}s`);
   return schemas;
+}
+
+// What the caller needs to tell a person apart: an org with no cards at all is a
+// configuration fact, and one whose cards did not answer is a "try again".
+function wizardSourceState(orgSlug) {
+  const hit = _wizardSchemaCache.get(orgSlug);
+  return hit ? { configured: hit.configured || 0, answered: hit.answered || 0 } : { configured: 0, answered: 0 };
 }
 
 // Source-level descriptions to help the AI pick the right data source
@@ -7815,7 +7956,16 @@ app.post("/:org/report-wizard/api/generate", async (req, res) => {
     const schemas = await fetchWizardSchemas(slug, org);
     const sourceCount = Object.keys(schemas).length;
     if (!sourceCount) {
-      return res.status(500).json({ error: "No data sources available for this org" });
+      // "No data sources available for this org" was told to Dan by an org with
+      // twelve of them. Naming which of the two states this is decides whether
+      // Try Again is worth pressing.
+      const st = wizardSourceState(slug);
+      return res.status(st.configured > 0 ? 503 : 500).json({
+        error: st.configured > 0
+          ? `None of this org's ${st.configured} data sources answered in time. They are usually just slow — try again in a moment.`
+          : "No data sources are configured for this org",
+        retryable: st.configured > 0,
+      });
     }
 
     const schemaText = Object.entries(schemas).map(([rt, s]) => {
