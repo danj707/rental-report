@@ -1294,6 +1294,8 @@ const CASES = [
     needs: ".card-tab[href*=\"/programs?\"][href*=\"tab=fillrate\"]" },
   { name: "org landing · community intel chips", path: "/{org}",
     needs: ".card-tab[href*=\"/users?\"][href*=\"tab=strategy\"]" },
+  { name: "org landing · fast track chips", path: "/{org}",
+    needs: ".card-tab[href*=\"/fasttrack?\"][href*=\"tab=conversions\"]" },
 
   // AND THE LINKS HAVE TO LAND. A chip is a link, and both pages were unable to
   // honour one: programs read ?tab= into initial state and then fetchData()
@@ -1334,6 +1336,61 @@ const CASES = [
         { timeout: 45000 });
     } },
 
+  /* Fast Track's chips. Keyed on WHICH tab is LIT, not on "a tab strip
+     rendered" — landing on the wrong tab looks identical otherwise, and that is
+     exactly what the page did before it read ?tab=. `.tab-btn.active` is the
+     Fast Track strip's own class. */
+  { name: "fasttrack · deep link lands on the tab", path: "/{org}/fasttrack?tab=conversions",
+    needs: ".tab-btn.active", act: async page => {
+      await page.waitForFunction(
+        () => /Conversions/.test(document.querySelector(".tab-btn.active")?.textContent || ""),
+        { timeout: 45000 });
+    } },
+  // The lazy feed too. Revenue/Conversions/Demographics all read the Community
+  // Intel feed and only switchTab asked for it, so a deep link used to land on a
+  // permanently empty body — "the tab is lit" is not enough.
+  // Asserted on the browser's own resource timeline rather than on rendered
+  // text: the harness answers /users/api/data from a generic stub, so the panel
+  // looks much the same either way — what actually regressed is that the
+  // REQUEST was never made. Reverting the mount effect leaves this entry absent.
+  { name: "fasttrack · deep link fetches its feed", path: "/{org}/fasttrack?tab=demographics",
+    needs: "body[data-ft-feed-ok=\"1\"]", act: async page => {
+      await page.waitForFunction(
+        () => /Demographics/.test(document.querySelector(".tab-btn.active")?.textContent || ""),
+        { timeout: 45000 });
+      await page.waitForFunction(
+        () => performance.getEntriesByType("resource")
+                .some(e => /\/users\/api\/data/.test(e.name)),
+        { timeout: 45000 });
+      await page.evaluate(() => document.body.setAttribute("data-ft-feed-ok", "1"));
+    } },
+  // An unknown tab must fall back rather than blanking the body.
+  { name: "fasttrack · unknown tab falls back", path: "/{org}/fasttrack?tab=nonsense",
+    needs: ".tab-btn.active", act: async page => {
+      await page.waitForFunction(
+        () => /Overview/.test(document.querySelector(".tab-btn.active")?.textContent || ""),
+        { timeout: 45000 });
+    } },
+  /* THE WRITE-BACK MUST NOT DESTROY THE LINK IT JUST HONOURED. The share-link
+     effect rebuilds the whole query string and runs on mount; before this change
+     it carried only token/season/search, so ?tab= survived being read and was
+     erased a millisecond later. Asserting the URL still says conversions after
+     the page settles is the only way to see that — the tab would be lit either
+     way on the very first paint. */
+  { name: "fasttrack · deep link survives the write-back", path: "/{org}/fasttrack?tab=conversions",
+    needs: "body[data-ft-url-ok=\"1\"]", act: async page => {
+      await page.waitForFunction(
+        () => /Conversions/.test(document.querySelector(".tab-btn.active")?.textContent || ""),
+        { timeout: 45000 });
+      await new Promise(r => setTimeout(r, 1200));   // let the effect run
+      await page.evaluate(() => {
+        const t = new URLSearchParams(window.location.search).get("tab");
+        const lit = document.querySelector(".tab-btn.active")?.textContent || "";
+        if (t === "conversions" && /Conversions/.test(lit)) {
+          document.body.setAttribute("data-ft-url-ok", "1");
+        }
+      });
+    } },
   { name: "campmap · stay search", path: "/{org}/campmap",                needs: "#departPick[max]" },
   // The Campsite Type filter. `option[value="tent-and-rv"]` is only there if the
   // LIVE site feed landed and buildTypeFilter() re-ran off its subType — the

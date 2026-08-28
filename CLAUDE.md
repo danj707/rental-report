@@ -618,6 +618,47 @@ Plus six `ci-check-render.js` cases keyed on **which tab is LIT**, not on "a tab
 strip rendered" — landing on the wrong tab looks identical otherwise. Three of
 them were seen to fail in a real browser on the real regression.
 
+### …and the Fast Track card (2026-08-28)
+
+Dan: *"add the subtab thing for the Fast Track report"*. Three more lines of
+`CARD_TABS` — Revenue, Conversions, Demographics — and **the page could not
+honour the link they produce either**, in the same two ways plus one new one.
+
+- **`fasttrack.html` did not read `?tab=` at all**, exactly like `users.html`.
+  `activeTab` started `'overview'`, so every chip would have landed on Overview.
+- **The share-link effect would have DESTROYED it.** That effect rebuilds the
+  whole query string from `token`/`season`/`search` and runs on mount, so a
+  `?tab=` that survived being read is erased a millisecond later. Third instance
+  of the `?ci_rows=` write-back bug. It now writes `tab` too — and so does
+  `recShareLink`, or Copy Link hands over a URL that drops the tab the sender was
+  looking at. **The spec had to be scoped to the EFFECT**: both builders carry
+  the identical line, so a bare `.test()` passed with either one alone — verified
+  by mutating each half separately.
+- **A deep-linked tab never asked for its feed.** All three chipped tabs render
+  from the Community Intel feed, fetched by `switchTab`, which a URL never calls.
+  `ensureTabData(t)` is now one function called from the click AND from mount.
+
+**Overview gets no chip** (the card already lands there) but **stays ACCEPTED**
+by `ftEffectiveTab` — a `?tab=overview` link someone was handed must not stop
+working because the card no longer emits one. Resolver at module scope, like the
+other two, so the spec can RUN it.
+
+**The chip icons are pinned to the page's own tab strip.** 💰 Revenue, 🔥
+Conversions, 👥 Demographics — I first gave Revenue a 🔥 too, which would have
+put two identical glyphs on one card and disagreed with the tab it opens.
+
+Guards: `report-tabs.spec.js` 69 → **98 assertions**, mutation-tested seven more
+ways (the page ignoring `?tab=`, the write-back dropping it from either builder,
+`activeTab` out of the effect deps, the mount fetch removed, a chip naming a tab
+the page rewrites, Overview given a chip, and a chip icon drifting from the
+page). Plus four `ci-check-render` cases, three of which were seen to fail in a
+browser on a real regression — and they discriminate: removing the mount fetch
+leaves *lands on the tab* and *survives the write-back* PASSING while only
+*fetches its feed* fails. That one asserts on the browser's own
+`performance.getEntriesByType("resource")` rather than on rendered text, because
+the harness answers `/users/api/data` from a generic stub and the panel looks
+much the same either way — what regressed is that the REQUEST was never made.
+
 ## Slack activity notifications — wire every new surface (IMPORTANT)
 
 Standing rule (see Working preferences): any new button, export, download, or
