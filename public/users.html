@@ -273,6 +273,28 @@ var isPrint = urlParams.get('_print') === '1';
 if (isPrint) document.body.classList.add('print-mode');
 function withToken(u) { return !token ? u : u + (u.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(token); }
 
+// ── Which tab a URL may land on ──────────────────────────────────────────────
+// This page did not read ?tab= at ALL, so the org dashboard's new tab chips
+// would have landed every one of them on Demographics — the link looks right and
+// goes somewhere else, which is the failure a fire-and-forget link never reports.
+//
+// ONLY THE UNCONDITIONAL TABS ARE ACCEPTED, and that restriction is the point:
+//  * `guests` renders only when `s.guestCount > 0`, and the feed has not
+//    answered at mount — so honouring ?tab=guests there would be asserting
+//    something we cannot know yet, and an org with no guests would get a blank
+//    body with no tab button to click back from. Same load-vs-empty rule as the
+//    permits column and the campmap's POS_OK.
+//  * the cross-report tabs (`products`) are gated on the org HAVING that report,
+//    so a chip for one would be a dead end for everyone else.
+// Anything else falls back to Demographics rather than rendering nothing.
+//
+// Module scope so `report-tabs.spec.js` can RUN it.
+var USERS_URL_TABS = ['demo', 'revenue', 'strategy'];
+
+function usersEffectiveTab(urlTab) {
+  return USERS_URL_TABS.indexOf(urlTab) >= 0 ? urlTab : 'demo';
+}
+
 if (typeof Chart !== 'undefined') { Chart.defaults.font.family = "'Inter',sans-serif"; Chart.defaults.font.size = 11; Chart.defaults.plugins.legend.display = false; }
 
 /* ═══ Shared UI ═══ */
@@ -1054,7 +1076,7 @@ function App() {
   var [error, setError] = useState(null);
   var [cacheInfo, setCacheInfo] = useState(null);
   var [refreshing, setRefreshing] = useState(false);
-  var [tab, setTab] = useState('demo');
+  var [tab, setTab] = useState(function(){ return usersEffectiveTab(urlParams.get('tab')); });
   var [mapMode, setMapMode] = useState('hh');
 
   // ── Cross-tab infrastructure ──────────────────────────────
@@ -1099,6 +1121,16 @@ function App() {
 
   function switchTab(t){
     setTab(t);setInsights(null);setInsightsError(null);
+    // Mirror the tab into the URL, so the address bar is shareable the way the
+    // dashboard's chips are — the same thing programs.html and facilities.html
+    // already do. replaceState rather than push: a tab is not a page, and Back
+    // should leave the report, not walk the tabs you looked at.
+    try {
+      var q = new URLSearchParams(window.location.search);
+      if (t === 'demo') q.delete('tab'); else q.set('tab', t);
+      var qs = q.toString();
+      window.history.replaceState(null, '', window.location.pathname + (qs ? '?' + qs : ''));
+    } catch (e) {}
     // Lazy-fetch cross-tab data
     var ct = CROSS_TABS.find(function(c){return c.key===t;});
     if (ct && orgReports.indexOf(ct.gate || ct.report) !== -1) fetchCrossTab(ct.key, ct.report);

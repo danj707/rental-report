@@ -131,6 +131,9 @@ jobs:
       - name: Report settings (one cache-key builder; a setting seeds and never overrides; TTL floor)
         run: node scripts/report-settings.spec.js
 
+      - name: Tab chips (a chip never lands on a tab the page will not honour)
+        run: node scripts/report-tabs.spec.js
+
       - name: ePACT export (her five columns, her DISTINCT, cancellations out; 14-day default)
         run: node scripts/roster-epact.spec.js
 

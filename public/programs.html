@@ -549,6 +549,37 @@ function getOrgAndBase() {
   return { orgSlug: parts[0] || 'unknown', basePath: `/${parts[0]}/${parts[1]}` };
 }
 
+// ── Which tab a URL may land on ──────────────────────────────────────────────
+// The org dashboard's card now links straight to a tab, so ?tab= is an entry
+// point rather than a nicety. Two rules, and both exist because a wrong value is
+// a BLANK BODY under the tab strip rather than an error:
+//
+//  * A tab this org does not have (Participants and Retention are gated) and any
+//    unknown string fall back to Summary. `{tab === 'participants' && ...}`
+//    renders NOTHING when the tab is off, so an unrecognised value is not a
+//    cosmetic miss.
+//  * `detail` is never accepted without a section_id — it is a drill-down into
+//    one section, and there is nothing to drill into without one.
+//
+// Module scope, not inside the component, so `report-tabs.spec.js` can RUN it
+// rather than regex over it (the nightStateFrom lesson).
+var PROG_URL_TABS = ['summary', 'revenue', 'participants', 'retention', 'fillrate', 'checkins'];
+
+function progTabAvailable(t, cfg) {
+  var c = cfg || {};
+  if (t === 'participants') return !!c.participantsTab;
+  if (t === 'retention')    return !!c.retentionTab;
+  return PROG_URL_TABS.indexOf(t) >= 0;
+}
+
+function progEffectiveTab(urlTab, hasProgram, hasSectionId, cfg) {
+  // ?program= is a deep link into one program's revenue and predates the chips.
+  if (hasProgram) return 'revenue';
+  if (urlTab === 'detail') return hasSectionId ? 'detail' : 'summary';
+  if (urlTab && progTabAvailable(urlTab, cfg)) return urlTab;
+  return 'summary';
+}
+
 function getParams() {
   const p = new URLSearchParams(window.location.search);
   return { start_date: p.get('start_date'), end_date: p.get('end_date'), _print: p.get('_print'), tab: p.get('tab'), section_id: p.get('section_id'), program: p.get('program') };
@@ -1127,7 +1158,11 @@ function App() {
   const [chartHover, setChartHover] = useState(null);
 
   // ── Participants tab ──────────────────────────────────────────────
-  const [tab, setTab] = useState(() => { var qs = new URLSearchParams(window.location.search); return qs.get('program') ? 'revenue' : (qs.get('tab') || 'summary'); });
+  const [tab, setTab] = useState(() => {
+    var qs = new URLSearchParams(window.location.search);
+    return progEffectiveTab(qs.get('tab'), !!qs.get('program'), !!qs.get('section_id'),
+                            (window.ORG_CONFIG || {}));
+  });
   // demoRows/demoLoading/demoError moved above activityInfo (Babel var-hoisting fix)
   const [demoOpen, setDemoOpen] = useState(() => new Set());
 
@@ -1197,11 +1232,20 @@ function App() {
       .finally(() => { setCiLoading(false); });
   }, [orgSlug]);
 
-  const switchTab = useCallback((t) => {
-    setTab(t);
+  // Kicking a tab's lazy feed is now needed from TWO places — a click, and a
+  // deep link that lands on the tab without one — so it is one function. Two
+  // copies would drift the first time a tab gained a feed, and the failure is
+  // silent: Participants with demoRows null and demoLoading false renders
+  // NOTHING, no loader and no empty state.
+  const ensureTabData = useCallback((t) => {
     if ((t === 'participants' || t === 'retention' || t === 'fillrate') && !demoRows && !demoLoading) fetchDemoData();
     if (t === 'retention' && !retRows && !retLoading) fetchRetentionData();
   }, [demoRows, demoLoading, fetchDemoData, retRows, retLoading, fetchRetentionData]);
+
+  const switchTab = useCallback((t) => {
+    setTab(t);
+    ensureTabData(t);
+  }, [ensureTabData]);
 
   const openSectionDetail = useCallback((sectionId, sectionName) => {
     setDetailSection(sectionName);
@@ -1492,9 +1536,18 @@ function App() {
     }
   }, []);
 
-  const fetchData = useCallback((sd, ed) => {
+  const fetchData = useCallback((sd, ed, initial) => {
     setLoading(true); setError(null);
-    setDetailSection(null); setDetailSectionId(null); setDetailRows(null); setDetailError(null); var pp = new URLSearchParams(window.location.search).get('program'); setTab(pp ? 'revenue' : 'summary'); document.body.removeAttribute('data-hide-widgets');
+    setDetailSection(null); setDetailSectionId(null); setDetailRows(null); setDetailError(null);
+    // RE-RUNNING a report returns you to Summary; the FIRST load must not, or it
+    // destroys the tab the URL asked for one millisecond after it was read. That
+    // is what made ?tab= inert on this page — the same shape as the ?ci_rows=
+    // deep link the check-ins write-back used to wipe.
+    if (!initial) {
+      var pp = new URLSearchParams(window.location.search).get('program');
+      setTab(pp ? 'revenue' : 'summary');
+    }
+    document.body.removeAttribute('data-hide-widgets');
     setInsights(null); setInsightsMeta(null); setInsightsError(null);
     setCiRows(null); fetchCheckins(sd, ed);
     const qs = new URLSearchParams();
@@ -1523,7 +1576,12 @@ function App() {
       .finally(() => setLoading(false));
   }, [basePath, fetchCheckins]);
 
-  useEffect(() => { fetchData(startDate, endDate); }, []);
+  useEffect(() => {
+    fetchData(startDate, endDate, true);
+    // A deep-linked tab has never been through switchTab, so nothing has asked
+    // for its feed. `tab` is the resolved value here, not the raw URL string.
+    ensureTabData(tab);
+  }, []);
 
   // ── Prior-period fetch: same report, immediately preceding equal-length
   // window. Fires AFTER the main load completes (keyed on loadedStart/End),

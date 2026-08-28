@@ -1257,6 +1257,53 @@ const CASES = [
     needs: ".card-tab[href*=\"tab=fields\"]" },
   { name: "org landing · checkins chip", path: "/{org}",
     needs: ".card-tab[href*=\"tab=checkins\"]" },
+  // Programs and Community Intel chips (Dan: "roll that out for the programs
+  // report and the community intelligence report cards too"). Keyed on the HREF,
+  // so a chip pointing at the wrong tab fails rather than "a chip rendered".
+  { name: "org landing · programs chips", path: "/{org}",
+    needs: ".card-tab[href*=\"/programs?\"][href*=\"tab=fillrate\"]" },
+  { name: "org landing · community intel chips", path: "/{org}",
+    needs: ".card-tab[href*=\"/users?\"][href*=\"tab=strategy\"]" },
+
+  // AND THE LINKS HAVE TO LAND. A chip is a link, and both pages were unable to
+  // honour one: programs read ?tab= into initial state and then fetchData()
+  // destroyed it on mount, and users.html never read it at all. Keyed on the
+  // ACTIVE tab, because the page renders a tab strip either way — landing on the
+  // wrong tab looks identical to landing on the right one unless you check which
+  // is lit.
+  { name: "programs · deep link lands on the tab", path: "/{org}/programs?tab=fillrate",
+    needs: ".tab.active", act: async page => {
+      await page.waitForFunction(
+        () => /Fill Rate/.test(document.querySelector(".tab.active")?.textContent || ""),
+        { timeout: 45000 });
+    } },
+  // The lazy feed too: Participants with demoRows null and demoLoading false
+  // renders NOTHING, so "the tab is active" is not enough — something from the
+  // feed has to appear.
+  { name: "programs · deep link fetches its feed", path: "/{org}/programs?tab=participants",
+    needs: ".summary-cards .card-value" },
+  // An unknown tab must not leave a blank body under the strip.
+  { name: "programs · unknown tab falls back", path: "/{org}/programs?tab=nonsense",
+    needs: ".tab.active", act: async page => {
+      await page.waitForFunction(
+        () => /Summary/.test(document.querySelector(".tab.active")?.textContent || ""),
+        { timeout: 45000 });
+    } },
+  { name: "users · deep link lands on the tab", path: "/{org}/users?tab=strategy",
+    needs: ".tab.active", act: async page => {
+      await page.waitForFunction(
+        () => /Strategy/.test(document.querySelector(".tab.active")?.textContent || ""),
+        { timeout: 45000 });
+    } },
+  // Guests renders only when the feed has guests, and the feed has not answered
+  // at mount — so the URL must not be able to strand a reader on a blank tab.
+  { name: "users · guests is not a URL destination", path: "/{org}/users?tab=guests",
+    needs: ".tab.active", act: async page => {
+      await page.waitForFunction(
+        () => /Demographics/.test(document.querySelector(".tab.active")?.textContent || ""),
+        { timeout: 45000 });
+    } },
+
   { name: "campmap · stay search", path: "/{org}/campmap",                needs: "#departPick[max]" },
   // The Campsite Type filter. `option[value="tent-and-rv"]` is only there if the
   // LIVE site feed landed and buildTypeFilter() re-ran off its subType — the

@@ -455,8 +455,12 @@
   /* Reports whose real content lives in tabs. Without these the Fields and
      Outdoor Events views are two clicks deep behind a card that says
      "Facilities", which is how a whole vertical stays invisible to the people
-     it was built for. Every tab renders for every org (each has its own empty
-     state), so a chip is never a dead end. */
+     it was built for.
+     A CHIP MUST NEVER BE A DEAD END, and that governs which tabs are listed:
+     only ones that render for every org, each with its own empty state. Tabs
+     gated on the org having a report (Community Intel's Products) or on the feed
+     having rows (its Guests) are left off, and both pages resolve an
+     unrecognised ?tab= back to their default rather than rendering nothing. */
   var CARD_TABS = {
     facilities: [
       { tab: 'camping',  icon: '\u{1F3D5}\u{FE0F}', label: 'Camping' },
@@ -470,6 +474,25 @@
     memberships: [
       { tab: 'checkins',  icon: '\u2705',   label: 'Check-Ins' },
       { tab: 'retention', icon: '\u{1F4C8}', label: 'Retention' },
+    ],
+    /* Programs. Summary is the card itself, so it gets no chip — a chip that
+       lands where the card already lands is noise. `detail` is deliberately
+       absent: it is a drill-down into one section and there is nothing to drill
+       into from here. */
+    programs: [
+      { tab: 'revenue',      icon: '\u{1F4B0}', label: 'Revenue' },
+      { tab: 'participants', icon: '\u{1F9D1}', label: 'Participants' },
+      { tab: 'retention',    icon: '\u{1F4C8}', label: 'Retention' },
+      { tab: 'fillrate',     icon: '\u{1F4CA}', label: 'Fill Rate' },
+      { tab: 'checkins',     icon: '\u2705',   label: 'Check-Ins' },
+    ],
+    /* Community Intel. Only the three tabs every org has: `guests` appears only
+       when the org HAS guests and `products` only when it has that report, so a
+       chip for either would be a dead end — and the page falls back to
+       Demographics rather than rendering a blank body. */
+    users: [
+      { tab: 'revenue',  icon: '\u{1F4B0}', label: 'Revenue' },
+      { tab: 'strategy', icon: '\u{1F3AF}', label: 'Strategy' },
     ],
   };
 
