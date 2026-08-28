@@ -1253,6 +1253,16 @@ const CASES = [
   // The hub's verticals are two clicks deep behind a card that just says
   // "Facilities". The chips are how Fields and Outdoor Events are findable at
   // all from the org landing page.
+  // THE WIZARD IS DISABLED FOR EVERY ORG (Dan: "they should not be able to see or
+  // click it"). Asserted as ABSENT FROM THE DOM, because org.html builds its
+  // cards client-side — the card BUILDER is in the served JS on every load, so
+  // grepping the HTML proves nothing. Only a browser can say the card is not
+  // there. Note this case runs against a server that ENABLES the wizard for its
+  // routes (see WIZARD_ENABLED_ORGS above), so it is the RETIRED_REPORTS half
+  // being proved here, which is the half a reader actually sees.
+  { name: "org landing · no wizard card", path: "/{org}",
+    needs: ".card", absent: 'a.card[href*="/report-wizard"]' },
+
   { name: "org landing · hub tab chips", path: "/{org}",
     needs: ".card-tab[href*=\"tab=fields\"]" },
   { name: "org landing · checkins chip", path: "/{org}",
@@ -1540,7 +1550,20 @@ try {
 const child = spawn(process.execPath, [path.join(__dirname, "..", "server.js")], {
   env: { ...process.env, PORT: String(PORT), DATA_DIR: dataDir,
          METABASE_URL: "http://127.0.0.1:9", RESEND_API_KEY: "", SLACK_WEBHOOK_URL: "",
-         DASHBOARD_PASSWORD: RENDER_ADMIN_PW },
+         DASHBOARD_PASSWORD: RENDER_ADMIN_PW,
+         // The Report Wizard is DISABLED for every org in production. Its six
+         // render cases still have to run — a switched-off feature whose guards
+         // stop running comes back broken — so this server enables it. `org` is
+         // resolved after the spawn, hence the slug list read from server.js.
+         WIZARD_ENABLED_ORGS: (() => {
+           try {
+             const src = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
+             const i = src.indexOf("const ORGS = {");
+             const j = src.indexOf("\nconst REPORT_TYPES", i);
+             return Object.keys(require("vm").runInNewContext(
+               "(" + src.slice(src.indexOf("{", i), j).trim().replace(/;$/, "") + ")")).join(",");
+           } catch (_) { return ""; }
+         })() },
   stdio: ["ignore", "pipe", "pipe"],
 });
 let out = "";

@@ -2034,7 +2034,33 @@ const DEFAULT_HIDDEN_REPORTS = new Set([]);
 // schemas. Nothing was deleted when it was retired — the page, the generate
 // route and the feedback route all stayed — so bringing it back is removing it
 // from this Set, not a rebuild.
-const RETIRED_REPORTS = new Set(["court-utilization", "chat", "campmap"]);
+const RETIRED_REPORTS = new Set(["court-utilization", "chat", "campmap", "report-wizard"]);
+
+// ── Report Wizard: OFF for every org (Dan, 2026-08-28) ───────────────────────
+// "we need to disable it for all orgs... they should not be able to see or click
+// it." Both halves of that need a different gate, and either alone is a
+// half-measure:
+//
+//   * SEE — RETIRED_REPORTS above. That removes the card from the org dashboard
+//     and from the admin portal.
+//   * CLICK — WIZARD_ENABLED_ORGS below. The comment on RETIRED_REPORTS says it
+//     controls whether a report is SURFACED, not whether it works: campmap
+//     served ~24 visitors a month through direct links the whole time it was
+//     listed there. A hidden card is not a disabled feature, and every wizard
+//     link already sent or bookmarked still resolves.
+//
+// Empty set means off everywhere. Same shape as MUNIS_EXPORT_ORGS, which is how
+// the Tyler export was parked: setting WIZARD_ENABLED_ORGS=slug,slug turns it
+// back on for those orgs alone, without un-hiding the card for anyone.
+//
+// NOTHING IS DELETED. public/report-wizard.html, the generate/feedback/log
+// routes and the wizard specs all stay, so re-enabling is configuration rather
+// than a rebuild — exactly what made un-retiring this in August a one-line
+// change. Why it is off, and the measurements behind that, are in CLAUDE.md.
+const WIZARD_ENABLED_ORGS = new Set(
+  (process.env.WIZARD_ENABLED_ORGS || "").split(",").map(x => x.trim()).filter(Boolean)
+);
+function wizardEnabled(slug) { return WIZARD_ENABLED_ORGS.has(slug); }
 
 // ── Dynamic orgs (added via dashboard UI) ────────────────────────────
 // Loaded at startup and merged into ORGS; also updated at runtime.
@@ -6376,6 +6402,7 @@ app.post("/:org/report-wizard/api/log", (req, res) => {
   // exemption list grows.
   const qToken = req.query.token || req.headers["x-token"];
   if (org.token && qToken !== org.token) return res.status(403).json({ ok: false, error: "Invalid token" });
+  if (!wizardEnabled(slug)) return refuse404(res, { ok: false, error: "The Report Wizard is not enabled for this organization." });
   const event = req.query.event;
   const ALLOWED = ["wizard-save"];
   if (!ALLOWED.includes(event)) return res.status(400).json({ ok: false, error: "Unknown event" });
@@ -7801,6 +7828,7 @@ app.post("/:org/report-wizard/api/generate", async (req, res) => {
 
   const qToken = req.query.token || req.headers["x-token"];
   if (org.token && qToken !== org.token) return res.status(403).json({ error: "Invalid token" });
+  if (!wizardEnabled(slug)) return refuse404(res, { error: "The Report Wizard is not enabled for this organization." });
 
   if (!anthropic) {
     return res.status(503).json({ error: "AI not configured" });
@@ -7943,6 +7971,7 @@ app.post("/:org/report-wizard/api/feedback", (req, res) => {
   if (!org) return res.status(404).json({ error: "Unknown org" });
   const qToken = req.query.token || req.headers["x-token"];
   if (org.token && qToken !== org.token) return res.status(403).json({ error: "Invalid token" });
+  if (!wizardEnabled(slug)) return refuse404(res, { ok: false, error: "The Report Wizard is not enabled for this organization." });
   const { vote, prompt, title, widgetCount, traceId, comment } = req.body || {};
   // The comment is the whole reason a thumbs-down is worth reading, so it travels
   // with the event — the Slack line prints it, same as the AI-insights votes do.
@@ -12627,6 +12656,15 @@ app.get("/:org/report-wizard", (req, res) => {
   const slug = req.params.org;
   const org  = ORGS[slug];
   if (!org) return res.status(404).send("Unknown org");
+  // MARKED DELIBERATE so switching this off does not page anyone. noteDeadLink()
+  // alerts on "a 404 that arrived with a valid-looking token", which is exactly
+  // the shape of every wizard link already bookmarked or sent in an email — so
+  // without this marker, disabling the feature would post one DEAD LINK alert
+  // per stale link, naming a path we turned off on purpose.
+  if (!wizardEnabled(slug)) {
+    res.locals.deliberate404 = true;
+    return res.status(404).send("The Report Wizard is not enabled for this organization.");
+  }
   logEvent(slug, "report-wizard", "view", req);
   const available = REPORT_TYPES.filter(r => !NON_ADDABLE_REPORTS.has(r) && (org[r]?.mbUuid || SHARED_UUIDS[r]));
   const slugTitle = slug.charAt(0).toUpperCase() + slug.slice(1);
@@ -12968,7 +13006,10 @@ app.get("/:org", async (req, res, next) => {
     reports: available,
     token: org.token || "",
     chatVisible: !RETIRED_REPORTS.has("chat") && !orgHidden.has("chat"),
-    wizardVisible: !RETIRED_REPORTS.has("report-wizard") && !orgHidden.has("report-wizard"),
+    // Both gates: RETIRED_REPORTS decides whether the card is drawn, wizardEnabled
+    // whether the page behind it answers. Either alone leaves a card that 404s or
+    // a live page nobody can find.
+    wizardVisible: wizardEnabled(slug) && !RETIRED_REPORTS.has("report-wizard") && !orgHidden.has("report-wizard"),
     publicMode: getPublicMode(slug),
     emailEnabled: EMAIL_ENABLED_ORGS.has(slug),
     announcements: activeAnnouncementsForOrg(slug).map(a => a.smart
