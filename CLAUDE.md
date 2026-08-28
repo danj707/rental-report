@@ -164,6 +164,88 @@ exactly as authoritative.
   not be able to blank the report. Reports saved before this shipped have neither
   and render no panel at all rather than an empty decorated box.
 
+### The wizard only suggests what the org can actually generate (2026-08-28)
+
+Dan: *"if we ask org x about a set of data we don't have live for them, or they
+don't use something, like campgrounds, then that suggestion won't even
+appear… Douglas County should get campground and programs comments, Apex should
+get, well, everything, and Clarksville should get aquatics, memberships and
+product suggestions… the goal clearly is that if we surface a prompt, the report
+should generate."*
+
+A prompt now declares what it NEEDS and is only offered when the org has it.
+**Two kinds of requirement, because Dan's own examples span both:**
+
+- a **SOURCE** (`memberships`, `products`, `gl`) — exact, and already known:
+  `fetchWizardSchemas` says which sources answered.
+- a **VERTICAL** (campgrounds, aquatics, ice) — **not report types**. These are
+  `court.type` values *inside* the facility feed, so they can only be known by
+  looking at rows. Measured over a year of bookings:
+
+| org | verticals |
+|---|---|
+| `douglas-county-nv` | camping **573** · fields 302 · racket 51 · outdoor 49 |
+| `clarksville` | aquatics **359** · outdoor 307 · fields **8** |
+
+**Douglas has no pool and Clarksville has no campsite** — the distinction Dan
+drew is real and only visible in the data.
+
+- **The site-type refinement is MIRRORED from `facilities.html`, not
+  reinvented.** Rec types pools, rinks and gyms as `court` (only `court` sites
+  reach the consumer app's instant-book section), so a naive read files an ice
+  rink as a tennis court. `wizard-prompts.spec.js` lifts BOTH copies and requires
+  they agree on 18 cases — two surfaces disagreeing about what an org HAS is
+  worse than one not knowing.
+- **`WIZARD_VERTICAL_MIN_ROWS` (20): a handful of bookings is not a vertical.**
+  Clarksville has EIGHT field rows against 359 pool rows; a fields prompt there
+  would generate a nearly empty report, which is the same broken promise as a
+  missing source.
+- **A vertical prompt LEADS.** "Campsite bookings and occupancy" is why Douglas
+  opened the page; "Top 10 programs by revenue" is true of everyone and says
+  nothing about them.
+- **Chips and typed lines stay two different pools** (Dan's call, and the note
+  below): chips short and scannable, typed lines longer questions. The spec fails
+  if a string appears in both — they are on screen at the same time.
+- **Computed from cheap signals only** — warm cache, last-known-good schemas, and
+  the org's own facility rows — and injected into `ORG_CONFIG`. A page load that
+  fired twelve Metabase queries to decide which chips to draw would be a worse
+  bug than the one being fixed.
+- **A thin org is topped up from a `generic` set that needs NOTHING but
+  `programs`**, and the spec enforces that: it is the list a thin org falls back
+  to, so it has to be the safest on the page rather than the most interesting.
+
+**The page's own static floor was breaking the rule.** The old hardcoded lists
+named GL, city demographics, Fast Track and product sales — sources plenty of
+orgs do not have — so the last resort could itself surface a prompt that fails.
+Both fallbacks are programs-only now.
+
+**And the first chip on this page could never have worked.** "Program revenue and
+fill rate by gender" needs gender at program grain, which lives in
+`program-demographics` — excluded from the wizard by `NON_ADDABLE_REPORTS`, so
+the model is never shown a schema for it (this was already noted as an open item
+here). It is gone. Note the rule is narrower than "never mention gender":
+measured, the `users` card DOES carry a `Gender` column (32 columns, 17,154 rows
+at Clarksville), so a community gender breakdown is real — the spec requires any
+gender prompt to declare `users`.
+
+**A LIVE HALF EARNED ITS KEEP HERE.** Every unit assertion passed while all three
+orgs were served an **identical** list with no vertical in it: `wizardVerticalsFor`
+read the cache *after* the probe, and a schema probe derives columns and stores
+nothing, so the map was always empty. The verticals now come from the probe's own
+rows — the one moment a full facility row set is in hand — and the spec drives the
+real route for three orgs and fails if two orgs with different data get the same
+chips.
+
+Guards: `scripts/wizard-prompts.spec.js` (**220 assertions, in CI**), lifting and
+running the registry plus a live half that stands up a stub Metabase serving each
+org's measured site-type mix. Mutation-tested eight ways, all failing by name —
+the vertical requirement ignored, the refinement drifting from the page's, the
+floor removed (Clarksville's 8 field rows becoming a vertical), a generic top-up
+needing more than programs, a generic prompt leading instead of the org's own
+vertical, the page's floor naming a risky source, and both of the real bugs above
+(verticals read from the cache, verticals not persisted) which fail on the live
+half alone.
+
 ### The build screen types, then erases
 
 The prompt box writes an example, holds, erases and moves to the next. Dan's ask,

@@ -475,14 +475,39 @@
     // Deliberately NOT the quick-prompt chips below. The chips are there to be
     // clicked and the animation is there to be read, so reusing the same six
     // lines would make the panel repeat itself twice over.
-    var TYPING_PROMPTS = [
+    // ── The prompts this org can actually generate ──
+    // Injected by the server from what it KNOWS the org has: sources that have
+    // answered (warm cache or last-known-good) and the facility verticals in the
+    // org's own rows. Dan: "if we surface a prompt, the report should generate."
+    //
+    // Douglas books campsites and no pool; Clarksville books a pool and no
+    // campsite (measured — 573 campsite rows vs 359 pool rows, neither org has
+    // the other), so the two see different suggestions.
+    //
+    // The arrays below are the FLOOR, used when the server has no idea yet —
+    // a brand-new org, or a fresh volume. Every one of them needs only the
+    // programs card, which every org has, so the floor cannot itself surface a
+    // prompt that fails.
+    function orgPrompts(kind, fallback) {
+      try {
+        var p = (window.ORG_CONFIG || {}).prompts || {};
+        var list = p[kind];
+        return Array.isArray(list) && list.length ? list : fallback;
+      } catch (e) { return fallback; }
+    }
+
+    // PROGRAMS-ONLY, every one of them. The old list named GL, city
+    // demographics and facility rentals — sources plenty of orgs do not have
+    // answering — so the floor itself could surface a prompt that fails. It is
+    // the last resort, and it has to be the safest list on the page, not the
+    // most interesting one.
+    var TYPING_PROMPTS_FALLBACK = [
       'Compare this fall\u2019s enrollment against last year',
       'Which programs are filling up and which are half empty?',
-      'Revenue by GL account, with refunds broken out',
-      'Where are our registrations coming from \u2014 by city',
-      'Facility rentals by location, busiest days first',
-      'Which sections should we add another of?',
+      'Top programs by revenue, highest first',
+      'Which sections cancelled the most registrations?',
     ];
+    var TYPING_PROMPTS = orgPrompts('typed', TYPING_PROMPTS_FALLBACK);
 
     // Types a phrase, holds it, erases it, moves to the next. Returns
     // [text, caret]: the characters written so far (or '' before the first one),
@@ -546,14 +571,22 @@
     var STATIC_PLACEHOLDER = 'e.g. Show me program revenue by gender with fill rates and a breakdown table...';
 
     // ── Example prompts ──
-    var EXAMPLES = [
-      "Program revenue and fill rate by gender",
+    // Deliberately a DIFFERENT pool from the typed phrases (Dan): the chips are
+    // short and scannable, the typed lines are longer questions, and one set
+    // driving both makes the panel say the same thing twice.
+    // Also programs-only. Note what is GONE: "Program revenue and fill rate by
+    // gender" was the first chip on this page for months and could never have
+    // worked — gender lives in program-demographics, which fetchWizardSchemas
+    // excludes via NON_ADDABLE_REPORTS, so the model was never shown a source
+    // that has it. It worked in the system prompt's worked example only because
+    // that example hardcodes real field names.
+    var EXAMPLES_FALLBACK = [
       "Top 10 programs by revenue with enrollment details",
-      "Revenue breakdown by GL account with totals",
-      "Community demographics overview — age groups, gender split, revenue per capita",
-      "Fast Track conversion funnel — wishlists vs registrations by program",
-      "Monthly product sales breakdown with top sellers",
+      "Which programs are filling up and which are half empty",
+      "Program enrollment by section with capacity and fill rate",
+      "Cancellations by program, worst first",
     ];
+    var EXAMPLES = orgPrompts('chip', EXAMPLES_FALLBACK);
 
     // ── KPI Widget ──
     function KpiRow({ items, data }) {

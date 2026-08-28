@@ -7640,10 +7640,58 @@ function rememberWizardSchemas(orgSlug, schemas) {
   const all = readWizardSchemaStore();
   const org = all[orgSlug] || (all[orgSlug] = {});
   for (const [rt, sch] of Object.entries(schemas)) {
+    if (sch.stale) continue; // never re-store a remembered schema as a fresh one
     org[rt] = { fields: sch.fields, rowCount: sch.rowCount, ts: Date.now() };
   }
   _wizardSchemaStore = all;
   try { writeJSON(WIZARD_SCHEMA_FILE, all); } catch (e) { console.warn("[wizard] schema store write failed:", e.message); }
+}
+
+// Which facility verticals this org actually books, remembered on the volume for
+// the same reason the schemas are: it is read on PAGE LOAD to decide which
+// prompts to offer, and a page load must never wait on Metabase. Computed from
+// warm facility rows when there are any, and otherwise from what we last saw —
+// an org does not stop having a campground because the cache went cold.
+const _WIZ_VERT_KEY = "_verticals";
+function rememberWizardVerticals(orgSlug, verticals) {
+  if (!verticals || !Object.keys(verticals).length) return;
+  const all = readWizardSchemaStore();
+  const org = all[orgSlug] || (all[orgSlug] = {});
+  org[_WIZ_VERT_KEY] = { verticals, ts: Date.now() };
+  _wizardSchemaStore = all;
+  try { writeJSON(WIZARD_SCHEMA_FILE, all); } catch (e) { console.warn("[wizard] vertical store write failed:", e.message); }
+}
+
+// The cheap read, for the page route: warm rows if we have them, the store if we
+// do not, and {} if we have never seen this org's facility feed — in which case
+// no vertical prompt is offered, which is the honest answer rather than a guess.
+function wizardVerticalsFor(orgSlug) {
+  const warm = warmestRowsFor(orgSlug, "facility");
+  if (warm && warm.length) {
+    const v = wizardVerticalsFrom(warm);
+    rememberWizardVerticals(orgSlug, v);
+    return v;
+  }
+  const remembered = (readWizardSchemaStore()[orgSlug] || {})[_WIZ_VERT_KEY];
+  return (remembered && remembered.verticals) || {};
+}
+
+// Which sources this org is KNOWN to have — without probing anything. Warm cache
+// first, then last-known-good. The page route uses this: a page load that fired
+// twelve Metabase queries to decide which chips to draw would be a worse bug
+// than the one this is fixing.
+function wizardKnownSources(orgSlug, orgConfig) {
+  const out = {};
+  const store = readWizardSchemaStore()[orgSlug] || {};
+  for (const rt of REPORT_TYPES) {
+    if (NON_ADDABLE_REPORTS.has(rt)) continue;
+    if (!(orgConfig[rt]?.mbUuid || SHARED_UUIDS[rt])) continue;
+    const warm = warmestRowsFor(orgSlug, rt);
+    if (warm && warm.length) { out[rt] = true; continue; }
+    const remembered = store[rt];
+    if (remembered && Array.isArray(remembered.fields) && remembered.fields.length) out[rt] = true;
+  }
+  return out;
 }
 
 async function fetchWizardSchemas(orgSlug, orgConfig) {
@@ -7706,6 +7754,14 @@ async function fetchWizardSchemas(orgSlug, orgConfig) {
         if (!Array.isArray(rows) || !rows.length) continue;
         schemas[rt] = wizardSchemaFromRows(rows);
         fromProbe++;
+        // THE VERTICALS COME FROM THESE ROWS, not from a later cache lookup.
+        // The probe is the one moment a full facility row set is in hand — and
+        // it is never in dataCache, because a schema probe derives columns and
+        // stores nothing. Reading the cache here found nothing, so every org got
+        // an identical prompt list with no vertical in it: caught by driving the
+        // real page for three orgs, not by the unit assertions, which were all
+        // passing on an empty verticals map.
+        if (rt === "facility") rememberWizardVerticals(orgSlug, wizardVerticalsFrom(rows));
         console.log(`[wizard] schema ${orgSlug}/${rt}: ${schemas[rt].fields.length} fields, ${rows.length} rows`);
       } catch (e) { console.error(`[wizard] schema ${orgSlug}/${rt}: ${e.message}`); }
     }
@@ -7748,6 +7804,157 @@ async function fetchWizardSchemas(orgSlug, orgConfig) {
 function wizardSourceState(orgSlug) {
   const hit = _wizardSchemaCache.get(orgSlug);
   return hit ? { configured: hit.configured || 0, answered: hit.answered || 0 } : { configured: 0, answered: 0 };
+}
+
+// ── Which prompts is this org allowed to be shown? ───────────────────────────
+// Dan: "if we ask org x about a set of data we don't have live for them, or they
+// don't use something, like campgrounds, then that suggestion won't even
+// appear… the goal clearly is that if we surface a prompt, the report should
+// generate."
+//
+// So a prompt declares what it NEEDS and is only offered when the org has it.
+// Two kinds of requirement, because Dan's own examples span both:
+//
+//   * a SOURCE — "memberships", "products", "gl". Exact, and already known:
+//     fetchWizardSchemas() says which sources answered.
+//   * a VERTICAL — campgrounds, aquatics, ice. These are not report types, they
+//     are `court.type` values INSIDE the facility feed, so they can only be
+//     known by looking at rows. Measured 2026-08-28 over a year of bookings:
+//
+//        douglas-county-nv  camping 573 · fields 302 · racket 51 · outdoor 49
+//        clarksville        aquatics 359 · outdoor 307 · fields 8
+//
+//     Douglas has no pool and Clarksville has no campsite, which is exactly the
+//     distinction Dan drew, and it is only visible in the data.
+//
+// THE SITE-TYPE REFINEMENT IS MIRRORED FROM facilities.html, NOT REINVENTED.
+// Rec types pools, rinks and gyms as `court` (only `court` sites reach the
+// consumer app's instant-book section), so a naive read counts an ice rink as a
+// tennis court. `wizard-prompts.spec.js` lifts BOTH copies and requires they
+// agree row for row — two surfaces disagreeing about what an org HAS is worse
+// than one surface not knowing.
+const WIZARD_OUTDOOR_TYPES = ["outdoor-event-space", "picnic-table", "bounce-house"];
+const WIZARD_VERTICAL_TYPES = {
+  camping:  ["campsite"],
+  outdoor:  WIZARD_OUTDOOR_TYPES,
+  fields:   ["field"],
+  golf:     ["golf"],
+  aquatics: ["pool"],
+  ice:      ["rink"],
+  racket:   ["court"],
+};
+
+// Recovered from the SITE name only, never the location — a court that merely
+// sits at "Aquatic Park" is not a pool. Only rows Rec typed `court` are ever
+// reconsidered. Mirrors refineSiteType() in public/facilities.html.
+function wizardRefineSiteType(rawType, facility) {
+  if (rawType !== "court") return rawType;
+  const n = String(facility == null ? "" : facility).toLowerCase();
+  if (/\b(ice|rink)\b/.test(n)) return "rink";
+  if (/\b(pool|aquatics?|natatorium|swim)\b/.test(n)) return "pool";
+  if (/\bgym(nasium)?\b/.test(n) && !/\bcourt\b/.test(n)) return "gym";
+  return "court";
+}
+
+// A handful of bookings is not a vertical. Clarksville has EIGHT field rows in a
+// year against 359 pool rows — a "fields" prompt there would generate a report
+// with almost nothing in it, which is the same broken promise as a prompt whose
+// source is missing.
+const WIZARD_VERTICAL_MIN_ROWS = Number(process.env.WIZARD_VERTICAL_MIN_ROWS || 20);
+
+function wizardVerticalsFrom(rows) {
+  const seen = {};
+  for (const r of rows || []) {
+    const t = wizardRefineSiteType(String(r["Site Type"] || ""), r["Facility"]);
+    seen[t] = (seen[t] || 0) + 1;
+  }
+  const out = {};
+  for (const [v, types] of Object.entries(WIZARD_VERTICAL_TYPES)) {
+    const n = types.reduce((a, t) => a + (seen[t] || 0), 0);
+    if (n >= WIZARD_VERTICAL_MIN_ROWS) out[v] = n;
+  }
+  return out;
+}
+
+// The prompts themselves. `chip` and `typed` are DELIBERATELY DIFFERENT POOLS
+// (Dan, and the note in CLAUDE.md): the chips are short and scannable, the typed
+// phrases are longer questions, and reusing one set for both makes the panel
+// repeat itself twice over.
+//
+// `needs` is a list of sources that must ALL have answered. `vertical` adds the
+// facility-data requirement. `generic: true` marks the ones used to top a thin
+// org's list up — they ask for nothing an org with a programs card lacks.
+const WIZARD_PROMPTS = [
+  // ── generic: any org with programs, which is every org ──
+  { kind: "chip",  text: "Top 10 programs by revenue with enrollment details", needs: ["programs"], generic: true },
+  { kind: "chip",  text: "Which programs are filling up and which are half empty", needs: ["programs"], generic: true },
+  { kind: "typed", text: "Compare this fall\u2019s enrollment against last year", needs: ["programs"], generic: true },
+  { kind: "typed", text: "Which programs are filling up and which are half empty?", needs: ["programs"], generic: true },
+  { kind: "typed", text: "Which sections should we add another of?", needs: ["programs", "waitlist"] },
+
+  // ── finance ──
+  { kind: "chip",  text: "Revenue breakdown by GL account with totals", needs: ["gl"] },
+  { kind: "typed", text: "Revenue by GL account, with refunds broken out", needs: ["gl"] },
+
+  // ── community ──
+  { kind: "chip",  text: "Community demographics \u2014 age groups, gender split, revenue per household", needs: ["users"] },
+  { kind: "typed", text: "Where are our registrations coming from \u2014 by city", needs: ["users"] },
+
+  // ── memberships / products / fast track ──
+  { kind: "chip",  text: "Membership plans by active members and renewal dates", needs: ["memberships"] },
+  { kind: "typed", text: "How many memberships are up for renewal this quarter?", needs: ["memberships"] },
+  { kind: "chip",  text: "Monthly product sales breakdown with top sellers", needs: ["products"] },
+  { kind: "typed", text: "Which products actually sell, and which are dead stock?", needs: ["products"] },
+  { kind: "chip",  text: "Fast Track conversion funnel \u2014 holds vs registrations", needs: ["fasttrack"] },
+  { kind: "typed", text: "Fast Track demand by program, highest first", needs: ["fasttrack"] },
+  { kind: "chip",  text: "Class roster by section with enrolled and cancelled counts", needs: ["roster"] },
+
+  // ── facilities, general ──
+  { kind: "chip",  text: "Facility rentals by location with revenue", needs: ["facility"] },
+  { kind: "typed", text: "Facility rentals by location, busiest days first", needs: ["facility"] },
+
+  // ── facilities, per vertical: only where the org actually books them ──
+  { kind: "chip",  text: "Campsite bookings and occupancy by site", needs: ["facility"], vertical: "camping" },
+  { kind: "typed", text: "Which campsites sit empty, and which are booked solid?", needs: ["facility"], vertical: "camping" },
+  { kind: "chip",  text: "Pool and aquatics rentals by facility", needs: ["facility"], vertical: "aquatics" },
+  { kind: "typed", text: "How busy are the pools, hour by hour?", needs: ["facility"], vertical: "aquatics" },
+  { kind: "chip",  text: "Ice rental hours and revenue by rink", needs: ["facility"], vertical: "ice" },
+  { kind: "typed", text: "Ice time by team and by hour \u2014 where are the gaps?", needs: ["facility"], vertical: "ice" },
+  { kind: "chip",  text: "Field bookings by sport and location", needs: ["facility"], vertical: "fields" },
+  { kind: "typed", text: "Which fields get the most league use, and when?", needs: ["facility"], vertical: "fields" },
+  { kind: "chip",  text: "Pavilion and picnic area bookings by hour", needs: ["facility"], vertical: "outdoor" },
+  { kind: "typed", text: "Which shelters are busiest at the weekend?", needs: ["facility"], vertical: "outdoor" },
+  { kind: "chip",  text: "Court rentals by sport with utilisation", needs: ["facility"], vertical: "racket" },
+  { kind: "chip",  text: "Golf rounds and revenue by course", needs: ["facility"], vertical: "golf" },
+];
+
+// How many of each kind to offer. Enough to feel like a menu, few enough that
+// the panel is scannable.
+const WIZARD_PROMPT_TARGET = { chip: 6, typed: 6 };
+
+function wizardPromptsFor(sources, verticals) {
+  const has = rt => !!sources[rt];
+  const eligible = p =>
+    (p.needs || []).every(has) && (!p.vertical || !!verticals[p.vertical]);
+
+  const pick = (kind) => {
+    const all = WIZARD_PROMPTS.filter(p => p.kind === kind && eligible(p));
+    // A VERTICAL PROMPT LEADS. "Campsite bookings and occupancy" is the reason
+    // Douglas opens this page; "Top 10 programs by revenue" is true of everyone
+    // and says nothing about them. Specific first, then the rest, then the
+    // generic top-up — which is also the order a thin org gets trimmed to.
+    const specific = all.filter(p => p.vertical);
+    const named    = all.filter(p => !p.vertical && !p.generic);
+    const generic  = all.filter(p => !p.vertical && p.generic);
+    const out = [];
+    for (const p of specific.concat(named, generic)) {
+      if (out.length >= WIZARD_PROMPT_TARGET[kind]) break;
+      out.push(p.text);
+    }
+    return out;
+  };
+
+  return { chips: pick("chip"), typed: pick("typed") };
 }
 
 // Source-level descriptions to help the AI pick the right data source
@@ -12790,6 +12997,13 @@ app.get("/:org/report-wizard", (req, res) => {
     // with the row counts it actually received — see WIZARD_SOURCE_GRAIN for why
     // it is injected rather than duplicated in the page.
     sourceGrain: WIZARD_SOURCE_GRAIN,
+    // The prompts THIS org can actually generate. Computed from cheap signals
+    // only — warm cache, last-known-good schemas, and the verticals in its own
+    // facility rows — so a page load never waits on Metabase to decide which
+    // chips to draw. Injected rather than fetched because the chips and the
+    // typing animation are on screen immediately, and a list that arrived a
+    // second late would pop in over a static one.
+    prompts: wizardPromptsFor(wizardKnownSources(slug, org), wizardVerticalsFor(slug)),
   };
   const html = require("fs").readFileSync(path.join(__dirname, "public", "report-wizard.html"), "utf8");
   const inject = `<script>window.ORG_CONFIG=${JSON.stringify(orgConfig)};</script>`;
