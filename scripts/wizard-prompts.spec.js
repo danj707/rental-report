@@ -38,7 +38,7 @@ const is = (a, b, w) => { n++; assert.deepStrictEqual(a, b, w); };
 
 // ── Lift the server's implementation and RUN it ──────────────────────────────
 const S = (() => {
-  const re = /const WIZARD_OUTDOOR_TYPES = \[[\s\S]*?\nfunction wizardPromptsFor\(sources, verticals\) \{[\s\S]*?\n\}/;
+  const re = /const WIZARD_OUTDOOR_TYPES = \[[\s\S]*?\nfunction wizardPromptsFor\(known, verticals, configured\) \{[\s\S]*?\n\}/;
   const m = re.exec(SERVER);
   assert.ok(m, "could not lift the wizard prompt registry");
   return vm.runInThisContext(
@@ -166,6 +166,20 @@ const rowsFor = (spec) => {
   const thin = S.wizardPromptsFor({ programs: true }, {});
   ok(thin.chips.length >= 2 && thin.typed.length >= 2,
      "an org with only programs still gets a usable menu, topped up from the generic set");
+
+  // A COLD VOLUME KNOWS NOTHING, and the floor must still fire. Measured on the
+  // PR preview before this was fixed: Douglas and Apex were served an EMPTY list
+  // and Clarksville got 2 chips of 6, because the generic top-up was gated on
+  // having SEEN the programs card answer. A floor gated on liveness is not a
+  // floor. `configured` is a configuration fact and is what the top-up reads.
+  const cold = S.wizardPromptsFor({}, {}, { programs: true, gl: true, facility: true });
+  ok(cold.chips.length >= 2,
+     "with NOTHING known but a programs card configured, the generic chips still appear");
+  ok(cold.typed.length >= 2, "…and the typed lines");
+  ok(!cold.chips.concat(cold.typed).some(t => /pool|campsite|membership|product|GL account/i.test(t)),
+     "…and NONE of them is a specific claim about a source we have not seen answer — a configured "
+     + "card is not evidence the org uses it, and 'if we surface a prompt it should generate' is "
+     + "about what we know, not what is wired up");
   const generics = S.WIZARD_PROMPTS.filter(p => p.generic);
   for (const p of generics) {
     is(p.needs, ["programs"],
@@ -237,8 +251,9 @@ const rowsFor = (spec) => {
 
 // ── 6. The page reads them, and its floor is safe ───────────────────────────
 {
-  src(/prompts: wizardPromptsFor\(wizardKnownSources\(slug, org\), wizardVerticalsFor\(slug\)\)/.test(SERVER),
-     "the page route injects the org's prompts");
+  src(/prompts: wizardPromptsFor\(wizardKnownSources\(slug, org\), wizardVerticalsFor\(slug\),\n\s*wizardConfiguredSources\(org\)\)/.test(SERVER),
+     "the page route injects the org's prompts, with BOTH tiers — known sources for the specific "
+     + "claims and configured ones for the floor");
   src(/function wizardKnownSources\(/.test(SERVER) && !/await/.test(
         /function wizardKnownSources\([\s\S]*?\n\}/.exec(SERVER)[0]),
      "…computed WITHOUT awaiting anything: a page load that fired twelve Metabase queries to decide "

@@ -7680,6 +7680,16 @@ function wizardVerticalsFor(orgSlug) {
 // first, then last-known-good. The page route uses this: a page load that fired
 // twelve Metabase queries to decide which chips to draw would be a worse bug
 // than the one this is fixing.
+// Sources the org has a CARD for, live or not. A configuration fact.
+function wizardConfiguredSources(orgConfig) {
+  const out = {};
+  for (const rt of REPORT_TYPES) {
+    if (NON_ADDABLE_REPORTS.has(rt)) continue;
+    if (orgConfig[rt]?.mbUuid || SHARED_UUIDS[rt]) out[rt] = true;
+  }
+  return out;
+}
+
 function wizardKnownSources(orgSlug, orgConfig) {
   const out = {};
   const store = readWizardSchemaStore()[orgSlug] || {};
@@ -7932,10 +7942,23 @@ const WIZARD_PROMPTS = [
 // the panel is scannable.
 const WIZARD_PROMPT_TARGET = { chip: 6, typed: 6 };
 
-function wizardPromptsFor(sources, verticals) {
-  const has = rt => !!sources[rt];
-  const eligible = p =>
-    (p.needs || []).every(has) && (!p.vertical || !!verticals[p.vertical]);
+// `known` = sources we have actually seen answer (warm cache or last-known-good).
+// `configured` = sources the org HAS A CARD FOR. The distinction is the whole
+// reason the top-up works: on a cold volume — a fresh PR preview, or production
+// in the minutes after a deploy — nothing is `known` yet, and gating the FLOOR on
+// liveness leaves the panel empty or, worse, two chips long. Measured on the PR
+// preview: Douglas and Apex got nothing, Clarksville got 2 of 6.
+//
+// So a SPECIFIC claim ("Pool and aquatics rentals", "Membership plans") still
+// needs a source we have seen, because that is a statement about this org. The
+// GENERIC top-up only needs the card to exist, which is a configuration fact —
+// and if that card is merely slow, the caller gets the 503 "try again" path
+// rather than a false promise.
+function wizardPromptsFor(known, verticals, configured) {
+  const conf = configured || known;
+  const eligible = p => p.generic
+    ? (p.needs || []).every(rt => !!conf[rt])
+    : (p.needs || []).every(rt => !!known[rt]) && (!p.vertical || !!verticals[p.vertical]);
 
   const pick = (kind) => {
     const all = WIZARD_PROMPTS.filter(p => p.kind === kind && eligible(p));
@@ -13003,7 +13026,8 @@ app.get("/:org/report-wizard", (req, res) => {
     // chips to draw. Injected rather than fetched because the chips and the
     // typing animation are on screen immediately, and a list that arrived a
     // second late would pop in over a static one.
-    prompts: wizardPromptsFor(wizardKnownSources(slug, org), wizardVerticalsFor(slug)),
+    prompts: wizardPromptsFor(wizardKnownSources(slug, org), wizardVerticalsFor(slug),
+                              wizardConfiguredSources(org)),
   };
   const html = require("fs").readFileSync(path.join(__dirname, "public", "report-wizard.html"), "utf8");
   const inject = `<script>window.ORG_CONFIG=${JSON.stringify(orgConfig)};</script>`;
