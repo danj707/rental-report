@@ -13,6 +13,68 @@
   into what's being used (and enjoys the vanity of seeing plays/exports roll in).
   See the section below for the exact mechanism.
 
+## Report Wizard — PARKED, off for every org (Dan, 2026-08-28)
+
+**Status: disabled platform-wide.** `report-wizard` is in `RETIRED_REPORTS` (hides
+the card on the org dashboard and the admin portal) **and** every wizard route is
+gated on `WIZARD_ENABLED_ORGS`, which is empty. Dan: *"This report wizard is nice
+in concept, but really needs direct db connectivity via an api."*
+
+**Not broken — parked.** Everything below in this section still describes working
+code, and the 2026-08-28 improvements all landed before the switch-off.
+
+**RETIRED_REPORTS ALONE WOULD NOT HAVE BEEN ENOUGH.** That Set controls whether a
+report is SURFACED, not whether it works — campmap served ~24 visitors a month
+through direct links the whole time it was listed there. So the routes are gated
+too, the same shape as `MUNIS_EXPORT_ORGS`: empty set ⇒ off everywhere, and
+adding a slug (or setting `WIZARD_ENABLED_ORGS=slug,slug`) turns it back on for
+those orgs alone. The PR-169 preview environment has that variable set, which is
+how the improvements stayed reviewable while the default shipped off.
+
+**THE 404s MUST BE MARKED DELIBERATE, and this is the part worth remembering.**
+`noteDeadLink()` alerts on *"a 404 that arrived with a valid-looking token"* —
+which is exactly the shape of every bookmarked wizard link from now on. Without
+`refuse404()` / `res.locals.deliberate404`, switching the feature off would post
+one DEAD LINK alert per bookmark, naming a path we turned off on purpose. That is
+the settings-route bug Dan hit on 2026-08-28, at scale. A refused page also does
+not log a `view`, so the report does not keep looking "active" to the watchdogs
+that gate alerting on usage.
+
+**Why, with the measurements** (so nobody has to re-derive them):
+
+- **The shape is wrong for Metabase as middleware.** The schema probe pulls the
+  WHOLE card to read five rows — the `users` card returned **104,340 rows in
+  52s** — and the page then pulls whole feeds to compute sums a
+  `SELECT sum(...) GROUP BY` would answer in milliseconds. Production, warm:
+  apex facility **42.7s**, roster 16.9s, programs 15.7s.
+- **Direct DB is the right direction but not sufficient on its own.** Every table
+  in the `materialized` schema has exactly one index — its primary key — so going
+  direct inherits the same seq scans *without* the 4-hour cache currently hiding
+  them. Direct DB **plus** the `(organization_id, datetime_at_primary_timezone)`
+  index already spec'd in this file is the combination that pays.
+- **SOURCE SUBSTITUTION IS STILL OPEN, and it is the finding that outlives the
+  parking.** When a source that justified a prompt has not answered at generate
+  time, the model builds from what it does have — measured across 13 generated
+  reports: *"Facility rentals by location"* was answered from `gl`, and *"Class
+  roster by section"* from `calendar`. Both produced **arithmetically correct
+  reports answering a question nobody asked**, and the field-name repair pass
+  cannot catch it because those fields are all real for the substituted source.
+  Fixing it means the generate route refusing when a named source is missing, or
+  saying on screen what it substituted.
+
+**Nothing is deleted.** `public/report-wizard.html`, the generate/feedback/log
+routes, `WIZARD_PROMPTS`, `fetchWizardSchemas`, `wizardRepairConfigFields` and all
+four wizard specs stay and keep running in CI — a parked feature whose guards are
+deleted comes back broken. Un-parking is a slug in `WIZARD_ENABLED_ORGS` plus
+removing it from `RETIRED_REPORTS`.
+
+Guard: `scripts/wizard-parked.spec.js` (**32 assertions, in CI**), which boots the
+server with an empty allowlist and requires all four routes to 404, the card to be
+gone, and **zero `deadlink` events** despite every request carrying a real token.
+Mutation-tested four ways — not retired, generate still answering, the page 404
+unmarked (fails on the live half with the dead-link assertion), and the org card
+no longer gated on the route being live.
+
 ## Report Wizard (2026-08-26) — three things worth knowing
 
 ### The wizard's own runs were invisible in Slack — FOURTH instance of the trap

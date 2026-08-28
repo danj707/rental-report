@@ -140,6 +140,9 @@ jobs:
       - name: Wizard prompts (only suggest what this org can actually generate)
         run: node scripts/wizard-prompts.spec.js
 
+      - name: Wizard parked (off for every org, and the 404s do not page anyone)
+        run: node scripts/wizard-parked.spec.js
+
       - name: ePACT export (her five columns, her DISTINCT, cancellations out; 14-day default)
         run: node scripts/roster-epact.spec.js
 

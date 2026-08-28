@@ -1540,7 +1540,20 @@ try {
 const child = spawn(process.execPath, [path.join(__dirname, "..", "server.js")], {
   env: { ...process.env, PORT: String(PORT), DATA_DIR: dataDir,
          METABASE_URL: "http://127.0.0.1:9", RESEND_API_KEY: "", SLACK_WEBHOOK_URL: "",
-         DASHBOARD_PASSWORD: RENDER_ADMIN_PW },
+         DASHBOARD_PASSWORD: RENDER_ADMIN_PW,
+         // The Report Wizard is PARKED for every org in production
+         // (WIZARD_ENABLED_ORGS empty). Its six render cases still have to run —
+         // a parked feature whose guards stop running comes back broken — so
+         // this server enables it for the org under test.
+         WIZARD_ENABLED_ORGS: (() => {
+           try {
+             const src = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
+             const i = src.indexOf("const ORGS = {");
+             const j = src.indexOf("\nconst REPORT_TYPES", i);
+             return Object.keys(require("vm").runInNewContext(
+               "(" + src.slice(src.indexOf("{", i), j).trim().replace(/;$/, "") + ")")).join(",");
+           } catch (_) { return ""; }
+         })() },
   stdio: ["ignore", "pipe", "pipe"],
 });
 let out = "";

@@ -26,6 +26,19 @@ const path = require("path");
 const vm = require("vm");
 
 const ROOT = path.join(__dirname, "..");
+
+// The wizard is PARKED for every org in production (WIZARD_ENABLED_ORGS empty).
+// Its behaviour still has to be guarded, or un-parking it later is a leap of
+// faith — so the servers these specs boot enable it explicitly. Every org slug
+// this repo serves, comma-joined, is overkill by design: a spec should not have
+// to know which org it picked.
+const WIZ_ORGS = (() => {
+  const src = fs.readFileSync(path.join(ROOT, "server.js"), "utf8");
+  const i = src.indexOf("const ORGS = {");
+  const j = src.indexOf("\nconst REPORT_TYPES", i);
+  return Object.keys(require("vm").runInNewContext(
+    "(" + src.slice(src.indexOf("{", i), j).trim().replace(/;$/, "") + ")")).join(",");
+})();
 const SERVER = fs.readFileSync(path.join(ROOT, "server.js"), "utf8");
 const FACILITIES = fs.readFileSync(path.join(ROOT, "public", "facilities.html"), "utf8");
 const WIZARD = fs.readFileSync(path.join(ROOT, "public", "report-wizard.html"), "utf8");
@@ -465,6 +478,7 @@ const { spawn } = require("child_process");
       PORT: String(PORT), DATA_DIR: dataDir,
       METABASE_URL: `http://127.0.0.1:${stub.address().port}`,
       ANTHROPIC_API_KEY: "sk-ant-spec-not-called",
+      WIZARD_ENABLED_ORGS: WIZ_ORGS,
       WIZARD_PROBE_TIMEOUT_MS: "4000", WIZARD_SCHEMA_FAIL_TTL_MS: "1",
       RESEND_API_KEY: "", SLACK_WEBHOOK_URL: "",
     }),

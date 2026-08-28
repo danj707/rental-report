@@ -305,7 +305,13 @@ ok(R.reportSettingsEnabled("roster") && !R.reportSettingsEnabled("gl"),
   src(/if \(res\.locals && res\.locals\.deliberate404\) return;/.test(SERVER),
      "…and the dead-link watch has to honour the marker, or every refused request posts a DEAD LINK "
      + "alert naming the very path the 404 exists to keep quiet");
-  is((SERVER.match(/return refuse404\(res/g) || []).length, 4,
+  // SCOPED to the settings routes. A global count of refuse404() calls breaks the
+  // moment any other route adopts the helper — which is exactly what happened
+  // when the report wizard was parked, and an assertion that fails on a
+  // non-regression is a false alarm waiting to happen.
+  const settingsRoutes = SERVER.split(/app\.(?:get|put)\("\/:org\/:report\/api\/settings"/).slice(1)
+    .map(chunk => chunk.slice(0, 1200)).join("\n");
+  is((settingsRoutes.match(/return refuse404\(res/g) || []).length, 4,
      "both settings routes refuse through it, on both the admin gate and the unregistered report");
 
   src(/"epact", "settings-open", "settings-save"/.test(SERVER),

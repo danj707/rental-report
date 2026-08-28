@@ -2034,7 +2034,41 @@ const DEFAULT_HIDDEN_REPORTS = new Set([]);
 // schemas. Nothing was deleted when it was retired — the page, the generate
 // route and the feedback route all stayed — so bringing it back is removing it
 // from this Set, not a rebuild.
-const RETIRED_REPORTS = new Set(["court-utilization", "chat", "campmap"]);
+const RETIRED_REPORTS = new Set(["court-utilization", "chat", "campmap", "report-wizard"]);
+
+// ── Report Wizard: PARKED, off for every org (Dan, 2026-08-28) ───────────────
+// Not broken — parked. It does work, and the improvements behind it are all in
+// (schema resilience, org-derived prompts, the field-name repair pass). Dan's
+// call: "This report wizard is nice in concept, but really needs direct db
+// connectivity via an api." Two measured reasons that is the right read:
+//
+//   * THE SHAPE IS WRONG FOR METABASE AS MIDDLEWARE. The schema probe pulls the
+//     WHOLE card to read five rows — the users card returned 104,340 rows in 52s
+//     — and the page then pulls whole feeds to compute sums a SELECT ... GROUP BY
+//     would answer in milliseconds. Measured on production, warm: apex facility
+//     42.7s, roster 16.9s, programs 15.7s.
+//   * SOURCE SUBSTITUTION IS STILL OPEN. When a source that justified a prompt
+//     has not answered at generate time, the model builds from what it does have
+//     — measured, "Facility rentals by location" was answered from `gl` and
+//     "Class roster by section" from `calendar`. Both produced arithmetically
+//     correct reports answering a question nobody asked, and the field-name guard
+//     cannot catch it because those fields are all real for the substituted
+//     source. That needs the generate route to refuse, or to say on screen what
+//     it substituted.
+//
+// RETIRED_REPORTS alone is NOT enough, and the comment above says why: it
+// controls whether a report is SURFACED, not whether it works — campmap served
+// ~24 visitors a month through direct links the whole time it was listed there.
+// So the routes are gated too, the same shape as MUNIS_EXPORT_ORGS: an empty set
+// means off everywhere, and adding a slug turns it back on for that org alone.
+//
+// NOTHING IS DELETED. public/report-wizard.html, the generate/feedback/log
+// routes, the prompt registry and both specs all stay, so un-parking is adding a
+// slug here (or emptying it back out of RETIRED_REPORTS for the card).
+const WIZARD_ENABLED_ORGS = new Set(
+  (process.env.WIZARD_ENABLED_ORGS || "").split(",").map(x => x.trim()).filter(Boolean)
+);
+function wizardEnabled(slug) { return WIZARD_ENABLED_ORGS.has(slug); }
 
 // ── Dynamic orgs (added via dashboard UI) ────────────────────────────
 // Loaded at startup and merged into ORGS; also updated at runtime.
@@ -6376,6 +6410,7 @@ app.post("/:org/report-wizard/api/log", (req, res) => {
   // exemption list grows.
   const qToken = req.query.token || req.headers["x-token"];
   if (org.token && qToken !== org.token) return res.status(403).json({ ok: false, error: "Invalid token" });
+  if (!wizardEnabled(slug)) return refuse404(res, { ok: false, error: "The Report Wizard is not enabled for this organization." });
   const event = req.query.event;
   const ALLOWED = ["wizard-save"];
   if (!ALLOWED.includes(event)) return res.status(400).json({ ok: false, error: "Unknown event" });
@@ -8280,6 +8315,7 @@ app.post("/:org/report-wizard/api/generate", async (req, res) => {
 
   const qToken = req.query.token || req.headers["x-token"];
   if (org.token && qToken !== org.token) return res.status(403).json({ error: "Invalid token" });
+  if (!wizardEnabled(slug)) return refuse404(res, { error: "The Report Wizard is not enabled for this organization." });
 
   if (!anthropic) {
     return res.status(503).json({ error: "AI not configured" });
@@ -8455,6 +8491,7 @@ app.post("/:org/report-wizard/api/feedback", (req, res) => {
   if (!org) return res.status(404).json({ error: "Unknown org" });
   const qToken = req.query.token || req.headers["x-token"];
   if (org.token && qToken !== org.token) return res.status(403).json({ error: "Invalid token" });
+  if (!wizardEnabled(slug)) return refuse404(res, { ok: false, error: "The Report Wizard is not enabled for this organization." });
   const { vote, prompt, title, widgetCount, traceId, comment } = req.body || {};
   // The comment is the whole reason a thumbs-down is worth reading, so it travels
   // with the event — the Slack line prints it, same as the AI-insights votes do.
@@ -13139,6 +13176,15 @@ app.get("/:org/report-wizard", (req, res) => {
   const slug = req.params.org;
   const org  = ORGS[slug];
   if (!org) return res.status(404).send("Unknown org");
+  // PARKED. Marked as a deliberate 404 so the dead-link watch stays quiet: it
+  // keys on "a 404 that arrived with a valid-looking token", which is precisely
+  // the shape of every bookmarked wizard link from here on. Without the marker,
+  // switching this off would fill Slack with DEAD LINK alerts naming a path we
+  // turned off on purpose.
+  if (!wizardEnabled(slug)) {
+    res.locals.deliberate404 = true;
+    return res.status(404).send("The Report Wizard is not enabled for this organization.");
+  }
   logEvent(slug, "report-wizard", "view", req);
   const available = REPORT_TYPES.filter(r => !NON_ADDABLE_REPORTS.has(r) && (org[r]?.mbUuid || SHARED_UUIDS[r]));
   const slugTitle = slug.charAt(0).toUpperCase() + slug.slice(1);
@@ -13488,7 +13534,10 @@ app.get("/:org", async (req, res, next) => {
     reports: available,
     token: org.token || "",
     chatVisible: !RETIRED_REPORTS.has("chat") && !orgHidden.has("chat"),
-    wizardVisible: !RETIRED_REPORTS.has("report-wizard") && !orgHidden.has("report-wizard"),
+    // Both gates: RETIRED_REPORTS hides the card, wizardEnabled decides whether
+    // the page behind it answers at all. Either one alone leaves a card that
+    // 404s or a live page nobody can find.
+    wizardVisible: wizardEnabled(slug) && !RETIRED_REPORTS.has("report-wizard") && !orgHidden.has("report-wizard"),
     publicMode: getPublicMode(slug),
     emailEnabled: EMAIL_ENABLED_ORGS.has(slug),
     announcements: activeAnnouncementsForOrg(slug).map(a => a.smart
