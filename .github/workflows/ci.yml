@@ -128,6 +128,9 @@ jobs:
       - name: Add-ons in the note line, Forms link (the add-on money survives its column)
         run: node scripts/facility-addons-forms.spec.js
 
+      - name: Report settings (one cache-key builder; a setting seeds and never overrides; TTL floor)
+        run: node scripts/report-settings.spec.js
+
       - name: ePACT export (her five columns, her DISTINCT, cancellations out; 14-day default)
         run: node scripts/roster-epact.spec.js
 

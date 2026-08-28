@@ -768,6 +768,13 @@ const clickCheckinsTab = async page => {
   });
 };
 
+// The report-settings panel is behind a feature flag AND a super-admin key
+// derived from DASHBOARD_PASSWORD (see the boot below, which sets both). Declared
+// here because CASES needs it.
+const RENDER_ADMIN_PW = "render-check-password";
+const RENDER_ADMIN_KEY = require("crypto").createHash("sha256")
+  .update(RENDER_ADMIN_PW + "|report-settings|v1").digest("hex").slice(0, 32);
+
 // ── Pages to prove ──────────────────────────────────────────────────────────
 // `needs` is a selector that only exists once the page has really rendered, so
 // a blank page fails instead of passing on "no errors thrown".
@@ -1062,6 +1069,129 @@ const CASES = [
       });
     } },
 
+  // ── Class Roster: the settings panel ────────────────────────────────────
+  // THE DOOR FIRST. An org staffer holds a valid token — that is what the report
+  // link is — and must not even see the gear. Asserted as ABSENT from the DOM
+  // rather than disabled: "renders a greyed button" and "renders nothing" are
+  // different claims, and only one of them keeps the power away from an org user.
+  { name: "roster · no gear without the admin key", path: "/{org}/roster",
+    needs: ".toolbar", absent: "[data-rs-open]" },
+  // The gear sits at the far right of the toolbar (Dan: "a standard gear wheel
+  // settings looking icon in the upper right corner").
+  { name: "roster · settings gear is last in the toolbar", path: "/{org}/roster?admin=" + RENDER_ADMIN_KEY,
+    needs: "body[data-gear-last=\"1\"]",
+    act: async page => {
+      await page.waitForSelector("[data-rs-open]", { timeout: 45000 });
+      await page.evaluate(() => {
+        const tb = document.querySelector(".toolbar");
+        const gear = document.querySelector("[data-rs-open]");
+        const btns = [...tb.querySelectorAll("button")];
+        // Last button in the toolbar, and further right than the exports.
+        const epact = document.querySelector(".btn-epact");
+        const rightOfExports = !epact
+          || gear.getBoundingClientRect().left > epact.getBoundingClientRect().left;
+        if (btns[btns.length - 1] === gear && rightOfExports) {
+          document.body.setAttribute("data-gear-last", "1");
+        }
+      });
+    } },
+  // The panel opens and carries all three groups, in blast-radius order.
+  { name: "roster · settings panel opens", path: "/{org}/roster?admin=" + RENDER_ADMIN_KEY,
+    needs: "[data-rs-group=\"safe\"] , [data-rs-group=\"warn\"]",
+    act: async page => {
+      await page.waitForSelector("[data-rs-open]", { timeout: 45000 });
+      await page.click("[data-rs-open]");
+      await page.waitForSelector(".rs-sheet", { timeout: 45000 });
+    } },
+  // The ePACT drift banner: green on the verified five, and it must flip the
+  // moment a column is added. A panel that let you leave the verified template
+  // silently is the one thing this group exists to prevent.
+  { name: "roster · epact drift is never silent", path: "/{org}/roster?admin=" + RENDER_ADMIN_KEY,
+    needs: "body[data-drift=\"1\"]",
+    act: async page => {
+      await page.waitForSelector("[data-rs-open]", { timeout: 45000 });
+      await page.click("[data-rs-open]");
+      await page.waitForSelector("[data-rs-verified]", { timeout: 45000 });
+      const before = await page.$eval("[data-rs-verified]", el => el.getAttribute("data-rs-verified"));
+      await page.select("[data-rs-epact-add]", "Age");
+      await page.waitForFunction(
+        () => document.querySelector("[data-rs-verified]")?.getAttribute("data-rs-verified") === "0",
+        { timeout: 45000 });
+      const after = await page.$eval("[data-rs-verified]", el => el.textContent);
+      await page.evaluate(([b, a]) => {
+        if (b === "1" && /no longer the Apex-verified/.test(a)) document.body.setAttribute("data-drift", "1");
+      }, [before, after]);
+    } },
+  // The cache dial prices itself: the shared-card total has to MOVE, or the
+  // guardrail is a caption nobody reads.
+  { name: "roster · cache dial shows what it costs", path: "/{org}/roster?admin=" + RENDER_ADMIN_KEY,
+    needs: "body[data-priced=\"1\"]",
+    act: async page => {
+      await page.waitForSelector("[data-rs-open]", { timeout: 45000 });
+      await page.click("[data-rs-open]");
+      await page.waitForSelector("[data-rs-cost]", { timeout: 45000 });
+      const at2h = await page.$eval("[data-rs-cost]", el => el.getAttribute("data-rs-cost"));
+      // Driven by the KEYBOARD rather than by assigning .value: React tracks a
+      // controlled input's value internally, so a direct assignment plus a
+      // synthetic event is ignored and the case would fail on a working dial.
+      // Three steps left is 2 hours → 30 minutes, the floor.
+      await page.focus(".rs-meter input[type=range]");
+      await page.keyboard.press("ArrowLeft");
+      await page.keyboard.press("ArrowLeft");
+      await page.keyboard.press("ArrowLeft");
+      await page.waitForFunction(
+        (was) => document.querySelector("[data-rs-cost]")?.getAttribute("data-rs-cost") !== was,
+        { timeout: 45000 }, at2h);
+      await page.evaluate((was) => {
+        const now = Number(document.querySelector("[data-rs-cost]").getAttribute("data-rs-cost"));
+        // A shorter cache must cost MORE, not just differently.
+        if (now > Number(was)) document.body.setAttribute("data-priced", "1");
+      }, at2h);
+    } },
+
+  // SIGN IN, THEN NAVIGATE — the flow Dan actually used, and the one that was
+  // broken: basic auth is scoped to "/" by the browser, so nothing carried the
+  // credential to a report and the gear could only be reached by pasting a key
+  // onto the URL. No ?admin= on this path; the cookie is the whole test.
+  { name: "roster · signed in, then navigated", path: "/{org}/roster",
+    needs: "[data-rs-open]",
+    pre: async page => {
+      await page.setCookie({ name: "rs_admin", value: RENDER_ADMIN_KEY,
+                             domain: "127.0.0.1", path: "/" });
+    } },
+
+  // Flag off, credential good. Absent-not-greyed is right for someone who may
+  // never hold the control; for a proven super-admin it is a dead end with no
+  // exit — which is exactly how "not seeing it" got reported. Runs LAST of the
+  // settings cases and restores the flag in a finally, because the flag is
+  // server state every earlier case depends on.
+  { name: "roster · flag off says where the switch is", path: "/{org}/roster?admin=" + RENDER_ADMIN_KEY,
+    needs: "[data-rs-flagoff]", absent: "[data-rs-open]",
+    pre: async page => {
+      await page.setCookie({ name: "rs_admin", value: RENDER_ADMIN_KEY,
+                             domain: "127.0.0.1", path: "/" });
+    },
+    act: async page => {
+      // Flipped from NODE, not from the page: every /api/ request the browser
+      // makes is intercepted and answered from STUBS, so an in-page fetch would
+      // return a stub and never reach the server.
+      const flip = (v) => new Promise((res, rej) => {
+        const body = JSON.stringify({ password: RENDER_ADMIN_PW, key: "reportSettings", value: v });
+        const req = http.request({ host: "127.0.0.1", port: PORT, method: "POST",
+          path: "/api/admin/flags", headers: { "Content-Type": "application/json" } },
+          r => { r.resume(); r.on("end", res); });
+        req.on("error", rej);
+        req.end(body);
+      });
+      await flip(false);
+      await page.reload({ waitUntil: "domcontentloaded" });
+      try {
+        await page.waitForSelector("[data-rs-flagoff]", { timeout: 45000 });
+      } finally {
+        await flip(true);
+      }
+    } },
+
   { name: "facilities · outdoor events",   path: "/{org}/facilities?tab=outdoor", needs: "[data-oe-heat]" },
   { name: "facilities · outdoor peak hour", path: "/{org}/facilities?tab=outdoor", needs: "[data-oe-peak=\"11a\"]" },
   { name: "facilities · outdoor multi-day", path: "/{org}/facilities?tab=outdoor", needs: "[data-oe-timed=\"4\"]" },
@@ -1350,10 +1480,20 @@ const CASES = [
     act: async page => { await page.click(".example-chip"); await page.click(".btn-generate"); } },
 ];
 
+// The report-settings panel is behind TWO gates: a feature flag (default off)
+// and a super-admin key derived from DASHBOARD_PASSWORD. So this check boots
+// with a password and pre-enables the flag — otherwise the gear does not render
+// and the panel cases would be testing the closed door rather than the panel.
+// One case deliberately drops the key, to prove the door.
+try {
+  fs.writeFileSync(path.join(dataDir, "feature-flags.json"),
+                   JSON.stringify({ reportSettings: true }));
+} catch (_) {}
+
 const child = spawn(process.execPath, [path.join(__dirname, "..", "server.js")], {
   env: { ...process.env, PORT: String(PORT), DATA_DIR: dataDir,
          METABASE_URL: "http://127.0.0.1:9", RESEND_API_KEY: "", SLACK_WEBHOOK_URL: "",
-         DASHBOARD_PASSWORD: "" },
+         DASHBOARD_PASSWORD: RENDER_ADMIN_PW },
   stdio: ["ignore", "pipe", "pipe"],
 });
 let out = "";
@@ -1469,6 +1609,9 @@ function waitForServer(started) {
     });
 
     STUB_MODE = c.stubMode || "";
+    // Optional: set up the BROWSER before the first navigation. A cookie set in
+    // `act` is set too late — the page it decides has already been served.
+    if (c.pre) await c.pre(page);
     const url = `http://127.0.0.1:${PORT}` + c.path.replace("{org}", org)
       + (c.path.includes("?") ? "&" : "?") + "token=" + encodeURIComponent(token);
     let found = false, bodyLen = 0;

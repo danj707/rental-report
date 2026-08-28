@@ -483,7 +483,10 @@ The mechanism lives in `server.js` under "Slack activity notifications":
 Wired so far: `created`, `org-deleted`, `pdf`, `excel`, `print`, `summary`
 (🧾 lite export), `game` (🕹️ hidden banner mini-game plays),
 `outdoor` (🎪 Outdoor Event Spaces tab opened, with the booking count), `view`, `insights`,
-feedback/votes, `email`, `munis`, `permits`, `map`, `epact` (📤 a participant list
+feedback/votes, `email`, `munis`, `permits`, `map`, `epact`, `settings-open` (🔍 the report-settings panel was opened, saying whether the org
+is already off the platform defaults), `settings-save`/
+`settings-reset` (⚙️ a per-org report default changed, naming the fields and
+flagging an ePACT template that left the verified set) (📤 a participant list
 exported for the ePACT camp-forms vendor, with the count and whether it was one
 class or the whole view), and three platform alerts —
 `report-down` (a report's card stopped answering, links straight to the report
@@ -2883,6 +2886,300 @@ Already shipped (PR #75, live on `main`): name-based site-type recovery so
 "court" excludes rinks/pools/gyms, specific-type revenue breakdown, Location
 filter, Ice sub-tab, court-name wrap. Display/scoping only — did not change the
 revenue math, so the gap above predates and survives it.
+
+## Per-org report settings (2026-08-27) — and the cache-key bug found under them
+
+Dan: *"we could also add some type of report settings, where you could customize
+some report defaults that applied per org. Select columns, etc."* Then, settling
+the design questions: *"since it's single tenant, anyone can edit the settings.
+we'll figure out a multi tenant thing later. Per org. One report for now, we'll
+do the class roster."* And the scope: *"allowing saved views, exporting or
+printing pdf's, email subscriptions, default date range for date filters (with a
+warning that anything over 30 days can be bad)."*
+
+A ⚙ at the far right of the Class Roster toolbar opens a sheet grouped by
+**blast radius** rather than by category, because "default columns" and "cache
+lifetime" are not the same kind of decision. Mockup:
+https://claude.ai/code/artifact/386455f8-d3d0-44ea-a377-c9dd170f7082
+
+### THE BUG UNDERNEATH: pre-warm was writing keys nothing could read
+
+Found while checking whether a per-org cache TTL was contained. The data route
+built its key one way and pre-warm built it another:
+
+```
+route  :  `${orgSlug}:${reportType}:v${FEED_VERSION[reportType] || 1}:${paramStr}`
+prewarm:  `${slug}:${rt}:${paramStr}`                       ← no version segment
+```
+
+Those cannot produce the same string, so **every param'd entry pre-warm wrote
+was unreachable from the page that needed it.** The version segment was added to
+the route's key to bust the cache when a card gains a column (court-utilization
+v2) and pre-warm was never updated. The base key is unreachable too, for a
+different and *correct* reason: `getCachedEntry`'s fallback fires only when
+`key === baseKey`, and the route's key always carries `v1:` — that fallback was
+deliberately narrowed by an earlier fix ("silently serving default-range data
+regardless of requested dates"), which is right and should stay.
+
+**Proven by construction, not by measurement.** A live timing test looked
+tempting and is worthless here: pre-warm runs at 4:50am and the roster's TTL is
+2h, so by any reasonable hour a warm entry is expired anyway and slowness
+discriminates nothing. Both key builders now go through one `feedCacheKey()`,
+and `report-settings.spec.js` fails if either caller hand-builds a key again or
+if the versioned format appears twice.
+
+**Consequence to expect:** first opens that used to be cold can now hit warm
+data. That is the point, and the TTL still governs how stale it may be.
+
+### What a setting is, and what it is not
+
+- **PER ORG, proven against a second org rather than inferred from the store's
+  shape.** `report-settings.spec.js` changes every field for org A and then
+  requires org B to read the platform defaults field by field, in the API *and*
+  in the injected `ORG_CONFIG` that decides its first render. An org nobody has
+  configured has **no record at all**, which is also why reset DROPS the record
+  instead of writing the defaults into it — a later change to a platform default
+  still has to reach every org that never customised. The one thing deliberately
+  not contained is the shared-card total: org A shortening its cache moves the
+  figure org B is priced against, which is the entire reason the budget exists,
+  and org B's panel names org A as the one running short.
+- **A setting SEEDS; it never overrides.** Precedence is
+  `platform default → the org's setting → this person's own choice`. Column
+  toggles still live in each reader's `localStorage` and still win. An org
+  default that reached in and reset those would produce "my settings keep
+  resetting" as the first ticket — the same line that kept columns out of saved
+  views.
+- **Not a saved view.** A view is a named filter set anyone can make, many per
+  report. This is one starting point per org.
+- **SUPER-ADMIN ONLY, behind a flag** (Dan, after seeing the panel: *"this power
+  is too much for an org user to handle"*). Two gates, and both are deliberate:
+  the `reportSettings` feature flag, default **OFF**; and a key that is **not**
+  the org token — every staffer at an org has that, and these settings change
+  what all of them see plus what the shared card costs. The key is
+  `sha256(DASHBOARD_PASSWORD + "|report-settings|v1")` truncated, so it can sit
+  in a URL without handing over the admin dashboard, and rotating the password
+  rotates it. Look it up at `/api/admin/report-settings-key?password=…`.
+  The flag has its own switch in the admin dashboard's Feature Flags block —
+  **that block is written by hand per toggle, so a new flag does NOT appear on
+  its own**, and one that `applyFlags()` never drives renders permanently off.
+  **It FAILS CLOSED**: no `DASHBOARD_PASSWORD` means no key means nobody, which
+  is the opposite of `dashboardAuth`'s "no password → open access" for the root
+  page — right for a root page in dev, wrong for a control that spends a shared
+  resource. Both routes answer **404, not 403**, so a staffer with a valid token
+  never learns the surface exists, and the gear is absent from the DOM rather
+  than disabled.
+- Registry-driven like `SAVED_VIEW_PARAMS`: `REPORT_SETTINGS_SCHEMA` registers
+  `roster` alone and every other report 404s.
+
+### The credential had no way to travel — sign in, navigate, nothing there
+
+Dan, on the preview: *"the settings should show if I login as a super admin, then
+navigate to the org page and reports, no? Not seeing it on the PR."* Right, and
+the first build had no answer for it. **Basic auth is scoped to `/` by the
+browser**, so signing into the admin dashboard left nothing behind, and the only
+way into the panel was pasting `&admin=<key>` onto every report URL by hand.
+
+A successful password match in `dashboardAuth` now sets **one cookie**, and the
+details are the design:
+
+- **It carries the DERIVED KEY, never the password.** If it leaks it opens the
+  settings panel and nothing else, and rotating `DASHBOARD_PASSWORD` rotates it.
+  No password ⇒ no key ⇒ no cookie, the same fail-closed direction as the key.
+- **A cookie is the better credential here, not merely the more convenient one.**
+  A URL key leaks through history, referrers and copy-paste — the same reasoning
+  that keeps the org token off the campmap card link.
+- `HttpOnly` (no page ever reads it — the server injects `settingsAdmin` into
+  `ORG_CONFIG`), **`SameSite=Lax`** (rides a click through from the dashboard,
+  **not** sent on a cross-site PUT, which is the CSRF defence), `Secure` only
+  over https or the cookie is dropped on `http://localhost` and the gear silently
+  never appears in dev, 12h.
+- The query parameter and `x-admin-key` still work — a link someone was handed
+  must not stop working, and the specs drive the routes without a browser. All
+  three go through one `reportSettingsKeyMatches()` constant-time compare.
+- **The app has no cookie middleware and one name does not justify adding one**,
+  so `readCookie()` parses the single header by hand.
+
+**And a proven super-admin with the flag OFF is a different state from an org
+staffer.** Rendering both as "no gear" is exactly what made this look broken.
+`reportSettingsFlagOff(req)` is `!flag && keyOk` — **gated on the KEY**, so it can
+never appear for a token holder, which would advertise the surface the 404s exist
+to hide. In that state the page renders a **disabled** gear naming the switch and
+where it lives. Absent-not-greyed stays the rule for someone who may never hold
+the control; for someone holding the key it is a dead end with no exit. Same
+lesson as the Fast Track pin: *a control nobody can find is a control that does
+not exist, and the bug report for it arrives as a feature request.*
+
+Worth knowing when a preview looks dead: **each PR preview is a fresh volume, so
+`feature-flags.json` starts empty and `reportSettings` defaults OFF there** — the
+flag has to be switched on in that environment before anything appears.
+
+### A DELIBERATE 404 looked exactly like a dead link (2026-08-28)
+
+Dan clicked into settings and got a Slack alert: *"DEAD LINK — someone opened
+`/apex/roster/api/settings` with a valid-looking token and got a 404 (no such
+report)"*. The route was working perfectly; **that 404 IS the refusal.**
+
+`noteDeadLink()` watches for stale internal links and its whole discriminator is
+*"a 404 that arrived with a valid-looking token"* — which is byte-identical to
+the shape of every deliberate refusal on this surface. So each refused request
+posted an alert, and the alert **named in Slack exactly the path the 404 exists
+to keep quiet**. It also misclassified: `apex` and `roster` both exist, so it
+reported `unknown-report` about a report that is very much real.
+
+`refuse404(res, body)` sets `res.locals.deliberate404` and both settings routes
+go through it; the watch skips a marked response. **A refusal is not a dead
+link: the path is real and the caller was told no.** Worth copying to any other
+route that 404s on purpose behind a token — `saved-views`, the lessons and munis
+gates and the per-report "not configured" 404s all have the same shape and were
+left alone here rather than widened into this change.
+
+### Opening the panel is its own signal
+
+Dan: *"make sure we're tagging when the settings option is clicked into for any
+org in slack, that way I can see and track it."* `settings-open` (🔍) fires from
+`openSettings()`, alongside the existing `settings-save` / `settings-reset`.
+
+- **A LOOK is the earlier signal than a change** — most opens will not end in a
+  save, and those are the ones that say the surface is being used.
+- It carries `custom`, whether this org has already moved off the platform
+  defaults, because browsing and revisiting are different things.
+  **`rsCustomised()` compares field by field, not "is there a stored record"** —
+  a record holding nothing but defaults is not a customised org.
+- Default debounce (`org|report|event`, 60s): opening and closing the panel
+  twice while editing is one look.
+- The value is clamped to `"1"`/`"0"` server-side like every other extra on that
+  route, never echoed from the query string.
+
+### The three groups
+
+| group | blast radius | settings |
+|---|---|---|
+| What it opens on | display only | window, status, run-on-open, default columns, which controls exist |
+| How fresh | costs Metabase time on a **shared card** | cache lifetime, "Data as of" stamp, pre-warm the default window |
+| The ePACT export | changes a file a HIPAA vendor imports | columns and their order, group label, BOM |
+
+- **The cache dial prices itself, and the platform figure is a SUM.** The first
+  version multiplied this org's rate by the org count — "348 card queries/day ·
+  29 orgs" — which is simply false: each org's lifetime is its own. Dan spotted
+  what it implied (*"can't have one org going rogue and borking it for
+  everyone"*). The panel now shows this org's rate plus what every OTHER org has
+  actually chosen, against a budget.
+- **A per-org floor does not answer that objection, so there is also a
+  platform-wide budget.** The floor bounds one org; the CARD is shared, and the
+  failure mode is contention on one Metabase queue — this repo has already had
+  it, in the post-deploy prewarm storm that 502'd the facility Summary.
+  `sharedCardLoad(rt)` sums every visible org's configured rate;
+  `REPORT_BUDGET_MULTIPLE` (2) sets the cap as a multiple of what all-defaults
+  would cost, **written as a multiple so it cannot go stale as orgs are
+  onboarded**. A save that would exceed it is refused, and the refusal **names
+  the orgs already running short** — the one dragging the slider is not
+  necessarily the one that filled it. It only refuses a change that makes things
+  *worse*, so an org already over budget can still lengthen back toward the
+  default. Shared cards only: an org on its own card spends nobody else's time.
+- The floor of **30 minutes** clamps rather than refuses — a dial that snaps
+  teaches the limit where an error just loses the edit.
+- **`warmDefaultWindow` is OFF by default.** It adds one Metabase query per org
+  per day; a load increase should be switched on and measured, not slipped in.
+  When on, pre-warm fetches the window the page will actually ask for, built
+  with the real `buildMetabaseParams` so the key is the route's and not an
+  approximation of it.
+- **Over 30 days the window warns rather than being refused** — a month at Apex
+  was ~382 pages and 12,130 rows before the reader had chosen anything, but an
+  org running year-round programmes may genuinely want a quarter.
+- **`ROSTER_DEFAULT_DAYS` stays a constant.** The server's `next14` relative
+  range is pinned to it, so a saved view named "Next 14 days" and the report's
+  own default cannot drift. An org's window arrives as an argument to
+  `getDefaultRange(today, days)` instead of editing that constant.
+
+### Email subscriptions are deliberately NOT offered here
+
+The roster is not in `EMAIL_SUBSCRIBABLE_REPORTS` (only `facility` and `gl`
+are), so it has no subscribe control to remove — and a switch over a control
+that does not exist is the same dead end as a greyed button. The spec asserts
+its absence *and* asserts why, so the day the roster becomes subscribable the
+toggle is one line. Every other item on Dan's list is there: saved views, PDF,
+print, Excel, ePACT, the form-questions picker.
+
+**Two invariants the spec enforces about that list**: every removable key has a
+label (or the panel renders a raw key), and every removable key is actually read
+by something on the page (or it is a switch that controls nothing, which looks
+like a working control and is not one).
+
+### The ePACT catalogue excludes SESSION-grain fields, on purpose
+
+The export reproduces her `SELECT DISTINCT` over **whatever columns are
+chosen**, so adding a session-grain field (Session Start / Session End) would
+stop the dedupe collapsing two same-day sessions and upload the same camper
+twice. `EPACT_FIELD_CATALOGUE` therefore offers participant- and section-grain
+fields only. Deviating from the verified five is allowed and **never silent**:
+the panel flips from green to a warning naming the risk, and the same-five-in-a-
+different-order case counts as drift because ePACT maps on position.
+
+Also: the sort had to stop being positional. It was `t[4] || t[2] || t[1]`
+(label, last, first); with a configurable column set index 4 need not be the
+label, so it now looks the columns up **by name**.
+
+### Guards
+
+`scripts/report-settings.spec.js` (**171 assertions, in CI**) lifts and RUNS the
+registry and its validator, and has a live half that boots the server, saves,
+clamps, resets and reads the settings back **out of the page's injected
+`ORG_CONFIG`** — they decide the first render, so a page that fetched them would
+flash the platform defaults first. `SKIP_SOURCE=1` drops the source assertions so
+the live half can be shown to catch a regression on its own — a regex over our own
+patch is not evidence the server behaves, and all five cookie/flag-notice
+mutations below were verified against the live half alone.
+
+Mutation-tested twenty-eight ways, all failing by
+name: one org's settings leaking to another, a refusal announced as a DEAD LINK
+(the alert Dan saw), `settings-open`
+missing from the log route's `ALLOWED` list, the `custom` flag dropped on the way
+through, sign-in leaving no cookie (the bug exactly as Dan hit it), the cookie
+carrying the password instead of the derived key, `SameSite` dropped, the admin
+gate ignoring the cookie, the flag-off notice not gated on the key (so it would
+advertise the surface to a staffer),
+the flag's switch never driven by `applyFlags`, the feature flag defaulting ON, no-password falling open instead of
+closed, the admin gate removed from either route, the budget check dropped, the
+panel multiplying by the org count again, the gear rendering for everyone,
+pre-warm hand-building its key again, the TTL floor removed,
+`warmDefaultWindow` defaulting on, an unknown key silently accepted, a
+session-grain field offered, the server's column defaults drifting from the
+page's, an org default overriding a reader's columns, `settings-save` dropped
+from `SLACK_NOTIFY`, a removable control nothing reads, a removable control with
+no label, an email toggle on a report with no subscribe button, and the
+wide-window warning removed.
+
+`roster-epact.spec.js` 73 → **94**: the export now runs through a configured org
+as well as an unconfigured one, and the assertions that matter are that the
+DEFAULT is still the verified five and that an unknown column set falls back
+rather than exporting empty columns.
+
+`ci-check-render.js` now boots the server **with** a `DASHBOARD_PASSWORD` and
+pre-writes `feature-flags.json` with `reportSettings: true`, or the panel cases
+would be testing the closed door instead of the panel. One case deliberately
+drops the key and asserts the gear is **ABSENT from the DOM** — "renders a greyed
+button" and "renders nothing" are different claims, and only one of them keeps
+the power away from an org user.
+
+**`ci-check-render.js` gained a per-case `pre(page)` hook** for the two cookie
+cases: a cookie set in `act` is set too late, because the page it decides has
+already been served. `roster · signed in, then navigated` carries **no `?admin=`**
+— the cookie is the whole test — and `roster · flag off says where the switch is`
+flips the flag **from Node, not from the page**, since every `/api/` request the
+browser makes is answered from `STUBS` and an in-page fetch would never reach the
+server; it runs last of the settings cases and restores the flag in a `finally`,
+because the flag is server state every earlier case depends on.
+
+Seven `ci-check-render.js` cases, four of them seen to fail on a real
+regression in a browser: the gear is **last** in the toolbar (moving it fails),
+the panel opens with all three groups, the drift banner flips when a column is
+added (pinning it green fails), and the cache dial's platform total **goes up**
+when the lifetime goes down.
+
+**A render-check note worth keeping:** the dial case drives the range input with
+the **keyboard**, not by assigning `.value`. React tracks a controlled input's
+value internally, so a direct assignment plus a synthetic `input` event is
+ignored — the case would have failed on a perfectly good dial.
 
 ## Saved views on the Class Roster (2026-08-27)
 
