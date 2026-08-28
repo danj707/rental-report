@@ -3044,7 +3044,30 @@ window; **6 were labelled Confirmed/In-Progress** and $60 of canceled charges sa
 in Charged. Fixed in the SQL: `CASE WHEN r.canceled_at IS NOT NULL THEN
 'Canceled' ELSE INITCAP(fr.status) END`. The client already zeroes a row whose
 Status says Canceled, so the $60 leaves on its own — no client change needed.
-Requires a card update to take effect.
+**SHIPPED AND VERIFIED LIVE — card 19570 is on v2.2 (checked 2026-08-28).** This
+line used to read *"Requires a card update to take effect"* and was stale, which
+is the FACILITIES_SUMMARY_UUID trap in this same section a second time: a note
+that says work is outstanding costs exactly as much as one that says it is done.
+The live card was read before anything was written to it, and its executable SQL
+is identical to `sql/facilities-summary-v2.sql` — only comment wording differs —
+so there is nothing to push. All three template tags are correctly typed
+(`org_id:string/=`, `start_date:date/single`, `end_date:date/single`), i.e. the
+re-flip happened too.
+
+Measured through the public endpoint (cache-independent), douglas-county-nv,
+campsites, Aug 2026:
+
+| | |
+|---|---|
+| reservations | 218 — **210 live, 8 Canceled** |
+| every canceled row's `Total` | **0**, so its **$120** of Billed stays out of Charged |
+| distinct `Site ID` | **41** |
+| distinct `Facility` NAME | **46** — the 5 phantom "campsites" that are fee names |
+| `Site ID` on all 63 invoice rows | NULL |
+
+(Row counts run ahead of the 206/198 recorded on 2026-08-23 simply because the
+month has since filled in; the 41-vs-46 gap and the canceled handling are the
+invariants, and both hold.)
 
 **Also added to the SQL: a `Site ID` column** (`ct.id`, NULL on invoice rows), so
 counting sites is counting identities rather than display names. `siteKey()`
