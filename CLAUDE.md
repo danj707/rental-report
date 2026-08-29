@@ -297,6 +297,132 @@ first, as the timing caveat in the health-check section says.
   threw `ReferenceError` before asserting anything. Deps injected, 7/7 passing,
   and it is in CI now.
 
+## Memberships: the PAID BOOK, and why the platform counts read so high (2026-08-29)
+
+Dan: *"we're looking for paid memberships, like swim passes, yoga or fitness
+memberships, autorenewing memberships"* — and then the admin questions the report
+should answer: how many are on auto-renew, what does it make each month, are
+sales up or down, where am I losing money, which plans are popular and why.
+
+**A `group` IS the membership record**, so the obvious query returns **141,128
+active memberships** and that number is mostly a residency file: **130,170 are
+priced at $0**, almost all free resident-verification records (*Torrance
+Residents*, *Norman Residents*, *Apex Resident*). The real paid book is
+**10,958 memberships ($2,563,002) + 13,802 passes ($737,628) = $3,300,630**
+across ~45 orgs.
+
+**The Memberships report was already right about this** — card 17301 reads a
+*purchases* view, and a membership reaches it **iff `finalCents > 0`**. Tested,
+not assumed: zero exceptions across 102,765 rows. So the report's figures are
+sound; it is the platform-level counts that mislead.
+
+### AUTO-RENEW IS A PLAN SETTING, NOT A MEMBER CHOICE
+
+The finding that reframes everything else. Of the **317 plans** carrying a paid
+membership: **268 have zero members on auto-renew, 47 have every member on it,
+and exactly 2 are mixed** — 4 members platform-wide. Plans named *Monthly* and
+*EFT* are 100%; everything priced as an annual or a season is 0%.
+
+So "only 17% of the book auto-renews" is really **"268 plans were never
+configured for it"** — a config review with an org list, not a member campaign.
+Only **6 orgs** have any auto-renew at all. Economics: **$119,823/month**
+platform-wide, median cycle **31 days**, avg charge $69.28.
+
+### SEASON PASSES ARE NOT CHURN — and I got this wrong first
+
+I reported **$846,397 expiring in 90 days with no auto-renew** as money at risk.
+**95% of it is season passes reaching the end of their season.** A *2026 Season
+Pass* ending 30 September is the product working. Split properly:
+**$807,142 is next-season re-buy** and **$39,256 is genuine renewal exposure**.
+Both matter; they are not the same job, and one number covering both is how a
+report gets distrusted.
+
+The term rule is on the plan, and it predicts everything:
+
+| shape | test | active | book | on auto-renew |
+|---|---|---|---|---|
+| open-ended / subscription | neither field set | 5,395 | $1,631,303 | 1,848 (34.3%) |
+| season | `group.end_date` | 4,637 | $879,940 | **0** |
+| rolling term | `group.ends_after_seconds` | 926 | $51,758 | **0** |
+| passes | — | 13,802 | $737,628 | **n/a** |
+
+**The `pass` table has no subscription column at all** — no
+`stripe_subscription_id`, no `next_renewal_at`. 13,802 active paid passes worth
+$737,628 cannot auto-renew as a matter of schema, not configuration.
+
+### Card 17301 v2 — five columns, and nothing else moved
+
+`Coverage`, `Plan Season End`, `Plan Term Days`, `Auto Renew`, `Period Start`,
+via two LEFT JOINs to `public.membership` and `public."group"` — both on primary
+keys, so neither can fan out. **Verified before the push**: Norman, 20,341 rows
+with and without the joins and a byte-identical md5 over the original columns.
+Mirror at `sql/report-cards/17301-memberships.sql` (there was none before).
+
+- **`Auto Renew` is `stripe_subscription_id IS NOT NULL`** — the truth. The
+  existing `Renewal Type` infers it from `next_renewal_at` and is **kept
+  unchanged** for compatibility, but it is not the same test.
+- **`Period Start` + `Next Renewal` give the billing CYCLE**, which is the only
+  way to turn a per-cycle charge into a monthly figure. Measured: 50 memberships
+  bill weekly, so reading the charge as monthly understates them 4x.
+
+**THE CACHE INVARIANT.** Feeds cache 4 hours, so a pre-v2 response and a v2 one
+are both live at once. `mbIsAutoRenew()` resolves them to the same answer, and
+`mbHasEconomics()` is **presence, not count** — the panels HIDE on a pre-v2 feed
+rather than rendering `$0`, which would say "this org earns nothing from
+auto-renew" when the truth is "this feed cannot tell us". Same rule as
+`hasAbsent` / `ciHasStatus`. And **`mbProductShape()` returns `unknown`, never
+`open`, without the plan columns** — guessing would file all 4,637 season passes
+as subscriptions and put $807,142 of re-buy into the churn number.
+
+### The price/volume bridge answers "where am I losing money"
+
+Norman, measured: Jun→Jul **units +10.4%, revenue −74.9%**. Not churn and not a
+discount — **mix**: the $224 family season pass stopped selling and $9 single
+passes replaced it. `mbDecompose()` splits the move into volume (+$9,145) and
+price/mix (−$75,307), **priced at the PRIOR month's average** so the parts sum.
+
+**Asserting only that the parts sum cannot catch a wrong bridge** — `price` is
+*defined* as `total - volume`, so the identity holds however volume is computed.
+Caught by mutation; the spec pins the VALUES.
+
+### Popular vs unpopular, with the why
+
+The plan table carries **price beside units**, which is the only way "why is this
+one unpopular" is answerable. It is what shows Norman's **YFAC Annual Individual
+at $240 against a $20 monthly — exactly 12x, no discount for a year's
+commitment** — so 135 people take the monthly and **17 take the annual**.
+
+### Nothing was removed
+
+Additive by construction, and the spec pins it: all 13 table columns, all 21
+Excel columns, all 6 views, all 3 tabs and all 6 KPI cards are asserted still
+present. Two new tabs (**Auto-Renew**, **Sales & Mix**), both deep-linkable —
+the URL write-back was already generic, so the `?ci_rows=` erasure trap did not
+recur.
+
+**Still don't build on `last_used_at`**: NULL on all 155,853 memberships and all
+73,888 passes, so the shipped "Last Used" column has never had a value.
+`cancel_reason` offers only *other / schedule / cost* and **94.2% say "other"** —
+there is no "why they left" panel to build.
+
+Guards: `scripts/memberships-revenue.spec.js` (**31 assertions, in CI**), which
+LIFTS AND RUNS the eight helpers. Mutation-tested ten ways, all failing by name —
+the pre-v2 shape guessed as open-ended, the cache-invariant fallback dropped, an
+unknown cycle defaulted to 30 days, the economics gate reading a value instead of
+the column, the bridge priced at the current average, `Auto Renew` reverted to
+the inferred column, an Excel column dropped, either beacon missing from the log
+allowlist or from `SLACK_NOTIFY`, and the card's trailing `ORDER BY` dropped.
+Plus **14 `ci-check-render.js` cases**, keyed on computed values rather than "a
+panel rendered", over a fixture with a `prev2` stub mode that drops the five v2
+columns — so the pre-v2 degradation is proven in a real browser, not asserted in
+source.
+
+**One existing assertion had to be loosened.** `report-settings.spec.js` pinned
+`"settings-open"]` — the END of the log route's ALLOWED array — so appending any
+later event broke it with nothing about settings-open changing. It now tests
+membership in the array, and was re-verified to still catch settings-open being
+removed.
+
 ## Absent and Failed check-ins (2026-08-26) — one log, two grains
 
 Dan: add 'absent' and 'failed' to the check-in reporting, "pulled directly from

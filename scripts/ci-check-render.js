@@ -468,23 +468,71 @@ function programCheckinRows() {
   ];
 }
 
-// Enough of the memberships feed for the tab underneath to render; the Check-Ins
-// tab is what the cases assert on.
+// Memberships fixture. Carries the card 17301 v2 columns (Coverage, Plan Season
+// End, Plan Term Days, Auto Renew, Period Start) so the Auto-Renew and Sales &
+// Mix tabs have something real to compute from, and spreads purchases over three
+// months so the month series and the price/volume decomposition are exercised.
+//
+// The proportions are the shape measured on prod, not invented:
+//   · a SEASON plan nobody auto-renews (all season plans on prod are 0%)
+//   · a MONTHLY open-ended plan where every member auto-renews (100%, as on prod)
+//   · an ANNUAL plan priced at exactly 12x that monthly, which almost nobody buys
+// The last one is the finding the Sales & Mix plan table exists to surface.
+//
+// stubMode "prev2" drops the five v2 columns, i.e. a warm pre-v2 cache entry.
+// Both feed shapes are live at once for four hours after the card ships, so the
+// page has to be correct on either — see mbHasEconomics / mbIsAutoRenew.
 function membershipRows() {
-  return [
-    { "User ID": "24d709e5-675b-4d7e-91e3-f7b18daeb41c", "First Name": "Ada", "Last Name": "Lovelace",
-      "Email": "ada@example.com", "Membership ID": "m-1", "Membership Type": "Annual Family",
-      "Group / Plan": "Family", "Status": "active", "Renewal Type": "Auto-renew",
-      "Price": 240, "Paid": 240, "Refunded": 0, "Net Collected": 240,
-      "Start Date": "2026-01-01", "End Date": "2026-12-31", "Created At": "2026-01-01",
-      "Usage Count": 12, "Attendance Count": 12 },
-    { "User ID": "a37fea14-be38-46db-96da-40e61ccca25a", "First Name": "Emmy", "Last Name": "Noether",
-      "Email": "emmy@example.com", "Membership ID": "m-2", "Membership Type": "Adult",
-      "Group / Plan": "Adult", "Status": "active", "Renewal Type": "One-time",
-      "Price": 120, "Paid": 120, "Refunded": 0, "Net Collected": 120,
-      "Start Date": "2026-03-01", "End Date": "2027-02-28", "Created At": "2026-03-01",
-      "Usage Count": 4, "Attendance Count": 4 },
-  ];
+  const V2 = STUB_MODE !== "prev2";
+  const row = (o) => {
+    const r = {
+      "Paid": o["Price"], "Refunded": 0, "Net Collected": o["Price"],
+      "Usage Count": 4, "Attendance Count": 4,
+      "Email": (o["First Name"] || "x").toLowerCase() + "@example.com",
+      "Canceled At": "", "Last Used": "",
+    };
+    Object.assign(r, o);
+    if (!V2) {
+      delete r["Coverage"]; delete r["Plan Season End"]; delete r["Plan Term Days"];
+      delete r["Auto Renew"]; delete r["Period Start"];
+    }
+    return r;
+  };
+  const rows = [];
+  // Season pass — 6 sold in May at $240, none auto-renewing.
+  for (let i = 0; i < 6; i++) {
+    rows.push(row({
+      "User ID": "24d709e5-675b-4d7e-91e3-f7b18daeb41c", "First Name": "Ada", "Last Name": "Lovelace " + i,
+      "Membership ID": "m-s" + i, "Membership Type": "Aquatic Season", "Group / Plan": "Summer Season Pass",
+      "Status": "active", "Renewal Type": "One-time", "Price": 240,
+      "Start Date": "2026-05-01", "End Date": "2026-09-30", "Created At": "2026-05-1" + i,
+      "Next Renewal": "", "Coverage": "group", "Plan Season End": "2026-09-30",
+      "Plan Term Days": null, "Auto Renew": false, "Period Start": "",
+    }));
+  }
+  // Monthly fitness — 4 sold in June at $20, every one auto-renewing on a 31-day
+  // cycle, so the tab can compute a real monthly figure and an ARPU.
+  for (let i = 0; i < 4; i++) {
+    rows.push(row({
+      "User ID": "a37fea14-be38-46db-96da-40e61ccca25a", "First Name": "Emmy", "Last Name": "Noether " + i,
+      "Membership ID": "m-m" + i, "Membership Type": "Fitness Monthly", "Group / Plan": "Monthly Individual",
+      "Status": "active", "Renewal Type": "Auto-renew", "Price": 20,
+      "Start Date": "2026-06-01", "End Date": "", "Created At": "2026-06-0" + (i + 1),
+      "Next Renewal": "2026-09-29", "Coverage": "individual", "Plan Season End": null,
+      "Plan Term Days": null, "Auto Renew": true, "Period Start": "2026-08-29",
+    }));
+  }
+  // Annual fitness at 12x the monthly — one buyer, renewing by hand. This is the
+  // conversion candidate AND the unpopular-plan case, in one row.
+  rows.push(row({
+    "User ID": "b48fea14-be38-46db-96da-40e61ccca25b", "First Name": "Grace", "Last Name": "Hopper",
+    "Membership ID": "m-a1", "Membership Type": "Fitness Annual", "Group / Plan": "Annual Individual",
+    "Status": "active", "Renewal Type": "One-time", "Price": 240,
+    "Start Date": "2026-07-01", "End Date": "2027-06-30", "Created At": "2026-07-05",
+    "Next Renewal": "", "Coverage": "individual", "Plan Season End": null,
+    "Plan Term Days": null, "Auto Renew": false, "Period Start": "",
+  }));
+  return rows;
 }
 
 // ── Director's Report fixture ───────────────────────────────────────────────
@@ -1515,6 +1563,53 @@ const CASES = [
     stubMode: "nofail", needs: "[data-ci-total=\"9\"]", absent: "[data-ci-rowset-toggle]" },
   // THE STRAND. A ci_rows=failed link into a window with no failures must land
   // on the accepted list, not an empty table whose toggle is gone.
+  // ── Auto-Renew and Sales & Mix (card 17301 v2) ──────────────────────────
+  // Keyed on COMPUTED VALUES, not on "a panel rendered": every one of these
+  // passes on a tab that renders the wrong number.
+  { name: "memberships · auto-renew count", path: "/{org}/memberships?tab=autorenew",
+    needs: "[data-ar-count=\"4\"]" },
+  { name: "memberships · auto-renew monthly revenue", path: "/{org}/memberships?tab=autorenew",
+    needs: "[data-ar-mrr=\"79\"]" },
+  // Only the annual plan qualifies: it is open-ended and renewing by hand. The
+  // six season passes must NOT be here — a season pass expiring is the season
+  // closing, and offering it as a conversion candidate sends an admin chasing
+  // churn that does not exist.
+  { name: "memberships · season passes are not conversion candidates", path: "/{org}/memberships?tab=autorenew",
+    needs: "[data-ar-cands=\"1\"]" },
+  { name: "memberships · auto-renew is per plan", path: "/{org}/memberships?tab=autorenew",
+    needs: "[data-ar-plan=\"Monthly Individual\"] [data-ar-plan-pct=\"100\"]" },
+  { name: "memberships · season plan reads 0% auto-renew", path: "/{org}/memberships?tab=autorenew",
+    needs: "[data-ar-plan=\"Summer Season Pass\"] [data-ar-plan-pct=\"0\"]" },
+  // A pre-v2 cache entry still knows WHO auto-renews (from Renewal Type), so the
+  // count must be identical across both feed shapes — the cache invariant. What
+  // it cannot know is the billing cycle, so the monthly figure hides rather than
+  // rendering a $0 that would read as "this org earns nothing".
+  { name: "memberships · auto-renew count survives a pre-v2 feed", path: "/{org}/memberships?tab=autorenew",
+    stubMode: "prev2", needs: "[data-ar-count=\"4\"]" },
+  { name: "memberships · no invented monthly on a pre-v2 feed", path: "/{org}/memberships?tab=autorenew",
+    stubMode: "prev2", needs: "[data-ar-pending=\"1\"]", absent: "[data-ar-mrr]" },
+  // Without the plan columns the shape is unknown, so nothing may be offered as
+  // a conversion candidate — guessing "open-ended" would file every season pass
+  // as churn.
+  { name: "memberships · no candidates guessed without plan terms", path: "/{org}/memberships?tab=autorenew",
+    stubMode: "prev2", needs: "[data-ar-cands=\"0\"]" },
+
+  // Jun (4 units / $80) → Jul (1 unit / $240): units DOWN, revenue UP, and the
+  // whole move is price. A revenue line alone would read as growth; a unit line
+  // alone as collapse. Both parts are asserted because the bridge must sum.
+  { name: "memberships · sales decomposition", path: "/{org}/memberships?tab=salesmix",
+    needs: "[data-sm-decomp] [data-sm-volume=\"-60\"]" },
+  { name: "memberships · price half of the bridge", path: "/{org}/memberships?tab=salesmix",
+    needs: "[data-sm-decomp] [data-sm-price=\"220\"]" },
+  { name: "memberships · units fell", path: "/{org}/memberships?tab=salesmix",
+    needs: "[data-sm-unit-delta=\"-3\"]" },
+  { name: "memberships · revenue rose in the same month", path: "/{org}/memberships?tab=salesmix",
+    needs: "[data-sm-rev-delta=\"160\"]" },
+  { name: "memberships · plan mix ranks by units", path: "/{org}/memberships?tab=salesmix",
+    needs: "[data-sm-plan=\"Summer Season Pass\"] [data-sm-plan-units=\"6\"]" },
+  { name: "memberships · the unpopular annual is on the table", path: "/{org}/memberships?tab=salesmix",
+    needs: "[data-sm-plan=\"Annual Individual\"] [data-sm-plan-units=\"1\"]" },
+
   { name: "memberships · failed link cannot strand", path: "/{org}/memberships?tab=checkins&ci_rows=failed",
     stubMode: "nofail", needs: "[data-ci-list-set=\"ok\"]" },
   // A window where every scan failed: the reader used to be told "11 scans were

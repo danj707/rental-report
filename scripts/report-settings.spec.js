@@ -317,7 +317,11 @@ ok(R.reportSettingsEnabled("roster") && !R.reportSettingsEnabled("gl"),
   src(/"epact", "settings-open", "settings-save"/.test(SERVER),
      "opening the panel posts to Slack — the standing rule is that a new surface ships with its "
      + "activity ping, and a LOOK is the earlier signal than a change");
-  src(/"epact", "settings-open"\]/.test(SERVER),
+  // Membership, not position: this pinned `"settings-open"]` — the END of the
+  // ALLOWED array — so appending any later event broke it without anything
+  // about settings-open changing. What it is protecting is that the event is on
+  // the list at all; a beacon whose event is missing 400s silently.
+  src(/const ALLOWED = \[[^\]]*"settings-open"[^\]]*\]/.test(SERVER),
      "…and the event has to be on the log route's ALLOWED list or the beacon 400s silently");
   src(/"settings-open":\s*\{ emoji/.test(SERVER), "and it needs a message meta entry");
   src(/logClientEvent\('settings-open', \{ custom: rsCustomised\(\) \? 1 : 0 \}\)/.test(PAGE),
