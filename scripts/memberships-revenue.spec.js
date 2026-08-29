@@ -105,11 +105,26 @@ test("a pre-v2 feed reads UNKNOWN, never open-ended", () => {
 });
 
 // ── The cache invariant ─────────────────────────────────────────────────────
-test("auto-renew resolves the same on a v2 and a pre-v2 feed", () => {
+test("a membership on auto-renew reads that way on both feed shapes", () => {
   assert.strictEqual(mbIsAutoRenew(V2_MONTHLY), true);
   assert.strictEqual(mbIsAutoRenew(PRE_V2_MONTHLY), true,
-    "both feed shapes are live at once for four hours after the card ships; if " +
-    "they disagree the report changes what it says the moment a cache entry expires");
+    "both feed shapes are live at once for four hours after the card ships");
+});
+
+test("the pre-v2 fallback can only ever UNDERCOUNT, never overcount", () => {
+  // Measured over active memberships on prod 2026-08-29: 1,760 carry both
+  // signals, 88 carry a live subscription with no renewal date, and NOT ONE
+  // carries a renewal date without a subscription. So the only possible
+  // disagreement is a pre-v2 feed missing someone — a 4.8% undercount that
+  // corrects upward when the cache turns over.
+  //
+  // The dangerous direction is the other one: reporting a member as
+  // auto-renewing when no subscription exists would put revenue in the forecast
+  // that nothing will collect.
+  const renewalDateButNoSubscription = { autoRenew: false, renewalType: "Auto-renew" };
+  assert.strictEqual(mbIsAutoRenew(renewalDateButNoSubscription), false,
+    "where v2 can speak it must win — a renewal date without a subscription " +
+    "is not auto-renew, and prod has zero such memberships anyway");
 });
 
 test("the explicit column wins over the inferred one", () => {
@@ -240,6 +255,15 @@ test("all three pre-existing tabs are still reachable", () => {
   ["memberships", "checkins", "retention"].forEach(t => {
     assert.strictEqual(mbEffectiveTab(t), t, "tab " + t + " is no longer reachable");
   });
+});
+
+test("the Auto-Renew KPI and the Auto-Renew tab share one implementation", () => {
+  // Two auto-renew numbers on one page that disagree by 5% is the trap the
+  // facility Summary already shipped once. The KPI now routes through the same
+  // helper, so on a pre-v2 feed it is byte-for-byte today's behaviour and on v2
+  // both surfaces move together.
+  assert.match(page, /r\.status === 'active' && mbIsAutoRenew\(r\)/,
+    "the summary KPI must not re-derive auto-renew on its own");
 });
 
 test("the six pre-existing KPI cards are still computed", () => {

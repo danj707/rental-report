@@ -790,9 +790,20 @@ function mbProductShape(r) {
 // member the moment a cache entry expires — the ftEffectiveStatus lesson.
 //
 // v2 carries stripe_subscription_id, which is the truth. v1 only had
-// "Renewal Type", inferred from membership_next_renewal_at. Measured on prod
-// the two agree on the active paid book, so the fallback is sound; where they
-// could disagree, the explicit column wins.
+// "Renewal Type", inferred from membership_next_renewal_at.
+//
+// MEASURED, because "they agree" was too strong when I first wrote it. Over
+// ACTIVE memberships on prod 2026-08-29: 1,760 carry both signals, 88 carry a
+// subscription with no renewal date, and NOT ONE carries a renewal date without
+// a subscription. So the fallback undercounts by 88 (4.8%) and can never
+// overcount — it degrades in the safe direction, which is why it is kept rather
+// than hiding the number on a pre-v2 feed.
+//
+// The two diverge much further over a PURCHASE window, which is what this
+// report is: next_renewal_at is cleared when a membership ends while the
+// subscription id persists, so a May cohort at Norman reads 2 against 96. That
+// is not a defect in either column — they answer different questions — and it
+// is why every panel here is scoped to ACTIVE memberships before counting.
 function mbIsAutoRenew(r) {
   if (!r) return false;
   if (r.autoRenew != null) return !!r.autoRenew;   // v2: the real thing
@@ -1520,7 +1531,13 @@ function normalizeRow(raw) {
           byStatus[r.status] = (byStatus[r.status] || 0) + 1;
           totalRevenue += r.price;
           totalNetCollected += r.netCollected;
-          if (r.status === 'active' && r.renewalType === 'Auto-renew') {
+          // Routed through the shared helper so this KPI and the Auto-Renew tab
+          // cannot report different numbers for the same thing on the same page
+          // — the disagreement trap the facility Summary already shipped once.
+          // On a pre-v2 feed mbIsAutoRenew IS this test, so today's figure is
+          // unchanged; on v2 it picks up the 88 memberships whose renewal date
+          // has been cleared but whose subscription is live.
+          if (r.status === 'active' && mbIsAutoRenew(r)) {
             autoRenewCount++;
             mrrEstimate += r.price;
           }

@@ -33,8 +33,10 @@
                          charge into a monthly figure.
 
    Both new joins are on primary keys (membership.id, group.id), so
-   neither can fan out a row. Verified before push: identical row count
-   and a byte-identical sha256 over the 22 original columns.
+   neither can fan out a row. Verified against prod before the push:
+   City of Norman, 20,341 rows with and without the two joins, and an
+   identical md5 over (epsio_id, customer_user_id, product_name,
+   created_at) — the row identity — in both directions.
 
    WHY the extra joins are to base tables: the materialized purchases
    view carries `coverage` and `group_id` but NOT the plan's term rule
