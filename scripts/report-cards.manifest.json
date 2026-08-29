@@ -100,6 +100,18 @@
       "card": "cb6fd909-72d3-446b-930b-c0382da02d62",
       "org": "d781690b-c5a0-43c5-8443-9ae43899528c",
       "timeout": 120
+    },
+    {
+      "label": "memberships / clarksville (heaviest — 25,971 rows in 3.9s, measured 2026-08-29 right after card 17301 v2 added Coverage / Plan Season End / Plan Term Days / Auto Renew / Period Start; here so a lost column or a re-Texted date tag is caught rather than discovered as a blank Memberships report — this card had NO manifest row before)",
+      "card": "f4496307-d965-4637-b048-ecc703f2d37f",
+      "org": "460566d3-3a51-4387-a7a0-0b010923e40d",
+      "timeout": 120
+    },
+    {
+      "label": "memberships / norman (v2 COLUMN regression case — clarksville has zero subscriptions and zero term plans, so it structurally cannot catch a dropped Auto Renew or Period Start. Norman carries 404 subscriptions and 2,859 season-plan memberships, so the new columns are exercised here or nowhere)",
+      "card": "f4496307-d965-4637-b048-ecc703f2d37f",
+      "org": "574923bd-9e7b-43e0-9e5f-7ce256189cbf",
+      "timeout": 120
     }
   ]
 }
