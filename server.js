@@ -77,7 +77,36 @@ const METABASE_URL   = process.env.METABASE_URL   || "https://rec.metabaseapp.co
 const PORT           = process.env.PORT           || 3100;
 const BASE_URL       = process.env.BASE_URL       || `http://localhost:${PORT}`;
 const RESEND_API_KEY = process.env.RESEND_API_KEY || "";
-const SLACK_WEBHOOK_URL = process.env.SLACK_WEBHOOK_URL || ""; // Slack Incoming Webhook for activity pings; inert if unset
+// ── Slack posts ONLY from production ──────────────────────────────────
+// Railway PR previews inherit the SERVICE's variables, webhook included, and
+// each gets its OWN volume — so every preview has been posting into the live
+// activity feed from its own tiny events.jsonl. On 2026-08-29 that surfaced as
+// THREE contradictory "Daily activity — Fri, Aug 28" digests in one morning:
+//
+//   production            429 views across 19 orgs   ← the real one
+//   rental-report-pr-169   15 views, "report-wizard 15"  ← a parked branch I was testing
+//   rental-report-pr-159   "Quiet day: nothing logged."  ← a parked branch, empty volume
+//
+// The midnight digest is only the visible half. `notifySlack` fires the same
+// way, so every view/generate/export on a preview has been landing in the feed
+// Dan reads to judge real usage — indistinguishable from production, because
+// nothing in the message says which environment sent it.
+//
+// Both post sites read this one constant and both already degrade to a log line
+// when it is empty, so emptying it here is the whole fix.
+//
+// FAILS OPEN, deliberately. An unset RAILWAY_ENVIRONMENT_NAME means we are not
+// on Railway at all (local dev, CI), where the webhook is essentially never set
+// — and if Railway ever stopped injecting the name, posting twice is a nuisance
+// while a silently dead activity feed is the failure this repo keeps being
+// bitten by. Only a NAMED non-production Railway environment is muted.
+const RAILWAY_ENV_NAME = process.env.RAILWAY_ENVIRONMENT_NAME || "";
+const SLACK_ENV_IS_PROD = !RAILWAY_ENV_NAME || RAILWAY_ENV_NAME === "production";
+const SLACK_WEBHOOK_URL = SLACK_ENV_IS_PROD ? (process.env.SLACK_WEBHOOK_URL || "") : "";
+if (process.env.SLACK_WEBHOOK_URL && !SLACK_ENV_IS_PROD) {
+  console.log(`[slack] MUTED — environment "${RAILWAY_ENV_NAME}" is not production. `
+    + `Activity pings and the daily digest will be logged, not posted.`);
+}
 const SLACK_MENTION_USER_ID = process.env.SLACK_MENTION_USER_ID || "U08Q62BMHJP"; // Dan's Slack member ID — @mention on feedback events
 const FROM_EMAIL     = process.env.FROM_EMAIL     || "reports@rec.us";
 const FROM_NAME      = process.env.FROM_NAME      || "rec.us Reports";
@@ -13456,6 +13485,11 @@ app.get("/api/admin/report-activity", (req, res) => {
     }
   }
   res.json({
+    // Which environment this instance is, and whether it may post to Slack at
+    // all. A preview inherits the webhook and has its own volume, so without
+    // this you cannot tell a muted preview from a broken production feed.
+    environment: RAILWAY_ENV_NAME || "(not on Railway)",
+    slackPostingEnabled: !!SLACK_WEBHOOK_URL,
     reportDownAlerts: watchdogEnabled("reportDownAlerts"),
     windowDays: a.windowDays,
     usageEvents: a.events,
