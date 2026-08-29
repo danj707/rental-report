@@ -698,6 +698,55 @@ gone), `param-drift` (a date template tag is no longer typed Date). The three
 alerts debounce at 6h and @-mention if `SLACK_MENTION_USER_ID` is set. Inert
 unless `SLACK_WEBHOOK_URL` is set (prod has it).
 
+## Slack posts ONLY from production — previews were posting too (2026-08-29)
+
+Dan: *"look into these slack notifications…three this AM reporting different info
+about the prior day's stats?"* Three **"Daily activity — Fri, Aug 28"** digests
+landed within minutes, each with different numbers for the same day.
+
+**Railway PR previews inherit the SERVICE's variables — `SLACK_WEBHOOK_URL`
+included — and each preview gets its OWN volume.** So every preview ran the
+midnight cron against its own tiny `events.jsonl` and posted the result to the
+live channel. The project had exactly three environments and there were exactly
+three digests:
+
+| message | environment |
+|---|---|
+| 429 views across 19 orgs — watertown 321 · apex 52 | **production** — the real one |
+| 15 views, *"top reports: report-wizard 15"* | `rental-report-pr-169`, the parked wizard branch |
+| *"Quiet day: nothing logged."* | `rental-report-pr-159`, parked, empty volume |
+
+**THE DIGEST WAS ONLY THE VISIBLE HALF.** `notifySlack` reads the same constant,
+so every `view` / `generate` / export driven on a preview has been landing in the
+activity feed all along — and nothing in the message says which environment sent
+it, so preview traffic is indistinguishable from real usage in the feed Dan reads
+to decide what orgs actually use. Any usage judgement made from that feed since
+previews started is contaminated by whatever was being tested that day.
+
+The fix is one gate at the source: `SLACK_WEBHOOK_URL` resolves to `""` unless
+this is production. Both post sites already degrade to a log line when it is
+empty, so nothing else changed.
+
+**IT FAILS OPEN, deliberately, and that asymmetry is the part to keep.** Only a
+NAMED non-production Railway environment is muted; an *absent*
+`RAILWAY_ENVIRONMENT_NAME` still posts. Muting the unknown case is the tempting
+stricter rule and it is wrong here — off-Railway means local or CI, where the
+webhook is essentially never set, and if Railway ever stopped injecting the name
+the strict rule would silently kill the production feed. A duplicate is a
+nuisance; a feed that quietly stops is the failure this repo keeps being bitten
+by. The spec pins the asymmetry so nobody "tightens" it later.
+
+`/api/admin/report-activity` now reports `environment` and
+`slackPostingEnabled`, because a muted preview and a dead production feed look
+identical from the outside.
+
+Guard: `scripts/slack-production-only.spec.js` (**14 assertions, in CI**), which
+LIFTS AND RUNS the gate under each environment name rather than regexing it — a
+regex passes on an inverted comparison. Mutation-tested five ways, all failing by
+name: no gate at all (the bug as it shipped), the gate inverted, the strict
+"mute anything unknown" variant, a third post site reading `process.env`
+directly, and the admin route no longer naming the environment.
+
 ## Metabase card updates via API/MCP — template-tag types reset (IMPORTANT)
 
 Updating a card's SQL through the Metabase API/MCP (`construct_native_query` +

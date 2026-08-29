@@ -113,6 +113,14 @@ jobs:
       - name: Fast Track early-access spec (its own phase; both feed shapes agree)
         run: node scripts/fasttrack-early-access.spec.js
 
+      # Railway PR previews inherit the service's SLACK_WEBHOOK_URL and get their
+      # own volume, so each one posted its own daily digest into the live feed —
+      # three contradictory "Daily activity" messages in one morning. Pins the
+      # gate, and pins that it FAILS OPEN off-Railway (a silently dead activity
+      # feed is worse than a duplicate).
+      - name: Slack posts only from production (previews muted)
+        run: node scripts/slack-production-only.spec.js
+
       - name: Outdoor events hour spec (hours covered, not hours started; multi-day excluded)
         run: node scripts/outdoor-hours.spec.js
 
