@@ -471,7 +471,11 @@
       { tab: 'aquatics', icon: '\u{1F3CA}', label: 'Aquatics' },
       { tab: 'ice',      icon: '\u{26F8}\u{FE0F}', label: 'Ice' },
     ],
+    /* Memberships. In the page's own tab order, minus the landing tab: the card
+       already opens on Memberships, so a chip for it would be noise. */
     memberships: [
+      { tab: 'autorenew', icon: '\u{1F501}', label: 'Auto-Renew' },
+      { tab: 'salesmix',  icon: '\u{1F4CA}', label: 'Sales & Mix' },
       { tab: 'checkins',  icon: '\u2705',   label: 'Check-Ins' },
       { tab: 'retention', icon: '\u{1F4C8}', label: 'Retention' },
     ],
@@ -864,9 +868,18 @@
     var tabs = CARD_TABS[r];
     if (!tabs) return '';
     var sep = tokenQS ? '&' : '?';
+    // The label is TEXT and goes out through innerHTML, so it is escaped here
+    // rather than pre-escaped in the config — "Sales & Mix" is the page's own
+    // tab name, and an entity stored in CARD_TABS would leak into anything that
+    // ever reads a label as a string.
+    function escChip(s) {
+      return String(s == null ? '' : s).replace(/[&<>"]/g, function(c) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+      });
+    }
     return '<div class="card-tabs">' + tabs.map(function(t) {
-      return '<a class="card-tab" href="/' + slug + '/' + r + tokenQS + sep + 'tab=' + t.tab + '">'
-        + t.icon + ' ' + t.label + '</a>';
+      return '<a class="card-tab" href="/' + slug + '/' + r + tokenQS + sep + 'tab=' + encodeURIComponent(t.tab) + '">'
+        + escChip(t.icon) + ' ' + escChip(t.label) + '</a>';
     }).join('') + '</div>';
   }
 
