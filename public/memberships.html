@@ -740,6 +740,41 @@ function ciEffectiveRowSet(set, failCount, loaded, okCount) {
   return set;
 }
 
+// The Retention tab needs a long window — a cohort chart over four weeks has
+// nothing to plot. Clicking the tab therefore widens the date range.
+//
+// IT MUST ONLY EVER WIDEN, and getting that wrong is what made the chart flash
+// up and vanish. The old code was:
+//
+//     var start12 = new Date(now.getTime() - 30 * 86400000);   // 30 DAYS
+//     if (startDate > s || endDate < e) { ...refetch... }
+//
+// Two bugs compounding. `start12` was 30 days despite its name and the comment
+// above it saying 12 months. And the condition fired on `endDate < e` alone, so
+// a window that ALREADY covered twelve months got replaced by a 31-day one the
+// moment its end date sat a couple of days short of month-end. The pane renders
+// from the previous `data` while the refetch is in flight, so the full cohort
+// chart drew, then the narrow response landed and buildCohorts collapsed it.
+//
+// Returning the UNION of the current window and the wanted one makes narrowing
+// structurally impossible, whatever the two dates are.
+function mbRetentionWindow(startDate, endDate, now) {
+  var d = now ? new Date(now) : new Date();
+  // Twelve calendar months back, not 30 days.
+  var want = { start: mbISODate(new Date(d.getFullYear(), d.getMonth() - 12, d.getDate())),
+               end:   mbISODate(new Date(d.getFullYear(), d.getMonth() + 1, 0)) };
+  var start = startDate && startDate < want.start ? startDate : want.start;
+  var end   = endDate   && endDate   > want.end   ? endDate   : want.end;
+  return { start: start, end: end, changed: start !== startDate || end !== endDate };
+}
+
+// ISO date from local parts. Never toISOString() — that is UTC, so an evening
+// in any US timezone rolls to tomorrow and the window silently shifts a day.
+function mbISODate(d) {
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') +
+         '-' + String(d.getDate()).padStart(2, '0');
+}
+
 // Which tab a ?tab= link resolves to. At module scope so the spec can RUN it
 // (the nightStateFrom lesson) and so the org card's tab chips and this page
 // cannot drift about which tabs exist. An unknown value falls back to the
@@ -2365,17 +2400,14 @@ function normalizeRow(raw) {
               </button>
               <button className={'tab-btn' + (activeTab === 'retention' ? ' active' : '')} onClick={function(){
                   setActiveTab('retention');
-                  // Auto-expand to 12 months for meaningful cohort data
-                  var now = new Date();
-                  var start12 = new Date(now.getTime() - 30 * 86400000);
-                  var end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-                  var s = toISO(start12);
-                  var e = toISO(end);
-                  if (startDate > s || endDate < e) {
-                    setStartDate(s);
-                    setEndDate(e);
+                  // Widen to 12 months for a meaningful cohort chart — and only
+                  // ever widen, so a window that already covers more is kept.
+                  var w = mbRetentionWindow(startDate, endDate);
+                  if (w.changed) {
+                    setStartDate(w.start);
+                    setEndDate(w.end);
                     setActiveRange(null);
-                    fetchData(s, e);
+                    fetchData(w.start, w.end);
                   }
                 }}>
                 📈 Retention

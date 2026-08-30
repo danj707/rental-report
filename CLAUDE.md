@@ -350,6 +350,39 @@ The term rule is on the plan, and it predicts everything:
 `stripe_subscription_id`, no `next_renewal_at`. 13,802 active paid passes worth
 $737,628 cannot auto-renew as a matter of schema, not configuration.
 
+### The Retention chart flashed up and vanished — a PRE-EXISTING bug
+
+Dan, on the preview: *"under 'retention' this metric (which is awesome) shows
+briefly then disappears."* Nothing to do with the paid-book work — byte-identical
+on `main`, and the tab's own button had two defects compounding:
+
+```js
+var start12 = new Date(now.getTime() - 30 * 86400000);   // THIRTY DAYS
+if (startDate > s || endDate < e) { ...refetch... }
+```
+
+- **`start12` was 30 days**, despite its name and the comment above it saying
+  "auto-expand to 12 months". Even the intended widening gave a month.
+- **The condition NARROWED a window that was already wider.** It fires on
+  `endDate < e` alone, so on 2026-08-30 a 2025-09-01 → 2026-08-29 window (twelve
+  months) was replaced by Jul 31 → Aug 31 — **31 days**.
+
+The pane renders from the previous `data` while the refetch is in flight, so the
+full cohort chart drew, the narrow response landed, and `buildCohorts` collapsed
+it. That is the whole "shows briefly then disappears".
+
+`mbRetentionWindow()` returns the **UNION** of the current window and the wanted
+one, so narrowing is structurally impossible whatever the two dates are. At
+module scope so the spec can RUN it.
+
+**The guard needed a timezone to mean anything.** `mbISODate` builds the date
+from local parts; swapping it for `toISOString().slice(0,10)` passed the entire
+spec, because this sandbox and GitHub Actions both run UTC. The spec now
+re-execs under `TZ=America/Los_Angeles` — chosen for the PROPERTY, not an org:
+it is behind UTC, so a local evening is already tomorrow in UTC and the two
+implementations diverge. A zone ahead of UTC would not discriminate. Same lesson
+as `fasttrack-dates.spec.js`, and it was found by mutation, not by review.
+
 ### Card 17301 v2 — five columns, and nothing else moved
 
 `Coverage`, `Plan Season End`, `Plan Term Days`, `Auto Renew`, `Period Start`,

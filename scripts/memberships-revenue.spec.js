@@ -24,6 +24,24 @@
 //
 // Run: node scripts/memberships-revenue.spec.js
 "use strict";
+
+// The Retention-window assertions below turn on a UTC-vs-local off-by-one, which
+// is MEANINGLESS in a UTC process — and both this sandbox and GitHub Actions run
+// UTC. Caught by mutation: swapping mbISODate for toISOString().slice(0,10)
+// passed the whole spec until the timezone was forced. That is the exact shape
+// of a guard that looks like one and is not (see fasttrack-dates.spec.js, which
+// learned it first).
+//
+// America/Los_Angeles is chosen for the property, not the org: it is BEHIND UTC,
+// so a local evening is already tomorrow in UTC and the two implementations
+// diverge. A zone ahead of UTC would not discriminate for an evening timestamp.
+const TZ = "America/Los_Angeles";
+if (process.env.TZ !== TZ) {
+  const r = require("child_process").spawnSync(process.execPath, [__filename],
+    { env: Object.assign({}, process.env, { TZ }), stdio: "inherit" });
+  process.exit(r.status == null ? 1 : r.status);
+}
+
 const assert = require("assert");
 const fs = require("fs");
 const path = require("path");
@@ -51,12 +69,14 @@ function cut(name) {
   return page.slice(i, end);
 }
 const NAMES = ["mbIsPaid", "mbProductShape", "mbIsAutoRenew", "mbCycleDays",
-               "mbMonthlyValue", "mbHasEconomics", "mbDecompose", "mbEffectiveTab"];
+               "mbMonthlyValue", "mbHasEconomics", "mbDecompose", "mbEffectiveTab",
+               "mbRetentionWindow", "mbISODate"];
 const api = new Function(
   "var MB_URL_TABS = ['memberships','autorenew','salesmix','checkins','retention'];\n" +
   NAMES.map(cut).join("\n") + "\nreturn { " + NAMES.join(", ") + " };")();
 const { mbIsPaid, mbProductShape, mbIsAutoRenew, mbCycleDays,
-        mbMonthlyValue, mbHasEconomics, mbDecompose, mbEffectiveTab } = api;
+        mbMonthlyValue, mbHasEconomics, mbDecompose, mbEffectiveTab,
+        mbRetentionWindow, mbISODate } = api;
 
 // The same membership, as the two feeds that are live at once describe it.
 // A 4-hour cache means a pre-v2 response and a v2 response are both in flight
@@ -214,6 +234,49 @@ test("the URL write-back carries the tab, so a deep link is not erased", () => {
   // rebuilds the query string on mount and wipes a tab that was read from it.
   assert.match(page, /qs\.delete\('tab'\); else qs\.set\('tab', activeTab\)/,
     "the write-back must set the tab generically, not list the tabs it knows");
+});
+
+// ── The Retention window only ever widens ───────────────────────────────────
+// Reported from the live preview: the cohort chart "shows briefly then
+// disappears". The pane renders from the previous `data` while a refetch is in
+// flight, so the full chart drew and then the narrow response collapsed it.
+const RET_NOW = new Date(2026, 7, 30);   // 2026-08-30, local — the day it was seen
+
+test("a 12-month window survives clicking Retention", () => {
+  // THE BUG, exactly as reported. The old condition fired on `endDate < e`
+  // alone, so a window already covering twelve months was replaced by the
+  // 31 days between Jul 31 and Aug 31.
+  const w = mbRetentionWindow("2025-09-01", "2026-08-29", RET_NOW);
+  // The invariant is directional, not a fixed date: the window may only GROW.
+  assert.ok(w.start <= "2025-09-01", "start moved forward to " + w.start + " — that narrows it");
+  assert.ok(w.end   >= "2026-08-29", "end moved backward to " + w.end + " — that narrows it");
+  const days = (Date.parse(w.end) - Date.parse(w.start)) / 86400000;
+  assert.ok(days > 300, "the window collapsed to " + days + " days — the chart would vanish");
+});
+
+test("a narrow window IS widened to twelve months, not to 30 days", () => {
+  // The other half: `start12` was `now - 30 * 86400000` despite its name and
+  // the comment above it. Even the intended expansion only gave a month.
+  const w = mbRetentionWindow("2026-08-01", "2026-08-29", RET_NOW);
+  assert.strictEqual(w.start, "2025-08-30", "twelve calendar months back");
+  assert.ok(w.changed, "a one-month window must trigger the widen");
+  const days = (Date.parse(w.end) - Date.parse(w.start)) / 86400000;
+  assert.ok(days > 360, "expected ~12 months, got " + days + " days");
+});
+
+test("an already-wide window is left completely alone", () => {
+  // No refetch, so nothing can collapse and nothing flickers.
+  const w = mbRetentionWindow("2024-01-01", "2027-01-01", RET_NOW);
+  assert.strictEqual(w.changed, false);
+  assert.strictEqual(w.start, "2024-01-01");
+  assert.strictEqual(w.end, "2027-01-01");
+});
+
+test("the window is built from LOCAL date parts, never toISOString", () => {
+  // toISOString is UTC: an evening in any US timezone rolls to tomorrow and the
+  // window shifts a day. Same trap as the fasttrack dates and campmap horizon.
+  assert.strictEqual(mbISODate(new Date(2026, 7, 30, 23, 30)), "2026-08-30");
+  assert.strictEqual(mbISODate(new Date(2026, 0, 1, 0, 0)), "2026-01-01");
 });
 
 // ── Nothing existing may be lost ────────────────────────────────────────────
