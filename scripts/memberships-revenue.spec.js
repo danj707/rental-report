@@ -70,7 +70,7 @@ function cut(name) {
 }
 const NAMES = ["mbIsPaid", "mbProductShape", "mbIsAutoRenew", "mbCanAutoRenew",
                "mbCycleDays", "mbMonthlyValue", "mbRenewalsSoFar", "mbIsCanceled",
-               "mbCancelPending", "mbHasCancelSchedule", "mbHasProductKind",
+               "mbCancelPending", "mbHasCancelSchedule", "mbPlanKey", "mbHasProductKind",
                "mbHasEconomics", "mbDecompose", "mbEffectiveTab", "mbRetentionWindow",
                "mbISODate"];
 const api = new Function(
@@ -78,7 +78,7 @@ const api = new Function(
   NAMES.map(cut).join("\n") + "\nreturn { " + NAMES.join(", ") + " };")();
 const { mbIsPaid, mbProductShape, mbIsAutoRenew, mbCanAutoRenew, mbCycleDays,
         mbMonthlyValue, mbRenewalsSoFar, mbIsCanceled, mbCancelPending,
-        mbHasCancelSchedule, mbHasProductKind, mbHasEconomics, mbDecompose,
+        mbHasCancelSchedule, mbPlanKey, mbHasProductKind, mbHasEconomics, mbDecompose,
         mbEffectiveTab, mbRetentionWindow, mbISODate } = api;
 
 // The same membership, as the two feeds that are live at once describe it.
@@ -286,6 +286,32 @@ test("an eligible-but-unenrolled plan is a CANDIDATE, and is named", () => {
     "candidacy is still the recurring-shape test");
   assert.match(page, /data-ar-cand-plan=/,
     "and the plan names must reach the page, not just the count");
+});
+
+test("ONE plan key, because three surfaces now read it", () => {
+  // The per-plan table, the retention filter pills, and the filter itself. Two
+  // copies drift the first time the fallback order changes, and then a pill
+  // matches nothing and silently draws an empty chart.
+  assert.strictEqual(mbPlanKey({ group: "Monthly Individual", type: "Fitness" }),
+    "Monthly Individual", "the plan wins over the product type");
+  assert.strictEqual(mbPlanKey({ group: "", type: "Fitness" }), "Fitness");
+  assert.strictEqual(mbPlanKey({}), "\u2014");
+  assert.strictEqual(mbPlanKey(null), "\u2014");
+  assert.ok(!/r\.group \|\| r\.type \|\| '\u2014'/.test(page),
+    "nothing may re-derive the plan key inline");
+});
+
+test("the leaving-soon count carries its ROWS, not just a number", () => {
+  // Dan: "can we add a drop down/expansion option here to show WHO those two
+  // users are? Kinda unhelpful otherwise." A count with nowhere to go is the
+  // dead end the Failed check-ins tile had.
+  const b = block("arPlans");
+  assert.match(b, /e\.pending\+\+; e\.pendingRows\.push\(r\);/,
+    "the members themselves have to survive the aggregation");
+  assert.match(page, /data-ar-pending-member=/,
+    "and reach the page");
+  assert.match(page, /ciUserUrl\(recOrgId, r\.userId\)/,
+    "named members link through to their Rec account, built from the uuid");
 });
 
 test("the tab no longer claims an adoption RATE", () => {

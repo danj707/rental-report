@@ -1683,6 +1683,50 @@ const CASES = [
   // and 4 would prove it was handed everything.
   { name: "memberships · the retention chart covers auto-renewers only", path: "/{org}/memberships?tab=autorenew",
     needs: "[data-ar-cohorts=\"2\"]" },
+
+  // ── WHO is leaving, not just how many ──────────────────────────────────
+  // A count with nowhere to go is the dead end the Failed check-ins tile had.
+  // The list must be ABSENT until asked for -- an always-open list is a
+  // different (and noisier) feature from an expander.
+  { name: "memberships · the leaving-soon list is closed until asked for", path: "/{org}/memberships?tab=autorenew",
+    needs: "[data-ar-pending-toggle=\"Monthly Family\"]", absent: "[data-ar-pending-list]" },
+  { name: "memberships · expanding it names the member", path: "/{org}/memberships?tab=autorenew",
+    act: async (page) => {
+      await page.click('[data-ar-pending-toggle="Monthly Family"]');
+      await new Promise(r => setTimeout(r, 250));
+    },
+    needs: "[data-ar-pending-list=\"Monthly Family\"] [data-ar-pending-member]" },
+  // The name has to LINK to the member's Rec account, built from the uuid --
+  // an anchor alone passes on a link built from the wrong id.
+  { name: "memberships · and links them through to Rec", path: "/{org}/memberships?tab=autorenew",
+    act: async (page) => {
+      await page.click('[data-ar-pending-toggle="Monthly Family"]');
+      await new Promise(r => setTimeout(r, 250));
+    },
+    needs: "[data-ar-pending-list] a[href$=\"/users/d60fea14-be38-46db-96da-40e61ccca25d\"]" },
+
+  // ── Retention, per plan ────────────────────────────────────────────────
+  // A blended curve answers "does this org retain", which is a different
+  // question from "does THIS plan retain".
+  { name: "memberships · retention opens on the whole book", path: "/{org}/memberships?tab=autorenew",
+    needs: "[data-ar-ret-scope=\"all\"]" },
+  // Picking a plan must RESCOPE the chart, not just light a pill. Monthly
+  // Individual is 4 members created in one month, so one cohort -- against two
+  // for the whole book. A pill that lit without filtering would still read 2.
+  { name: "memberships · a plan pill rescopes the cohorts", path: "/{org}/memberships?tab=autorenew",
+    act: async (page) => {
+      await page.click('[data-ar-ret-pill="Monthly Individual"]');
+      await new Promise(r => setTimeout(r, 250));
+    },
+    needs: "[data-ar-cohorts=\"1\"] [data-ar-ret-scope=\"Monthly Individual\"]" },
+  // A four-member slice is individual departures, not a trend, and the panel
+  // has to say so rather than drawing a confident staircase.
+  { name: "memberships · a thin slice says so", path: "/{org}/memberships?tab=autorenew",
+    act: async (page) => {
+      await page.click('[data-ar-ret-pill="Monthly Individual"]');
+      await new Promise(r => setTimeout(r, 250));
+    },
+    needs: "[data-ar-ret-thin=\"1\"]" },
   { name: "memberships · and the candidate plan is NAMED, not just counted", path: "/{org}/memberships?tab=autorenew",
     needs: "[data-ar-cand-plan=\"Annual Individual\"]" },
   // Named and counted, not silently dropped — "6 season plans ($1,440)" is

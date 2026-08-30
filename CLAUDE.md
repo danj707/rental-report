@@ -617,8 +617,43 @@ literal `"}, [filtered]);"`, so the moment one memo's deps changed the slice ran
 on into the *next* memo and an assertion about `arPlans` started reading someone
 else's code. It matches the dependency line by pattern now.
 
-**Still deferred (Dan): the per-user list.** *"once we get some good metrics,
-we'll add in specific user information here."*
+### Naming people, and slicing retention per plan (2026-08-30)
+
+Dan: *"This '2 ending soon' section is helpful, but can we add a drop
+down/expansion option here to show WHO those two users are? Kinda unhelpful
+otherwise."* And: *"I want to know this data by WHICH membership as well."*
+
+**A count with nowhere to go is the dead end the Failed check-ins tile had**, one
+report over. The pending count is now an expander: it keeps the ROWS, not just a
+number, and lists member, email, last billing day and price — each name linking
+to their Rec account via `ciUserUrl(recOrgId, r.userId)`. The memberships feed's
+`User ID` is already the uuid the admin URL wants, unlike check-ins where
+`Member ID` is a 6-character rec_id that looks identical and 404s.
+
+**The list is CLOSED until asked for.** An always-open list is a different and
+noisier feature; the render case asserts it is ABSENT from the DOM before the
+click, which is the only thing that distinguishes the two.
+
+**`mbPlanKey()` exists because THREE surfaces now key on the plan** — the table,
+the retention pills and the retention filter. Two copies drift the first time the
+`group || type` fallback changes, and then a pill matches nothing and silently
+draws an empty chart. The spec fails if any surface re-derives it inline.
+
+**Retention is filterable per plan, and that is not cosmetic.** A blended curve
+answers "does this org retain", which is a different question from "does THIS
+plan retain" — at Norman the weekly child-care plans cancel at 100% while the
+monthlies sit near 42%, so the blend describes neither. Picking a pill rescopes
+the cohorts; the render case keys on the **cohort count** (1 for a single-month
+plan against 2 for the book), because a pill that lights without filtering looks
+identical otherwise.
+
+**A thin slice says so.** Under 20 members the panel warns that the curve is a
+handful of individual departures rather than a trend — a cohort of one is a
+100%-then-0% staircase, and drawing it confidently is how a chart lies.
+
+**Still deferred (Dan): the full per-user list.** *"once we get some good metrics,
+we'll add in specific user information here."* The leaving-soon expander is the
+first slice of it, not the whole thing.
 
 ### Sales & Mix was unreadable (2026-08-30)
 
