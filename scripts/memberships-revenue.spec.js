@@ -69,21 +69,40 @@ function cut(name) {
   return page.slice(i, end);
 }
 const NAMES = ["mbIsPaid", "mbProductShape", "mbIsAutoRenew", "mbCycleDays",
-               "mbMonthlyValue", "mbHasEconomics", "mbDecompose", "mbEffectiveTab",
-               "mbRetentionWindow", "mbISODate"];
+               "mbMonthlyValue", "mbHasProductKind", "mbHasEconomics", "mbDecompose",
+               "mbEffectiveTab", "mbRetentionWindow", "mbISODate"];
 const api = new Function(
   "var MB_URL_TABS = ['memberships','autorenew','salesmix','checkins','retention'];\n" +
   NAMES.map(cut).join("\n") + "\nreturn { " + NAMES.join(", ") + " };")();
 const { mbIsPaid, mbProductShape, mbIsAutoRenew, mbCycleDays,
-        mbMonthlyValue, mbHasEconomics, mbDecompose, mbEffectiveTab,
+        mbMonthlyValue, mbHasProductKind, mbHasEconomics, mbDecompose, mbEffectiveTab,
         mbRetentionWindow, mbISODate } = api;
 
 // The same membership, as the two feeds that are live at once describe it.
 // A 4-hour cache means a pre-v2 response and a v2 response are both in flight
 // for four hours after the card ships.
-const V2_MONTHLY = { price: 20, renewalType: "Auto-renew", autoRenew: true,
+const V3_MONTHLY = { price: 20, renewalType: "Auto-renew", autoRenew: true,
+  productKind: "membership", hasPlanTerms: true, hasCycle: true,
+  planSeasonEnd: "", planTermDays: null,
+  periodStart: "2026-08-29", nextRenewal: "2026-09-29" };
+// The SAME membership as v2 described it — plan columns present, "Product Kind"
+// absent. Indistinguishable from a gate fee, which is exactly the v2 bug.
+const V2_MONTHLY_NO_KIND = { price: 20, renewalType: "Auto-renew", autoRenew: true,
   hasPlanTerms: true, hasCycle: true, planSeasonEnd: "", planTermDays: null,
   periodStart: "2026-08-29", nextRenewal: "2026-09-29" };
+// A $6 gate admission. NOTHING about its plan columns distinguishes it from the
+// monthly subscription above — a pass has no `group`, so both come back NULL.
+// Norman sells 4,518 of these; v2 offered every one as a conversion candidate.
+const V3_GATE_PASS = { price: 6, renewalType: "One-time", autoRenew: false,
+  productKind: "pass", hasPlanTerms: true, hasCycle: true,
+  planSeasonEnd: "", planTermDays: null, periodStart: "", nextRenewal: "" };
+// A pass that DOES carry a term rule, now that pass_schema is joined. Still a
+// pass: the kind is settled before any term test, or a dated pass would be
+// filed as a season membership and land in the re-buy number.
+const V3_SEASON_PASS = { price: 40, renewalType: "One-time", autoRenew: false,
+  productKind: "pass", hasPlanTerms: true, hasCycle: true,
+  planSeasonEnd: "2026-09-30", planTermDays: null,
+  periodStart: "", nextRenewal: "" };
 const PRE_V2_MONTHLY = { price: 20, renewalType: "Auto-renew", autoRenew: undefined,
   hasPlanTerms: false, hasCycle: false, planSeasonEnd: "", planTermDays: null,
   periodStart: "", nextRenewal: "2026-09-29" };
@@ -113,7 +132,45 @@ test("a rolling term is its own shape — it expires and cannot auto-renew today
 });
 
 test("no end date and no term length is open-ended", () => {
-  assert.strictEqual(mbProductShape(V2_MONTHLY), "open");
+  assert.strictEqual(mbProductShape(V3_MONTHLY), "open");
+});
+
+test("a pass is a PASS, whatever its plan columns say", () => {
+  // The v2 bug, pinned. A pass has no `group`, so "Plan Season End" and
+  // "Plan Term Days" are both NULL — byte-identical to an open-ended
+  // subscription. Absence of a group term rule is not evidence of a
+  // subscription, and no field-level test can tell the two apart; only the
+  // product kind can. At Norman 16,940 of 20,341 rows are passes and 10,669
+  // of them carried neither term rule.
+  assert.strictEqual(mbProductShape(V3_GATE_PASS), "pass",
+    "a $6 gate admission was being offered as an auto-renew conversion");
+});
+
+test("the pass test is settled FIRST, before any term rule", () => {
+  // pass_schema now gives a pass its own end date. If the season test ran
+  // first, a dated pass would read "season" and its value would land in the
+  // next-season re-buy figure, which is a membership question.
+  assert.strictEqual(mbProductShape(V3_SEASON_PASS), "pass");
+});
+
+test("a pre-v3 feed says UNKNOWN rather than guessing subscription", () => {
+  // THE CACHE INVARIANT DOES NOT HOLD HERE, and that is deliberate: v2 and v3
+  // genuinely cannot answer the same question, because v2 has no column that
+  // separates a $20 monthly membership from a $6 gate fee. The resolution is
+  // the presence gate below — the panels HIDE on a pre-v3 feed instead of
+  // rendering a number built on a guess. Same rule as hasAbsent/ciHasStatus.
+  assert.strictEqual(mbProductShape(V2_MONTHLY_NO_KIND), "unknown",
+    "without Product Kind this row is indistinguishable from a day pass");
+});
+
+test("the conversion panels gate on the COLUMN, not on any row being a pass", () => {
+  assert.strictEqual(mbHasProductKind([V2_MONTHLY_NO_KIND, PRE_V2_MONTHLY]), false,
+    "a warm pre-v3 cache entry must hide the conversion count, not zero it");
+  assert.strictEqual(mbHasProductKind([V2_MONTHLY_NO_KIND, V3_MONTHLY]), true,
+    "presence of the column is the test — an org that sells no passes still " +
+    "gets its conversion count");
+  assert.strictEqual(mbHasProductKind([]), false);
+  assert.strictEqual(mbHasProductKind(null), false);
 });
 
 test("a pre-v2 feed reads UNKNOWN, never open-ended", () => {
@@ -126,7 +183,7 @@ test("a pre-v2 feed reads UNKNOWN, never open-ended", () => {
 
 // ── The cache invariant ─────────────────────────────────────────────────────
 test("a membership on auto-renew reads that way on both feed shapes", () => {
-  assert.strictEqual(mbIsAutoRenew(V2_MONTHLY), true);
+  assert.strictEqual(mbIsAutoRenew(V3_MONTHLY), true);
   assert.strictEqual(mbIsAutoRenew(PRE_V2_MONTHLY), true,
     "both feed shapes are live at once for four hours after the card ships");
 });
@@ -156,14 +213,14 @@ test("the explicit column wins over the inferred one", () => {
 
 // ── Cycle and monthly value ─────────────────────────────────────────────────
 test("the billing cycle is measured, and an unknown cycle stays null", () => {
-  assert.strictEqual(mbCycleDays(V2_MONTHLY), 31);
+  assert.strictEqual(mbCycleDays(V3_MONTHLY), 31);
   assert.strictEqual(mbCycleDays(PRE_V2_MONTHLY), null,
     "a missing cycle is 'we do not know how often this bills', not 'monthly'");
   assert.strictEqual(mbCycleDays(V2_SEASON), null);
 });
 
 test("monthly value is null when the cycle is unknown — never defaulted", () => {
-  const mv = mbMonthlyValue(V2_MONTHLY);
+  const mv = mbMonthlyValue(V3_MONTHLY);
   assert.ok(Math.abs(mv - 19.639) < 0.01, "20 over a 31-day cycle is ~$19.64/mo, got " + mv);
   assert.strictEqual(mbMonthlyValue(PRE_V2_MONTHLY), null,
     "defaulting this would turn a per-cycle charge into a fabricated monthly figure");
@@ -354,6 +411,28 @@ test("v2 keeps every original column, by name", () => {
 test("v2 adds exactly the five columns the new tabs need", () => {
   ['"Coverage"', '"Plan Season End"', '"Plan Term Days"', '"Auto Renew"', '"Period Start"']
     .forEach(c => assert.ok(sqlBody.includes(c), "missing new column " + c));
+});
+
+test("v3 states the product kind rather than leaving it to be inferred", () => {
+  assert.match(sqlBody, /mp\.product_type\s+AS "Product Kind"/,
+    "product_type was already read in the WHERE clause and thrown away; " +
+    "selecting it is what keeps 13,802 paid passes out of the auto-renew " +
+    "denominator");
+});
+
+test("v3 reads the term rule from BOTH product families", () => {
+  // The bug in one line: gg.end_date alone is NULL for every pass, and the
+  // page then concluded "no season end, no term days, therefore open-ended".
+  assert.match(sqlBody, /COALESCE\(gg\.end_date, pss\.end_date\)\s+AS "Plan Season End"/,
+    "a pass's season end lives on pass_schema, not on `group`");
+  assert.match(sqlBody, /COALESCE\(gg\.ends_after_seconds, pss\.ends_after_seconds\)/,
+    "a pass's rolling term lives on pass_schema, not on `group`");
+});
+
+test("the pass_schema join is on a primary key too, so it cannot fan out", () => {
+  // Verified against prod before the push: Norman, 20,341 rows with and
+  // without the join, every row distinct.
+  assert.match(sqlBody, /LEFT JOIN public\.pass_schema pss\s+ON pss\.id = mp\.pass_schema_id/);
 });
 
 test("both new joins are on primary keys, so neither can fan out a row", () => {

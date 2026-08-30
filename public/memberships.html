@@ -811,9 +811,23 @@ function mbIsPaid(r) { return !!(r && r.price > 0); }
 //             whole split exists to prevent.
 function mbProductShape(r) {
   if (!r) return 'unknown';
+  // A PASS IS ITS OWN PRODUCT and must be settled FIRST, before any test that
+  // reads a term rule. This ordering is the whole fix for the v2 bug: a pass has
+  // no `group`, so both plan-term columns are NULL, and "no season end and no
+  // term days" then read as "open-ended subscription". Every day pass and gate
+  // fee on the platform was classified as a subscription and offered as an
+  // auto-renew conversion candidate — 10,669 of them at Norman alone.
+  //
+  // Absence of a group term rule is not evidence of a subscription. And a pass
+  // cannot auto-renew whatever its terms say: the `pass` table has no
+  // stripe_subscription_id and no next_renewal_at.
+  if (r.productKind === 'pass') return 'pass';
   if (r.planSeasonEnd) return 'season';
   if (r.planTermDays != null && r.planTermDays > 0) return 'term';
-  if (r.hasPlanTerms) return 'open';
+  // Only a row we KNOW is a membership may be called open-ended. On a pre-v3
+  // feed productKind is absent, so a pass would fall through to here — hence
+  // the explicit membership test rather than a bare `hasPlanTerms`.
+  if (r.hasPlanTerms && r.productKind === 'membership') return 'open';
   return 'unknown';
 }
 
@@ -872,6 +886,17 @@ function mbMonthlyValue(r) {
 // panels hide instead. Gated on the COLUMN being present rather than on any
 // row having a value, so an org that genuinely has no auto-renew still sees
 // the panel and reads a real zero.
+// Does this feed distinguish memberships from passes at all?
+// PRESENCE, NOT COUNT. Without "Product Kind" nothing may be called open-ended
+// (see mbProductShape), so the conversion list would read a confident 0 rather
+// than an honest "cannot tell yet" — the same false-zero the economics gate
+// exists to prevent, one field over.
+function mbHasProductKind(rows) {
+  if (!rows || !rows.length) return false;
+  for (var i = 0; i < rows.length; i++) if (rows[i] && rows[i].productKind) return true;
+  return false;
+}
+
 function mbHasEconomics(rows) {
   if (!rows || !rows.length) return false;
   for (var i = 0; i < rows.length; i++) {
@@ -928,6 +953,8 @@ function normalizeRow(raw) {
         // feed" and would label every season pass on a warm cache entry as a
         // subscription.
         hasPlanTerms:  Object.prototype.hasOwnProperty.call(raw, 'Plan Season End'),
+        // 'membership' | 'pass'. STATED, not inferred — see mbProductShape.
+        productKind:   raw['Product Kind'] || '',
         coverage:      raw['Coverage'] || '',
         planSeasonEnd: raw['Plan Season End'] || '',
         planTermDays:  raw['Plan Term Days'] == null ? null : safeNum(raw['Plan Term Days']),
@@ -1597,7 +1624,14 @@ function normalizeRow(raw) {
       // Scoped to ACTIVE PAID memberships: a cancelled or expired row has no
       // future charge, and a $0 residency record never had one.
       const arStats = useMemo(() => {
-        const paid = filtered.filter(r => r.status === 'active' && mbIsPaid(r));
+        const hasKind = mbHasProductKind(filtered);
+        const paidAll = filtered.filter(r => r.status === 'active' && mbIsPaid(r));
+        // PASSES ARE OUT OF THE DENOMINATOR. A pass cannot auto-renew as a
+        // matter of schema, so counting it as a membership that merely isn't
+        // auto-renewing understates the rate against a base that could never
+        // move. Norman: 16,940 of 20,341 rows are passes.
+        const passes = hasKind ? paidAll.filter(r => mbProductShape(r) === 'pass') : [];
+        const paid = hasKind ? paidAll.filter(r => mbProductShape(r) !== 'pass') : paidAll;
         const on = paid.filter(mbIsAutoRenew);
         let perCycle = 0, monthly = 0, withCycle = 0;
         const cycles = [];
@@ -1615,6 +1649,9 @@ function normalizeRow(raw) {
         return {
           count: on.length,
           paidActive: paid.length,
+          passes: passes.length,
+          passValue: passes.reduce((s, r) => s + r.price, 0),
+          hasKind: hasKind,
           perCycle,
           monthly,
           withCycle,
@@ -1633,8 +1670,14 @@ function normalizeRow(raw) {
       // useful unit is the plan, not the member.
       const arPlans = useMemo(() => {
         const m = new Map();
+        const hasKind = mbHasProductKind(filtered);
         for (const r of filtered) {
           if (r.status !== 'active' || !mbIsPaid(r)) continue;
+          // Passes out: this table is an auto-renew CONFIG review, and a pass
+          // schema has no auto-renew setting to review. Leaving them in put
+          // 4,518 gate admissions at the top of the list reading "0%", which
+          // looks like a misconfiguration and is not one.
+          if (hasKind && mbProductShape(r) === 'pass') continue;
           const k = r.group || r.type || '—';
           if (!m.has(k)) m.set(k, { plan: k, n: 0, on: 0, shape: mbProductShape(r), price: r.price });
           const e = m.get(k);
@@ -2420,8 +2463,12 @@ function normalizeRow(raw) {
               {!loading && (
                 <React.Fragment>
                   <div className="mb-scope-note">
-                    🔁 Auto-renew across <strong>{arStats.paidActive.toLocaleString()} active paid memberships</strong> purchased in this window
-                    <span className="mb-scope-sub">Free residency records are excluded — they have no charge to renew. Season passes are counted here but never appear as conversion candidates: a season pass expiring is the season closing, not a member lapsing.</span>
+                    🔁 Auto-renew across <strong data-ar-base={arStats.paidActive}>{arStats.paidActive.toLocaleString()} active paid memberships</strong> purchased in this window
+                    <span className="mb-scope-sub">
+                      Free residency records are excluded — they have no charge to renew.
+                      {arStats.passes > 0 && <React.Fragment> So are <strong>{arStats.passes.toLocaleString()} passes</strong> ({money(arStats.passValue)}): day passes and gate admissions cannot auto-renew at all — the pass record has no subscription to attach one to — so counting them here would measure the rate against a base that can never move.</React.Fragment>}
+                      {' '}Season passes are counted, but never appear as conversion candidates: a season pass expiring is the season closing, not a member lapsing.
+                    </span>
                   </div>
 
                   <div className="summary-cards">
@@ -2460,11 +2507,19 @@ function normalizeRow(raw) {
                         <div className="card-sub">Monthly value, cycle length and revenue per member need the billing cycle, which arrives with card 17301 v2. Showing a $0 here would say this org earns nothing from auto-renew, when the truth is that this feed cannot tell us.</div>
                       </div>
                     )}
-                    <div className="summary-card">
-                      <div className="card-label">Could Convert</div>
-                      <div className="card-value amber" data-ar-cands={arStats.candidates}>{arStats.candidates.toLocaleString()}</div>
-                      <div className="card-sub">{money(arStats.candidateValue)} on recurring plans, renewing by hand</div>
-                    </div>
+                    {arStats.hasKind ? (
+                      <div className="summary-card">
+                        <div className="card-label">Could Convert</div>
+                        <div className="card-value amber" data-ar-cands={arStats.candidates}>{arStats.candidates.toLocaleString()}</div>
+                        <div className="card-sub">{money(arStats.candidateValue)} on recurring plans, renewing by hand</div>
+                      </div>
+                    ) : (
+                      <div className="summary-card" style={{flex:'2 1 320px'}} data-ar-nokind="1">
+                        <div className="card-label">Could Convert</div>
+                        <div className="card-value" style={{color:'#9ca3af'}}>Not in this feed yet</div>
+                        <div className="card-sub">Separating memberships from passes needs the Product Kind column, which arrives with card 17301 v3. Until then nothing is offered for conversion: a 0 here would look like an answer, and the previous version&rsquo;s non-zero was worse — it counted day passes and gate fees as subscriptions.</div>
+                      </div>
+                    )}
                   </div>
 
                   <div className="ci-panel">
@@ -2507,7 +2562,6 @@ function normalizeRow(raw) {
               {!loading && salesMonths.length === 0 && <div className="empty-state">No paid memberships or passes sold in this window.</div>}
               {!loading && salesMonths.length > 0 && (() => {
                 var maxRev = Math.max.apply(null, salesMonths.map(function(m){ return m.revenue; })) || 1;
-                var maxUnits = Math.max.apply(null, salesMonths.map(function(m){ return m.units; })) || 1;
                 var last = salesMonths[salesMonths.length - 1];
                 var prev = salesMonths.length > 1 ? salesMonths[salesMonths.length - 2] : null;
                 var dec = mbDecompose(prev, last);
@@ -2550,53 +2604,72 @@ function normalizeRow(raw) {
                     </div>
 
                     <div className="ci-panel">
-                      <div className="ci-chart-title">Units and revenue by month</div>
-                      <div style={{fontSize:11,color:'#9ca3af',marginBottom:10,marginTop:-6}}>Both series, because at a seasonal org they move in opposite directions and either one alone tells you the wrong story.</div>
-                      <div style={{display:'flex',alignItems:'flex-end',gap:4,height:150}}>
+                      <div className="ci-chart-title">What you sold, month by month</div>
+                      <div style={{fontSize:11,color:'#9ca3af',marginBottom:14,marginTop:-6}}>Bar height is revenue. The count under each month is how many you sold.</div>
+                      <div style={{display:'flex',alignItems:'flex-end',gap:6,height:150}}>
                         {salesMonths.map(function(m) {
                           return (
-                            <div key={m.month} style={{flex:1,display:'flex',flexDirection:'column',justifyContent:'flex-end',height:'100%',position:'relative'}} title={ciMonthLong(m.month) + ' — ' + m.units + ' sold, ' + money(m.revenue)}>
+                            <div key={m.month} style={{flex:1,display:'flex',flexDirection:'column',justifyContent:'flex-end',height:'100%'}}
+                                 title={ciMonthLong(m.month) + ' — ' + m.units.toLocaleString() + ' sold, ' + money(m.revenue) + ', ' + money(m.avgPrice) + ' each'}>
+                              <div style={{fontSize:9.5,textAlign:'center',color:'#6b7280',marginBottom:3,whiteSpace:'nowrap'}}>{money(m.revenue)}</div>
                               <div style={{background:'#15803d',opacity:.85,borderRadius:'2px 2px 0 0',height: Math.max(2, m.revenue / maxRev * 100) + '%'}} />
-                              <div style={{position:'absolute',left:0,right:0,borderTop:'2px solid #6366f1',bottom: (m.units / maxUnits * 100) + '%'}} />
                             </div>
                           );
                         })}
                       </div>
-                      <div style={{display:'flex',gap:4,marginTop:6}}>
+                      <div style={{display:'flex',gap:6,marginTop:6}}>
                         {salesMonths.map(function(m) {
-                          return <div key={m.month} style={{flex:1,textAlign:'center',fontSize:9,color:'#9ca3af'}}>{ciMonthShort(m.month)}</div>;
+                          return (
+                            <div key={m.month} style={{flex:1,textAlign:'center'}}>
+                              <div style={{fontSize:10,color:'#6b7280'}}>{ciMonthShort(m.month)}</div>
+                              <div style={{fontSize:11,fontWeight:600,color:'#111'}} data-sm-mo-units={m.units}>{m.units.toLocaleString()}</div>
+                              <div style={{fontSize:9,color:'#9ca3af'}}>sold</div>
+                            </div>
+                          );
                         })}
-                      </div>
-                      <div style={{display:'flex',gap:16,marginTop:10,fontSize:10.5,color:'#888'}}>
-                        <span><i style={{display:'inline-block',width:9,height:9,borderRadius:2,background:'#15803d',marginRight:5}} />revenue</span>
-                        <span><i style={{display:'inline-block',width:14,height:2,background:'#6366f1',marginRight:5,verticalAlign:3}} />units sold</span>
                       </div>
                     </div>
 
                     {dec && (
                       <div className="ci-panel" data-sm-decomp="1">
-                        <div className="ci-chart-title">{ciMonthLong(prev.month)} → {ciMonthLong(last.month)}, decomposed</div>
-                        <div style={{fontSize:11,color:'#9ca3af',marginBottom:12,marginTop:-6}}>
-                          How much of the move is how many you sold, and how much is what they were worth. Priced at {ciMonthShort(prev.month)}&rsquo;s average so the two parts sum exactly to the total.
+                        {/* The direction is on the attribute, not just its presence: a headline that
+                            renders "more" for a month that fell reads exactly like a working one,
+                            and only a computed value can tell the two apart. */}
+                        <div className="ci-chart-title" data-sm-headline={dec.total < 0 ? 'down' : 'up'}>
+                          {ciMonthLong(last.month)} brought in {money(Math.abs(dec.total))} {dec.total < 0 ? 'less than' : 'more than'} {ciMonthLong(prev.month)}
                         </div>
-                        <table className="report">
-                          <tbody>
-                            <tr><td>{ciMonthLong(prev.month)} revenue</td><td className="num">{money(prev.revenue)}</td></tr>
-                            <tr>
-                              <td>Volume <span style={{color:'#9ca3af'}}>· {last.units - prev.units >= 0 ? '+' : ''}{(last.units - prev.units).toLocaleString()} units at {money(prev.avgPrice)}</span></td>
-                              <td className="num" data-sm-volume={Math.round(dec.volume)} style={{color: dec.volume >= 0 ? '#15803d' : '#b91c1c', fontWeight:600}}>{dec.volume >= 0 ? '+' : ''}{money(dec.volume)}</td>
-                            </tr>
-                            <tr>
-                              <td>Price &amp; mix <span style={{color:'#9ca3af'}}>· average {money(prev.avgPrice)} → {money(last.avgPrice)}</span></td>
-                              <td className="num" data-sm-price={Math.round(dec.price)} style={{color: dec.price >= 0 ? '#15803d' : '#b91c1c', fontWeight:600}}>{dec.price >= 0 ? '+' : ''}{money(dec.price)}</td>
-                            </tr>
-                            <tr><td><strong>{ciMonthLong(last.month)} revenue</strong></td><td className="num"><strong>{money(last.revenue)}</strong></td></tr>
-                          </tbody>
-                        </table>
-                        <div style={{fontSize:11,color:'#6b7280',marginTop:12,borderLeft:'2px solid #db2777',paddingLeft:11,lineHeight:1.55}}>
+                        <div style={{fontSize:11,color:'#9ca3af',marginBottom:14,marginTop:-6}}>Two things move revenue: how many you sold, and what each one was worth. This splits the change between them.</div>
+                        <div style={{display:'flex',flexDirection:'column',gap:10,maxWidth:640}}>
+                          <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',gap:16,paddingBottom:9,borderBottom:'1px solid #eee'}}>
+                            <span style={{fontSize:13}}>
+                              You sold <strong>{Math.abs(last.units - prev.units).toLocaleString()} {last.units < prev.units ? 'fewer' : 'more'}</strong>
+                              <span style={{color:'#9ca3af'}}> · {prev.units.toLocaleString()} → {last.units.toLocaleString()}</span>
+                            </span>
+                            <strong className="num" data-sm-volume={Math.round(dec.volume)} style={{color: dec.volume >= 0 ? '#15803d' : '#b91c1c', whiteSpace:'nowrap'}}>
+                              {dec.volume >= 0 ? '+' : '−'}{money(Math.abs(dec.volume))}
+                            </strong>
+                          </div>
+                          <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',gap:16,paddingBottom:9,borderBottom:'1px solid #eee'}}>
+                            <span style={{fontSize:13}}>
+                              What you sold was worth <strong>{last.avgPrice >= prev.avgPrice ? 'more' : 'less'}</strong> each
+                              <span style={{color:'#9ca3af'}}> · {money(prev.avgPrice)} → {money(last.avgPrice)}</span>
+                            </span>
+                            <strong className="num" data-sm-price={Math.round(dec.price)} style={{color: dec.price >= 0 ? '#15803d' : '#b91c1c', whiteSpace:'nowrap'}}>
+                              {dec.price >= 0 ? '+' : '−'}{money(Math.abs(dec.price))}
+                            </strong>
+                          </div>
+                          <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',gap:16,fontSize:13}}>
+                            <span><strong>Net change</strong></span>
+                            <strong className="num" style={{color: dec.total >= 0 ? '#15803d' : '#b91c1c'}}>
+                              {dec.total >= 0 ? '+' : '−'}{money(Math.abs(dec.total))}
+                            </strong>
+                          </div>
+                        </div>
+                        <div style={{fontSize:12,color:'#374151',marginTop:16,borderLeft:'2px solid #db2777',paddingLeft:11,lineHeight:1.6}}
+                             data-sm-verdict={Math.abs(dec.price) > Math.abs(dec.volume) ? 'mix' : 'volume'}>
                           {Math.abs(dec.price) > Math.abs(dec.volume)
-                            ? 'Most of this move is price and mix, not how many you sold — a different product sold, not fewer members. Churn is measured separately on the Retention tab.'
-                            : 'Most of this move is volume — you sold a different number of roughly the same thing.'}
+                            ? <React.Fragment><strong>This is about what you sold, not how much.</strong> The mix shifted toward {last.avgPrice < prev.avgPrice ? 'cheaper' : 'pricier'} products. Nobody cancelled — cancellations are on the Retention tab.</React.Fragment>
+                            : <React.Fragment><strong>This is about how many you sold, not the price.</strong> Prices held roughly steady; the volume changed. If that is a drop, the Retention tab says whether members left or simply did not buy.</React.Fragment>}
                         </div>
                       </div>
                     )}

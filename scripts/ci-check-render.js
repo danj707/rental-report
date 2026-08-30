@@ -494,7 +494,7 @@ function membershipRows() {
     Object.assign(r, o);
     if (!V2) {
       delete r["Coverage"]; delete r["Plan Season End"]; delete r["Plan Term Days"];
-      delete r["Auto Renew"]; delete r["Period Start"];
+      delete r["Auto Renew"]; delete r["Period Start"]; delete r["Product Kind"];
     }
     return r;
   };
@@ -508,6 +508,7 @@ function membershipRows() {
       "Start Date": "2026-05-01", "End Date": "2026-09-30", "Created At": "2026-05-1" + i,
       "Next Renewal": "", "Coverage": "group", "Plan Season End": "2026-09-30",
       "Plan Term Days": null, "Auto Renew": false, "Period Start": "",
+      "Product Kind": "membership",
     }));
   }
   // Monthly fitness — 4 sold in June at $20, every one auto-renewing on a 31-day
@@ -520,6 +521,7 @@ function membershipRows() {
       "Start Date": "2026-06-01", "End Date": "", "Created At": "2026-06-0" + (i + 1),
       "Next Renewal": "2026-09-29", "Coverage": "individual", "Plan Season End": null,
       "Plan Term Days": null, "Auto Renew": true, "Period Start": "2026-08-29",
+      "Product Kind": "membership",
     }));
   }
   // Annual fitness at 12x the monthly — one buyer, renewing by hand. This is the
@@ -531,7 +533,24 @@ function membershipRows() {
     "Start Date": "2026-07-01", "End Date": "2027-06-30", "Created At": "2026-07-05",
     "Next Renewal": "", "Coverage": "individual", "Plan Season End": null,
     "Plan Term Days": null, "Auto Renew": false, "Period Start": "",
+    "Product Kind": "membership",
   }));
+  // ── PASSES ──
+  // The shape that broke v2: a pass has no group, so both plan-term columns are
+  // NULL and "no season end, no term days" read as "open-ended subscription".
+  // 12 gate admissions at $5 — they must NOT appear as conversion candidates,
+  // must NOT be in the auto-renew denominator, and must NOT be in the plan table.
+  for (let i = 0; i < 12; i++) {
+    rows.push(row({
+      "User ID": "c59fea14-be38-46db-96da-40e61ccca25c", "First Name": "Alan", "Last Name": "Turing " + i,
+      "Membership ID": "p-" + i, "Membership Type": "Gate Admission", "Group / Plan": "Tournament Gate Adult $5",
+      "Status": "active", "Renewal Type": "One-time", "Price": 5,
+      "Start Date": "2026-08-01", "End Date": "", "Created At": "2026-08-0" + ((i % 9) + 1),
+      "Next Renewal": "", "Coverage": "individual", "Plan Season End": null,
+      "Plan Term Days": null, "Auto Renew": false, "Period Start": "",
+      "Product Kind": "pass",
+    }));
+  }
   return rows;
 }
 
@@ -1588,23 +1607,50 @@ const CASES = [
     stubMode: "prev2", needs: "[data-ar-count=\"4\"]" },
   { name: "memberships · no invented monthly on a pre-v2 feed", path: "/{org}/memberships?tab=autorenew",
     stubMode: "prev2", needs: "[data-ar-pending=\"1\"]", absent: "[data-ar-mrr]" },
-  // Without the plan columns the shape is unknown, so nothing may be offered as
-  // a conversion candidate — guessing "open-ended" would file every season pass
-  // as churn.
-  { name: "memberships · no candidates guessed without plan terms", path: "/{org}/memberships?tab=autorenew",
-    stubMode: "prev2", needs: "[data-ar-cands=\"0\"]" },
+  // ── Passes are not subscriptions ────────────────────────────────────────
+  // The v2 bug in a browser: 12 gate admissions at $5 with no group, which the
+  // old shape test called open-ended subscriptions and offered for conversion.
+  { name: "memberships · gate passes are not conversion candidates", path: "/{org}/memberships?tab=autorenew",
+    needs: "[data-ar-cands=\"1\"]" },
+  // Keyed on the DENOMINATOR, not on the auto-renew count: passes never
+  // auto-renew, so leaving them in moves the base and nothing else — the count
+  // reads 4 either way and cannot discriminate.
+  { name: "memberships · passes are out of the auto-renew denominator", path: "/{org}/memberships?tab=autorenew",
+    needs: "[data-ar-base=\"11\"]" },
+  { name: "memberships · a pass plan is not in the config table", path: "/{org}/memberships?tab=autorenew",
+    absent: "[data-ar-plan=\"Tournament Gate Adult $5\"]", needs: "[data-ar-plan=\"Monthly Individual\"]" },
+  // Without Product Kind nothing may be called open-ended, so the card must say
+  // so rather than render a confident zero.
+  { name: "memberships · no conversion count without Product Kind", path: "/{org}/memberships?tab=autorenew",
+    stubMode: "prev2", needs: "[data-ar-nokind=\"1\"]", absent: "[data-ar-cands]" },
 
-  // Jun (4 units / $80) → Jul (1 unit / $240): units DOWN, revenue UP, and the
-  // whole move is price. A revenue line alone would read as growth; a unit line
-  // alone as collapse. Both parts are asserted because the bridge must sum.
+  // ── Sales & Mix reads in plain language ─────────────────────────────────
+  { name: "memberships · month bars carry unit counts", path: "/{org}/memberships?tab=salesmix",
+    needs: "[data-sm-mo-units=\"6\"]" },
+  // Both keyed on the COMPUTED branch, not on presence: a headline that says
+  // "more" about a month that fell, or a verdict that blames volume for a mix
+  // shift, renders exactly like a correct one.
+  { name: "memberships · the change has a plain-language headline", path: "/{org}/memberships?tab=salesmix",
+    needs: "[data-sm-headline=\"down\"]" },
+  { name: "memberships · and a verdict that names the cause", path: "/{org}/memberships?tab=salesmix",
+    needs: "[data-sm-verdict=\"mix\"]" },
+
+  // Jul (1 unit / $240) → Aug (12 units / $60): units UP 11, revenue DOWN $180,
+  // because a $240 membership was replaced by twelve $5 gate passes. That is
+  // exactly the mix shift the panel exists to name — a unit line alone reads as
+  // a boom, a revenue line alone as a collapse. Both halves asserted, because
+  // the bridge must sum: +2,640 volume and −2,820 price give −180.
+  //
+  // Passes ARE counted here, unlike on the Auto-Renew tab. They are real sales;
+  // what they cannot do is auto-renew.
   { name: "memberships · sales decomposition", path: "/{org}/memberships?tab=salesmix",
-    needs: "[data-sm-decomp] [data-sm-volume=\"-60\"]" },
+    needs: "[data-sm-decomp] [data-sm-volume=\"2640\"]" },
   { name: "memberships · price half of the bridge", path: "/{org}/memberships?tab=salesmix",
-    needs: "[data-sm-decomp] [data-sm-price=\"220\"]" },
-  { name: "memberships · units fell", path: "/{org}/memberships?tab=salesmix",
-    needs: "[data-sm-unit-delta=\"-3\"]" },
-  { name: "memberships · revenue rose in the same month", path: "/{org}/memberships?tab=salesmix",
-    needs: "[data-sm-rev-delta=\"160\"]" },
+    needs: "[data-sm-decomp] [data-sm-price=\"-2820\"]" },
+  { name: "memberships · units rose", path: "/{org}/memberships?tab=salesmix",
+    needs: "[data-sm-unit-delta=\"11\"]" },
+  { name: "memberships · revenue fell in the same month", path: "/{org}/memberships?tab=salesmix",
+    needs: "[data-sm-rev-delta=\"-180\"]" },
   { name: "memberships · plan mix ranks by units", path: "/{org}/memberships?tab=salesmix",
     needs: "[data-sm-plan=\"Summer Season Pass\"] [data-sm-plan-units=\"6\"]" },
   { name: "memberships · the unpopular annual is on the table", path: "/{org}/memberships?tab=salesmix",

@@ -407,6 +407,79 @@ auto-renew" when the truth is "this feed cannot tell us". Same rule as
 `open`, without the plan columns** — guessing would file all 4,637 season passes
 as subscriptions and put $807,142 of re-buy into the churn number.
 
+### v3: every day pass and gate fee was filed as a subscription (2026-08-30)
+
+Dan, on the Auto-Renew tab: *"we're showing memberships that are not
+auto-renewing, why?"* — and then, on how gate fees got there: *"lets fix that."*
+
+**A PASS HAS NO GROUP.** v2 read the plan's term rule from `group` alone, so for
+a pass both `Plan Season End` and `Plan Term Days` came back NULL — byte-identical
+to a monthly subscription. `mbProductShape()` then read "no season end, no term
+days" as **open-ended**, and every pass on the platform became an auto-renew
+conversion candidate. Norman alone: **16,940 of 20,341 rows are passes**, 10,669
+of them with neither term rule, including **4,518 "League Tournament Gate Adult
+$5" admissions at ~$6** listed as convertible to a subscription.
+
+**Absence of a group term rule is not evidence of a subscription**, and no
+field-level test can catch this — every NULL involved is genuine. The fix is to
+carry what the row IS rather than infer it:
+
+- **`Product Kind`** (`mp.product_type`) was **already on the view and already in
+  the WHERE clause**, and thrown away. Selecting it is the whole fix.
+- **`pass_schema` is joined** so a pass gets its own term rule instead of an
+  absent one. Both plan columns are now `COALESCE(gg.…, pss.…)`. Primary-key
+  join, so it cannot fan out — verified against prod: Norman **20,341 rows with
+  and without it, every row distinct**.
+
+**v3 is additive in ROWS but not in VALUES, and that distinction matters.**
+Measured at Norman: 20,341 rows with and without the join, and `Product Kind`
+splits them **3,401 memberships / 16,940 passes**. But `Plan Season End` was NULL
+on every pass under v2 and is now populated for **6,271** of them — an existing
+column whose values change, which is exactly why the shape helper had to be
+re-ordered in the same change rather than after it.
+
+**THE PASS TEST IS SETTLED FIRST, before any term rule.** Now that a pass can
+carry an end date, testing season first would file a dated pass as a season
+membership and put its value in the next-season **re-buy** number, which is a
+membership question. Ordering is load-bearing, exactly like `early-access` inside
+card 17300's CASE.
+
+**AND THE CACHE INVARIANT DELIBERATELY DOES NOT HOLD HERE.** v2 and v3 cannot
+answer the same question: v2 has no column that separates a $20 monthly
+membership from a $6 gate fee, so `mbProductShape()` returns **`unknown`** for
+every un-kinded row rather than guessing. The resolution is the presence gate —
+`mbHasProductKind()` is **presence, not count**, and the "Could Convert" card
+renders *"Not in this feed yet"* on a pre-v3 feed. A `0` there would look like an
+answer; v2's non-zero was worse, because it counted day passes as subscriptions.
+Same rule as `hasAbsent` / `ciHasStatus`, and it is why an org that sells no
+passes still gets its count.
+
+Passes are out of the **denominator** as well as the candidate list — counting a
+pass as a membership that merely isn't auto-renewing measures the rate against a
+base that can never move — and out of the **per-plan config table**, where they
+sat at the top reading "0%", looking like a misconfiguration and not being one.
+The scope note names them and their value, so they are excluded visibly rather
+than silently.
+
+**The render case for the denominator had to be re-keyed.** It asserted
+`data-ar-count`, which is the auto-renew COUNT — passes never auto-renew, so that
+number reads the same either way and the case could not discriminate. It keys on
+`data-ar-base` (the denominator) now. Caught by mutation, not by review.
+
+### Sales & Mix was unreadable (2026-08-30)
+
+Dan: *"i have no idea what this entire sectio even means."* Fairly — it was a
+second floating series with no axis and no printed values, over an analyst's
+vocabulary (*volume effect*, *price/mix effect*).
+
+The arithmetic is unchanged; the presentation is not. Revenue bars now **carry
+their unit counts printed on them** rather than a disconnected second series, and
+the panel leads with a plain-language headline (`data-sm-headline`) and closes
+with a **verdict that names the cause** (`data-sm-verdict`) — "you sold N more
+and still made less, because the average sale fell from $X to $Y" — instead of
+leaving the reader to infer it from two signed numbers. `mbDecompose()` is
+untouched and the spec still pins its VALUES.
+
 ### The price/volume bridge answers "where am I losing money"
 
 Norman, measured: Jun→Jul **units +10.4%, revenue −74.9%**. Not churn and not a
@@ -438,17 +511,25 @@ recur.
 `cancel_reason` offers only *other / schedule / cost* and **94.2% say "other"** —
 there is no "why they left" panel to build.
 
-Guards: `scripts/memberships-revenue.spec.js` (**31 assertions, in CI**), which
-LIFTS AND RUNS the eight helpers. Mutation-tested ten ways, all failing by name —
-the pre-v2 shape guessed as open-ended, the cache-invariant fallback dropped, an
-unknown cycle defaulted to 30 days, the economics gate reading a value instead of
-the column, the bridge priced at the current average, `Auto Renew` reverted to
-the inferred column, an Excel column dropped, either beacon missing from the log
-allowlist or from `SLACK_NOTIFY`, and the card's trailing `ORDER BY` dropped.
-Plus **14 `ci-check-render.js` cases**, keyed on computed values rather than "a
+Guards: `scripts/memberships-revenue.spec.js` (**44 assertions, in CI**), which
+LIFTS AND RUNS the eleven helpers. Mutation-tested seventeen ways, all failing by
+name — the pre-v2 shape guessed as open-ended, the cache-invariant fallback
+dropped, an unknown cycle defaulted to 30 days, the economics gate reading a
+value instead of the column, the bridge priced at the current average,
+`Auto Renew` reverted to the inferred column, an Excel column dropped, either
+beacon missing from the log allowlist or from `SLACK_NOTIFY`, the card's trailing
+`ORDER BY` dropped, and — for v3 — the pass branch deleted (the bug exactly as it
+shipped), the pass test moved below the term tests, open-ended back to a bare
+`hasPlanTerms`, `mbHasProductKind` hardcoded true, `Plan Season End` reverted to
+`gg.end_date` alone, the `pass_schema` join dropped, and the `Product Kind`
+column dropped.
+Plus **20 `ci-check-render.js` cases**, keyed on computed values rather than "a
 panel rendered", over a fixture with a `prev2` stub mode that drops the five v2
-columns — so the pre-v2 degradation is proven in a real browser, not asserted in
-source.
+columns **and `Product Kind`**, and twelve $5 gate admissions carrying it — so
+both the pre-v2 degradation and the pass misclassification are proven in a real
+browser rather than asserted in source. The old `no candidates guessed without
+plan terms` case is **gone**: it pinned a confident `0` on a pre-v3 feed, which
+is precisely the false-zero v3 stopped rendering.
 
 **One existing assertion had to be loosened.** `report-settings.spec.js` pinned
 `"settings-open"]` — the END of the log route's ALLOWED array — so appending any

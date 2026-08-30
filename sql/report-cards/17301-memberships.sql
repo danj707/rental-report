@@ -7,6 +7,26 @@
      Join: order_item_id when present; fall back to customer+product
      for orphaned rows (null order_item_id, e.g. desk/admin sales).
 
+   ── v3 (2026-08-30) ─────────────────────────────────────────
+   Adds "Product Kind" and joins pass_schema. WHY: v2 read the plan
+   term rule only from `group`, and A PASS HAS NO GROUP — its
+   group_id is NULL, so both plan columns came back NULL and the page
+   concluded "no season end, no term days, therefore an open-ended
+   subscription". Every day pass and gate fee on the platform was
+   classified as a subscription and offered as an auto-renew
+   conversion candidate. Norman alone: 16,940 of 20,341 rows are
+   passes and 10,669 of those carried neither term rule, including
+   4,518 "League Tournament Gate Adult $5" admissions at ~$6.
+
+   Absence of a group term rule is not evidence of a subscription.
+   "Product Kind" states what the row IS instead of inferring it, and
+   the pass_schema join gives a pass its own term rule rather than
+   leaving it to look like an absent one.
+
+   Additive, verified against prod before this push: City of Norman,
+   20,341 rows with and without the pass_schema join. It is on that
+   table's primary key, so it cannot fan out.
+
    ── v2 (2026-08-29) ─────────────────────────────────────────
    Adds FIVE columns and changes nothing else. Every pre-existing
    column keeps its name, position and expression, so a warm 4-hour
@@ -16,12 +36,17 @@
      "Coverage"          household | individual | group — already on the
                          materialized view; decides whether a membership's
                          people hang off household_id or membership_user.
-     "Plan Season End"   group.end_date. Non-null ⇒ a SEASON plan: every
-                         member's term ends on the same calendar date, so
-                         expiry is the season closing, NOT churn.
-     "Plan Term Days"    group.ends_after_seconds in days. Non-null ⇒ a
-                         rolling fixed term (365d annual, 28d, …).
-                         Both null ⇒ open-ended / subscription.
+     "Plan Season End"   the plan's fixed end date — group.end_date for a
+                         membership, pass_schema.end_date for a pass.
+                         Non-null ⇒ a SEASON plan: every member's term ends
+                         on the same calendar date, so expiry is the season
+                         closing, NOT churn.
+     "Plan Term Days"    the plan's ends_after_seconds in days, from the same
+                         two sources. Non-null ⇒ a rolling fixed term
+                         (365d annual, 28d, …).
+                         Both null on a MEMBERSHIP ⇒ open-ended / subscription.
+                         Both null on a PASS means nothing — see "Product
+                         Kind" below, and do not read it as open-ended.
      "Auto Renew"        membership.stripe_subscription_id IS NOT NULL.
                          This is the TRUTH about auto-renew. The existing
                          "Renewal Type" column infers it from
@@ -30,16 +55,23 @@
                          over ACTIVE memberships, 1,760 carry both, 88
                          carry a subscription with no renewal date, and
                          none carry a renewal date without a subscription.
+     "Product Kind"      'membership' | 'pass'. Already on the view and
+                         previously read only in the WHERE clause. A PASS
+                         CANNOT AUTO-RENEW AT ALL — the `pass` table has no
+                         stripe_subscription_id and no next_renewal_at — so
+                         this is what keeps 13,802 active paid passes out of
+                         the auto-renew denominator and out of the
+                         conversion list.
      "Period Start"      membership.current_period_start_at. With
                          "Next Renewal" this gives the billing CYCLE
                          length, which is the only way to turn a per-cycle
                          charge into a monthly figure.
 
-   Both new joins are on primary keys (membership.id, group.id), so
-   neither can fan out a row. Verified against prod before the push:
-   City of Norman, 20,341 rows with and without the two joins, and an
-   identical md5 over (epsio_id, customer_user_id, product_name,
-   created_at) — the row identity — in both directions.
+   All three added joins are on primary keys (membership.id, group.id,
+   pass_schema.id), so none can fan out a row. Verified against prod:
+   City of Norman, 20,341 rows with and without them, and an identical
+   md5 over (epsio_id, customer_user_id, product_name, created_at) —
+   the row identity — in both directions.
 
    WHY the extra joins are to base tables: the materialized purchases
    view carries `coverage` and `group_id` but NOT the plan's term rule
@@ -97,10 +129,14 @@ SELECT
   COALESCE(mp.membership_attendance_count, mp.pass_attendance_count) AS "Attendance Count",
   -- ── v2 additions ──
   mp.coverage                   AS "Coverage",
-  gg.end_date                   AS "Plan Season End",
-  CASE WHEN gg.ends_after_seconds IS NOT NULL
-       THEN ROUND(gg.ends_after_seconds / 86400.0)
+  -- COALESCEd across both product families: a membership's rule lives on
+  -- `group`, a pass's on `pass_schema`. Reading only the group side is what
+  -- made every pass look like an open-ended subscription in v2.
+  COALESCE(gg.end_date, pss.end_date)  AS "Plan Season End",
+  CASE WHEN COALESCE(gg.ends_after_seconds, pss.ends_after_seconds) IS NOT NULL
+       THEN ROUND(COALESCE(gg.ends_after_seconds, pss.ends_after_seconds) / 86400.0)
        ELSE NULL END            AS "Plan Term Days",
+  mp.product_type               AS "Product Kind",
   (mm.stripe_subscription_id IS NOT NULL) AS "Auto Renew",
   mm.current_period_start_at    AS "Period Start"
 FROM materialized.membership_and_pass_purchases_report mp
@@ -117,6 +153,8 @@ LEFT JOIN public.membership mm
   ON mm.id = mp.membership_id
 LEFT JOIN public."group" gg
   ON gg.id = mp.group_id
+LEFT JOIN public.pass_schema pss
+  ON pss.id = mp.pass_schema_id
 WHERE mp.organization_id = {{org_id}}::uuid
   AND mp.product_type IN ('membership', 'pass')
   [[ AND (mp.created_at AT TIME ZONE 'America/Chicago')::date >= {{start_date}} ]]
