@@ -69,14 +69,17 @@ function cut(name) {
   return page.slice(i, end);
 }
 const NAMES = ["mbIsPaid", "mbProductShape", "mbIsAutoRenew", "mbCanAutoRenew",
-               "mbCycleDays", "mbMonthlyValue", "mbHasProductKind", "mbHasEconomics",
-               "mbDecompose", "mbEffectiveTab", "mbRetentionWindow", "mbISODate"];
+               "mbCycleDays", "mbMonthlyValue", "mbRenewalsSoFar", "mbIsCanceled",
+               "mbCancelPending", "mbHasCancelSchedule", "mbHasProductKind",
+               "mbHasEconomics", "mbDecompose", "mbEffectiveTab", "mbRetentionWindow",
+               "mbISODate"];
 const api = new Function(
   "var MB_URL_TABS = ['memberships','autorenew','salesmix','checkins','retention'];\n" +
   NAMES.map(cut).join("\n") + "\nreturn { " + NAMES.join(", ") + " };")();
 const { mbIsPaid, mbProductShape, mbIsAutoRenew, mbCanAutoRenew, mbCycleDays,
-        mbMonthlyValue, mbHasProductKind, mbHasEconomics, mbDecompose, mbEffectiveTab,
-        mbRetentionWindow, mbISODate } = api;
+        mbMonthlyValue, mbRenewalsSoFar, mbIsCanceled, mbCancelPending,
+        mbHasCancelSchedule, mbHasProductKind, mbHasEconomics, mbDecompose,
+        mbEffectiveTab, mbRetentionWindow, mbISODate } = api;
 
 // The same membership, as the two feeds that are live at once describe it.
 // A 4-hour cache means a pre-v2 response and a v2 response are both in flight
@@ -240,25 +243,58 @@ test("a pre-v3 feed excludes NOTHING — it cannot tell, so it does not guess", 
   assert.strictEqual(mbCanAutoRenew(PRE_V2_MONTHLY), true);
 });
 
-test("the rate and the plan table share ONE predicate", () => {
-  // Two copies drift the first time a shape is added, and then the table and
-  // the percentage above it disagree about who counts — the numbers-disagree-
-  // across-the-page trap the facility Summary already shipped once.
-  // Scoped to each block rather than counted file-wide: a bare count passes
-  // when one caller uses it twice and the other not at all.
-  const block = (name) => {
-    const i = page.indexOf("const " + name + " = useMemo(");
-    assert.ok(i > 0, name + " should be a useMemo");
-    const end = page.indexOf("}, [filtered]);", i);
-    assert.ok(end > i, "could not bound " + name);
-    return page.slice(i, end);
-  };
-  assert.ok(block("arStats").includes("mbCanAutoRenew"),
-    "the RATE must use the shared predicate");
-  assert.ok(block("arPlans").includes("mbCanAutoRenew"),
-    "the per-plan CONFIG TABLE must use the same one");
+// Bound the memo by its own dependency line rather than a hardcoded one: the
+// terminator used to be "}, [filtered]);" for every block, so when arPlans
+// switched to filteredAnyStatus the slice silently ran on into the NEXT memo
+// and an assertion about arPlans started reading someone else's code.
+const block = (name) => {
+  const i = page.indexOf("const " + name + " = useMemo(");
+  assert.ok(i > 0, name + " should be a useMemo");
+  const end = page.slice(i).search(/\n\s*\}, \[[^\]]*\]\);/);
+  assert.ok(end > 0, "could not bound " + name);
+  return page.slice(i, i + end);
+};
+
+test("the plan table lists ONLY plans set up for auto-renew", () => {
+  // Dan, after two rounds of narrowing a denominator instead: "the memberships
+  // showing up in the auto renew tab should be those that are setup for auto
+  // renew." So the test is `on > 0`, which subsumes every exclusion argued for
+  // before it — a pass, a season plan and a desk-paid cash plan all have nobody
+  // enrolled and fall out on one rule rather than three special cases.
+  const b = block("arPlans");
+  // The rule is at the door: a row that is not on auto-renew never enters the
+  // map, so a plan with nobody on it cannot appear. That one test subsumes
+  // every exclusion argued for in earlier rounds — pass, season, rolling term
+  // and desk-paid cash plans all fall out together.
+  assert.match(b, /if \(!mbIsPaid\(r\) \|\| !mbIsAutoRenew\(r\)\) continue;/,
+    "a plan nobody auto-renews on is not part of the auto-renew book");
+  assert.ok(!/mbCanAutoRenew/.test(b),
+    "eligibility is the CANDIDATE question, not the book question — the table " +
+    "must not re-introduce a second rule for who appears");
   assert.ok(!/mbProductShape\(r\) === 'pass'\) continue/.test(page),
-    "arPlans must not re-derive its own exclusion");
+    "and nothing may re-derive a per-shape exclusion");
+});
+
+test("an eligible-but-unenrolled plan is a CANDIDATE, and is named", () => {
+  // The 5 desk-paid memberships Dan pointed at have to go somewhere. Dropping
+  // them from the table without naming them would lose the only actionable
+  // population on the tab; "Could Convert: 5" alone is a number to wonder
+  // about, so the card carries the plan names.
+  const b = block("arStats");
+  assert.ok(b.includes("candidatePlans"), "the candidate PLANS must be derived");
+  assert.match(b, /mbProductShape\(r\) === 'open'/,
+    "candidacy is still the recurring-shape test");
+  assert.match(page, /data-ar-cand-plan=/,
+    "and the plan names must reach the page, not just the count");
+});
+
+test("the tab no longer claims an adoption RATE", () => {
+  // Every denominator tried here was contested — paid memberships, then
+  // non-passes, then subscription-shaped. The tab reports the book it can
+  // state without argument: how many auto-renew, on what, billing what.
+  assert.ok(!/data-ar-pct=/.test(page),
+    "a percentage needs a denominator, and this tab no longer asserts one");
+  assert.ok(!/data-ar-base=/.test(page));
 });
 
 // ── The cache invariant ─────────────────────────────────────────────────────
@@ -289,6 +325,82 @@ test("the explicit column wins over the inferred one", () => {
   // stripe_subscription_id. Where they disagree, the subscription is the truth.
   assert.strictEqual(mbIsAutoRenew({ autoRenew: false, renewalType: "Auto-renew" }), false);
   assert.strictEqual(mbIsAutoRenew({ autoRenew: true, renewalType: "One-time" }), true);
+});
+
+// ── How is this plan working out? ───────────────────────────────────────────
+// Dan: "which a/r memberships are working out the best, which have a high
+// cancellation rate."
+const V4_RENEWED = { price: 20, autoRenew: true, productKind: "membership",
+  hasPlanTerms: true, hasCycle: true, planSeasonEnd: "", planTermDays: null,
+  status: "active", startDate: "2026-06-01", periodStart: "2026-08-29",
+  nextRenewal: "2026-09-29", canceledAt: "", hasCancelSchedule: true,
+  cancelScheduledAt: "" };
+const V4_LEFT = Object.assign({}, V4_RENEWED,
+  { status: "canceled", canceledAt: "2026-08-15", nextRenewal: "", periodStart: "" });
+const V4_LEAVING = Object.assign({}, V4_RENEWED, { cancelScheduledAt: "2026-09-29" });
+
+test("renewals are DERIVED, because no renewal history exists anywhere", () => {
+  // `public.subscription` is a marketing opt-in table and `membership` keeps
+  // only the current period, so this is (period start - start) / cycle.
+  // Jun 1 -> Aug 29 is 89 days over a 31-day cycle: 2.87, which rounds to 3.
+  // Verified sound on prod rather than assumed — weekly divides exactly and
+  // monthly sits 0.06 off a whole number, which is calendar drift.
+  assert.strictEqual(mbCycleDays(V4_RENEWED), 31);
+  assert.strictEqual(mbRenewalsSoFar(V4_RENEWED), 3);
+});
+
+test("a cancelled membership yields NULL renewals, never 0", () => {
+  // next_renewal_at is cleared on cancellation, so there is no cycle to divide
+  // by. A 0 would say a member who renewed six times and then left never
+  // renewed at all — and averaged into a plan, it punishes the plan hardest
+  // for the members it kept billing longest.
+  assert.strictEqual(mbRenewalsSoFar(V4_LEFT), null);
+  assert.strictEqual(mbRenewalsSoFar({ startDate: "2026-06-01", periodStart: "" }), null);
+  assert.strictEqual(mbRenewalsSoFar(null), null);
+});
+
+test("cancellation reads the DATE first and the status word second", () => {
+  assert.strictEqual(mbIsCanceled(V4_LEFT), true);
+  assert.strictEqual(mbIsCanceled(V4_RENEWED), false);
+  assert.strictEqual(mbIsCanceled({ status: "cancelled" }), true, "both spellings");
+  assert.strictEqual(mbIsCanceled({ canceledAt: "2026-08-15", status: "active" }), true,
+    "the date is the fact; status vocabulary varies by product");
+});
+
+test("SCHEDULED to cancel is not CANCELLED, and they must not be added", () => {
+  // Still live, still billing, still in the book — and will not renew. The
+  // only forward-looking churn signal in the schema; Norman has 126 of them.
+  assert.strictEqual(mbCancelPending(V4_LEAVING), true);
+  assert.strictEqual(mbIsCanceled(V4_LEAVING), false,
+    "counting it as cancelled would double-count it the moment it actually is");
+  assert.strictEqual(mbCancelPending(V4_RENEWED), false);
+  assert.strictEqual(mbCancelPending(Object.assign({}, V4_LEFT,
+    { cancelScheduledAt: "2026-09-29" })), false,
+    "already gone is not 'leaving'");
+});
+
+test("the pending-cancel card gates on the COLUMN, not on the count", () => {
+  assert.strictEqual(mbHasCancelSchedule([V4_RENEWED]), true,
+    "present and empty is a real answer: this member is not leaving");
+  assert.strictEqual(mbHasCancelSchedule([
+    { autoRenew: true, cancelScheduledAt: "" }]), false,
+    "a pre-v4 feed must HIDE the card, not render a 0 reading 'nobody is leaving'");
+  assert.strictEqual(mbHasCancelSchedule([]), false);
+});
+
+test("A CHURN METRIC MAY NOT BE COMPUTED OVER A VIEW THAT HIDES CHURN", () => {
+  // The status pill defaults to ['active'], so a cancellation rate taken from
+  // `filtered` is structurally 0.0% for every org, forever — and reads as a
+  // healthy book rather than a broken number. Caught by the render check: the
+  // per-plan rate came out 0% on a fixture built to make it 60%.
+  assert.match(page, /const \[statusFilter, setStatusFilter\] = useState\(\(\) => \{\s*try \{ return JSON\.parse\(localStorage\.getItem\(LS_STATUS\)\) \|\| \['active'\]/,
+    "if this default ever stops being 'active' this test's premise changes");
+  assert.ok(block("arPlans").includes("filteredAnyStatus"),
+    "the per-plan cancellation rate must see cancelled rows");
+  assert.ok(block("arBook").includes("filteredAnyStatus"),
+    "and so must the book-level rate");
+  assert.ok(!/for \(const r of filtered\)/.test(block("arPlans")),
+    "reading `filtered` here is the bug, not a style choice");
 });
 
 // ── Cycle and monthly value ─────────────────────────────────────────────────
@@ -527,6 +639,17 @@ test("both new joins are on primary keys, so neither can fan out a row", () => {
 test("auto-renew comes from the subscription id, not from the inferred column", () => {
   assert.match(sqlBody, /mm\.stripe_subscription_id IS NOT NULL\)?\s+AS "Auto Renew"/,
     "Renewal Type infers auto-renew from next_renewal_at; this is the real test");
+});
+
+test("v4 carries the forward-looking cancellation signal", () => {
+  assert.match(sqlBody, /mm\.cancel_scheduled_at\s+AS "Cancel Scheduled At"/,
+    "canceled_at is the past; this is the only column that says who is about " +
+    "to leave, and nothing else in the schema exposes it");
+  assert.match(sqlBody, /mm\.cancel_reason\s+AS "Cancel Reason"/);
+  // Both come off the membership join v2 already made, so v4 adds no joins.
+  const joins = (sqlBody.match(/LEFT JOIN/g) || []).length;
+  assert.strictEqual(joins, 6,
+    "v4 must add NO join — if this count moved, a row count can move with it");
 });
 
 test("the ORDER BY is intact", () => {
