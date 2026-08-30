@@ -495,6 +495,7 @@ function membershipRows() {
     if (!V2) {
       delete r["Coverage"]; delete r["Plan Season End"]; delete r["Plan Term Days"];
       delete r["Auto Renew"]; delete r["Period Start"]; delete r["Product Kind"];
+      delete r["Cancel Scheduled At"]; delete r["Cancel Reason"];
     }
     return r;
   };
@@ -521,6 +522,30 @@ function membershipRows() {
       "Start Date": "2026-06-01", "End Date": "", "Created At": "2026-06-0" + (i + 1),
       "Next Renewal": "2026-09-29", "Coverage": "individual", "Plan Season End": null,
       "Plan Term Days": null, "Auto Renew": true, "Period Start": "2026-08-29",
+      "Product Kind": "membership",
+    }));
+  }
+  // A second auto-renewing plan that CHURNS — 2 still billing, 3 cancelled, so
+  // the per-plan cancel rate is 60% against Monthly Individual's 0%. Without a
+  // cancelled row every plan reads 0% and the column proves nothing. One of the
+  // live pair is scheduled to cancel at period end, which is a different state
+  // from already cancelled and must not be added to it.
+  for (let i = 0; i < 5; i++) {
+    const gone = i >= 2;
+    rows.push(row({
+      "User ID": "d60fea14-be38-46db-96da-40e61ccca25d", "First Name": "Katherine", "Last Name": "Johnson " + i,
+      "Membership ID": "m-f" + i, "Membership Type": "Fitness Monthly", "Group / Plan": "Monthly Family",
+      "Status": gone ? "canceled" : "active", "Renewal Type": "Auto-renew", "Price": 40,
+      "Start Date": "2026-06-01", "End Date": "", "Created At": "2026-07-0" + (i + 1),
+      // A cancelled membership loses next_renewal_at, so it has no cycle and
+      // contributes NO renewal count — reporting it as 0 would say someone who
+      // renewed three times then left never renewed at all.
+      "Next Renewal": gone ? "" : "2026-09-29",
+      "Canceled At": gone ? "2026-08-1" + i : "",
+      "Coverage": "household", "Plan Season End": null,
+      "Plan Term Days": null, "Auto Renew": true,
+      "Period Start": gone ? "" : "2026-08-29",
+      "Cancel Scheduled At": (!gone && i === 0) ? "2026-09-29" : "",
       "Product Kind": "membership",
     }));
   }
@@ -1586,24 +1611,22 @@ const CASES = [
   // Keyed on COMPUTED VALUES, not on "a panel rendered": every one of these
   // passes on a tab that renders the wrong number.
   { name: "memberships · auto-renew count", path: "/{org}/memberships?tab=autorenew",
-    needs: "[data-ar-count=\"4\"]" },
+    needs: "[data-ar-count=\"6\"]" },
   { name: "memberships · auto-renew monthly revenue", path: "/{org}/memberships?tab=autorenew",
-    needs: "[data-ar-mrr=\"79\"]" },
+    needs: "[data-ar-mrr=\"157\"]" },
   // Only the annual plan qualifies: it is open-ended and renewing by hand. The
   // six season passes must NOT be here — a season pass expiring is the season
   // closing, and offering it as a conversion candidate sends an admin chasing
   // churn that does not exist.
   { name: "memberships · season passes are not conversion candidates", path: "/{org}/memberships?tab=autorenew",
     needs: "[data-ar-cands=\"1\"]" },
-  { name: "memberships · auto-renew is per plan", path: "/{org}/memberships?tab=autorenew",
-    needs: "[data-ar-plan=\"Monthly Individual\"] [data-ar-plan-pct=\"100\"]" },
 
   // A pre-v2 cache entry still knows WHO auto-renews (from Renewal Type), so the
   // count must be identical across both feed shapes — the cache invariant. What
   // it cannot know is the billing cycle, so the monthly figure hides rather than
   // rendering a $0 that would read as "this org earns nothing".
   { name: "memberships · auto-renew count survives a pre-v2 feed", path: "/{org}/memberships?tab=autorenew",
-    stubMode: "prev2", needs: "[data-ar-count=\"4\"]" },
+    stubMode: "prev2", needs: "[data-ar-count=\"6\"]" },
   { name: "memberships · no invented monthly on a pre-v2 feed", path: "/{org}/memberships?tab=autorenew",
     stubMode: "prev2", needs: "[data-ar-pending=\"1\"]", absent: "[data-ar-mrr]" },
   // ── Passes are not subscriptions ────────────────────────────────────────
@@ -1620,10 +1643,48 @@ const CASES = [
   // the base and the rate is 4/5 = 80%. Counting every paid row gives 23 and a
   // rate of 17% — which is the shape of the bug: Norman read 7.1% when it was
   // really at 97.6%.
-  { name: "memberships · only subscription-shaped rows are in the denominator", path: "/{org}/memberships?tab=autorenew",
-    needs: "[data-ar-base=\"5\"]" },
-  { name: "memberships · and the rate is measured against that base", path: "/{org}/memberships?tab=autorenew",
-    needs: "[data-ar-pct=\"80\"]" },
+  // THE TABLE IS THE AUTO-RENEW BOOK. Of the fixture's four plans only "Monthly
+  // Individual" has anybody enrolled, so it is the only row. The Annual plan is
+  // the discriminator this case exists for: it is subscription-shaped and
+  // eligible, so every earlier rule would have listed it at 0% — it belongs on
+  // the Could Convert card instead.
+  { name: "memberships · the plan table is the auto-renew book", path: "/{org}/memberships?tab=autorenew",
+    needs: "[data-ar-plans=\"2\"]", absent: "[data-ar-plan=\"Annual Individual\"]" },
+  // ── Is this plan working out? ──────────────────────────────────────────
+  // 4 Monthly Individual (all live) + 5 Monthly Family (2 live, 3 cancelled).
+  // Renewals: start 2026-06-01, period start 2026-08-29, 31-day cycle → 89/31
+  // rounds to 3 each, over the 6 memberships that still have a cycle → 18.
+  { name: "memberships · renewals are derived from the period dates", path: "/{org}/memberships?tab=autorenew",
+    needs: "[data-ar-renewals=\"18\"]" },
+  // 3 of 9 ever-auto-renewing memberships have cancelled. Counting only ACTIVE
+  // rows, as every earlier version of this table did, makes this unmeasurable.
+  { name: "memberships · cancellation rate spans the whole book", path: "/{org}/memberships?tab=autorenew",
+    needs: "[data-ar-book-cancel-rate=\"33.3\"]" },
+  // The two plans must read DIFFERENTLY, or the column cannot answer "which
+  // one is working out".
+  { name: "memberships · a churning plan is visibly worse than a healthy one", path: "/{org}/memberships?tab=autorenew",
+    needs: "[data-ar-plan=\"Monthly Family\"] [data-ar-cancel-rate=\"60\"]" },
+  { name: "memberships · a healthy plan reads zero churn", path: "/{org}/memberships?tab=autorenew",
+    needs: "[data-ar-plan=\"Monthly Individual\"] [data-ar-cancel-rate=\"0\"]" },
+  // Averaged over the memberships that CAN answer. Folding the 3 cancelled
+  // rows in as 0 would drag this to 1.2 and punish the plan for retaining
+  // people long enough to have renewals at all.
+  { name: "memberships · a cancelled row contributes tenure, not a zero renewal", path: "/{org}/memberships?tab=autorenew",
+    needs: "[data-ar-plan=\"Monthly Family\"] [data-ar-plan-renew=\"3\"]" },
+  // Scheduled-to-cancel is a different state from cancelled: still billing,
+  // still in the book, will not renew.
+  { name: "memberships · a pending cancellation is not a cancellation", path: "/{org}/memberships?tab=autorenew",
+    needs: "[data-ar-pending-cancel=\"1\"]" },
+  { name: "memberships · no false zero for pending cancels pre-v4", path: "/{org}/memberships?tab=autorenew",
+    stubMode: "prev2", needs: "[data-ar-nosched=\"1\"]", absent: "[data-ar-pending-cancel]" },
+  // THE COHORT CHART IS FED THE AUTO-RENEW SUBSET, not the feed. The fixture
+  // spans four purchase months (May season, Jun monthly, Jul family, Aug
+  // passes); only two of them contain auto-renewers, so 2 proves the scoping
+  // and 4 would prove it was handed everything.
+  { name: "memberships · the retention chart covers auto-renewers only", path: "/{org}/memberships?tab=autorenew",
+    needs: "[data-ar-cohorts=\"2\"]" },
+  { name: "memberships · and the candidate plan is NAMED, not just counted", path: "/{org}/memberships?tab=autorenew",
+    needs: "[data-ar-cand-plan=\"Annual Individual\"]" },
   // Named and counted, not silently dropped — "6 season plans ($1,440)" is
   // itself worth reading, and a silent exclusion is how a number stops being
   // trusted.
@@ -1634,8 +1695,8 @@ const CASES = [
   // A season plan sitting at 0% is not a misconfiguration, and six of them
   // filled the top of Norman's table and buried the two cash plans that were
   // the actual finding.
-  { name: "memberships · a season plan is not in the config table", path: "/{org}/memberships?tab=autorenew",
-    absent: "[data-ar-plan=\"Summer Season Pass\"]", needs: "[data-ar-plan=\"Annual Individual\"]" },
+  { name: "memberships · a season plan is not in the book", path: "/{org}/memberships?tab=autorenew",
+    absent: "[data-ar-plan=\"Summer Season Pass\"]", needs: "[data-ar-plan=\"Monthly Individual\"]" },
   { name: "memberships · a pass plan is not in the config table", path: "/{org}/memberships?tab=autorenew",
     absent: "[data-ar-plan=\"Tournament Gate Adult $5\"]", needs: "[data-ar-plan=\"Monthly Individual\"]" },
   // Without Product Kind nothing may be called open-ended, so the card must say
@@ -1663,13 +1724,13 @@ const CASES = [
   // Passes ARE counted here, unlike on the Auto-Renew tab. They are real sales;
   // what they cannot do is auto-renew.
   { name: "memberships · sales decomposition", path: "/{org}/memberships?tab=salesmix",
-    needs: "[data-sm-decomp] [data-sm-volume=\"2640\"]" },
+    needs: "[data-sm-decomp] [data-sm-volume=\"960\"]" },
   { name: "memberships · price half of the bridge", path: "/{org}/memberships?tab=salesmix",
-    needs: "[data-sm-decomp] [data-sm-price=\"-2820\"]" },
+    needs: "[data-sm-decomp] [data-sm-price=\"-1220\"]" },
   { name: "memberships · units rose", path: "/{org}/memberships?tab=salesmix",
-    needs: "[data-sm-unit-delta=\"11\"]" },
+    needs: "[data-sm-unit-delta=\"9\"]" },
   { name: "memberships · revenue fell in the same month", path: "/{org}/memberships?tab=salesmix",
-    needs: "[data-sm-rev-delta=\"-180\"]" },
+    needs: "[data-sm-rev-delta=\"-260\"]" },
   { name: "memberships · plan mix ranks by units", path: "/{org}/memberships?tab=salesmix",
     needs: "[data-sm-plan=\"Summer Season Pass\"] [data-sm-plan-units=\"6\"]" },
   { name: "memberships · the unpopular annual is on the table", path: "/{org}/memberships?tab=salesmix",

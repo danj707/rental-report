@@ -7,6 +7,35 @@
      Join: order_item_id when present; fall back to customer+product
      for orphaned rows (null order_item_id, e.g. desk/admin sales).
 
+   ── v4 (2026-08-30) ─────────────────────────────────────────
+   Adds "Cancel Scheduled At" and "Cancel Reason". Both come off the
+   `membership` join v2 already made, so this adds no joins and cannot
+   move a row count.
+
+     "Cancel Scheduled At"  membership.cancel_scheduled_at. A cancellation
+                            already booked for the end of the current period —
+                            the membership is live, is counted in the book, and
+                            WILL NOT renew. It is the only forward-looking churn
+                            signal in this schema, and nothing else exposes it:
+                            City of Norman has 126. `canceled_at` is the past,
+                            this is the future.
+     "Cancel Reason"        membership.cancel_reason. Carried so the page can
+                            show it where it exists, but do not build a "why
+                            they left" panel on it — the vocabulary is only
+                            other/schedule/cost and 94.2% say "other".
+
+   WHAT IS *NOT* HERE, and why. There is no renewal-event history anywhere in
+   this database: `public.subscription` is a marketing opt-in table, and
+   `membership` keeps only the CURRENT period. Renewals are therefore DERIVED
+   on the page as (Period Start − Start Date) ÷ cycle. Verified sound against
+   prod rather than assumed — over City of Norman's auto-renewers the elapsed
+   time divides into whole cycles: weekly (58 memberships) is exact, monthly
+   (137) sits 0.06 off a whole number, which is calendar months of unequal
+   length against a fixed 31-day cycle. Note the derivation only works while a
+   membership is LIVE: next_renewal_at is cleared on cancellation, so a
+   cancelled membership has no cycle to divide by and contributes tenure
+   instead of a renewal count.
+
    ── v3 (2026-08-30) ─────────────────────────────────────────
    Adds "Product Kind" and joins pass_schema. WHY: v2 read the plan
    term rule only from `group`, and A PASS HAS NO GROUP — its
@@ -138,7 +167,12 @@ SELECT
        ELSE NULL END            AS "Plan Term Days",
   mp.product_type               AS "Product Kind",
   (mm.stripe_subscription_id IS NOT NULL) AS "Auto Renew",
-  mm.current_period_start_at    AS "Period Start"
+  mm.current_period_start_at    AS "Period Start",
+  -- ── v4 additions ──
+  -- Both off the `membership` join v2 already made, so v4 adds NO joins and
+  -- cannot change a row count.
+  mm.cancel_scheduled_at        AS "Cancel Scheduled At",
+  mm.cancel_reason              AS "Cancel Reason"
 FROM materialized.membership_and_pass_purchases_report mp
 LEFT JOIN materialized.membership_and_pass_plans_report pl
   ON pl.id = mp.product_id

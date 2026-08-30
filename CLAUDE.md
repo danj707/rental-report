@@ -518,6 +518,108 @@ out. I applied the argument to passes, wrote it down, and still left two
 identical populations in — the write-up did not stop the second instance because
 it named passes rather than the property.
 
+### The Auto-Renew tab is the auto-renew BOOK, not an adoption rate (2026-08-30)
+
+Dan, after two rounds of me narrowing a denominator instead: *"the memberships
+showing up in the auto renew tab should be those that are setup for auto renew.
+Those two memberships totalling 5 aren't auto renewing memberships."*
+
+**Every denominator was contested and the framing was the problem.** Paid
+memberships, then non-passes, then subscription-shaped — each was less wrong than
+the last and each still put rows on the tab that nobody auto-renews. The table is
+now `on > 0`: a plan is listed iff somebody is actually on auto-renew. **That one
+rule subsumes every exclusion argued for earlier** — a pass, a season plan and a
+desk-paid cash plan all have nobody enrolled and fall out together instead of as
+three special cases. The rate is gone; the tab states the book.
+
+An eligible-but-unenrolled plan is a **CANDIDATE**, and the Could Convert card now
+NAMES the plans rather than only counting them — "5" is a number to wonder about,
+"4 on 1 Month Individual Cash, 1 on 1 Month Family" is a list to work through.
+
+### WHY those 5 could not auto-renew: the payment method, not the plan name
+
+They are on plans *named* "Cash", which is the name-matching trap. There is **no
+payment-method column on `group` or `membership`** — but the purchase's
+transaction method is on `item_log_report`, and over open-shape active paid
+memberships platform-wide it splits perfectly, **zero exceptions in 2,083 rows**:
+
+| method | memberships | on auto-renew |
+|---|---|---|
+| card-online | 3,312 | 1,841 (55.6%) |
+| card-present (desk swipe) | 1,523 | **0** |
+| cash | 343 | **0** |
+| check | 185 | **0** |
+| organization-credit | 32 | **0** |
+
+**CONFIRMED BY DAN AS A PRODUCT RULE, not just a correlation:** *"a/r memberships
+are ONLY available via CC."* So the table above is the rule showing through the
+data, and the tab may state it in words — an online purchase leaves a reusable
+card; a desk swipe, cash, check or org credit does not, so there is nothing for
+Stripe to charge.
+
+**Consequence for the Could Convert card:** converting one of these is not
+flipping a plan setting, it is getting a card on file, and the card says so.
+**Deliberately NOT used as an exclusion:** a cash member CAN
+be converted — you ask for a card — whereas a season pass cannot. Excluding them
+would delete 2,083 convertible memberships platform-wide, the largest conversion
+opportunity there is. **`Card On File` is NOT on the card yet, and it is the obvious next column** —
+`bool_or(transaction_method = 'card-online')` inside the `tx_oi` / `tx_cust` CTEs,
+which already scan `item_log_report`, so it costs no new scan. It would split
+Could Convert into "already pays by card, so the plan setting is the whole job"
+versus "pays at the desk, so someone has to capture a card" — two different jobs
+currently reported as one number. A single method pick would be wrong for the 36
+of 113,819 order items that split across methods; the boolean is deterministic.
+It belongs as the *reason* beside a candidate, never as a filter.
+
+### The metrics: renewals, cancellation, and A/R retention (card v4)
+
+Dan: *"where are things like auto-renewing rate per period, cancellation rate,
+maybe a chart similar to the retention tab… which a/r memberships are working out
+the best, which have a high cancellation rate."*
+
+**THERE IS NO RENEWAL-EVENT HISTORY ANYWHERE.** `public.subscription` is a
+marketing opt-in table (name, description, opt_in_by_default) and `membership`
+keeps only the CURRENT period. So renewals are **derived**:
+`mbRenewalsSoFar()` = (Period Start − Start Date) ÷ cycle.
+
+**Verified by remainder, not by spot check.** Over Norman's auto-renewers the
+elapsed time divides into whole cycles: weekly (58) exact, monthly (137) 0.06 off
+a whole number — calendar months against a fixed 31-day cycle — annual (12)
+exact. Monthly members have renewed up to 7 times.
+
+- **NULL, never 0, when it cannot be derived.** `next_renewal_at` is cleared on
+  cancellation, so a cancelled membership has no cycle. A 0 would say a member who
+  renewed six times and then left never renewed at all — and averaged into a plan
+  it punishes that plan hardest for the members it kept billing longest.
+- **Card v4 adds `Cancel Scheduled At`** — a cancellation booked for period end,
+  membership still live, still billing, will not renew. **The only
+  forward-looking churn signal in the schema**; Norman has 126. `canceled_at` is
+  the past. `mbCancelPending()` requires `!mbIsCanceled()`, or the two get added
+  together the moment one becomes the other. Presence-gated
+  (`mbHasCancelSchedule`) like everything else.
+- `Cancel Reason` is carried but **do not build a "why they left" panel on it** —
+  other/schedule/cost, 94.2% "other".
+- The A/R retention chart reuses **`buildCohorts` and `RetentionChart`
+  unchanged**, handed the auto-renewer subset. Two cohort builders would drift
+  and two tabs would then report different retention for the same members.
+
+**A CHURN METRIC MAY NOT BE COMPUTED OVER A VIEW THAT HIDES CHURN.** `statusFilter`
+defaults to `['active']`, so a cancellation rate taken from `filtered` is
+structurally **0.0% for every org, forever** — and reads as a healthy book rather
+than a broken number. `filteredAnyStatus` applies every toolbar filter *except*
+status; the Auto-Renew tab reads it and every other panel still reads `filtered`.
+**Found by the render check**, on a fixture built to make the rate 60%, not by
+review. Generalise it: any denominator that must include an outcome cannot be
+taken from a view whose default hides that outcome.
+
+**A spec-helper gotcha worth keeping:** `block()` bounded each `useMemo` by the
+literal `"}, [filtered]);"`, so the moment one memo's deps changed the slice ran
+on into the *next* memo and an assertion about `arPlans` started reading someone
+else's code. It matches the dependency line by pattern now.
+
+**Still deferred (Dan): the per-user list.** *"once we get some good metrics,
+we'll add in specific user information here."*
+
 ### Sales & Mix was unreadable (2026-08-30)
 
 Dan: *"i have no idea what this entire sectio even means."* Fairly — it was a
