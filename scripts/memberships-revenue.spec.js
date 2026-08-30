@@ -68,13 +68,13 @@ function cut(name) {
   assert.ok(end > i, "could not bound " + name);
   return page.slice(i, end);
 }
-const NAMES = ["mbIsPaid", "mbProductShape", "mbIsAutoRenew", "mbCycleDays",
-               "mbMonthlyValue", "mbHasProductKind", "mbHasEconomics", "mbDecompose",
-               "mbEffectiveTab", "mbRetentionWindow", "mbISODate"];
+const NAMES = ["mbIsPaid", "mbProductShape", "mbIsAutoRenew", "mbCanAutoRenew",
+               "mbCycleDays", "mbMonthlyValue", "mbHasProductKind", "mbHasEconomics",
+               "mbDecompose", "mbEffectiveTab", "mbRetentionWindow", "mbISODate"];
 const api = new Function(
   "var MB_URL_TABS = ['memberships','autorenew','salesmix','checkins','retention'];\n" +
   NAMES.map(cut).join("\n") + "\nreturn { " + NAMES.join(", ") + " };")();
-const { mbIsPaid, mbProductShape, mbIsAutoRenew, mbCycleDays,
+const { mbIsPaid, mbProductShape, mbIsAutoRenew, mbCanAutoRenew, mbCycleDays,
         mbMonthlyValue, mbHasProductKind, mbHasEconomics, mbDecompose, mbEffectiveTab,
         mbRetentionWindow, mbISODate } = api;
 
@@ -179,6 +179,86 @@ test("a pre-v2 feed reads UNKNOWN, never open-ended", () => {
   // $807,142 of season-end re-buy into the churn number.
   assert.strictEqual(mbProductShape(PRE_V2_MONTHLY), "unknown");
   assert.strictEqual(mbProductShape({ hasPlanTerms: false, planSeasonEnd: "" }), "unknown");
+});
+
+// ── The denominator ─────────────────────────────────────────────────────────
+// A rate is only meaningful over a base that can move. Measured on prod
+// 2026-08-30 over ACTIVE PAID memberships: open 5,398 with 1,841 on auto-renew;
+// season 4,650 with ZERO; term 932 with ZERO; and 13,802 passes, which cannot
+// carry one as a matter of schema.
+test("a season plan is not a membership that merely isn't auto-renewing", () => {
+  assert.strictEqual(mbCanAutoRenew(V2_SEASON), false,
+    "0 of 4,650 active paid season memberships carry a subscription — dividing " +
+    "by them told Norman it was at 7.1% when it was at 97.6%");
+});
+
+test("a fixed-term plan is out too — same measurement, 0 of 932", () => {
+  assert.strictEqual(mbCanAutoRenew(V2_ANNUAL_TERM), false);
+});
+
+test("a pass is out — it has no subscription column at all", () => {
+  assert.strictEqual(mbCanAutoRenew(V3_GATE_PASS), false);
+  assert.strictEqual(mbCanAutoRenew(V3_SEASON_PASS), false);
+});
+
+test("a subscription-shaped membership is IN, on or off auto-renew", () => {
+  assert.strictEqual(mbCanAutoRenew(V3_MONTHLY), true);
+  assert.strictEqual(mbCanAutoRenew(
+    Object.assign({}, V3_MONTHLY, { autoRenew: false, renewalType: 'One-time' })), true,
+    "a monthly plan nobody enrolled is the whole point of the tab — it is the " +
+    "conversion candidate, and it must be in the denominator");
+});
+
+test("AN ACTUAL AUTO-RENEWER IS NEVER EXCLUDED, whatever its plan shape", () => {
+  // The zeros above are MEASURED, not a schema guarantee. This is the branch
+  // that makes the exclusion safe to apply at all: if a season plan ever does
+  // carry a subscription, it has to show up rather than vanish from the tab.
+  const seasonOnAutoRenew = Object.assign({}, V2_SEASON,
+    { autoRenew: true, renewalType: 'Auto-renew' });
+  assert.strictEqual(mbProductShape(seasonOnAutoRenew), 'season');
+  assert.strictEqual(mbCanAutoRenew(seasonOnAutoRenew), true,
+    "excluding a member who IS auto-renewing would drop revenue off the tab");
+});
+
+test("a pre-v3 feed excludes NOTHING — it cannot tell, so it does not guess", () => {
+  // Degrades to exactly the old behaviour rather than shrinking a denominator
+  // on a guess. Same direction as mbProductShape returning `unknown`.
+  //
+  // THE ROW MUST NOT BE AUTO-RENEWING. Both pre-v3 fixtures above carry it, so
+  // the safety-valve branch answered first and this assertion passed with the
+  // `unknown` branch deleted — caught by mutation, and the reason this test
+  // builds its own row instead of reusing one.
+  const unkownOff = { price: 20, renewalType: 'One-time', autoRenew: undefined,
+    hasPlanTerms: true, hasCycle: true, planSeasonEnd: '', planTermDays: null,
+    periodStart: '', nextRenewal: '' };
+  assert.strictEqual(mbIsAutoRenew(unkownOff), false, "fixture must be OFF auto-renew");
+  assert.strictEqual(mbProductShape(unkownOff), 'unknown');
+  assert.strictEqual(mbCanAutoRenew(unkownOff), true,
+    "an un-kinded row could be a $20 monthly or a $6 gate fee; excluding it " +
+    "would shrink the denominator on a guess");
+  assert.strictEqual(mbCanAutoRenew(V2_MONTHLY_NO_KIND), true);
+  assert.strictEqual(mbCanAutoRenew(PRE_V2_MONTHLY), true);
+});
+
+test("the rate and the plan table share ONE predicate", () => {
+  // Two copies drift the first time a shape is added, and then the table and
+  // the percentage above it disagree about who counts — the numbers-disagree-
+  // across-the-page trap the facility Summary already shipped once.
+  // Scoped to each block rather than counted file-wide: a bare count passes
+  // when one caller uses it twice and the other not at all.
+  const block = (name) => {
+    const i = page.indexOf("const " + name + " = useMemo(");
+    assert.ok(i > 0, name + " should be a useMemo");
+    const end = page.indexOf("}, [filtered]);", i);
+    assert.ok(end > i, "could not bound " + name);
+    return page.slice(i, end);
+  };
+  assert.ok(block("arStats").includes("mbCanAutoRenew"),
+    "the RATE must use the shared predicate");
+  assert.ok(block("arPlans").includes("mbCanAutoRenew"),
+    "the per-plan CONFIG TABLE must use the same one");
+  assert.ok(!/mbProductShape\(r\) === 'pass'\) continue/.test(page),
+    "arPlans must not re-derive its own exclusion");
 });
 
 // ── The cache invariant ─────────────────────────────────────────────────────

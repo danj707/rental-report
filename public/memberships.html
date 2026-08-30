@@ -831,6 +831,42 @@ function mbProductShape(r) {
   return 'unknown';
 }
 
+// CAN this row carry auto-renew at all? The denominator question, and the one
+// the tab got wrong twice.
+//
+// A rate is only meaningful over a base that can move. Measured on prod
+// 2026-08-30, over ACTIVE PAID memberships:
+//
+//     shape     rows    on auto-renew
+//     open     5,398    1,841
+//     season   4,650        0
+//     term       932        0
+//     passes  13,802      n/a — the `pass` table has no subscription column
+//
+// So season and rolling-term plans are exactly like passes: not one of the
+// 5,582 of them has ever carried a subscription, because the product ends on a
+// date rather than recurring. Dividing by them told City of Norman it sits at
+// 7.1% adoption across 2,887 memberships when it is really at 97.6% across 209,
+// with two cash plans left to convert — and it filled the per-plan config table
+// with 2,678 season passes reading "0%", which looks like a misconfiguration
+// and is not one.
+//
+// TWO THINGS KEEP THIS HONEST:
+//
+//   · `unknown` is ELIGIBLE. On a pre-v3 feed we cannot tell a subscription
+//     from a day pass, so nothing is excluded and the tab degrades to exactly
+//     its old behaviour rather than quietly shrinking a denominator on a guess.
+//   · A row that IS on auto-renew is eligible WHATEVER its shape. The zeros
+//     above are measured, not a schema guarantee, so if a season plan ever does
+//     carry a subscription it must show up here rather than vanish. This is the
+//     one branch that makes the exclusion safe to apply at all.
+function mbCanAutoRenew(r) {
+  if (!r) return false;
+  if (mbIsAutoRenew(r)) return true;          // measured zero today; never hide a real one
+  var sh = mbProductShape(r);
+  return sh === 'open' || sh === 'unknown';
+}
+
 // Is this membership genuinely on auto-renew?
 //
 // THE CACHE INVARIANT IS THE HARD PART. Feeds cache for 4 hours, so a pre-v2
@@ -1624,14 +1660,22 @@ function normalizeRow(raw) {
       // Scoped to ACTIVE PAID memberships: a cancelled or expired row has no
       // future charge, and a $0 residency record never had one.
       const arStats = useMemo(() => {
-        const hasKind = mbHasProductKind(filtered);
         const paidAll = filtered.filter(r => r.status === 'active' && mbIsPaid(r));
-        // PASSES ARE OUT OF THE DENOMINATOR. A pass cannot auto-renew as a
-        // matter of schema, so counting it as a membership that merely isn't
-        // auto-renewing understates the rate against a base that could never
-        // move. Norman: 16,940 of 20,341 rows are passes.
-        const passes = hasKind ? paidAll.filter(r => mbProductShape(r) === 'pass') : [];
-        const paid = hasKind ? paidAll.filter(r => mbProductShape(r) !== 'pass') : paidAll;
+        // THE DENOMINATOR IS WHAT COULD AUTO-RENEW, not everything that is paid.
+        // Passes, season plans and rolling terms all end on a date instead of
+        // recurring, and not one of them on the platform carries a subscription
+        // — see mbCanAutoRenew for the measurement. They are named and counted
+        // in the scope note rather than silently dropped, because "excluded 2,678
+        // season passes worth $317,180" is itself worth reading.
+        const paid = paidAll.filter(mbCanAutoRenew);
+        const excluded = { pass: [], season: [], term: [] };
+        for (const r of paidAll) {
+          if (mbCanAutoRenew(r)) continue;
+          const sh = mbProductShape(r);
+          if (excluded[sh]) excluded[sh].push(r);
+        }
+        const exGroup = k => ({ n: excluded[k].length,
+                                value: excluded[k].reduce((s, r) => s + r.price, 0) });
         const on = paid.filter(mbIsAutoRenew);
         let perCycle = 0, monthly = 0, withCycle = 0;
         const cycles = [];
@@ -1649,9 +1693,9 @@ function normalizeRow(raw) {
         return {
           count: on.length,
           paidActive: paid.length,
-          passes: passes.length,
-          passValue: passes.reduce((s, r) => s + r.price, 0),
-          hasKind: hasKind,
+          paidAll: paidAll.length,
+          excluded: { pass: exGroup('pass'), season: exGroup('season'), term: exGroup('term') },
+          hasKind: mbHasProductKind(filtered),
           perCycle,
           monthly,
           withCycle,
@@ -1670,14 +1714,15 @@ function normalizeRow(raw) {
       // useful unit is the plan, not the member.
       const arPlans = useMemo(() => {
         const m = new Map();
-        const hasKind = mbHasProductKind(filtered);
         for (const r of filtered) {
           if (r.status !== 'active' || !mbIsPaid(r)) continue;
-          // Passes out: this table is an auto-renew CONFIG review, and a pass
-          // schema has no auto-renew setting to review. Leaving them in put
-          // 4,518 gate admissions at the top of the list reading "0%", which
-          // looks like a misconfiguration and is not one.
-          if (hasKind && mbProductShape(r) === 'pass') continue;
+          // THIS TABLE IS A CONFIG REVIEW, so only plans that HAVE an auto-renew
+          // setting to review belong in it. A season pass or a gate admission
+          // reading "0%" is not a misconfiguration, and at Norman six such plans
+          // filled the top of the list and buried the two cash plans that are
+          // the actual finding. Same predicate as the denominator, so the table
+          // and the rate can never disagree about who counts.
+          if (!mbCanAutoRenew(r)) continue;
           const k = r.group || r.type || '—';
           if (!m.has(k)) m.set(k, { plan: k, n: 0, on: 0, shape: mbProductShape(r), price: r.price });
           const e = m.get(k);
@@ -2462,20 +2507,42 @@ function normalizeRow(raw) {
               {loading && <div className="loading"><div className="spinner" /><div className="juice-msg"><span>Squeezing the oranges…</span><span>Counting renewals…</span><span>Pouring it out…</span></div></div>}
               {!loading && (
                 <React.Fragment>
-                  <div className="mb-scope-note">
-                    🔁 Auto-renew across <strong data-ar-base={arStats.paidActive}>{arStats.paidActive.toLocaleString()} active paid memberships</strong> purchased in this window
-                    <span className="mb-scope-sub">
-                      Free residency records are excluded — they have no charge to renew.
-                      {arStats.passes > 0 && <React.Fragment> So are <strong>{arStats.passes.toLocaleString()} passes</strong> ({money(arStats.passValue)}): day passes and gate admissions cannot auto-renew at all — the pass record has no subscription to attach one to — so counting them here would measure the rate against a base that can never move.</React.Fragment>}
-                      {' '}Season passes are counted, but never appear as conversion candidates: a season pass expiring is the season closing, not a member lapsing.
-                    </span>
-                  </div>
+                  {(function() {
+                    var ex = arStats.excluded;
+                    var parts = [];
+                    if (ex.pass.n)   parts.push({ k: 'pass',   label: 'day passes and gate admissions', n: ex.pass.n,   v: ex.pass.value });
+                    if (ex.season.n) parts.push({ k: 'season', label: 'season plans',                   n: ex.season.n, v: ex.season.value });
+                    if (ex.term.n)   parts.push({ k: 'term',   label: 'fixed-term plans',               n: ex.term.n,   v: ex.term.value });
+                    return (
+                      <div className="mb-scope-note">
+                        🔁 Auto-renew across <strong data-ar-base={arStats.paidActive}>{arStats.paidActive.toLocaleString()} memberships that can carry it</strong>, purchased in this window
+                        <span className="mb-scope-sub">
+                          Free residency records are excluded — they have no charge to renew.
+                          {parts.length > 0 && (
+                            <React.Fragment>
+                              {' '}So are{' '}
+                              {parts.map(function(p, i) {
+                                return (
+                                  <React.Fragment key={p.k}>
+                                    {i > 0 ? (i === parts.length - 1 ? ' and ' : ', ') : ''}
+                                    <strong data-ar-excl={p.k} data-ar-excl-n={p.n}>{p.n.toLocaleString()} {p.label}</strong> ({money(p.v)})
+                                  </React.Fragment>
+                                );
+                              })}
+                              {' '}— every one of these ends on a date instead of recurring, and platform-wide not one of them has ever carried a subscription. Counting them would measure the rate against a base that can never move, and would fill the table below with plans reading &ldquo;0%&rdquo; that are working exactly as intended.
+                            </React.Fragment>
+                          )}
+                          {' '}Anything genuinely on auto-renew is counted whatever its plan shape, so a real one can never be hidden by this.
+                        </span>
+                      </div>
+                    );
+                  })()}
 
                   <div className="summary-cards">
                     <div className="summary-card">
                       <div className="card-label">On Auto-Renew</div>
                       <div className="card-value green" data-ar-count={arStats.count}>{arStats.count.toLocaleString()}</div>
-                      <div className="card-sub">{arStats.paidActive ? Math.round(arStats.count / arStats.paidActive * 1000) / 10 : 0}% of paid memberships</div>
+                      <div className="card-sub" data-ar-pct={arStats.paidActive ? Math.round(arStats.count / arStats.paidActive * 1000) / 10 : 0}>{arStats.paidActive ? Math.round(arStats.count / arStats.paidActive * 1000) / 10 : 0}% of the {arStats.paidActive.toLocaleString()} that can carry it</div>
                     </div>
                     <div className="summary-card">
                       <div className="card-label">Billed Per Cycle</div>
@@ -2525,7 +2592,7 @@ function normalizeRow(raw) {
                   <div className="ci-panel">
                     <div className="ci-chart-title">Auto-renew by plan</div>
                     <div style={{fontSize:11,color:'#9ca3af',marginBottom:10,marginTop:-6}}>
-                      Auto-renew is set on the plan, not chosen by the member — platform-wide, 268 of 317 paid plans have nobody on it and 47 have everybody. So the plan is the unit worth looking at, and a plan sitting at 0% is a setting to review rather than a campaign to run.
+                      Auto-renew is set on the plan, not chosen by the member — platform-wide, of the plans that can carry it, most have nobody on it and the rest have everybody, with almost nothing in between. So the plan is the unit worth looking at, and a plan sitting at 0% <em>here</em> is a setting to review rather than a campaign to run — season and pass products are excluded above precisely so that a 0% on this table always means something.
                     </div>
                     {arPlans.length === 0 ? (
                       <div className="empty-state">No paid memberships in this window.</div>

@@ -466,6 +466,58 @@ than silently.
 number reads the same either way and the case could not discriminate. It keys on
 `data-ar-base` (the denominator) now. Caught by mutation, not by review.
 
+### The DENOMINATOR was the same bug, and I only half-fixed it (2026-08-30)
+
+Dan, on production, after the pass fix shipped: *"still not understanding why
+non-autorenewing memberships are in this tab."* Right — v3 took passes out and
+stopped there, and **season and rolling-term plans have exactly the same
+property.** Measured on prod over ACTIVE PAID memberships:
+
+| shape | rows | on auto-renew |
+|---|---|---|
+| open-ended | 5,398 | 1,841 |
+| season | 4,650 | **0** |
+| rolling term | 932 | **0** |
+| passes | 13,802 | n/a — no subscription column exists |
+
+**A rate is only meaningful over a base that can move.** Norman read
+**7.1% across 2,887 memberships** when the truth is **97.6% across 209**, with
+exactly two cash plans (5 members, $120) left to convert. The "Could Convert: 5"
+card was right the whole time and *everything around it* was wrong — and the
+per-plan table was six Westwood season passes at "0%" burying the two rows that
+are the actual finding.
+
+`mbCanAutoRenew(r)` is the single predicate, read by **both** the rate and the
+per-plan table (`memberships-revenue.spec.js` slices each `useMemo` and requires
+it in both — a file-wide count passes when one caller uses it twice and the
+other not at all). Two branches keep it honest:
+
+- **`unknown` IS ELIGIBLE.** On a pre-v3 feed nothing is excluded, so the tab
+  degrades to its old behaviour rather than shrinking a denominator on a guess.
+- **A row that IS on auto-renew is eligible whatever its shape.** Those zeros are
+  MEASURED, not a schema guarantee, so a season plan that ever does carry a
+  subscription must show up rather than vanish. This is the branch that makes
+  the exclusion safe to apply at all.
+
+**Excluded ≠ hidden.** The scope note names each excluded family with its count
+and value ("2,678 season plans ($317,180)"), because a silent exclusion is how a
+number stops being trusted — and *"you have $317k of season passes"* is worth
+reading on its own.
+
+**Two spec mutations survived the first draft**, both fixed in the spec rather
+than the mutation. Deleting the `unknown` branch passed, because both pre-v3
+fixtures happened to carry auto-renew and the safety valve answered first — that
+test now builds its own row that is explicitly OFF. And reverting the rate to
+every paid row passed every source assertion, because the mutated block still
+*mentions* the helper; only the browser could tell, and it does —
+`data-ar-base` and `data-ar-pct` both fail by name.
+
+**Generalise it:** when you exclude a population from a numerator's base,
+exclude it from every surface that base feeds, and say on screen what you took
+out. I applied the argument to passes, wrote it down, and still left two
+identical populations in — the write-up did not stop the second instance because
+it named passes rather than the property.
+
 ### Sales & Mix was unreadable (2026-08-30)
 
 Dan: *"i have no idea what this entire sectio even means."* Fairly — it was a
@@ -522,8 +574,12 @@ beacon missing from the log allowlist or from `SLACK_NOTIFY`, the card's trailin
 shipped), the pass test moved below the term tests, open-ended back to a bare
 `hasPlanTerms`, `mbHasProductKind` hardcoded true, `Plan Season End` reverted to
 `gg.end_date` alone, the `pass_schema` join dropped, and the `Product Kind`
-column dropped.
-Plus **20 `ci-check-render.js` cases**, keyed on computed values rather than "a
+column dropped. Plus six more for the denominator — season back in the base (the
+bug Dan hit), the real-auto-renewer safety valve removed, `unknown` excluded,
+the plan table re-deriving its own rule, and — browser-only, because no source
+assertion can see it — the rate reverting to every paid row and season plans
+back in the config table.
+Plus **23 `ci-check-render.js` cases**, keyed on computed values rather than "a
 panel rendered", over a fixture with a `prev2` stub mode that drops the five v2
 columns **and `Product Kind`**, and twelve $5 gate admissions carrying it — so
 both the pre-v2 degradation and the pass misclassification are proven in a real
