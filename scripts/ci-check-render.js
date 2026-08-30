@@ -1658,12 +1658,17 @@ const CASES = [
     needs: "[data-ar-renewals=\"18\"]" },
   // 3 of 9 ever-auto-renewing memberships have cancelled. Counting only ACTIVE
   // rows, as every earlier version of this table did, makes this unmeasurable.
-  { name: "memberships · cancellation rate spans the whole book", path: "/{org}/memberships?tab=autorenew",
-    needs: "[data-ar-book-cancel-rate=\"33.3\"]" },
+  // CHURN PER RENEWAL, not lifetime-cancelled. The two differ on this fixture --
+  // 3 of 9 have ever cancelled (33%) but those 3 cancellations sit against 18
+  // renewals, so the hazard rate is 14.3%. A case keyed on 33.3 would pass on
+  // the old lifetime figure, which is exactly the number that read as a crisis.
+  { name: "memberships · churn is per renewal, not lifetime", path: "/{org}/memberships?tab=autorenew",
+    needs: "[data-ar-churn=\"14.3\"]" },
   // The two plans must read DIFFERENTLY, or the column cannot answer "which
   // one is working out".
+  // 3 cancellations against 6 renewals on this plan.
   { name: "memberships · a churning plan is visibly worse than a healthy one", path: "/{org}/memberships?tab=autorenew",
-    needs: "[data-ar-plan=\"Monthly Family\"] [data-ar-cancel-rate=\"60\"]" },
+    needs: "[data-ar-plan=\"Monthly Family\"] [data-ar-cancel-rate=\"33.3\"]" },
   { name: "memberships · a healthy plan reads zero churn", path: "/{org}/memberships?tab=autorenew",
     needs: "[data-ar-plan=\"Monthly Individual\"] [data-ar-cancel-rate=\"0\"]" },
   // Averaged over the memberships that CAN answer. Folding the 3 cancelled
@@ -1708,6 +1713,10 @@ const CASES = [
   // ── Retention, per plan ────────────────────────────────────────────────
   // A blended curve answers "does this org retain", which is a different
   // question from "does THIS plan retain".
+  // Rec Insights has to be OFFERED on this tab -- the section is shared across
+  // tabs and was gated to three of them, so the button was simply absent here.
+  { name: "memberships · rec insights is offered on the auto-renew tab", path: "/{org}/memberships?tab=autorenew",
+    needs: ".insights-section .insights-btn" },
   { name: "memberships · retention opens on the whole book", path: "/{org}/memberships?tab=autorenew",
     needs: "[data-ar-ret-scope=\"all\"]" },
   // Picking a plan must RESCOPE the chart, not just light a pill. Monthly

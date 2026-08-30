@@ -6827,6 +6827,35 @@ Rules:
 - Focus on top sellers, refund rates by product, revenue trends, and product mix.
 - Name specific products and dollar amounts.`;
 
+// The AUTO-RENEW tab has its own prompt, not the general memberships one. It is
+// given a subscription book with per-plan churn expressed in each plan's own
+// billing period, and it must not silently compare a weekly rate to a monthly
+// one. Dan asked it to cover "all of it": which plans to fix, who to contact,
+// pricing/tier structure, and seasonality.
+const AUTORENEW_SYS_PROMPT = `You are a membership retention analyst for US municipal parks & recreation departments. You are given ONE organization's auto-renewing subscription book, already aggregated. Never recompute or do arithmetic the data does not support.
+
+WHAT THE NUMBERS MEAN — read this carefully, several are easy to misread:
+
+- "churnPerCycle" is the share of RENEWAL OPPORTUNITIES that ended in a cancellation, expressed in that plan's OWN billing period. A weekly plan's 5% and a monthly plan's 5% are NOT the same thing: the weekly one loses far more members per year. Each plan carries "cadence" ("per week" / "per month" / "per quarter" / "per year") — always name the period when you quote a rate, and never rank plans on the raw number across different cadences without saying so.
+- "everCancelledPct" is a LIFETIME-TO-DATE running total since the org started, not a rate. It is large for any long-lived book and is NOT evidence of a problem on its own. Do not describe it as churn.
+- "avgRenewals" is derived from dates, not from a renewal ledger — the platform stores no renewal history. Treat it as approximate.
+- "pendingCancel" is people who have already cancelled and are still billing until period end. They are the only forward-looking churn signal, and they are still reachable.
+- "candidates" could be billing automatically and are not. Auto-renew is ONLY available on a credit card, so converting one means getting a card on file, never flipping a plan setting.
+
+COVER, in this order, and only where the data supports it:
+1. WHICH PLANS TO FIX. Rank by revenue at risk, not by rate — a 30%-per-month plan with 4 members matters less than a 6%-per-month plan with 500. Name the plans.
+2. WHO TO CONTACT NOW. The pendingCancel people and the conversion candidates, with what to do about each.
+3. PRICE AND TIER. Whether churn tracks price or tier. Call out plans priced at an exact multiple of a shorter plan (an annual at exactly 12x a monthly offers no reason to commit).
+4. WHEN. Any pattern in when people leave, and how long they stay first.
+
+RULES:
+- A plan with fewer than 20 members is a handful of individual decisions, not a trend. Say so rather than quoting its rate as if it were stable.
+- Never invent a cause. The platform records a cancel_reason but it is "other" 94% of the time, so it is not evidence.
+- Lead with what to DO. An observation the reader cannot act on is not an insight.
+- 3 to 5 insights. Each: a short bolded claim, then one or two sentences of specifics with real numbers from the data.
+
+Return ONLY a JSON array of objects with "title" and "detail" keys. No preamble, no markdown fences.`;
+
 const MEMBERSHIPS_SYS_PROMPT = `You are a membership analyst for US parks & recreation departments. You are given membership data showing active, lapsed, and cancelled memberships with renewal tracking and revenue.
 
 Return EXACTLY 4 insights as a JSON array and nothing else — no prose, no preamble, no markdown code fences. Each element is an object with exactly these keys:
@@ -7137,6 +7166,51 @@ app.post("/:org/lessons/api/insights", express.json(), async (req, res) => {
 
 // Insights — "camping" is a facilities-hub tab, not a REPORT_TYPES entry, so
 // resolveOrg would 404 the shared route; thin wrapper like lessons above.
+// Auto-Renew tab insights. Its own prompt because the tab's numbers are easy to
+// misread — per-cycle churn in each plan's own cadence, a lifetime-to-date figure
+// that is NOT churn, and a renewal count derived from dates rather than a ledger.
+//
+// The path's last segment is `autorenew-insights`, so it cannot collide with the
+// generic /:org/:report/api/insights route the way a bare /:org/autorenew/... would
+// (see the campmap and facilities-hub beacons, which 404'd for exactly that reason).
+// Events are logged against `memberships`, which IS a real report type, so
+// getReportActivity keeps seeing a report that exists.
+app.post("/:org/memberships/api/autorenew-insights", express.json(), async (req, res) => {
+  const slug = req.params.org;
+  if (!ORGS[slug]) return res.status(404).json({ ok: false, error: "Unknown org" });
+  if (!anthropic) return res.status(503).json({ ok: false, error: "AI insights not configured" });
+  const blob = req.body;
+  if (!blob || typeof blob !== "object") return res.status(400).json({ ok: false, error: "Missing stats payload" });
+  const key = crypto.createHash("sha256").update(slug + "|autorenew|" + JSON.stringify(blob)).digest("hex");
+  const hit = _insightsCache.get(key);
+  if (hit && Date.now() - hit.ts < INSIGHTS_TTL_MS) {
+    logEvent(slug, "memberships", "insights", req, { cached: true, tab: "autorenew" });
+    return res.json({ ok: true, insights: hit.insights, cached: true });
+  }
+  try {
+    const data = await anthropic.messages.create({
+      model: INSIGHTS_MODEL, max_tokens: 1000,
+      system: AUTORENEW_SYS_PROMPT + "\n\n" + SCHEMA_CONTEXT,
+      messages: [{ role: "user", content: JSON.stringify(blob) }],
+    });
+    const text = (data.content || []).filter(c => c.type === "text").map(c => c.text).join("");
+    const insights = salvageInsights(text);
+    if (!insights.length) return res.status(502).json({ ok: false, error: "Could not parse AI response" });
+    const u = data.usage || {};
+    _insightsCache.set(key, { ts: Date.now(), insights });
+    if (_insightsCache.size > INSIGHTS_CACHE_MAX) _insightsCache.delete(_insightsCache.keys().next().value);
+    logEvent(slug, "memberships", "insights", req, {
+      tab: "autorenew",
+      inTok: u.input_tokens || 0, outTok: u.output_tokens || 0,
+      costUsd: insightsCostUsd(data.model || INSIGHTS_MODEL, u.input_tokens || 0, u.output_tokens || 0),
+    });
+    res.json({ ok: true, insights });
+  } catch (e) {
+    console.error("[autorenew] insights: " + e.message);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
 app.post("/:org/camping/api/insights", express.json(), async (req, res) => {
   const slug = req.params.org;
   if (!ORGS[slug]) return res.status(404).json({ ok: false, error: "Unknown org" });

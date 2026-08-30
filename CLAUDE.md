@@ -617,6 +617,82 @@ literal `"}, [filtered]);"`, so the moment one memo's deps changed the slice ran
 on into the *next* memo and an assertion about `arPlans` started reading someone
 else's code. It matches the dependency line by pattern now.
 
+### THE RENEWAL COUNT WAS WRONG, and one org's clean data is why (2026-08-30)
+
+Apex's Auto-Renew tab reported **228 renewals on average, up to 44,665**, on a
+monthly plan. My bug, and the way it happened is the lesson.
+
+`mbRenewalsSoFar` divided by each ROW's own `next_renewal_at −
+current_period_start_at`. At Norman that gap really is the billing cycle, and I
+verified it there by remainder — weekly exact, monthly 0.06 off — and shipped it
+platform-wide. **It does not hold generally: on a membership whose renewal is
+imminent the gap is the time REMAINING in the period, not the period's length.**
+Measured at Apex over 1,323 auto-renewers:
+
+| row "cycle" | rows | max derived renewals |
+|---|---|---|
+| under 1 day (smallest **15 minutes**) | 8 | **44,665** |
+| 1–6 days | 35 | 671 |
+| weekly/monthly | 1,204 | 219 |
+| quarterly/annual | 76 | 28 |
+
+43 bad rows dragged whole plan averages. **A BILLING CYCLE IS A PROPERTY OF THE
+PLAN, NOT OF ONE ROW'S TIMESTAMPS**, so `mbPlanCycles()` takes the MEDIAN across
+each plan's members (sub-day gaps excluded from the vote), and a median is
+unmoved by a minority of corrupt rows. The worst Apex row then reads 1,341 days
+÷ 30 = **45**, which matches its 2022 start date. `mbRenewalsSoFar` also returns
+null above 600 — if the dates are wrong a dash is honest and 44,665 is not.
+
+**Generalise it: one org's data being clean is not evidence about what a column
+MEANS.** A rule of the form "these two timestamps are X" has to be checked across
+orgs before it ships.
+
+**The spec's first fixture did not discriminate**, and mutation caught that too:
+nine clean rows against one bad one passes with the sub-day filter deleted,
+because a median over nine good values ignores the tenth. The fixture now makes
+the bad rows the majority, which is the only shape where the filter matters.
+
+### Churn is per RENEWAL PERIOD, in the plan's own cadence (2026-08-30)
+
+Dan, on Apex: *"the average cancellation rates, those are crazy high"* — and then
+the rule: *"always report the churn rate based on its renewal period."*
+
+The number was right and the framing was wrong. **1,119 of 2,176 = 51% is
+LIFETIME-TO-DATE**, everyone who has ever been on auto-renew since 2022. Sitting
+in a KPI row between "Median cycle" and "Leaving at period end" it read as a
+churn rate. Half a four-year-old subscription book having eventually cancelled is
+unremarkable; 51% a month would be a fire.
+
+`mbChurnPerCycle()` is the hazard rate instead: **of all renewal opportunities,
+what share ended in a cancellation** — each member contributes its renewals as
+opportunities taken plus one if it cancelled. Apex's book reads a few percent per
+renewal rather than 51%.
+
+- **Every per-plan rate carries its cadence** (`mbCadence`): a weekly plan losing
+  5% a week and a monthly plan losing 5% a month are not the same thing, and the
+  table would otherwise invite ranking them against each other.
+- **The BOOK-level rate carries NO period label, deliberately.** A book of
+  weekly, monthly and annual plans has no single cadence, so "per month" would be
+  false for part of it. "Per renewal" is unit-free and true whatever the mix.
+- The lifetime figure is kept as a sub-line, and says out loud that it is a
+  running total rather than a rate.
+
+### Rec Insights on the Auto-Renew tab, and a gate that was already dead
+
+Dan: *"Add the Rec Insights button to this tab and wire it into some insights we
+can gain."* Its own prompt (`AUTORENEW_SYS_PROMPT`), because every number on this
+tab is easy to misread — the prompt spells out that the lifetime figure is not
+churn, that a weekly rate and a monthly rate are different units, that renewals
+are derived rather than logged, and that converting a candidate means capturing a
+card rather than flipping a setting. It covers plans to fix ranked by revenue at
+risk, who to contact, price/tier structure, and seasonality.
+
+**THE BUTTON'S CONDITION WAS NEVER THE PROBLEM.** The whole insights section sat
+INSIDE `{activeTab === 'memberships' && (...)}`, so adding `autorenew` to its own
+gate changed nothing — the block was unreachable from any other tab. It is at
+page level now. Found by the render check asserting the button and getting no
+DOM; the source change looked completely correct.
+
 ### Naming people, and slicing retention per plan (2026-08-30)
 
 Dan: *"This '2 ending soon' section is helpful, but can we add a drop
@@ -694,6 +770,11 @@ Excel columns, all 6 views, all 3 tabs and all 6 KPI cards are asserted still
 present. Two new tabs (**Auto-Renew**, **Sales & Mix**), both deep-linkable —
 the URL write-back was already generic, so the `?ci_rows=` erasure trap did not
 recur.
+
+**The scope note is ELI5 now** (Dan: *"this top blue box is way too verbose, no
+one is reading that"*). The reasoning did not go in the bin — the excluded counts
+are still exact, stated as a fact rather than argued for, and the "why" moved to
+the tooltip of the thing it explains.
 
 **Still don't build on `last_used_at`**: NULL on all 155,853 memberships and all
 73,888 passes, so the shipped "Last Used" column has never had a value.

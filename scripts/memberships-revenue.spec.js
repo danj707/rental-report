@@ -69,7 +69,8 @@ function cut(name) {
   return page.slice(i, end);
 }
 const NAMES = ["mbIsPaid", "mbProductShape", "mbIsAutoRenew", "mbCanAutoRenew",
-               "mbCycleDays", "mbMonthlyValue", "mbRenewalsSoFar", "mbIsCanceled",
+               "mbCycleDays", "mbMonthlyValue", "mbPlanCycles", "mbCadence",
+               "mbChurnPerCycle", "mbRenewalsSoFar", "mbIsCanceled",
                "mbCancelPending", "mbHasCancelSchedule", "mbPlanKey", "mbHasProductKind",
                "mbHasEconomics", "mbDecompose", "mbEffectiveTab", "mbRetentionWindow",
                "mbISODate"];
@@ -77,7 +78,8 @@ const api = new Function(
   "var MB_URL_TABS = ['memberships','autorenew','salesmix','checkins','retention'];\n" +
   NAMES.map(cut).join("\n") + "\nreturn { " + NAMES.join(", ") + " };")();
 const { mbIsPaid, mbProductShape, mbIsAutoRenew, mbCanAutoRenew, mbCycleDays,
-        mbMonthlyValue, mbRenewalsSoFar, mbIsCanceled, mbCancelPending,
+        mbMonthlyValue, mbPlanCycles, mbCadence, mbChurnPerCycle,
+        mbRenewalsSoFar, mbIsCanceled, mbCancelPending,
         mbHasCancelSchedule, mbPlanKey, mbHasProductKind, mbHasEconomics, mbDecompose,
         mbEffectiveTab, mbRetentionWindow, mbISODate } = api;
 
@@ -365,6 +367,87 @@ const V4_LEFT = Object.assign({}, V4_RENEWED,
   { status: "canceled", canceledAt: "2026-08-15", nextRenewal: "", periodStart: "" });
 const V4_LEAVING = Object.assign({}, V4_RENEWED, { cancelScheduledAt: "2026-09-29" });
 
+// ── The cycle belongs to the PLAN, not to one row's timestamps ──────────────
+// A correction. The first version divided by each row's own (next renewal -
+// period start), which held at City of Norman and does NOT hold generally: on a
+// membership whose renewal is imminent that gap is the time REMAINING, not the
+// period's length. Measured at Apex over 1,323 auto-renewers, 8 rows have a
+// "cycle" under a day (smallest 15 minutes) and 35 more under a week.
+test("a sub-day gap is not a billing cadence and does not get a vote", () => {
+  // THE FIXTURE HAS TO BE ADVERSARIAL OR THIS PROVES NOTHING. A first draft used
+  // nine clean rows against one bad one, and the filter could be deleted with the
+  // test still passing — a median over 9 good values is unmoved by a 10th. The
+  // filter earns its place only where the bad rows are the majority, which is a
+  // small plan whose members are mostly mid-renewal. Caught by mutation.
+  const rows = [
+    { group: "Tier 1 Monthly Household", periodStart: "2026-02-10", nextRenewal: "2026-03-12" },
+    { group: "Tier 1 Monthly Household", periodStart: "2026-02-11", nextRenewal: "2026-03-13" },
+    // Four rows whose renewal is imminent: minutes, not a cadence.
+    ...Array.from({ length: 4 }, (_, i) => ({ group: "Tier 1 Monthly Household",
+      periodStart: "2026-02-10T00:00:00Z",
+      nextRenewal: "2026-02-10T00:" + String(10 + i * 10) + ":00Z" })),
+  ];
+  const cycles = mbPlanCycles(rows);
+  assert.strictEqual(cycles["Tier 1 Monthly Household"], 30,
+    "the cadence is 30 days; admitting the sub-day rows makes the median ~0.03");
+});
+
+test("THE 44,665-RENEWAL BUG, pinned", () => {
+  // The exact Apex row: started 2022-06-10, current period started 2026-02-10,
+  // and its own two timestamps are 43 minutes apart. Dividing 1,341 days by that
+  // produced 44,665 renewals on a monthly plan and dragged the plan average to
+  // 228x. Against the PLAN's 30-day cadence it reads 45, which matches the dates.
+  const apex = { group: "Tier 1 Monthly Household", startDate: "2022-06-10",
+    periodStart: "2026-02-10T00:00:00Z", nextRenewal: "2026-02-10T00:43:00Z" };
+  assert.ok(mbCycleDays(apex) < 0.05, "the row's own gap really is that small");
+  assert.strictEqual(mbRenewalsSoFar(apex, 30), 45);
+  assert.strictEqual(mbRenewalsSoFar(apex, mbCycleDays(apex)), null,
+    "a sub-day cycle must never be accepted as a divisor");
+});
+
+test("an implausible answer is NULL, not a confident number", () => {
+  // Belt and braces on top of the plan-median cycle. If the dates are wrong, a
+  // dash is honest and 44,665 is not.
+  assert.strictEqual(mbRenewalsSoFar(
+    { startDate: "1970-01-01", periodStart: "2026-02-10" }, 1), null);
+  assert.strictEqual(mbRenewalsSoFar({ startDate: "2026-02-10", periodStart: "2026-02-10" }, 30), 0);
+  assert.strictEqual(mbRenewalsSoFar({ startDate: "2026-01-01", periodStart: "2026-02-10" }, null), null);
+});
+
+// ── Churn is per renewal period, in the plan's own cadence ──────────────────
+test("churn is a rate over RENEWAL OPPORTUNITIES, not a lifetime total", () => {
+  // Apex read 1,119 of 2,176 = 51% and Dan read it as a crisis. It is a running
+  // total since 2022. The hazard rate answers the question that was being asked.
+  assert.strictEqual(Math.round(mbChurnPerCycle(6, 3) * 1000) / 10, 33.3);
+  assert.strictEqual(mbChurnPerCycle(0, 0), null, "no opportunities, no rate");
+  assert.strictEqual(mbChurnPerCycle(45, 0), 0);
+  // The two measures genuinely differ, which is the whole point of the change.
+  const lifetime = 3 / 9;
+  assert.notStrictEqual(Math.round(mbChurnPerCycle(18, 3) * 100),
+    Math.round(lifetime * 100));
+});
+
+test("every rate carries the period it is measured in", () => {
+  // Dan: "always report the churn rate based on its renewal period." A weekly
+  // 5% and a monthly 5% are not the same thing.
+  assert.strictEqual(mbCadence(7).per, "per week");
+  assert.strictEqual(mbCadence(30).per, "per month");
+  assert.strictEqual(mbCadence(31).per, "per month");
+  assert.strictEqual(mbCadence(91).per, "per quarter");
+  assert.strictEqual(mbCadence(365).per, "per year");
+  assert.strictEqual(mbCadence(null), null);
+});
+
+test("the book-level rate carries NO period, because the book mixes them", () => {
+  // A book of weekly and monthly plans has no single cadence, so labelling it
+  // "per month" would be false for part of it. Per RENEWAL is unit-free.
+  const b = block("arBook");
+  assert.ok(!/cadence:/.test(b),
+    "no book-level period label -- the per-plan table names each plan's own");
+  assert.ok(b.includes("churn:") && b.includes("everCancelled:"),
+    "both measures survive; only one of them is a rate");
+});
+
 test("renewals are DERIVED, because no renewal history exists anywhere", () => {
   // `public.subscription` is a marketing opt-in table and `membership` keeps
   // only the current period, so this is (period start - start) / cycle.
@@ -372,7 +455,7 @@ test("renewals are DERIVED, because no renewal history exists anywhere", () => {
   // Verified sound on prod rather than assumed — weekly divides exactly and
   // monthly sits 0.06 off a whole number, which is calendar drift.
   assert.strictEqual(mbCycleDays(V4_RENEWED), 31);
-  assert.strictEqual(mbRenewalsSoFar(V4_RENEWED), 3);
+  assert.strictEqual(mbRenewalsSoFar(V4_RENEWED, 31), 3);
 });
 
 test("a cancelled membership yields NULL renewals, never 0", () => {
@@ -380,9 +463,10 @@ test("a cancelled membership yields NULL renewals, never 0", () => {
   // by. A 0 would say a member who renewed six times and then left never
   // renewed at all — and averaged into a plan, it punishes the plan hardest
   // for the members it kept billing longest.
-  assert.strictEqual(mbRenewalsSoFar(V4_LEFT), null);
-  assert.strictEqual(mbRenewalsSoFar({ startDate: "2026-06-01", periodStart: "" }), null);
-  assert.strictEqual(mbRenewalsSoFar(null), null);
+  assert.strictEqual(mbRenewalsSoFar(V4_LEFT, 31), null,
+    "a cancelled row has no period start to measure from");
+  assert.strictEqual(mbRenewalsSoFar({ startDate: "2026-06-01", periodStart: "" }, 31), null);
+  assert.strictEqual(mbRenewalsSoFar(null, 31), null);
 });
 
 test("cancellation reads the DATE first and the status word second", () => {

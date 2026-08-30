@@ -887,32 +887,97 @@ function mbCanAutoRenew(r) {
   return sh === 'open' || sh === 'unknown';
 }
 
+// THE BILLING CYCLE IS A PROPERTY OF THE PLAN, NOT OF ONE ROW'S TIMESTAMPS.
+//
+// This is a correction. mbRenewalsSoFar originally divided by each row's own
+// (next renewal − period start), which held at City of Norman and does NOT hold
+// generally: on a membership whose renewal is imminent that gap is the time
+// REMAINING in the period, not the period's length. Measured at Apex over 1,323
+// auto-renewers — 8 rows have a "cycle" under a day (the smallest is 15 minutes)
+// and 35 more under a week, and dividing a multi-year span by those produced
+// 44,665 renewals on a monthly plan and dragged that plan's average to 228x.
+//
+// A plan bills on one cadence, so the MEDIAN across its members is the cadence,
+// and a median is unmoved by a minority of corrupt rows. The same Apex row then
+// reads 1,341 days / ~30 = 45 renewals, which matches its 2022 start date.
+//
+// Generalise it: I validated the per-row derivation against one org and shipped
+// it platform-wide. A rule about "what these two columns mean" needs checking
+// across orgs, because one org's data being clean is not evidence about the
+// column.
+function mbPlanCycles(rows) {
+  var byPlan = {};
+  (rows || []).forEach(function(r) {
+    var c = mbCycleDays(r);
+    // Only plausible billing cadences vote. A sub-day gap is not a cadence any
+    // plan bills on; it is a row whose renewal is due imminently.
+    if (c == null || c < 1) return;
+    (byPlan[mbPlanKey(r)] = byPlan[mbPlanKey(r)] || []).push(c);
+  });
+  var out = {};
+  Object.keys(byPlan).forEach(function(k) {
+    var v = byPlan[k].sort(function(a, b){ return a - b; });
+    out[k] = v[Math.floor(v.length / 2)];
+  });
+  return out;
+}
+
+// What the plan's cadence is called, so a rate can be reported in it. Dan:
+// "always report the churn rate based on its renewal period" — a weekly plan's
+// churn and a monthly plan's churn are not comparable as raw percentages, and
+// naming the period is what makes each one readable on its own terms.
+function mbCadence(days) {
+  if (days == null) return null;
+  if (days <= 10)  return { unit: 'week',    per: 'per week' };
+  if (days <= 45)  return { unit: 'month',   per: 'per month' };
+  if (days <= 120) return { unit: 'quarter', per: 'per quarter' };
+  return { unit: 'year', per: 'per year' };
+}
+
 // HOW MANY TIMES HAS THIS MEMBERSHIP ACTUALLY RENEWED?
 //
 // There is no renewal-event history anywhere in the schema — `public.subscription`
 // is a marketing opt-in table, and `membership` keeps only the CURRENT period. So
 // this is derived: the distance from the original start to the current period
-// start, divided by the cycle.
+// start, divided by THE PLAN'S cycle (see mbPlanCycles for why not the row's).
 //
-// VERIFIED AGAINST PROD rather than assumed. Over City of Norman's auto-renewers
-// the elapsed time divides into whole cycles: weekly (58 memberships) is exact,
-// monthly (137) sits 0.06 off a whole number — calendar months of unequal length
-// against a fixed 31-day cycle — and annual (12) is exact. If that ever stopped
-// being true the figure would be quietly wrong, which is why the check is a
-// remainder test and not a spot check.
-//
-// NULL, NEVER ZERO, when it cannot be derived. next_renewal_at is cleared on
-// cancellation, so a cancelled membership has no cycle to divide by; reporting
-// it as "0 renewals" would say a member who renewed six times then left never
-// renewed at all. Those contribute TENURE instead, which the cohort chart reads.
-function mbRenewalsSoFar(r) {
+// NULL, NEVER ZERO, when it cannot be derived — and null when the answer is
+// implausible rather than shipping a confident 44,665. Reporting a cancelled
+// membership as "0 renewals" would say a member who renewed six times and then
+// left never renewed at all, and averaged into a plan it punishes that plan
+// hardest for the members it kept billing longest.
+function mbRenewalsSoFar(r, planCycle) {
   if (!r || !r.periodStart || !r.startDate) return null;
-  var cyc = mbCycleDays(r);
-  if (cyc == null || !(cyc > 0)) return null;
+  var cyc = planCycle != null && planCycle >= 1 ? planCycle : null;
+  if (cyc == null) return null;
   var a = Date.parse(r.startDate), b = Date.parse(r.periodStart);
   if (isNaN(a) || isNaN(b)) return null;
-  var n = Math.round((b - a) / 86400000 / cyc);
-  return n >= 0 ? n : null;
+  var days = (b - a) / 86400000;
+  if (days < 0) return null;
+  var n = Math.round(days / cyc);
+  // A membership cannot have renewed more times than the platform is old.
+  // Belt and braces on top of the plan-median cycle: if this ever fires, the
+  // dates are wrong and a number is worse than a dash.
+  return n <= 600 ? n : null;
+}
+
+// CHURN PER RENEWAL PERIOD — the rate that is actually comparable.
+//
+// The tab used to show cancellations / everyone-ever-on-auto-renew, which is a
+// LIFETIME-TO-DATE figure: at Apex that is 1,119 of 2,176 = 51%, over a book
+// going back to 2022. Sitting in a KPI row it read as a churn rate and Dan read
+// it as one ("those are crazy high"). Half a four-year-old subscription book
+// having eventually cancelled is unremarkable; 51% a month would be a fire.
+//
+// This is the hazard rate instead: of all the renewal opportunities the book has
+// been through, what share ended in a cancellation. Each member contributes its
+// renewals as opportunities taken, plus one more if it cancelled. Expressed in
+// the plan's OWN period, so a weekly plan reads per week and a monthly one per
+// month rather than being silently compared.
+function mbChurnPerCycle(renewals, canceled) {
+  var opportunities = (renewals || 0) + (canceled || 0);
+  if (!opportunities) return null;
+  return canceled / opportunities;
 }
 
 // Has this membership been cancelled? Reads the DATE first and the status word
@@ -1842,6 +1907,9 @@ function normalizeRow(raw) {
       // Could Convert card where it can be acted on.
       const arPlans = useMemo(() => {
         const m = new Map();
+        // One pass first: the cadence each plan bills on. A row's own two
+        // timestamps are not the cadence -- see mbPlanCycles.
+        const cycles = mbPlanCycles(filteredAnyStatus.filter(r => mbIsPaid(r) && mbIsAutoRenew(r)));
         for (const r of filteredAnyStatus) {
           if (!mbIsPaid(r) || !mbIsAutoRenew(r)) continue;
           const k = mbPlanKey(r);
@@ -1857,7 +1925,7 @@ function normalizeRow(raw) {
           // unhelpful otherwise." A count with nowhere to go is the same dead
           // end the Failed check-ins tile had.
           if (mbCancelPending(r)) { e.pending++; e.pendingRows.push(r); }
-          const rn = mbRenewalsSoFar(r);
+          const rn = mbRenewalsSoFar(r, cycles[k]);
           // Averaged over the memberships that CAN answer, not over the plan.
           // Folding a cancelled membership in as 0 would drag a healthy plan's
           // average down in proportion to how many people it has kept billing.
@@ -1866,8 +1934,13 @@ function normalizeRow(raw) {
         return Array.from(m.values())
           .filter(p => p.n > 0)
           .map(p => Object.assign(p, {
-            cancelRate: p.n ? p.canceled / p.n : 0,
+            // Kept as a sub-line, honestly labelled: this is everyone who has
+            // EVER been on the plan, not a rate.
+            everCancelled: p.n ? p.canceled / p.n : 0,
             avgRenewals: p.renewN ? p.renewSum / p.renewN : null,
+            cycleDays: cycles[p.plan] != null ? cycles[p.plan] : null,
+            cadence: mbCadence(cycles[p.plan]),
+            churn: mbChurnPerCycle(p.renewSum, p.canceled),
           }))
           .sort((a, b) => b.n - a.n);
       }, [filteredAnyStatus]);
@@ -1877,9 +1950,10 @@ function normalizeRow(raw) {
       // never disagree about who is in the book.
       const arBook = useMemo(() => {
         const book = filteredAnyStatus.filter(r => mbIsPaid(r) && mbIsAutoRenew(r));
+        const cycles = mbPlanCycles(book);
         let renewals = 0, renewN = 0, canceled = 0, pending = 0;
         for (const r of book) {
-          const rn = mbRenewalsSoFar(r);
+          const rn = mbRenewalsSoFar(r, cycles[mbPlanKey(r)]);
           if (rn != null) { renewals += rn; renewN++; }
           if (mbIsCanceled(r)) canceled++;
           if (mbCancelPending(r)) pending++;
@@ -1890,10 +1964,17 @@ function normalizeRow(raw) {
           renewals, renewN,
           avgRenewals: renewN ? renewals / renewN : null,
           canceled,
-          // Over the whole book INCLUDING cancellations — that is the
-          // denominator a cancellation rate needs. Measured at Norman: 195 of
-          // 404 ever-auto-renewing memberships have cancelled, i.e. 48%.
-          cancelRate: book.length ? canceled / book.length : null,
+          // LIFETIME-TO-DATE, kept as context and labelled as such.
+          everCancelled: book.length ? canceled / book.length : null,
+          // The rate that is comparable: share of renewal opportunities that
+          // ended in a cancellation, reported in the book's own cadence.
+          churn: mbChurnPerCycle(renewals, canceled),
+          // NO period label at book level, deliberately. The book mixes weekly,
+          // monthly and annual plans, so "per month" would be false for some of
+          // it — and "always report churn based on its renewal period" is
+          // exactly what that would break. Per RENEWAL is unit-free and true
+          // whatever the mix; the per-plan table names each plan's own cadence.
+          cycleCount: Object.keys(cycles).length,
           pending,
           hasSchedule: mbHasCancelSchedule(filteredAnyStatus),
         };
@@ -1945,6 +2026,59 @@ function normalizeRow(raw) {
     
   // ── AI Insights ──
   const buildInsightsBlob = useCallback(() => {
+    if (activeTab === 'autorenew') {
+      if (!arBook.size) return null;
+      // Pre-computed and LABELLED, because the model must not mistake the
+      // lifetime figure for churn or compare a weekly rate to a monthly one.
+      // Every rate ships beside the cadence it is measured in.
+      return {
+        tab: 'autorenew',
+        book: {
+          onAutoRenew: arBook.size,
+          stillActive: arBook.size - arBook.canceled,
+          billedPerCycle: Math.round(arStats.perCycle),
+          monthlyRevenue: Math.round(arStats.monthly),
+          revenuePerMember: arStats.arpu == null ? null : Math.round(arStats.arpu),
+          churnPerRenewalPct: arBook.churn == null ? null : Math.round(arBook.churn * 1000) / 10,
+          everCancelledPct: arBook.everCancelled == null ? null : Math.round(arBook.everCancelled * 100),
+          renewalsToDate: arBook.renewals,
+          pendingCancel: arBook.hasSchedule ? arBook.pending : null,
+        },
+        candidates: {
+          count: arStats.candidates,
+          value: Math.round(arStats.candidateValue),
+          plans: arStats.candidatePlans.slice(0, 8),
+          note: 'auto-renew is only available on a credit card, so these need a card on file',
+        },
+        plans: arPlans.slice(0, 20).map(function(p) {
+          return {
+            plan: p.plan,
+            onAutoRenew: p.n,
+            stillActive: p.on,
+            cancelled: p.canceled,
+            price: p.price,
+            cadence: p.cadence ? p.cadence.per : null,
+            cycleDays: p.cycleDays == null ? null : Math.round(p.cycleDays),
+            churnPerCyclePct: p.churn == null ? null : Math.round(p.churn * 1000) / 10,
+            everCancelledPct: Math.round(p.everCancelled * 100),
+            avgRenewals: p.avgRenewals == null ? null : Math.round(p.avgRenewals * 10) / 10,
+            pendingCancel: p.pending,
+            revenuePerCycle: Math.round(p.n * p.price),
+            thin: p.n < 20,
+          };
+        }),
+        // WHEN people leave, for the seasonality half of the question.
+        cancellationsByMonth: (function() {
+          var m = {};
+          arBook.rows.forEach(function(r) {
+            if (!r.canceledAt) return;
+            var k = monthKey(r.canceledAt);
+            if (k) m[k] = (m[k] || 0) + 1;
+          });
+          return m;
+        })(),
+      };
+    }
     if (activeTab === 'checkins') {
       if (!ciView || !ciView.length) return null;
       var hourCts = {}; var dayCts = {}; var deskCts = {}; var prodCts = {}; var uniqM = new Set();
@@ -1991,7 +2125,8 @@ function normalizeRow(raw) {
     if (!blob) return;
     setInsightsLoading(true); setInsightsError(null);
     try {
-      const resp = await fetch(withToken('/' + orgSlug + '/memberships' + '/api/insights'), {
+      const path = activeTab === 'autorenew' ? '/api/autorenew-insights' : '/api/insights';
+      const resp = await fetch(withToken('/' + orgSlug + '/memberships' + path), {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(blob),
       });
@@ -2005,7 +2140,7 @@ function normalizeRow(raw) {
     } finally {
       setInsightsLoading(false);
     }
-  }, [buildInsightsBlob]);
+  }, [buildInsightsBlob, activeTab]);
 
   // ── Excel export ──
       function toXlDate(s) { if (!s) return ''; const p = String(s).split('T')[0].split('-'); return p.length === 3 ? new Date(+p[0], +p[1]-1, +p[2]) : s; }
@@ -2675,31 +2810,44 @@ function normalizeRow(raw) {
               {!loading && (
                 <React.Fragment>
                   {(function() {
+                    // ELI5. Dan: "this top blue box is way too verbose, no one is
+                    // reading that." It was six lines of reasoning about
+                    // denominators — true, and written for whoever maintains the
+                    // tab rather than the person opening it.
+                    //
+                    // The reasoning did not go in the bin, it moved to where it
+                    // is needed: the excluded counts are still exact, just stated
+                    // as a fact rather than argued for, and the "why" now sits in
+                    // the tooltip of the thing it explains.
                     var ex = arStats.excluded;
                     var parts = [];
-                    if (ex.pass.n)   parts.push({ k: 'pass',   label: 'day passes and gate admissions', n: ex.pass.n,   v: ex.pass.value });
-                    if (ex.season.n) parts.push({ k: 'season', label: 'season plans',                   n: ex.season.n, v: ex.season.value });
-                    if (ex.term.n)   parts.push({ k: 'term',   label: 'fixed-term plans',               n: ex.term.n,   v: ex.term.value });
+                    if (ex.pass.n)   parts.push({ k: 'pass',   label: 'day passes', n: ex.pass.n,   v: ex.pass.value });
+                    if (ex.season.n) parts.push({ k: 'season', label: 'season plans', n: ex.season.n, v: ex.season.value });
+                    if (ex.term.n)   parts.push({ k: 'term',   label: 'fixed-term plans', n: ex.term.n, v: ex.term.value });
+                    var why = 'These end on a set date instead of billing again, so they have no renewal to keep or lose. '
+                            + 'Platform-wide, not one of them has ever carried a subscription.';
                     return (
                       <div className="mb-scope-note">
-                        🔁 <strong data-ar-count-note={arStats.count}>{arStats.count.toLocaleString()} memberships are set up to auto-renew</strong>, of those purchased in this window
+                        \uD83D\uDD01 <strong data-ar-count-note={arStats.count}>{arStats.count.toLocaleString()} memberships bill automatically</strong>{' '}
+                        {arPlans.length > 0 && <React.Fragment>across {arPlans.length} plan{arPlans.length === 1 ? '' : 's'}. </React.Fragment>}
+                        Everything below is about them.
                         <span className="mb-scope-sub">
-                          Free residency records are excluded — they have no charge to renew.
                           {parts.length > 0 && (
                             <React.Fragment>
-                              {' '}So are{' '}
+                              Not counted:{' '}
                               {parts.map(function(p, i) {
                                 return (
                                   <React.Fragment key={p.k}>
                                     {i > 0 ? (i === parts.length - 1 ? ' and ' : ', ') : ''}
-                                    <strong data-ar-excl={p.k} data-ar-excl-n={p.n}>{p.n.toLocaleString()} {p.label}</strong> ({money(p.v)})
+                                    <strong data-ar-excl={p.k} data-ar-excl-n={p.n}
+                                            title={why}>{p.n.toLocaleString()} {p.label}</strong> ({money(p.v)})
                                   </React.Fragment>
                                 );
                               })}
-                              {' '}— every one of these ends on a date instead of recurring, and platform-wide not one of them has ever carried a subscription. Counting them would measure the rate against a base that can never move, and would fill the table below with plans reading &ldquo;0%&rdquo; that are working exactly as intended.
+                              , which cannot auto-renew.{' '}
                             </React.Fragment>
                           )}
-                          {' '}Everything below describes those {arStats.count.toLocaleString()} — the plans they sit on, what they bill and how often. A membership that <em>could</em> auto-renew and does not is not part of that book: it is a conversion candidate, and it is named on the Could Convert card rather than padding this table with rows reading &ldquo;0%&rdquo;.
+                          Anyone who <em>could</em> be billing automatically and is not shows up under Could Convert.
                         </span>
                       </div>
                     );
@@ -2751,12 +2899,15 @@ function normalizeRow(raw) {
                       </div>
                     </div>
                     <div className="summary-card">
-                      <div className="card-label">Cancellation Rate</div>
-                      <div className={'card-value ' + (arBook.cancelRate != null && arBook.cancelRate > 0.25 ? 'amber' : '')}
-                           data-ar-book-cancel-rate={arBook.cancelRate == null ? '' : Math.round(arBook.cancelRate * 1000) / 10}>
-                        {arBook.cancelRate == null ? '—' : (Math.round(arBook.cancelRate * 1000) / 10) + '%'}
+                      <div className="card-label">Churn Per Renewal</div>
+                      <div className={'card-value ' + (arBook.churn != null && arBook.churn > 0.1 ? 'amber' : '')}
+                           data-ar-churn={arBook.churn == null ? '' : Math.round(arBook.churn * 1000) / 10}>
+                        {arBook.churn == null ? '—' : (Math.round(arBook.churn * 1000) / 10) + '%'}
                       </div>
-                      <div className="card-sub">{arBook.canceled.toLocaleString()} of {arBook.size.toLocaleString()} ever on auto-renew here</div>
+                      <div className="card-sub">
+                        of renewals end in a cancellation.
+                        {arBook.everCancelled != null && <React.Fragment> {Math.round(arBook.everCancelled * 100)}% have cancelled at some point since they joined &mdash; that is a running total, not a rate.</React.Fragment>}
+                      </div>
                     </div>
                     {arBook.hasSchedule ? (
                       <div className="summary-card">
@@ -2807,16 +2958,16 @@ function normalizeRow(raw) {
                   <div className="ci-panel">
                     <div className="ci-chart-title">Auto-renew by plan</div>
                     <div style={{fontSize:11,color:'#9ca3af',marginBottom:10,marginTop:-6}}>
-                      Auto-renew is set on the plan, not chosen by the member — platform-wide a plan almost always has everybody on it or nobody, with next to nothing in between. So these are the plans that carry the book. Plans with nobody on auto-renew are not listed: a season plan or a day pass could never carry it, and one that could is on the Could Convert card above, where it can be acted on.
+                      Churn is per renewal, in each plan&rsquo;s own billing period — a weekly plan losing 5% a week is very different from a monthly plan losing 5% a month, so comparing the raw numbers across rows only works because each one says which.
                     </div>
                     {arPlans.length === 0 ? (
                       <div className="empty-state">No paid memberships in this window.</div>
                     ) : (
                       <table className="report">
-                        <thead><tr><th>Plan</th><th className="num">On auto-renew</th><th className="num">Price</th><th className="num">Renewed</th><th className="num">Still active</th><th className="num">Cancelled</th><th className="num">Cancel rate</th></tr></thead>
+                        <thead><tr><th>Plan</th><th className="num">On auto-renew</th><th className="num">Price</th><th className="num">Renewed</th><th className="num">Still active</th><th className="num">Cancelled</th><th className="num">Churn</th></tr></thead>
                         <tbody>
                           {arPlans.slice(0, 40).map(function(p) {
-                            var cr = Math.round(p.cancelRate * 1000) / 10;
+                            var cr = p.churn == null ? null : Math.round(p.churn * 1000) / 10;
                             return (
                               <tr key={p.plan} data-ar-plan={p.plan}>
                                 <td>
@@ -2839,8 +2990,12 @@ function normalizeRow(raw) {
                                 </td>
                                 <td className="num">{p.on.toLocaleString()}</td>
                                 <td className="num">{p.canceled.toLocaleString()}</td>
-                                <td className="num" data-ar-cancel-rate={cr} style={{color: cr === 0 ? '#15803d' : cr >= 40 ? '#b91c1c' : '#d97706', fontWeight:600}}>
-                                  {cr}%
+                                <td className="num" data-ar-cancel-rate={cr == null ? '' : cr}
+                                    title={p.cadence ? 'Share of this plan\u2019s renewals that end in a cancellation \u2014 it bills ' + p.cadence.per : ''}
+                                    style={{color: cr == null ? '#9ca3af' : cr === 0 ? '#15803d' : cr >= 15 ? '#b91c1c' : cr >= 7 ? '#d97706' : '#6b7280', fontWeight:600}}>
+                                  {cr == null
+                                    ? '\u2014'
+                                    : <React.Fragment>{cr}%{p.cadence && <span style={{color:'#9ca3af',fontWeight:400,fontSize:10}}> {p.cadence.per}</span>}</React.Fragment>}
                                 </td>
                               </tr>
                             );
@@ -3627,8 +3782,23 @@ function normalizeRow(raw) {
             </div>
 
 
+
+            <StaleCacheBanner meta={meta} />
+            {/* Content */}
+            <div className="content">
+              {renderView()}
+            </div>
+
+            </React.Fragment>
+          )}
+
+            {/* AI INSIGHTS — at page level, NOT inside the memberships tab.
+                It used to sit inside {activeTab === 'memberships' && (...)},
+                so adding `autorenew` to its own condition changed nothing: the
+                whole block was already unreachable from any other tab. Caught by
+                the render check, which asserted the button and found no DOM. */}
         {/* AI Insights */}
-        {((activeTab === 'memberships' && data && data.length > 0) || (activeTab === 'checkins' && ciView.length > 0) || (activeTab === 'retention' && data && data.length > 0)) && (
+        {((activeTab === 'memberships' && data && data.length > 0) || (activeTab === 'checkins' && ciView.length > 0) || (activeTab === 'retention' && data && data.length > 0) || (activeTab === 'autorenew' && arBook.size > 0)) && (
           <div className="insights-section no-print">
             <div className="insights-head">
               <button type="button" className="insights-btn" onClick={getInsights} disabled={insightsLoading}>
@@ -3636,7 +3806,7 @@ function normalizeRow(raw) {
 {insightsLoading ? 'Analyzing\u2026' : (insights ? '\u21BB Refresh' : '\u2728 Rec Insights')}
               </button>
               {insights && !insightsLoading && (
-                <span className="insights-sub">{'Analyzed ' + (activeTab === 'checkins' ? ciView.length.toLocaleString() + ' check-ins' + (ciLoc !== 'all' ? ' at ' + ciLoc : '') : data.length.toLocaleString() + ' memberships')}</span>
+                <span className="insights-sub">{'Analyzed ' + (activeTab === 'checkins' ? ciView.length.toLocaleString() + ' check-ins' + (ciLoc !== 'all' ? ' at ' + ciLoc : '') : activeTab === 'autorenew' ? arBook.size.toLocaleString() + ' auto-renewing memberships across ' + arPlans.length + ' plan' + (arPlans.length === 1 ? '' : 's') : data.length.toLocaleString() + ' memberships')}</span>
               )}
             </div>
             {insightsLoading && <div className="ai-loading"><div className="ai-spinner" /></div>}
@@ -3679,15 +3849,6 @@ function normalizeRow(raw) {
             )}
           </div>
         )}
-
-            <StaleCacheBanner meta={meta} />
-            {/* Content */}
-            <div className="content">
-              {renderView()}
-            </div>
-
-            </React.Fragment>
-          )}
 
             {/* Shared footer */}
             <div className="report-footer">
