@@ -2746,7 +2746,9 @@ function normalizeRow(raw) {
                         <div className="card-label">Could Convert</div>
                         <div className="card-value amber" data-ar-cands={arStats.candidates}>{arStats.candidates.toLocaleString()}</div>
                         <div className="card-sub">
-                          {money(arStats.candidateValue)} on recurring plans, renewing by hand
+                          {money(arStats.candidateValue)} on recurring plans, renewing by hand.
+                          {' '}Auto-renew is only available on a credit card, so converting one means getting a card on file — not flipping a setting.
+                          {' '}
                           {arStats.candidatePlans.length > 0 && (
                             <React.Fragment>
                               {' — '}

@@ -551,13 +551,25 @@ memberships platform-wide it splits perfectly, **zero exceptions in 2,083 rows**
 | check | 185 | **0** |
 | organization-credit | 32 | **0** |
 
-The rule is **whether a reusable card ended up on file**. An online purchase
-stores one; a desk swipe, cash, check or org credit does not, so there is nothing
-for Stripe to charge. **Deliberately NOT used as an exclusion:** a cash member CAN
+**CONFIRMED BY DAN AS A PRODUCT RULE, not just a correlation:** *"a/r memberships
+are ONLY available via CC."* So the table above is the rule showing through the
+data, and the tab may state it in words — an online purchase leaves a reusable
+card; a desk swipe, cash, check or org credit does not, so there is nothing for
+Stripe to charge.
+
+**Consequence for the Could Convert card:** converting one of these is not
+flipping a plan setting, it is getting a card on file, and the card says so.
+**Deliberately NOT used as an exclusion:** a cash member CAN
 be converted — you ask for a card — whereas a season pass cannot. Excluding them
 would delete 2,083 convertible memberships platform-wide, the largest conversion
-opportunity there is. `Payment Method` is not on the card yet; if it is ever
-added, it belongs as the *reason* beside a candidate, never as a filter.
+opportunity there is. **`Card On File` is NOT on the card yet, and it is the obvious next column** —
+`bool_or(transaction_method = 'card-online')` inside the `tx_oi` / `tx_cust` CTEs,
+which already scan `item_log_report`, so it costs no new scan. It would split
+Could Convert into "already pays by card, so the plan setting is the whole job"
+versus "pays at the desk, so someone has to capture a card" — two different jobs
+currently reported as one number. A single method pick would be wrong for the 36
+of 113,819 order items that split across methods; the boolean is deterministic.
+It belongs as the *reason* beside a candidate, never as a filter.
 
 ### The metrics: renewals, cancellation, and A/R retention (card v4)
 
