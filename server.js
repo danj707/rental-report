@@ -3686,12 +3686,23 @@ function diffCardParamTypes(defs) {
       const type = String(p.type || "");
       if (type.startsWith("date/")) continue;
       wrongType.push({
-        mbUuid: d.mbUuid, tag, type: type || "(none)",
+        mbUuid: d.mbUuid, cardId: d.cardId || null, tag, type: type || "(none)",
         served: d.served, servedActive: d.servedActive || [],
       });
     }
   }
   return { wrongType };
+}
+
+// The Metabase UI URL for a card. THE PUBLIC UUID DOES NOT WORK HERE — the UI
+// addresses cards by their numeric id, which is why the alert used to print
+// "f4496307" and leave the reader to go find the card by hand. Dan, on the
+// Slack alert: "if ur going to msg me in slack at least give me a link to the
+// mb report". Only a human in that UI can flip a tag back to Date, so the link
+// IS the fix; naming the card is not.
+function metabaseCardUrl(cardId) {
+  if (!cardId) return null;
+  return `${METABASE_URL.replace(/\/+$/, "")}/question/${cardId}`;
 }
 
 function cardParamDriftFingerprint(d) {
@@ -3717,7 +3728,11 @@ async function checkCardParamTypes(opts) {
           { signal: AbortSignal.timeout(20000) });
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const def = await resp.json();
-        defs.push({ mbUuid, served, servedActive, parameters: def.parameters || [] });
+        // `def.id` is the NUMERIC card id, and it is the only thing that makes
+        // a Metabase UI link possible — the public uuid does not resolve there.
+        // It costs nothing: this is the same payload the check already reads.
+        defs.push({ mbUuid, cardId: def.id || null, served, servedActive,
+                    parameters: def.parameters || [] });
       } catch (e) {
         unreadable.push({ mbUuid, served, servedActive, error: e.message });
       }
@@ -3758,6 +3773,11 @@ async function checkCardParamTypes(opts) {
     logEvent("_platform", "schema", "param-drift", null, {
       tags: live.map(w => w.mbUuid.slice(0, 8) + " " + w.tag + "=" + w.type),
       reports: [...new Set(live.flatMap(w => w.servedActive))].sort(),
+      // ONE ENTRY PER CARD, not per tag: a card whose start_date AND end_date
+      // both drifted is one visit to one page, and two identical links read as
+      // two problems.
+      cards: [...new Map(live.filter(w => w.cardId)
+        .map(w => [w.cardId, { id: w.cardId, url: metabaseCardUrl(w.cardId) }])).values()],
     });
   }
   return {
@@ -4056,9 +4076,18 @@ function notifySlack(rec) {
     const mention = SLACK_MENTION_USER_ID ? ` <@${SLACK_MENTION_USER_ID}>` : "";
     const tags = rec.tags || [];
     const who = (rec.reports || []).length ? ` — breaks *${(rec.reports || []).slice(0, 6).join("*, *")}*` : "";
+    // The LINK is the fix. Only a human in the Metabase UI can flip a tag back
+    // to Date, so an alert that names a card id and stops there has made the
+    // reader do the lookup. Falls back to the old wording when the numeric id
+    // could not be read, rather than emitting a dead link.
+    const cards = (rec.cards || []).filter(c => c && c.url);
+    const fix = cards.length
+      ? ` · flip it back to Date: ${cards.slice(0, 4).map(c => `<${c.url}|card ${c.id}>`).join(", ")}`
+        + (cards.length > 4 ? ` and ${cards.length - 4} more` : "")
+      : " · flip it back to Date in the Metabase UI";
     text = `${meta.emoji} *DATE TAG RESET TO TEXT* — ${tags.slice(0, 6).join(", ")}`
          + (tags.length > 6 ? ` and ${tags.length - 6} more` : "") + who
-         + ` · flip it back to Date in the Metabase UI${mention}`;
+         + fix + mention;
   } else if (rec.event === "report-down") {
     const mention = SLACK_MENTION_USER_ID ? ` <@${SLACK_MENTION_USER_ID}>` : "";
     const why = rec.error ? ` — _${String(rec.error).slice(0, 160)}_` : "";
@@ -13467,11 +13496,18 @@ app.post("/api/admin/schema-break/check", express.json(), async (req, res) => {
 // GET /api/admin/param-drift — are the reports' date tags still typed Date?
 // POST /api/admin/param-drift/check — run it now (password-gated).
 app.get("/api/admin/param-drift", (req, res) => {
+  const last = readJSON(CARD_PARAM_DRIFT_FILE, null);
   res.json({
     enabled: watchdogEnabled("paramDriftAlerts"),
     cards: collectServedCards().size,
     shadowed: collectShadowedCards(),
-    last: readJSON(CARD_PARAM_DRIFT_FILE, null),
+    last,
+    // The same links the Slack alert carries, deduped per card. This panel is
+    // the other place someone reads "which tag drifted", and only the Metabase
+    // UI can fix it — so it hands over the URL rather than a card id to look up.
+    fixLinks: [...new Map((last?.wrongType || []).filter(w => w.cardId)
+      .map(w => [w.cardId, { id: w.cardId, url: metabaseCardUrl(w.cardId),
+                             reports: w.servedActive || [] }])).values()],
   });
 });
 

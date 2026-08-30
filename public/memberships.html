@@ -493,6 +493,18 @@
     .report-tabs .tab-btn { padding: 9px 18px 8px; font-size: 13px; font-weight: 600; font-family: inherit; background: transparent; border: 1px solid transparent; border-bottom: none; border-radius: 8px 8px 0 0; margin-bottom: -2px; cursor: pointer; color: #888; transition: all .15s; position: relative; }
     .report-tabs .tab-btn:hover { color: #333; background: #f3f4f6; }
     .ci-panel { background: #fff; border: 1px solid #e5e3df; border-radius: 6px; padding: 16px 18px; margin-bottom: 16px; }
+    .ar-pills { display:flex; flex-wrap:wrap; gap:6px; margin:0 0 12px; }
+    .ar-pill { font:inherit; font-size:11px; line-height:1.4; cursor:pointer;
+      border:1px solid #e2e0da; background:#fff; color:#374151;
+      border-radius:999px; padding:4px 10px; display:inline-flex; align-items:center; gap:6px; }
+    .ar-pill:hover { border-color:#c9c6bd; background:#faf9f7; }
+    .ar-pill.on { background:#111; border-color:#111; color:#fff; font-weight:600; }
+    .ar-pill .n { font-variant-numeric:tabular-nums; opacity:.6; font-weight:400; }
+    .ar-pill.on .n { opacity:.75; }
+    .ar-pending-btn { font:inherit; font-size:11px; cursor:pointer; margin-left:8px;
+      border:0; background:none; color:#d97706; padding:0; text-decoration:underline;
+      text-underline-offset:2px; }
+    .ar-pending-btn:hover { color:#b45309; }
     .pill-shape { display: inline-block; font-size: 9.5px; font-weight: 600; padding: 2px 7px; border-radius: 10px; letter-spacing: .03em; background: #eef2ff; color: #6366f1; text-transform: uppercase; }
     .report-tabs .tab-btn.active { color: #111; background: #fff; border-color: #d1d5db; box-shadow: 0 -2px 4px rgba(0,0,0,.04); z-index: 1; }
     .report-tabs .tab-badge { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 10px; margin-left: 6px; background: #6366f122; color: #6366f1; }
@@ -829,6 +841,14 @@ function mbProductShape(r) {
   // the explicit membership test rather than a bare `hasPlanTerms`.
   if (r.hasPlanTerms && r.productKind === 'membership') return 'open';
   return 'unknown';
+}
+
+// The plan a row belongs to. ONE implementation because three surfaces now key
+// on it — the per-plan table, the retention filter pills, and the filter itself.
+// Two copies drift the first time the fallback order changes, and then a pill
+// silently matches nothing and draws an empty chart.
+function mbPlanKey(r) {
+  return (r && (r.group || r.type)) || '\u2014';
 }
 
 // CAN this row carry auto-renew at all? The denominator question, and the one
@@ -1347,6 +1367,11 @@ function normalizeRow(raw) {
         const p = new URLSearchParams(window.location.search);
         return p.get('view') || localStorage.getItem(LS_VIEW) || 'revenueByType';
       });
+      // Which plan's leaving-soon list is open, and which plan the A/R retention
+      // chart is scoped to. Neither is persisted: both are a search intent, not
+      // a layout preference — the same call the campmap type filter makes.
+      const [arOpenPlan, setArOpenPlan] = useState(null);
+      const [arRetPlan, setArRetPlan] = useState(null);
       const [statusFilter, setStatusFilter] = useState(() => {
         try { return JSON.parse(localStorage.getItem(LS_STATUS)) || ['active']; }
         catch { return ['active']; }
@@ -1786,7 +1811,7 @@ function normalizeRow(raw) {
           // admin works through. These are the rows that used to sit in the
           // table above at 0% pretending to be part of the auto-renew book.
           candidatePlans: Object.entries(candidates.reduce((acc, r) => {
-            const k = r.group || r.type || '—';
+            const k = mbPlanKey(r);
             acc[k] = (acc[k] || 0) + 1;
             return acc;
           }, {})).map(([plan, n]) => ({ plan, n })).sort((a, b) => b.n - a.n),
@@ -1819,14 +1844,19 @@ function normalizeRow(raw) {
         const m = new Map();
         for (const r of filteredAnyStatus) {
           if (!mbIsPaid(r) || !mbIsAutoRenew(r)) continue;
-          const k = r.group || r.type || '—';
+          const k = mbPlanKey(r);
           if (!m.has(k)) m.set(k, { plan: k, n: 0, on: 0, canceled: 0, pending: 0,
+                                    pendingRows: [],
                                     renewSum: 0, renewN: 0, maxRenew: 0,
                                     shape: mbProductShape(r), price: r.price });
           const e = m.get(k);
           e.n++;
           if (mbIsCanceled(r)) e.canceled++; else e.on++;
-          if (mbCancelPending(r)) e.pending++;
+          // KEEP THE ROWS, not just a count. Dan: "can we add a drop
+          // down/expansion option here to show WHO those two users are? Kinda
+          // unhelpful otherwise." A count with nowhere to go is the same dead
+          // end the Failed check-ins tile had.
+          if (mbCancelPending(r)) { e.pending++; e.pendingRows.push(r); }
           const rn = mbRenewalsSoFar(r);
           // Averaged over the memberships that CAN answer, not over the plan.
           // Folding a cancelled membership in as 0 would drag a healthy plan's
@@ -1895,7 +1925,7 @@ function normalizeRow(raw) {
         const m = new Map();
         for (const r of filtered) {
           if (!mbIsPaid(r)) continue;
-          const k = r.group || r.type || '—';
+          const k = mbPlanKey(r);
           if (!m.has(k)) m.set(k, { plan: k, units: 0, revenue: 0, on: 0, shape: mbProductShape(r) });
           const e = m.get(k);
           e.units++;
@@ -2789,7 +2819,17 @@ function normalizeRow(raw) {
                             var cr = Math.round(p.cancelRate * 1000) / 10;
                             return (
                               <tr key={p.plan} data-ar-plan={p.plan}>
-                                <td><strong>{p.plan}</strong>{p.pending > 0 && <span style={{color:'#d97706',fontSize:11}}> · {p.pending} leaving at period end</span>}</td>
+                                <td>
+                                  <strong>{p.plan}</strong>
+                                  {p.pending > 0 && (
+                                    <button type="button" className="ar-pending-btn"
+                                      data-ar-pending-toggle={p.plan}
+                                      aria-expanded={arOpenPlan === p.plan}
+                                      onClick={function(){ setArOpenPlan(arOpenPlan === p.plan ? null : p.plan); }}>
+                                      {arOpenPlan === p.plan ? '\u25be' : '\u25b8'} {p.pending} leaving at period end
+                                    </button>
+                                  )}
+                                </td>
                                 <td className="num">{p.n.toLocaleString()}</td>
                                 <td className="num">{money(p.price)}</td>
                                 <td className="num" data-ar-plan-renew={p.avgRenewals == null ? '' : Math.round(p.avgRenewals * 10) / 10}>
@@ -2804,6 +2844,43 @@ function normalizeRow(raw) {
                                 </td>
                               </tr>
                             );
+                          }).flatMap(function(row, i) {
+                            // WHO is leaving, not just how many. Returned as a
+                            // sibling <tr> rather than nested markup, because a
+                            // table row cannot legally contain another table.
+                            var p = arPlans.slice(0, 40)[i];
+                            if (arOpenPlan !== p.plan || !p.pendingRows.length) return [row];
+                            return [row, (
+                              <tr key={p.plan + ':who'} data-ar-pending-list={p.plan}>
+                                <td colSpan={7} style={{background:'#fbfaf8',padding:'10px 14px'}}>
+                                  <div style={{fontSize:11,color:'#6b7280',marginBottom:6}}>
+                                    Cancelled already, still billing until the date shown &mdash; they will not renew.
+                                  </div>
+                                  <table className="report" style={{margin:0}}>
+                                    <thead><tr><th>Member</th><th>Email</th><th className="num">Last day</th><th className="num">Price</th></tr></thead>
+                                    <tbody>
+                                      {p.pendingRows.slice(0, 50).map(function(r, j) {
+                                        var url = ciUserUrl(recOrgId, r.userId);
+                                        var name = ((r.firstName || '') + ' ' + (r.lastName || '')).trim() || '(no name)';
+                                        return (
+                                          <tr key={(r.membershipId || '') + j} data-ar-pending-member={r.userId || name}>
+                                            <td>{url
+                                              ? <a href={url} target="_blank" rel="noopener noreferrer" style={{color:'#2563eb'}}>{name}</a>
+                                              : name}</td>
+                                            <td style={{fontSize:11}}>{r.email || '\u2014'}</td>
+                                            <td className="num">{dateOnly(r.cancelScheduledAt) || '\u2014'}</td>
+                                            <td className="num">{money(r.price)}</td>
+                                          </tr>
+                                        );
+                                      })}
+                                    </tbody>
+                                  </table>
+                                  {p.pendingRows.length > 50 && (
+                                    <div style={{fontSize:11,color:'#9ca3af',marginTop:6}}>Showing the first 50 of {p.pendingRows.length}.</div>
+                                  )}
+                                </td>
+                              </tr>
+                            )];
                           })}
                         </tbody>
                       </table>
@@ -2818,18 +2895,57 @@ function normalizeRow(raw) {
                       for the same members. */}
                   {(function() {
                     if (arBook.size === 0) return null;
-                    var arCohorts = buildCohorts(arBook.rows);
-                    if (!arCohorts || arCohorts.length === 0) return null;
-                    var at6 = arCohorts.filter(function(c){ return c.retention[6] !== null; });
+                    // SCOPED TO ONE PLAN when a pill is picked. Dan: "I want to
+                    // know this data by WHICH membership as well." A blended
+                    // curve answers "does this org retain", which is a different
+                    // question from "does THIS plan retain" — and at Norman the
+                    // weekly child-care plans churn at 100% while the monthlies
+                    // sit near 40%, so the blend describes neither.
+                    //
+                    // The pill list, the table and the filter all key through
+                    // mbPlanKey, so a pill can never match nothing.
+                    var scoped = arRetPlan
+                      ? arBook.rows.filter(function(r){ return mbPlanKey(r) === arRetPlan; })
+                      : arBook.rows;
+                    var arCohorts = buildCohorts(scoped);
+                    var at6 = (arCohorts || []).filter(function(c){ return c.retention[6] !== null; });
                     var avg6 = at6.length ? Math.round(at6.reduce(function(a,c){ return a + c.retention[6]; }, 0) / at6.length) : null;
+                    // A cohort of one is a 100%-then-0% staircase, not a trend.
+                    var thin = scoped.length < 20;
                     return (
-                      <div className="ci-panel" data-ar-cohorts={arCohorts.length}>
+                      <div className="ci-panel" data-ar-cohorts={(arCohorts || []).length}>
                         <div className="ci-chart-title">Auto-renew retention</div>
                         <div style={{fontSize:11,color:'#9ca3af',marginBottom:10,marginTop:-6}}>
                           The same cohort survival the Retention tab draws, over auto-renewing memberships only — so it reads as a subscription book rather than being diluted by one-off purchases. Each row is the month people started; each column is months later.
-                          {avg6 != null && <React.Fragment> Six months in, <strong data-ar-ret6={avg6}>{avg6}%</strong> of these are still here.</React.Fragment>}
+                          {avg6 != null && <React.Fragment> Six months in, <strong data-ar-ret6={avg6}>{avg6}%</strong> of {arRetPlan ? 'these' : 'the whole book'} are still here.</React.Fragment>}
                         </div>
-                        <RetentionChart cohorts={arCohorts} />
+                        <div className="ar-pills" data-ar-ret-scope={arRetPlan || 'all'}>
+                          <button type="button"
+                            className={'ar-pill' + (arRetPlan ? '' : ' on')}
+                            onClick={function(){ setArRetPlan(null); }}>
+                            All plans <span className="n">{arBook.size.toLocaleString()}</span>
+                          </button>
+                          {arPlans.slice(0, 12).map(function(p) {
+                            return (
+                              <button key={p.plan} type="button"
+                                className={'ar-pill' + (arRetPlan === p.plan ? ' on' : '')}
+                                data-ar-ret-pill={p.plan}
+                                onClick={function(){ setArRetPlan(arRetPlan === p.plan ? null : p.plan); }}
+                                title={p.plan + ' — ' + p.n + ' on auto-renew, ' + Math.round(p.cancelRate * 100) + '% cancelled'}>
+                                {p.plan.length > 34 ? p.plan.slice(0, 32) + '…' : p.plan}
+                                <span className="n">{p.n.toLocaleString()}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                        {thin && (
+                          <div style={{fontSize:11,color:'#d97706',margin:'2px 0 8px'}} data-ar-ret-thin="1">
+                            Only {scoped.length} member{scoped.length === 1 ? '' : 's'} in this slice — the curve is a handful of individual departures, not a trend.
+                          </div>
+                        )}
+                        {(!arCohorts || arCohorts.length === 0)
+                          ? <div className="empty-state" data-ar-ret-empty="1">No dated purchases on this plan in the window.</div>
+                          : <RetentionChart cohorts={arCohorts} />}
                       </div>
                     );
                   })()}

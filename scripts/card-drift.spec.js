@@ -35,6 +35,10 @@ function slice(start, end) {
 
 // Lift the shipping code, not a copy of it.
 const lifted = new Function(
+  // metabaseCardUrl reads METABASE_URL, which lives far from the block we lift.
+  // Pinned to a literal here so the assertions are about the URL SHAPE rather
+  // than about whatever the env happens to hold.
+  "const METABASE_URL = 'https://rec.metabaseapp.com';\n" +
   slice("const ORGS = {", "\nconst REPORT_TYPES") + "\n" +
   slice("const REPORT_TYPES", "\n") + "\n" +
   slice("const SHARED_UUIDS = {", "\n// Which card does the app") + "\n" +
@@ -45,11 +49,13 @@ const lifted = new Function(
   slice("function diffCardParamTypes", "function cardParamDriftFingerprint") + "\n" +
   slice("function cardParamDriftFingerprint", "async function checkCardParamTypes") + "\n" +
   "return { ORGS, REPORT_TYPES, SHARED_UUIDS, resolveReportCard, collectServedCards,"
-  + " collectShadowedCards, diffCardParamTypes, cardParamDriftFingerprint };"
+  + " collectShadowedCards, diffCardParamTypes, cardParamDriftFingerprint,"
+  + " metabaseCardUrl };"
 )();
 const {
   ORGS, REPORT_TYPES, SHARED_UUIDS, resolveReportCard,
   collectServedCards, collectShadowedCards, diffCardParamTypes, cardParamDriftFingerprint,
+  metabaseCardUrl,
 } = lifted;
 
 let passed = 0;
@@ -275,6 +281,77 @@ test("a failed read is never reported as drift", () => {
   assert.ok(body.includes("if (defs.length === 0)"),
     "zero readable definitions must short-circuit, not flag every card");
   assert.ok(/return \{ ok: false, error: "no card definitions could be read"/.test(body));
+});
+
+
+// ── The alert has to carry the fix, not just the diagnosis ──────────────────
+// Dan, on a real param-drift alert in Slack: "lol if ur going to msg me in
+// slack at least give me a link to the mb report". It named the card as
+// `f4496307` — the PUBLIC uuid, which does not resolve in the Metabase UI —
+// and only a human in that UI can flip a tag back to Date. So the link is the
+// fix; naming the card is homework.
+
+test("the card link uses the NUMERIC id — a public uuid does not resolve", () => {
+  assert.strictEqual(metabaseCardUrl(17301),
+    "https://rec.metabaseapp.com/question/17301");
+  assert.ok(!metabaseCardUrl(17301).includes("f4496307"),
+    "the uuid the alert used to print is not addressable in the UI");
+});
+
+test("no id means NO LINK, rather than a dead one", () => {
+  // A card whose definition could not be read has no numeric id. A link built
+  // from a missing id lands on /question/null, which is worse than the words.
+  assert.strictEqual(metabaseCardUrl(null), null);
+  assert.strictEqual(metabaseCardUrl(undefined), null);
+  assert.strictEqual(metabaseCardUrl(0), null);
+});
+
+test("the numeric id is CAPTURED from the definition the check already fetches", () => {
+  // No hand-maintained uuid->id map: /api/public/card/:uuid returns `id`, and
+  // the drift check reads that exact payload already.
+  assert.match(src, /defs\.push\(\{ mbUuid, cardId: def\.id \|\| null,/,
+    "the definition read must keep def.id or the alert has nothing to link to");
+});
+
+test("the id survives the diff, or the alert cannot use it", () => {
+  const drift = diffCardParamTypes([{
+    mbUuid: "f4496307-d965-4637-b048-ecc703f2d37f", cardId: 17301,
+    served: ["memberships (shared)"], servedActive: ["memberships (shared)"],
+    parameters: [
+      { slug: "start_date", type: "string/=", target: ["variable", ["template-tag", "start_date"]] },
+      { slug: "end_date",   type: "string/=", target: ["variable", ["template-tag", "end_date"]] },
+      { slug: "org_id",     type: "string/=", target: ["variable", ["template-tag", "org_id"]] },
+    ],
+  }]);
+  assert.strictEqual(drift.wrongType.length, 2, "both date tags drifted; org_id is not a date tag");
+  assert.ok(drift.wrongType.every(w => w.cardId === 17301),
+    "every drifted tag has to carry its card id through to the alert");
+});
+
+test("ONE link per card, not one per drifted tag", () => {
+  // The real alert had start_date AND end_date on the same card. Two identical
+  // links read as two problems; it is one visit to one page.
+  assert.match(src, /\[\.\.\.new Map\(live\.filter\(w => w\.cardId\)/,
+    "the event payload must dedupe by card id");
+  assert.match(src, /cards: \[\.\.\.new Map/);
+});
+
+test("the Slack message links the card and falls back to words without one", () => {
+  const branch = slice('} else if (rec.event === "param-drift") {', '} else if (rec.event === "report-down")');
+  assert.match(branch, /<\$\{c\.url\}\|card \$\{c\.id\}>/,
+    "Slack link syntax, so it renders as a click rather than a bare URL");
+  assert.match(branch, /flip it back to Date in the Metabase UI/,
+    "the old wording stays as the fallback for an unreadable card id");
+  assert.match(branch, /rec\.cards \|\| \[\]\)\.filter\(c => c && c\.url\)/,
+    "a card with no url must never reach the message");
+});
+
+test("the admin panel hands over the same links", () => {
+  // The other place someone reads "which tag drifted", and the same argument
+  // applies: only the Metabase UI can fix it.
+  const route = slice('app.get("/api/admin/param-drift"', "// GET /api/admin/report-activity");
+  assert.match(route, /fixLinks:/);
+  assert.match(route, /metabaseCardUrl\(w\.cardId\)/);
 });
 
 console.log(`\n${passed}/${passed} passing`);
