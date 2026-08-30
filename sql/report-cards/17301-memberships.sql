@@ -26,7 +26,10 @@
                          This is the TRUTH about auto-renew. The existing
                          "Renewal Type" column infers it from
                          membership_next_renewal_at and is kept unchanged
-                         for compatibility, but it is not the same test.
+                         for compatibility, but it is not the same test:
+                         over ACTIVE memberships, 1,760 carry both, 88
+                         carry a subscription with no renewal date, and
+                         none carry a renewal date without a subscription.
      "Period Start"      membership.current_period_start_at. With
                          "Next Renewal" this gives the billing CYCLE
                          length, which is the only way to turn a per-cycle
