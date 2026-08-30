@@ -1597,8 +1597,7 @@ const CASES = [
     needs: "[data-ar-cands=\"1\"]" },
   { name: "memberships · auto-renew is per plan", path: "/{org}/memberships?tab=autorenew",
     needs: "[data-ar-plan=\"Monthly Individual\"] [data-ar-plan-pct=\"100\"]" },
-  { name: "memberships · season plan reads 0% auto-renew", path: "/{org}/memberships?tab=autorenew",
-    needs: "[data-ar-plan=\"Summer Season Pass\"] [data-ar-plan-pct=\"0\"]" },
+
   // A pre-v2 cache entry still knows WHO auto-renews (from Renewal Type), so the
   // count must be identical across both feed shapes — the cache invariant. What
   // it cannot know is the billing cycle, so the monthly figure hides rather than
@@ -1612,11 +1611,31 @@ const CASES = [
   // old shape test called open-ended subscriptions and offered for conversion.
   { name: "memberships · gate passes are not conversion candidates", path: "/{org}/memberships?tab=autorenew",
     needs: "[data-ar-cands=\"1\"]" },
-  // Keyed on the DENOMINATOR, not on the auto-renew count: passes never
-  // auto-renew, so leaving them in moves the base and nothing else — the count
-  // reads 4 either way and cannot discriminate.
-  { name: "memberships · passes are out of the auto-renew denominator", path: "/{org}/memberships?tab=autorenew",
-    needs: "[data-ar-base=\"11\"]" },
+  // Keyed on the DENOMINATOR, not on the auto-renew count: nothing excluded here
+  // ever auto-renews, so leaving them in moves the base and nothing else — the
+  // count reads 4 whatever the rule, and cannot discriminate.
+  //
+  // The fixture is 6 season + 4 monthly + 1 annual + 12 gate passes, all active
+  // and paid. Only the 5 subscription-shaped ones can carry auto-renew, so 5 is
+  // the base and the rate is 4/5 = 80%. Counting every paid row gives 23 and a
+  // rate of 17% — which is the shape of the bug: Norman read 7.1% when it was
+  // really at 97.6%.
+  { name: "memberships · only subscription-shaped rows are in the denominator", path: "/{org}/memberships?tab=autorenew",
+    needs: "[data-ar-base=\"5\"]" },
+  { name: "memberships · and the rate is measured against that base", path: "/{org}/memberships?tab=autorenew",
+    needs: "[data-ar-pct=\"80\"]" },
+  // Named and counted, not silently dropped — "6 season plans ($1,440)" is
+  // itself worth reading, and a silent exclusion is how a number stops being
+  // trusted.
+  { name: "memberships · the excluded shapes are named on screen", path: "/{org}/memberships?tab=autorenew",
+    needs: "[data-ar-excl=\"season\"][data-ar-excl-n=\"6\"]" },
+  { name: "memberships · and so are the passes", path: "/{org}/memberships?tab=autorenew",
+    needs: "[data-ar-excl=\"pass\"][data-ar-excl-n=\"12\"]" },
+  // A season plan sitting at 0% is not a misconfiguration, and six of them
+  // filled the top of Norman's table and buried the two cash plans that were
+  // the actual finding.
+  { name: "memberships · a season plan is not in the config table", path: "/{org}/memberships?tab=autorenew",
+    absent: "[data-ar-plan=\"Summer Season Pass\"]", needs: "[data-ar-plan=\"Annual Individual\"]" },
   { name: "memberships · a pass plan is not in the config table", path: "/{org}/memberships?tab=autorenew",
     absent: "[data-ar-plan=\"Tournament Gate Adult $5\"]", needs: "[data-ar-plan=\"Monthly Individual\"]" },
   // Without Product Kind nothing may be called open-ended, so the card must say
