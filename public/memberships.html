@@ -493,6 +493,15 @@
     .report-tabs .tab-btn { padding: 9px 18px 8px; font-size: 13px; font-weight: 600; font-family: inherit; background: transparent; border: 1px solid transparent; border-bottom: none; border-radius: 8px 8px 0 0; margin-bottom: -2px; cursor: pointer; color: #888; transition: all .15s; position: relative; }
     .report-tabs .tab-btn:hover { color: #333; background: #f3f4f6; }
     .ci-panel { background: #fff; border: 1px solid #e5e3df; border-radius: 6px; padding: 16px 18px; margin-bottom: 16px; }
+    .ar-highlights { display:flex; flex-wrap:wrap; gap:10px; margin:0 0 16px; }
+    .ar-hl { flex:1 1 240px; background:#fff; border:1px solid #e8e6e0; border-left:3px solid #6b7280;
+      border-radius:6px; padding:11px 14px; }
+    .ar-hl.good { border-left-color:#15803d; }
+    .ar-hl.bad  { border-left-color:#b91c1c; }
+    .ar-hl .hl-k { font-size:10px; text-transform:uppercase; letter-spacing:.06em; color:#9ca3af; font-weight:600; }
+    .ar-hl .hl-v { font-size:14px; font-weight:700; color:#111; margin:3px 0 4px; line-height:1.25; }
+    .ar-hl .hl-s { font-size:11.5px; color:#4b5563; line-height:1.5; }
+    .ar-hl-note { flex:1 1 100%; font-size:10.5px; color:#9ca3af; line-height:1.5; }
     .ar-pills { display:flex; flex-wrap:wrap; gap:6px; margin:0 0 12px; }
     .ar-pill { font:inherit; font-size:11px; line-height:1.4; cursor:pointer;
       border:1px solid #e2e0da; background:#fff; color:#374151;
@@ -1844,12 +1853,22 @@ function normalizeRow(raw) {
         const exGroup = k => ({ n: excluded[k].length,
                                 value: excluded[k].reduce((s, r) => s + r.price, 0) });
         const on = paid.filter(mbIsAutoRenew);
-        let perCycle = 0, monthly = 0, withCycle = 0;
+        // ONE POPULATION FOR ALL THREE MONEY CARDS. They used to disagree: the
+        // charge total covered every auto-renewer while the monthly figure
+        // covered only those with a known billing cycle, so "$78,699 billed per
+        // cycle, yet $69,043 monthly" looked like broken arithmetic. It was two
+        // correct sums over different sets. At Apex only 2 of 1,030 lack a
+        // cycle, so the cost of excluding them is small and the cost of the
+        // cards not reconciling is that nobody trusts any of them.
+        let perCycle = 0, monthly = 0, withCycle = 0, noCycle = 0, noCycleValue = 0;
         const cycles = [];
         for (const r of on) {
-          perCycle += r.price;
           const mv = mbMonthlyValue(r);
-          if (mv != null) { monthly += mv; withCycle++; cycles.push(mbCycleDays(r)); }
+          if (mv != null) {
+            perCycle += r.price; monthly += mv; withCycle++; cycles.push(mbCycleDays(r));
+          } else {
+            noCycle++; noCycleValue += r.price;
+          }
         }
         cycles.sort((a, b) => a - b);
         // Candidates to CONVERT: a recurring-shaped product renewing by hand.
@@ -1868,7 +1887,8 @@ function normalizeRow(raw) {
           withCycle,
           medianCycle: cycles.length ? cycles[Math.floor(cycles.length / 2)] : null,
           arpu: withCycle ? monthly / withCycle : null,
-          avgCharge: on.length ? perCycle / on.length : 0,
+          avgCharge: withCycle ? perCycle / withCycle : 0,
+          noCycle, noCycleValue,
           candidates: candidates.length,
           candidateValue: candidates.reduce((s, r) => s + r.price, 0),
           // WHICH plans, not just how many. "5" is a number to wonder about;
@@ -1944,6 +1964,30 @@ function normalizeRow(raw) {
           }))
           .sort((a, b) => b.n - a.n);
       }, [filteredAnyStatus]);
+
+      // THREE PLAIN-LANGUAGE HIGHLIGHTS. Dan asked for the top plan by revenue and
+      // the best and worst by churn — the answers a reader wants before reading a
+      // twelve-row table.
+      //
+      // Best/worst are ranked ONLY over plans with enough members to mean
+      // something: a 3-member plan at 0% is not "your best plan", it is three
+      // people who have not left yet, and putting it on a headline card is how a
+      // chart lies. The same 20-member floor the retention panel warns at.
+      const AR_RANK_MIN = 20;
+      const arHighlights = useMemo(() => {
+        const rankable = arPlans.filter(p => p.n >= AR_RANK_MIN && p.churn != null);
+        const byChurn = rankable.slice().sort((a, b) => a.churn - b.churn);
+        // Revenue ranks over EVERY plan: a big plan is a big plan whatever its
+        // size relative to the floor, and no rate is being asserted about it.
+        const byRevenue = arPlans.slice().sort((a, b) => (b.n * b.price) - (a.n * a.price));
+        return {
+          topRevenue: byRevenue[0] || null,
+          best:  byChurn[0] || null,
+          worst: byChurn.length > 1 ? byChurn[byChurn.length - 1] : null,
+          rankable: rankable.length,
+          floor: AR_RANK_MIN,
+        };
+      }, [arPlans]);
 
       // The auto-renew book as one population, for the KPI row and the cohort
       // chart. Same predicate as the table, so a plan row and the header can
@@ -2804,6 +2848,70 @@ function normalizeRow(raw) {
               </button>
             </div>
 
+        {/* AI INSIGHTS — at PAGE level and directly under the tab strip.
+            Two separate things, both of which were wrong:
+
+            * it used to sit inside {activeTab === 'memberships' && (...)}, so
+              adding `autorenew` to its own condition changed nothing — the
+              whole block was already unreachable from any other tab. Caught by
+              the render check, which asserted the button and found no DOM; the
+              source change looked completely correct.
+            * and it rendered AFTER the tab body, which on a tab ending in a
+              full-height cohort chart left the button stranded below the fold.
+              The same place on every tab beats "sometimes top, sometimes
+              bottom". */}
+        {((activeTab === 'memberships' && data && data.length > 0) || (activeTab === 'checkins' && ciView.length > 0) || (activeTab === 'retention' && data && data.length > 0) || (activeTab === 'autorenew' && arBook.size > 0)) && (
+          <div className="insights-section no-print">
+            <div className="insights-head">
+              <button type="button" className="insights-btn" onClick={getInsights} disabled={insightsLoading}>
+                                <span className="sparkle">✦</span><span className="sparkle">✧</span><span className="sparkle">✦</span><span className="sparkle">✧</span><span className="sparkle">✦</span><span className="sparkle">✧</span>
+{insightsLoading ? 'Analyzing\u2026' : (insights ? '\u21BB Refresh' : '\u2728 Rec Insights')}
+              </button>
+              {insights && !insightsLoading && (
+                <span className="insights-sub">{'Analyzed ' + (activeTab === 'checkins' ? ciView.length.toLocaleString() + ' check-ins' + (ciLoc !== 'all' ? ' at ' + ciLoc : '') : activeTab === 'autorenew' ? arBook.size.toLocaleString() + ' auto-renewing memberships across ' + arPlans.length + ' plan' + (arPlans.length === 1 ? '' : 's') : data.length.toLocaleString() + ' memberships')}</span>
+              )}
+            </div>
+            {insightsLoading && <div className="ai-loading"><div className="ai-spinner" /></div>}
+            {insightsError && !insightsLoading && (
+              <div style={{color:'#dc2626',fontSize:13,padding:'8px 0'}}><strong>Insights unavailable:</strong> {insightsError}</div>
+            )}
+            {insights && !insightsLoading && (
+              <div className="insights-grid">
+                {insights.map((ins, i) => (
+                  <div key={i} className={'insight-card insight-' + (ins.type || 'signal')}>
+                    <div className="insight-type">{ins.type || 'signal'}</div>
+                    <div className="insight-title">{ins.title}</div>
+                    <div className="insight-detail">{ins.detail}</div>
+                    {ins.action && <div className="insight-action">→ {ins.action}</div>}
+                  </div>
+                ))}
+              </div>
+            )}
+            {insights && !insightsLoading && (
+              <div className="insights-feedback">
+                {fbSent ? (
+                  <span className="fb-thanks">✅ Thanks for the feedback!</span>
+                ) : fbMode === 'down' ? (
+                  <div className="fb-down-form">
+                    <input placeholder="What could be better?" value={fbComment}
+                      onChange={e => setFbComment(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && sendInsightsFeedback(0)}
+                      autoFocus maxLength={500} />
+                    <button className="fb-send" onClick={() => sendInsightsFeedback(0)}>Send</button>
+                    <button onClick={() => setFbMode(null)}>Cancel</button>
+                  </div>
+                ) : (
+                  <React.Fragment>
+                    <span className="fb-label">Were these insights helpful?</span>
+                    <button onClick={() => sendInsightsFeedback(1)} title="Yes">👍</button>
+                    <button onClick={() => setFbMode('down')} title="Not helpful">👎</button>
+                  </React.Fragment>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
           {activeTab === 'autorenew' && (
             <div style={{maxWidth:1100, margin:'0 auto'}}>
               {loading && <div className="loading"><div className="spinner" /><div className="juice-msg"><span>Squeezing the oranges…</span><span>Counting renewals…</span><span>Pouring it out…</span></div></div>}
@@ -2828,7 +2936,7 @@ function normalizeRow(raw) {
                             + 'Platform-wide, not one of them has ever carried a subscription.';
                     return (
                       <div className="mb-scope-note">
-                        \uD83D\uDD01 <strong data-ar-count-note={arStats.count}>{arStats.count.toLocaleString()} memberships bill automatically</strong>{' '}
+                        🔁 <strong data-ar-count-note={arStats.count}>{arStats.count.toLocaleString()} memberships bill automatically</strong>{' '}
                         {arPlans.length > 0 && <React.Fragment>across {arPlans.length} plan{arPlans.length === 1 ? '' : 's'}. </React.Fragment>}
                         Everything below is about them.
                         <span className="mb-scope-sub">
@@ -2862,14 +2970,21 @@ function normalizeRow(raw) {
                     <div className="summary-card">
                       <div className="card-label">Billed Per Cycle</div>
                       <div className="card-value blue">{money(arStats.perCycle)}</div>
-                      <div className="card-sub">{money(arStats.avgCharge)} average charge</div>
+                      <div className="card-sub">
+                        {money(arStats.avgCharge)} average charge, across {arStats.withCycle.toLocaleString()} memberships.
+                        {arStats.noCycle > 0 && <React.Fragment> {arStats.noCycle.toLocaleString()} more ({money(arStats.noCycleValue)}) bill on a schedule this feed cannot read, and are left out of all three money figures so they agree with each other.</React.Fragment>}
+                      </div>
                     </div>
                     {arStats.hasEconomics ? (
                       <React.Fragment>
                         <div className="summary-card">
                           <div className="card-label">Monthly Revenue</div>
                           <div className="card-value green" data-ar-mrr={Math.round(arStats.monthly)}>{money(arStats.monthly)}</div>
-                          <div className="card-sub">{arStats.withCycle.toLocaleString()} with a known cycle</div>
+                          <div className="card-sub">
+                            {arStats.medianCycle == null
+                              ? 'the same money, per month'
+                              : <React.Fragment>the same {money(arStats.perCycle)}, spread over a month. A {Math.round(arStats.medianCycle)}-day cycle is {arStats.medianCycle > 30.44 ? 'longer' : 'shorter'} than an average month, so each charge is worth {Math.round(30.44 / arStats.medianCycle * 1000) / 10}% of itself per month.</React.Fragment>}
+                          </div>
                         </div>
                         <div className="summary-card">
                           <div className="card-label">Median Cycle</div>
@@ -2879,7 +2994,7 @@ function normalizeRow(raw) {
                         <div className="summary-card">
                           <div className="card-label">Revenue Per Member</div>
                           <div className="card-value purple">{arStats.arpu == null ? '—' : money(arStats.arpu)}</div>
-                          <div className="card-sub">per month, per auto-renewing membership</div>
+                          <div className="card-sub">monthly revenue &divide; the same {arStats.withCycle.toLocaleString()} memberships &mdash; below the average charge for the same reason</div>
                         </div>
                       </React.Fragment>
                     ) : (
@@ -2954,6 +3069,47 @@ function normalizeRow(raw) {
                       </div>
                     )}
                   </div>
+
+                  {(arHighlights.topRevenue || arHighlights.best) && (
+                    <div className="ar-highlights">
+                      {arHighlights.topRevenue && (
+                        <div className="ar-hl" data-ar-hl="revenue">
+                          <div className="hl-k">Biggest earner</div>
+                          <div className="hl-v" data-ar-hl-plan={arHighlights.topRevenue.plan}>{arHighlights.topRevenue.plan}</div>
+                          <div className="hl-s">
+                            <strong>{money(arHighlights.topRevenue.n * arHighlights.topRevenue.price)}</strong> every time it bills
+                            {' '}&middot; {arHighlights.topRevenue.n.toLocaleString()} members at {money(arHighlights.topRevenue.price)}
+                          </div>
+                        </div>
+                      )}
+                      {arHighlights.best && (
+                        <div className="ar-hl good" data-ar-hl="best">
+                          <div className="hl-k">Sticks best</div>
+                          <div className="hl-v" data-ar-hl-plan={arHighlights.best.plan}>{arHighlights.best.plan}</div>
+                          <div className="hl-s">
+                            Only <strong>{Math.round(arHighlights.best.churn * 1000) / 10}%</strong> of its renewals end in a cancellation
+                            {arHighlights.best.cadence && <React.Fragment>, {arHighlights.best.cadence.per}</React.Fragment>}
+                            {' '}&middot; {arHighlights.best.n.toLocaleString()} members
+                          </div>
+                        </div>
+                      )}
+                      {arHighlights.worst && (
+                        <div className="ar-hl bad" data-ar-hl="worst">
+                          <div className="hl-k">Leaks most</div>
+                          <div className="hl-v" data-ar-hl-plan={arHighlights.worst.plan}>{arHighlights.worst.plan}</div>
+                          <div className="hl-s">
+                            <strong>{Math.round(arHighlights.worst.churn * 1000) / 10}%</strong> of its renewals end in a cancellation
+                            {arHighlights.worst.cadence && <React.Fragment>, {arHighlights.worst.cadence.per}</React.Fragment>}
+                            {' '}&middot; {money(arHighlights.worst.n * arHighlights.worst.price)} a cycle at stake
+                          </div>
+                        </div>
+                      )}
+                      <div className="ar-hl-note">
+                        Best and worst are ranked over the {arHighlights.rankable} plan{arHighlights.rankable === 1 ? '' : 's'} with at least {arHighlights.floor} members
+                        &mdash; a handful of people who happen not to have left yet is not a good plan, and each rate is in that plan&rsquo;s own billing period.
+                      </div>
+                    </div>
+                  )}
 
                   <div className="ci-panel">
                     <div className="ci-chart-title">Auto-renew by plan</div>
@@ -3792,63 +3948,6 @@ function normalizeRow(raw) {
             </React.Fragment>
           )}
 
-            {/* AI INSIGHTS — at page level, NOT inside the memberships tab.
-                It used to sit inside {activeTab === 'memberships' && (...)},
-                so adding `autorenew` to its own condition changed nothing: the
-                whole block was already unreachable from any other tab. Caught by
-                the render check, which asserted the button and found no DOM. */}
-        {/* AI Insights */}
-        {((activeTab === 'memberships' && data && data.length > 0) || (activeTab === 'checkins' && ciView.length > 0) || (activeTab === 'retention' && data && data.length > 0) || (activeTab === 'autorenew' && arBook.size > 0)) && (
-          <div className="insights-section no-print">
-            <div className="insights-head">
-              <button type="button" className="insights-btn" onClick={getInsights} disabled={insightsLoading}>
-                                <span className="sparkle">✦</span><span className="sparkle">✧</span><span className="sparkle">✦</span><span className="sparkle">✧</span><span className="sparkle">✦</span><span className="sparkle">✧</span>
-{insightsLoading ? 'Analyzing\u2026' : (insights ? '\u21BB Refresh' : '\u2728 Rec Insights')}
-              </button>
-              {insights && !insightsLoading && (
-                <span className="insights-sub">{'Analyzed ' + (activeTab === 'checkins' ? ciView.length.toLocaleString() + ' check-ins' + (ciLoc !== 'all' ? ' at ' + ciLoc : '') : activeTab === 'autorenew' ? arBook.size.toLocaleString() + ' auto-renewing memberships across ' + arPlans.length + ' plan' + (arPlans.length === 1 ? '' : 's') : data.length.toLocaleString() + ' memberships')}</span>
-              )}
-            </div>
-            {insightsLoading && <div className="ai-loading"><div className="ai-spinner" /></div>}
-            {insightsError && !insightsLoading && (
-              <div style={{color:'#dc2626',fontSize:13,padding:'8px 0'}}><strong>Insights unavailable:</strong> {insightsError}</div>
-            )}
-            {insights && !insightsLoading && (
-              <div className="insights-grid">
-                {insights.map((ins, i) => (
-                  <div key={i} className={'insight-card insight-' + (ins.type || 'signal')}>
-                    <div className="insight-type">{ins.type || 'signal'}</div>
-                    <div className="insight-title">{ins.title}</div>
-                    <div className="insight-detail">{ins.detail}</div>
-                    {ins.action && <div className="insight-action">→ {ins.action}</div>}
-                  </div>
-                ))}
-              </div>
-            )}
-            {insights && !insightsLoading && (
-              <div className="insights-feedback">
-                {fbSent ? (
-                  <span className="fb-thanks">✅ Thanks for the feedback!</span>
-                ) : fbMode === 'down' ? (
-                  <div className="fb-down-form">
-                    <input placeholder="What could be better?" value={fbComment}
-                      onChange={e => setFbComment(e.target.value)}
-                      onKeyDown={e => e.key === 'Enter' && sendInsightsFeedback(0)}
-                      autoFocus maxLength={500} />
-                    <button className="fb-send" onClick={() => sendInsightsFeedback(0)}>Send</button>
-                    <button onClick={() => setFbMode(null)}>Cancel</button>
-                  </div>
-                ) : (
-                  <React.Fragment>
-                    <span className="fb-label">Were these insights helpful?</span>
-                    <button onClick={() => sendInsightsFeedback(1)} title="Yes">👍</button>
-                    <button onClick={() => setFbMode('down')} title="Not helpful">👎</button>
-                  </React.Fragment>
-                )}
-              </div>
-            )}
-          </div>
-        )}
 
             {/* Shared footer */}
             <div className="report-footer">

@@ -45,6 +45,7 @@ const ROOT = path.join(__dirname, "..");
 const PROGRAMS = fs.readFileSync(path.join(ROOT, "public", "programs.html"), "utf8");
 const USERS = fs.readFileSync(path.join(ROOT, "public", "users.html"), "utf8");
 const FT = fs.readFileSync(path.join(ROOT, "public", "fasttrack.html"), "utf8");
+const MEM = fs.readFileSync(path.join(ROOT, "public", "memberships.html"), "utf8");
 const ORG = fs.readFileSync(path.join(ROOT, "public", "org.html"), "utf8");
 
 let n = 0;
@@ -66,6 +67,8 @@ const U = lift(USERS, ["USERS_URL_TABS", "usersEffectiveTab"],
   /var USERS_URL_TABS = \[[\s\S]*?\nfunction usersEffectiveTab\([\s\S]*?\n\}/);
 const F = lift(FT, ["FT_URL_TABS", "ftEffectiveTab"],
   /const FT_URL_TABS = \[[\s\S]*?\nfunction ftEffectiveTab\([\s\S]*?\n\}/);
+const M = lift(MEM, ["MB_URL_TABS", "mbEffectiveTab"],
+  /var MB_URL_TABS = \[[\s\S]*?\nfunction mbEffectiveTab\([\s\S]*?\n\}/);
 
 const ALL_ON = { participantsTab: true, retentionTab: true };
 
@@ -121,6 +124,14 @@ is(F.ftEffectiveTab("nonsense"), "overview", "an unknown tab falls back rather t
 is(F.ftEffectiveTab(""), "overview", "so does an empty one");
 is(F.ftEffectiveTab(null), "overview", "and a missing one");
 
+// ── 3c. Memberships: every offered tab survives ─────────────────────────────
+for (const t of M.MB_URL_TABS) {
+  is(M.mbEffectiveTab(t), t, `memberships honours ?tab=${t}`);
+}
+is(M.mbEffectiveTab("nonsense"), "memberships", "an unknown tab falls back rather than blanking the body");
+is(M.mbEffectiveTab(""), "memberships", "so does an empty one");
+is(M.mbEffectiveTab(null), "memberships", "and a missing one");
+
 // ── 4. THE CHIPS CANNOT NAME A TAB THE PAGE WILL NOT HONOUR ─────────────────
 // This is the invariant that keeps a chip from being a dead end, and it is the
 // one a config-only change would break silently.
@@ -136,6 +147,9 @@ ok(Array.isArray(CARD_TABS.users) && CARD_TABS.users.length > 0,
    "so does the Community Intel card");
 ok(Array.isArray(CARD_TABS.fasttrack) && CARD_TABS.fasttrack.length > 0,
    "and so does Fast Track — Dan asked for it by name");
+ok(Array.isArray(CARD_TABS.memberships) && CARD_TABS.memberships.length > 0,
+   "and so does Memberships — Dan: \"make sure you're adding the membership sub-tabs to the "
+   + "main cards on the org page, similar to the other cards with tabs\"");
 
 for (const t of CARD_TABS.programs) {
   is(P.progEffectiveTab(t.tab, false, false, ALL_ON), t.tab,
@@ -156,6 +170,20 @@ for (const t of CARD_TABS.fasttrack) {
   ok(t.tab !== "overview",
      "…and Overview gets no chip: the card already lands there, same reasoning as Summary");
 }
+for (const t of CARD_TABS.memberships) {
+  is(M.mbEffectiveTab(t.tab), t.tab,
+     `the Memberships chip "${t.label}" resolves to its own tab`);
+  ok(t.tab !== "memberships",
+     "…and Memberships gets no chip: the card already lands there, same reasoning as Summary");
+}
+// EVERY non-landing tab the page offers gets a chip. Auto-Renew and Sales & Mix
+// shipped as tabs and were NOT on the card for two days — a tab nobody can find
+// from the dashboard is a tab nobody uses, which is the whole argument for these
+// chips. This is the assertion that fails the next time a tab is added and the
+// card is forgotten.
+is(CARD_TABS.memberships.map((t) => t.tab).sort(),
+   M.MB_URL_TABS.filter((t) => t !== "memberships").sort(),
+   "the Memberships card chips cover every tab the page has except the one it lands on");
 // The chip icons must match the page's own tab strip, or a reader picks 💰 on
 // the dashboard and lands on a tab labelled with something else.
 {
@@ -163,6 +191,23 @@ for (const t of CARD_TABS.fasttrack) {
   for (const t of CARD_TABS.fasttrack) {
     is(t.icon, PAGE_ICON[t.tab],
        `the Fast Track "${t.label}" chip uses the same glyph as the page's own tab`);
+  }
+}
+// Same for Memberships, and here the glyphs are READ OUT OF THE PAGE rather than
+// transcribed: the tab strip is the source of truth, so a page that re-themes a
+// tab fails this instead of quietly disagreeing with the dashboard.
+{
+  const strip = /<div className="report-tabs no-print">[\s\S]*?\n            <\/div>/.exec(MEM);
+  ok(!!strip, "the memberships tab strip should be findable");
+  const PAGE_ICON = {};
+  const re = /activeTab === '([a-z]+)' \? ' active'[\s\S]*?\}\}>\s*\n\s*(\S+) /g;
+  let m;
+  while ((m = re.exec(strip[0]))) PAGE_ICON[m[1]] = m[2];
+  is(Object.keys(PAGE_ICON).sort(), M.MB_URL_TABS.slice().sort(),
+     "…and every tab in the strip was read, or the parity check below is vacuous");
+  for (const t of CARD_TABS.memberships) {
+    is(t.icon, PAGE_ICON[t.tab],
+       `the Memberships "${t.label}" chip uses the same glyph as the page's own tab`);
   }
 }
 

@@ -316,6 +316,35 @@ test("the leaving-soon count carries its ROWS, not just a number", () => {
     "named members link through to their Rec account, built from the uuid");
 });
 
+test("best and worst are ranked over plans big enough to mean something", () => {
+  // A 3-member plan at 0% is not "your best plan", it is three people who have
+  // not left yet -- and a headline card is the worst place to say otherwise.
+  // Revenue is deliberately NOT floored: a big plan is a big plan, and no rate
+  // is being asserted about it.
+  const b = block("arHighlights");
+  assert.match(b, /p\.n >= AR_RANK_MIN && p\.churn != null/,
+    "best/worst must only rank plans over the member floor with a real rate");
+  assert.match(b, /byRevenue = arPlans\.slice\(\)\.sort/,
+    "revenue ranks over every plan");
+  assert.ok(!/byRevenue[\s\S]{0,120}AR_RANK_MIN/.test(b),
+    "the floor must not silently drop the biggest earner");
+  assert.match(page, /const AR_RANK_MIN = 20;/);
+});
+
+test("the money cards all cover the SAME memberships", () => {
+  // Dan: "78k billed per cycle, yet 68k monthly revenue? 71 per members but
+  // 76.23 average charge?" Two correct sums over different populations. At Apex
+  // the charge total covered 1,030 and the monthly figure 1,028, and the
+  // 30.44/31 conversion did the rest. They agree now, and the count is on screen.
+  const b = block("arStats");
+  assert.match(b, /if \(mv != null\) \{\s*perCycle \+= r\.price; monthly \+= mv; withCycle\+\+/,
+    "the charge total and the monthly total must be built in the same branch");
+  assert.match(b, /avgCharge: withCycle \? perCycle \/ withCycle : 0/,
+    "the average charge must use that same denominator");
+  assert.match(b, /noCycle, noCycleValue/,
+    "and what was left out has to be countable, so the page can say so");
+});
+
 test("the tab no longer claims an adoption RATE", () => {
   // Every denominator tried here was contested — paid memberships, then
   // non-passes, then subscription-shaped. The tab reports the book it can

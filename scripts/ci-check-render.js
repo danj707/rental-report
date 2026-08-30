@@ -1388,6 +1388,26 @@ const CASES = [
     needs: ".card-tab[href*=\"/users?\"][href*=\"tab=strategy\"]" },
   { name: "org landing · fast track chips", path: "/{org}",
     needs: ".card-tab[href*=\"/fasttrack?\"][href*=\"tab=conversions\"]" },
+  // Memberships (Dan: "make sure you're adding the membership sub-tabs to the
+  // main cards on the org page, similar to the other cards with tabs"). Auto-
+  // Renew and Sales & Mix shipped as tabs with no way to reach them from the
+  // dashboard. Scoped to /memberships? because `tab=checkins` alone also matches
+  // the Programs card's own chip.
+  { name: "org landing · memberships autorenew chip", path: "/{org}",
+    needs: ".card-tab[href*=\"/memberships?\"][href*=\"tab=autorenew\"]" },
+  { name: "org landing · memberships salesmix chip", path: "/{org}",
+    needs: ".card-tab[href*=\"/memberships?\"][href*=\"tab=salesmix\"]" },
+  // The label carries an ampersand and goes out through innerHTML, so this is
+  // the case that fails if it is ever double-escaped into "Sales &amp; Mix" on
+  // screen. (The global unrendered-escape guard catches the entity form; this
+  // pins the text itself.)
+  { name: "org landing · salesmix chip reads as text", path: "/{org}",
+    needs: ".card-tab[href*=\"tab=salesmix\"]", act: async page => {
+      await page.waitForFunction(
+        () => (document.querySelector('.card-tab[href*="tab=salesmix"]')?.textContent || "")
+          .includes("Sales & Mix"),
+        { timeout: 45000 });
+    } },
 
   // AND THE LINKS HAVE TO LAND. A chip is a link, and both pages were unable to
   // honour one: programs read ?tab= into initial state and then fetchData()
@@ -1713,10 +1733,40 @@ const CASES = [
   // ── Retention, per plan ────────────────────────────────────────────────
   // A blended curve answers "does this org retain", which is a different
   // question from "does THIS plan retain".
+  // ── The three plain-language highlights ────────────────────────────────
+  // Monthly Family is 5 x $40 = $200 a cycle against Monthly Individual's
+  // 4 x $20 = $80, so it is the biggest earner even though it is the one that
+  // churns. Revenue ranks over every plan; no rate is being claimed.
+  { name: "memberships · the biggest earner is named", path: "/{org}/memberships?tab=autorenew",
+    needs: "[data-ar-hl=\"revenue\"] [data-ar-hl-plan=\"Monthly Family\"]" },
+  // NEITHER fixture plan reaches the 20-member floor, so there is no honest
+  // best or worst to crown. A 4-member plan at 0% is four people who have not
+  // left yet. Absence is the assertion -- "renders a winner" would pass on a
+  // build that happily ranks a 3-member plan.
+  { name: "memberships · no best/worst crowned on a thin book", path: "/{org}/memberships?tab=autorenew",
+    needs: "[data-ar-hl=\"revenue\"]", absent: "[data-ar-hl=\"best\"]" },
+  { name: "memberships · and no worst either", path: "/{org}/memberships?tab=autorenew",
+    needs: "[data-ar-hl=\"revenue\"]", absent: "[data-ar-hl=\"worst\"]" },
+
   // Rec Insights has to be OFFERED on this tab -- the section is shared across
   // tabs and was gated to three of them, so the button was simply absent here.
   { name: "memberships · rec insights is offered on the auto-renew tab", path: "/{org}/memberships?tab=autorenew",
     needs: ".insights-section .insights-btn" },
+  // ABOVE the tab body, not stranded under a full-height cohort chart. Keyed on
+  // document order rather than "a button rendered", because the button rendered
+  // perfectly well at the bottom of the page.
+  { name: "memberships · rec insights sits near the top", path: "/{org}/memberships?tab=autorenew",
+    needs: ".insights-section",
+    act: async (page) => {
+      await page.waitForSelector(".insights-section .insights-btn", { timeout: 30000 });
+      const above = await page.evaluate(() => {
+        const ins = document.querySelector(".insights-section");
+        const body = document.querySelector("[data-ar-count-note]");
+        if (!ins || !body) return false;
+        return !!(ins.compareDocumentPosition(body) & Node.DOCUMENT_POSITION_FOLLOWING);
+      });
+      if (!above) throw new Error("Rec Insights renders BELOW the tab content");
+    } },
   { name: "memberships · retention opens on the whole book", path: "/{org}/memberships?tab=autorenew",
     needs: "[data-ar-ret-scope=\"all\"]" },
   // Picking a plan must RESCOPE the chart, not just light a pill. Monthly
@@ -2098,6 +2148,22 @@ function waitForServer(started) {
         if (stillThere) { found = false; errs.push('"' + c.absent + '" should NOT be present, but it is'); }
       }
       bodyLen = await page.evaluate(() => document.body.innerText.trim().length);
+
+      // AN ESCAPE SEQUENCE THAT REACHED THE SCREEN. Checked on EVERY case, not
+      // per-selector, because it is a class of bug rather than one panel's
+      // problem — and because every existing case would sail past it.
+      //
+      // JSX text is not a JS string: `\uD83D\uDD01` written as bare markup is
+      // eight literal characters, not an emoji. That shipped to production in
+      // the Auto-Renew scope note, and the case covering that very line passed
+      // because it asserted a data- attribute rather than what a person reads.
+      // Assert on rendered TEXT when the thing you changed is text.
+      const rawEscapes = await page.evaluate(() => {
+        const t = document.body.innerText || "";
+        const m = t.match(/\\u[0-9A-Fa-f]{4}|\\x[0-9A-Fa-f]{2}|&[a-z]+;|&#\d+;/);
+        return m ? m[0] + "  in: " + t.slice(Math.max(0, t.indexOf(m[0]) - 40), t.indexOf(m[0]) + 40).replace(/\s+/g, " ") : null;
+      });
+      if (rawEscapes) errs.push("an unrendered escape reached the screen: " + rawEscapes);
     } catch (e) {
       errs.push("navigation: " + e.message.split("\n")[0].slice(0, 160));
     }

@@ -1717,13 +1717,51 @@ Mockup: https://claude.ai/code/artifact/b8db8343-588e-4db8-a65a-ba543ae71eaa
 
 **Org dashboard cards now carry tab chips** (`CARD_TABS` in `public/org.html`):
 Facilities → camping / outdoor / fields / racket / golf / aquatics / ice, and
-Memberships → check-ins / retention. Nested `<a>` is invalid, so a card with
+Memberships → **auto-renew / sales & mix** / check-ins / retention. Nested `<a>` is invalid, so a card with
 chips renders as `.card-wrap` holding the anchor plus a sibling chip row —
 pinning still works through the wrapper (verified in a browser, not assumed).
 Every tab renders for every org with its own empty state, so a chip is never a
 dead end. Descriptions in **three** places had gone stale and now name the same
 things: `REPORT_META` (org.html), `reportMeta` (the admin dashboard, inside the
 template literal — no apostrophes), and the Director's Report's own blurb.
+
+### …and the Memberships card lists EVERY tab but the one it lands on (2026-08-30)
+
+Dan: *"make sure you're adding the membership sub-tabs to the main cards on the
+org page, similar to the other cards with tabs"*. Auto-Renew and Sales & Mix
+shipped as tabs and sat there for days with **no way to reach them from the
+dashboard** — the card carried only check-ins and retention.
+
+So the guard is not "the two new chips exist", it is
+**`chips == MB_URL_TABS − the landing tab`**, asserted set-wise. Every earlier
+chip list was hand-curated against a reason to omit (Summary is where the card
+already lands; `detail` has nothing to drill into; `guests`/`products` are gated
+on data the feed has not returned). Memberships has no such tab — all four
+render for every org with their own empty state — so the coverage rule is
+available here, and it is the assertion that fails the next time a tab is added
+and the card is forgotten. That is the failure this change was fixing.
+
+**The chip glyphs are READ OUT OF `memberships.html`'s own tab strip**, not
+transcribed into the spec the way the Fast Track ones are — a page that
+re-themes a tab now fails the spec instead of quietly disagreeing with the
+dashboard. The parity check is itself guarded: it asserts the scrape found
+**every** tab in `MB_URL_TABS`, or a regex that silently matched nothing would
+make the whole comparison vacuous.
+
+**`Sales & Mix` is the first chip label carrying an `&`**, and `tabChipsHTML`
+builds its markup as a string for `innerHTML`. Escaping happens **at the render
+site, not in the config**: an `&amp;` stored in `CARD_TABS` would leak into
+anything that ever reads a label as a string, and it renders as the literal
+`Sales &amp; Mix` on screen — which is the same class of bug as the
+`\uD83D\uDD01` that reached the Auto-Renew tab. `org landing · salesmix chip
+reads as text` pins the rendered text, and the global unrendered-escape guard in
+`ci-check-render.js` covers the entity form.
+
+Guards: `report-tabs.spec.js` 98 → **124 assertions**, mutation-tested four ways
+— a chip icon drifting from the page, a tab with no chip (the bug as it stood),
+a chip naming a tab `mbEffectiveTab` rewrites, and the PAGE re-theming a tab
+glyph. All four fail by name. Plus three `ci-check-render` cases, two of which
+were seen to fail on the real regression in a browser.
 
 ## Memberships Check-Ins tab — one filter, two member ids (2026-08-24)
 
