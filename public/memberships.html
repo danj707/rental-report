@@ -492,6 +492,8 @@
     .report-tabs { display: flex; gap: 4px; border-bottom: 2px solid #d1d5db; margin-bottom: 20px; padding: 0 4px; align-items: flex-end; }
     .report-tabs .tab-btn { padding: 9px 18px 8px; font-size: 13px; font-weight: 600; font-family: inherit; background: transparent; border: 1px solid transparent; border-bottom: none; border-radius: 8px 8px 0 0; margin-bottom: -2px; cursor: pointer; color: #888; transition: all .15s; position: relative; }
     .report-tabs .tab-btn:hover { color: #333; background: #f3f4f6; }
+    .ci-panel { background: #fff; border: 1px solid #e5e3df; border-radius: 6px; padding: 16px 18px; margin-bottom: 16px; }
+    .pill-shape { display: inline-block; font-size: 9.5px; font-weight: 600; padding: 2px 7px; border-radius: 10px; letter-spacing: .03em; background: #eef2ff; color: #6366f1; text-transform: uppercase; }
     .report-tabs .tab-btn.active { color: #111; background: #fff; border-color: #d1d5db; box-shadow: 0 -2px 4px rgba(0,0,0,.04); z-index: 1; }
     .report-tabs .tab-badge { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 10px; margin-left: 6px; background: #6366f122; color: #6366f1; }
 
@@ -738,6 +740,188 @@ function ciEffectiveRowSet(set, failCount, loaded, okCount) {
   return set;
 }
 
+// The Retention tab needs a long window — a cohort chart over four weeks has
+// nothing to plot. Clicking the tab therefore widens the date range.
+//
+// IT MUST ONLY EVER WIDEN, and getting that wrong is what made the chart flash
+// up and vanish. The old code was:
+//
+//     var start12 = new Date(now.getTime() - 30 * 86400000);   // 30 DAYS
+//     if (startDate > s || endDate < e) { ...refetch... }
+//
+// Two bugs compounding. `start12` was 30 days despite its name and the comment
+// above it saying 12 months. And the condition fired on `endDate < e` alone, so
+// a window that ALREADY covered twelve months got replaced by a 31-day one the
+// moment its end date sat a couple of days short of month-end. The pane renders
+// from the previous `data` while the refetch is in flight, so the full cohort
+// chart drew, then the narrow response landed and buildCohorts collapsed it.
+//
+// Returning the UNION of the current window and the wanted one makes narrowing
+// structurally impossible, whatever the two dates are.
+function mbRetentionWindow(startDate, endDate, now) {
+  var d = now ? new Date(now) : new Date();
+  // Twelve calendar months back, not 30 days.
+  var want = { start: mbISODate(new Date(d.getFullYear(), d.getMonth() - 12, d.getDate())),
+               end:   mbISODate(new Date(d.getFullYear(), d.getMonth() + 1, 0)) };
+  var start = startDate && startDate < want.start ? startDate : want.start;
+  var end   = endDate   && endDate   > want.end   ? endDate   : want.end;
+  return { start: start, end: end, changed: start !== startDate || end !== endDate };
+}
+
+// ISO date from local parts. Never toISOString() — that is UTC, so an evening
+// in any US timezone rolls to tomorrow and the window silently shifts a day.
+function mbISODate(d) {
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') +
+         '-' + String(d.getDate()).padStart(2, '0');
+}
+
+// Which tab a ?tab= link resolves to. At module scope so the spec can RUN it
+// (the nightStateFrom lesson) and so the org card's tab chips and this page
+// cannot drift about which tabs exist. An unknown value falls back to the
+// default rather than rendering nothing.
+var MB_URL_TABS = ['memberships', 'autorenew', 'salesmix', 'checkins', 'retention'];
+function mbEffectiveTab(t) {
+  var v = String(t == null ? '' : t);
+  return MB_URL_TABS.indexOf(v) >= 0 ? v : 'memberships';
+}
+
+// ── Paid-book economics ────────────────────────────────────────────────
+// All at module scope, not inside the component, so the spec can RUN them
+// rather than regex over them (the nightStateFrom lesson).
+
+// A membership is PAID if someone was charged for it. Tested against prod
+// 2026-08-29: a membership reaches this feed if and only if finalCents > 0,
+// with zero exceptions across 102,765 rows — so in practice every row here is
+// already paid. The test stays explicit because that is a property of the
+// materialized purchases view, not a promise, and a future feed change that
+// let $0 residency records through must not silently fold 130,170 free
+// records into a revenue figure.
+function mbIsPaid(r) { return !!(r && r.price > 0); }
+
+// What SHAPE of product this is, which is what separates "a season ended"
+// from "a member left":
+//   season  — the plan has one fixed end date, so every member's term ends on
+//             the same day. Expiry is the season closing. NOT churn.
+//   term    — a rolling fixed term (365d annual, 28d, …). Expires and must be
+//             re-bought; today none of these can auto-renew.
+//   open    — open-ended / subscription. The only shape auto-renew runs on.
+//   unknown — a pre-v2 feed with no plan columns. Rendered as unknown, never
+//             guessed: calling an unlabelled row "open" would put season
+//             passes into the churn number, which is the exact error this
+//             whole split exists to prevent.
+function mbProductShape(r) {
+  if (!r) return 'unknown';
+  // A PASS IS ITS OWN PRODUCT and must be settled FIRST, before any test that
+  // reads a term rule. This ordering is the whole fix for the v2 bug: a pass has
+  // no `group`, so both plan-term columns are NULL, and "no season end and no
+  // term days" then read as "open-ended subscription". Every day pass and gate
+  // fee on the platform was classified as a subscription and offered as an
+  // auto-renew conversion candidate — 10,669 of them at Norman alone.
+  //
+  // Absence of a group term rule is not evidence of a subscription. And a pass
+  // cannot auto-renew whatever its terms say: the `pass` table has no
+  // stripe_subscription_id and no next_renewal_at.
+  if (r.productKind === 'pass') return 'pass';
+  if (r.planSeasonEnd) return 'season';
+  if (r.planTermDays != null && r.planTermDays > 0) return 'term';
+  // Only a row we KNOW is a membership may be called open-ended. On a pre-v3
+  // feed productKind is absent, so a pass would fall through to here — hence
+  // the explicit membership test rather than a bare `hasPlanTerms`.
+  if (r.hasPlanTerms && r.productKind === 'membership') return 'open';
+  return 'unknown';
+}
+
+// Is this membership genuinely on auto-renew?
+//
+// THE CACHE INVARIANT IS THE HARD PART. Feeds cache for 4 hours, so a pre-v2
+// response (no "Auto Renew" column) and a v2 one are BOTH live at once. Both
+// must resolve to the same answer or the report changes what it says about a
+// member the moment a cache entry expires — the ftEffectiveStatus lesson.
+//
+// v2 carries stripe_subscription_id, which is the truth. v1 only had
+// "Renewal Type", inferred from membership_next_renewal_at.
+//
+// MEASURED, because "they agree" was too strong when I first wrote it. Over
+// ACTIVE memberships on prod 2026-08-29: 1,760 carry both signals, 88 carry a
+// subscription with no renewal date, and NOT ONE carries a renewal date without
+// a subscription. So the fallback undercounts by 88 (4.8%) and can never
+// overcount — it degrades in the safe direction, which is why it is kept rather
+// than hiding the number on a pre-v2 feed.
+//
+// The two diverge much further over a PURCHASE window, which is what this
+// report is: next_renewal_at is cleared when a membership ends while the
+// subscription id persists, so a May cohort at Norman reads 2 against 96. That
+// is not a defect in either column — they answer different questions — and it
+// is why every panel here is scoped to ACTIVE memberships before counting.
+function mbIsAutoRenew(r) {
+  if (!r) return false;
+  if (r.autoRenew != null) return !!r.autoRenew;   // v2: the real thing
+  return r.renewalType === 'Auto-renew';           // pre-v2 cache entry
+}
+
+// Billing cycle length in days, or null when the feed cannot say.
+// NULL IS A REAL ANSWER and must stay null: a missing cycle is "we don't know
+// how often this bills", not "monthly". Defaulting it would quietly turn a
+// per-cycle charge into a fabricated monthly figure.
+function mbCycleDays(r) {
+  if (!r || !r.periodStart || !r.nextRenewal) return null;
+  var a = Date.parse(r.periodStart), b = Date.parse(r.nextRenewal);
+  if (isNaN(a) || isNaN(b)) return null;
+  var d = (b - a) / 86400000;
+  return d > 0 ? d : null;
+}
+
+// What this membership is worth per month. Null unless the cycle is known.
+function mbMonthlyValue(r) {
+  var d = mbCycleDays(r);
+  if (d == null || !r || !(r.price > 0)) return null;
+  return r.price * (30.44 / d);
+}
+
+// Does this feed carry the v2 economics columns at all?
+//
+// PRESENCE, NOT COUNT — the hasAbsent / ciHasStatus rule. A pre-v2 cache entry
+// has no cycle on any row, and rendering "$0/mo" for that says "this org earns
+// nothing from auto-renew" when the truth is "this feed cannot tell us". The
+// panels hide instead. Gated on the COLUMN being present rather than on any
+// row having a value, so an org that genuinely has no auto-renew still sees
+// the panel and reads a real zero.
+// Does this feed distinguish memberships from passes at all?
+// PRESENCE, NOT COUNT. Without "Product Kind" nothing may be called open-ended
+// (see mbProductShape), so the conversion list would read a confident 0 rather
+// than an honest "cannot tell yet" — the same false-zero the economics gate
+// exists to prevent, one field over.
+function mbHasProductKind(rows) {
+  if (!rows || !rows.length) return false;
+  for (var i = 0; i < rows.length; i++) if (rows[i] && rows[i].productKind) return true;
+  return false;
+}
+
+function mbHasEconomics(rows) {
+  if (!rows || !rows.length) return false;
+  for (var i = 0; i < rows.length; i++) {
+    if (rows[i] && rows[i].hasCycle && rows[i].hasPlanTerms) return true;
+  }
+  return false;
+}
+
+// Split a month-over-month revenue move into the part volume explains and the
+// part price/mix explains. Answers "where am I losing money?" without implying
+// churn: on the measured Norman case units rose 10.4% while revenue fell
+// 74.9%, entirely because the $224 season pass stopped selling and $9 single
+// passes replaced it. A revenue line alone reads as members leaving.
+//
+// Standard price-volume bridge, priced at the PRIOR average so the two parts
+// sum exactly to the total move (any residual is mix, folded into price by
+// construction and labelled that way on screen).
+function mbDecompose(prev, cur) {
+  if (!prev || !cur || !(prev.units > 0)) return null;
+  var prevAvg = prev.revenue / prev.units;
+  var volume = (cur.units - prev.units) * prevAvg;
+  var total = cur.revenue - prev.revenue;
+  return { volume: volume, price: total - volume, total: total };
+}
+
 function normalizeRow(raw) {
       return {
         userId:        raw['User ID'] || '',
@@ -761,6 +945,24 @@ function normalizeRow(raw) {
         lastUsed:      raw['Last Used'] || '',
         usageCount:    safeNum(raw['Usage Count']),
         attendanceCount: safeNum(raw['Attendance Count']),
+        // ── card 17301 v2 ──
+        // `hasPlanTerms` records that the feed CARRIES the plan columns, which
+        // is a different fact from a plan having no term rule (an open-ended
+        // subscription legitimately has neither an end date nor a term length).
+        // Without it, mbProductShape cannot tell "open-ended" from "pre-v2
+        // feed" and would label every season pass on a warm cache entry as a
+        // subscription.
+        hasPlanTerms:  Object.prototype.hasOwnProperty.call(raw, 'Plan Season End'),
+        // 'membership' | 'pass'. STATED, not inferred — see mbProductShape.
+        productKind:   raw['Product Kind'] || '',
+        coverage:      raw['Coverage'] || '',
+        planSeasonEnd: raw['Plan Season End'] || '',
+        planTermDays:  raw['Plan Term Days'] == null ? null : safeNum(raw['Plan Term Days']),
+        // Left undefined (not false) on a pre-v2 feed so mbIsAutoRenew can tell
+        // "the column says no" from "there is no column".
+        autoRenew:     Object.prototype.hasOwnProperty.call(raw, 'Auto Renew') ? !!raw['Auto Renew'] : undefined,
+        hasCycle:      Object.prototype.hasOwnProperty.call(raw, 'Period Start'),
+        periodStart:   raw['Period Start'] || '',
       };
     }
 
@@ -1016,7 +1218,7 @@ function normalizeRow(raw) {
       const [error, setError]     = useState(null);
       const [activeTab, setActiveTab] = useState(() => {
         const t = params.tab;
-        return (t === 'checkins' || t === 'retention' || t === 'memberships') ? t : 'memberships';
+        return mbEffectiveTab(t);
       });
       const [ciRows, setCiRows] = useState(null);
       const [ciMeta, setCiMeta] = useState({});
@@ -1391,7 +1593,13 @@ function normalizeRow(raw) {
           byStatus[r.status] = (byStatus[r.status] || 0) + 1;
           totalRevenue += r.price;
           totalNetCollected += r.netCollected;
-          if (r.status === 'active' && r.renewalType === 'Auto-renew') {
+          // Routed through the shared helper so this KPI and the Auto-Renew tab
+          // cannot report different numbers for the same thing on the same page
+          // — the disagreement trap the facility Summary already shipped once.
+          // On a pre-v2 feed mbIsAutoRenew IS this test, so today's figure is
+          // unchanged; on v2 it picks up the 88 memberships whose renewal date
+          // has been cleared but whose subscription is live.
+          if (r.status === 'active' && mbIsAutoRenew(r)) {
             autoRenewCount++;
             mrrEstimate += r.price;
           }
@@ -1411,6 +1619,111 @@ function normalizeRow(raw) {
         () => sortRows(filtered, sortKey, sortDir),
         [filtered, sortKey, sortDir]
       );
+
+      // ── Auto-renew economics (card 17301 v2) ──
+      // Scoped to ACTIVE PAID memberships: a cancelled or expired row has no
+      // future charge, and a $0 residency record never had one.
+      const arStats = useMemo(() => {
+        const hasKind = mbHasProductKind(filtered);
+        const paidAll = filtered.filter(r => r.status === 'active' && mbIsPaid(r));
+        // PASSES ARE OUT OF THE DENOMINATOR. A pass cannot auto-renew as a
+        // matter of schema, so counting it as a membership that merely isn't
+        // auto-renewing understates the rate against a base that could never
+        // move. Norman: 16,940 of 20,341 rows are passes.
+        const passes = hasKind ? paidAll.filter(r => mbProductShape(r) === 'pass') : [];
+        const paid = hasKind ? paidAll.filter(r => mbProductShape(r) !== 'pass') : paidAll;
+        const on = paid.filter(mbIsAutoRenew);
+        let perCycle = 0, monthly = 0, withCycle = 0;
+        const cycles = [];
+        for (const r of on) {
+          perCycle += r.price;
+          const mv = mbMonthlyValue(r);
+          if (mv != null) { monthly += mv; withCycle++; cycles.push(mbCycleDays(r)); }
+        }
+        cycles.sort((a, b) => a - b);
+        // Candidates to CONVERT: a recurring-shaped product renewing by hand.
+        // Season passes are excluded on purpose — a season pass expiring is the
+        // season closing, not a member lapsing, and putting it here would send
+        // an admin chasing churn that does not exist.
+        const candidates = paid.filter(r => !mbIsAutoRenew(r) && mbProductShape(r) === 'open');
+        return {
+          count: on.length,
+          paidActive: paid.length,
+          passes: passes.length,
+          passValue: passes.reduce((s, r) => s + r.price, 0),
+          hasKind: hasKind,
+          perCycle,
+          monthly,
+          withCycle,
+          medianCycle: cycles.length ? cycles[Math.floor(cycles.length / 2)] : null,
+          arpu: withCycle ? monthly / withCycle : null,
+          avgCharge: on.length ? perCycle / on.length : 0,
+          candidates: candidates.length,
+          candidateValue: candidates.reduce((s, r) => s + r.price, 0),
+          hasEconomics: mbHasEconomics(filtered),
+        };
+      }, [filtered]);
+
+      // Auto-renew adoption per plan. The finding this exists to surface: on
+      // prod, 268 of 317 paid plans have ZERO members on auto-renew and 47 have
+      // every member on it — it is a plan setting, not a member choice — so the
+      // useful unit is the plan, not the member.
+      const arPlans = useMemo(() => {
+        const m = new Map();
+        const hasKind = mbHasProductKind(filtered);
+        for (const r of filtered) {
+          if (r.status !== 'active' || !mbIsPaid(r)) continue;
+          // Passes out: this table is an auto-renew CONFIG review, and a pass
+          // schema has no auto-renew setting to review. Leaving them in put
+          // 4,518 gate admissions at the top of the list reading "0%", which
+          // looks like a misconfiguration and is not one.
+          if (hasKind && mbProductShape(r) === 'pass') continue;
+          const k = r.group || r.type || '—';
+          if (!m.has(k)) m.set(k, { plan: k, n: 0, on: 0, shape: mbProductShape(r), price: r.price });
+          const e = m.get(k);
+          e.n++;
+          if (mbIsAutoRenew(r)) e.on++;
+        }
+        return Array.from(m.values()).sort((a, b) => b.n - a.n);
+      }, [filtered]);
+
+      // ── Sales & mix: units AND revenue per month ──
+      // Two series on purpose. They move in opposite directions twice a year at
+      // a seasonal org, and either alone tells the wrong story.
+      const salesMonths = useMemo(() => {
+        const m = new Map();
+        for (const r of filtered) {
+          if (!mbIsPaid(r) || !r.createdAt) continue;
+          const k = ciMonthKey(r.createdAt);
+          if (!k) continue;
+          if (!m.has(k)) m.set(k, { month: k, units: 0, revenue: 0 });
+          const e = m.get(k);
+          e.units++;
+          e.revenue += r.price;
+        }
+        return Array.from(m.values())
+          .sort((a, b) => a.month < b.month ? -1 : 1)
+          .map(x => Object.assign(x, { avgPrice: x.units ? x.revenue / x.units : 0 }));
+      }, [filtered]);
+
+      // Plan mix with the PRICE beside the units — the only way "why is this
+      // one unpopular" is answerable. On prod this is what shows an annual plan
+      // priced at exactly 12x its own monthly, which nobody buys.
+      const planMix = useMemo(() => {
+        const m = new Map();
+        for (const r of filtered) {
+          if (!mbIsPaid(r)) continue;
+          const k = r.group || r.type || '—';
+          if (!m.has(k)) m.set(k, { plan: k, units: 0, revenue: 0, on: 0, shape: mbProductShape(r) });
+          const e = m.get(k);
+          e.units++;
+          e.revenue += r.price;
+          if (mbIsAutoRenew(r)) e.on++;
+        }
+        return Array.from(m.values())
+          .map(x => Object.assign(x, { price: x.units ? x.revenue / x.units : 0 }))
+          .sort((a, b) => b.units - a.units);
+      }, [filtered]);
 
       const onSort = (k) => {
         if (sortKey === k) setSortDir(sortDir === 'asc' ? 'desc' : 'asc');
@@ -2117,28 +2430,276 @@ function normalizeRow(raw) {
               <button className={'tab-btn' + (activeTab === 'memberships' ? ' active' : '')} onClick={function(){ setActiveTab('memberships'); }}>
                 🎟️ Memberships
               </button>
+              <button className={'tab-btn' + (activeTab === 'autorenew' ? ' active' : '')} onClick={function(){ setActiveTab('autorenew'); ciBeacon('mb-autorenew', { members: String(arStats.count) }); }}>
+                🔁 Auto-Renew
+                {arStats.count > 0 && <span className="tab-badge">{arStats.count.toLocaleString()}</span>}
+              </button>
+              <button className={'tab-btn' + (activeTab === 'salesmix' ? ' active' : '')} onClick={function(){ setActiveTab('salesmix'); ciBeacon('mb-salesmix', { months: String(salesMonths.length) }); }}>
+                📊 Sales &amp; Mix
+              </button>
               <button className={'tab-btn' + (activeTab === 'checkins' ? ' active' : '')} onClick={function(){ setActiveTab('checkins'); ensureCheckins(loadedStart || startDate, loadedEnd || endDate); }}>
                 ✅ Check-Ins
                 {ciRows && ciRows.length > 0 && <span className="tab-badge">{ciView.length.toLocaleString()}</span>}
               </button>
               <button className={'tab-btn' + (activeTab === 'retention' ? ' active' : '')} onClick={function(){
                   setActiveTab('retention');
-                  // Auto-expand to 12 months for meaningful cohort data
-                  var now = new Date();
-                  var start12 = new Date(now.getTime() - 30 * 86400000);
-                  var end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-                  var s = toISO(start12);
-                  var e = toISO(end);
-                  if (startDate > s || endDate < e) {
-                    setStartDate(s);
-                    setEndDate(e);
+                  // Widen to 12 months for a meaningful cohort chart — and only
+                  // ever widen, so a window that already covers more is kept.
+                  var w = mbRetentionWindow(startDate, endDate);
+                  if (w.changed) {
+                    setStartDate(w.start);
+                    setEndDate(w.end);
                     setActiveRange(null);
-                    fetchData(s, e);
+                    fetchData(w.start, w.end);
                   }
                 }}>
                 📈 Retention
               </button>
             </div>
+
+          {activeTab === 'autorenew' && (
+            <div style={{maxWidth:1100, margin:'0 auto'}}>
+              {loading && <div className="loading"><div className="spinner" /><div className="juice-msg"><span>Squeezing the oranges…</span><span>Counting renewals…</span><span>Pouring it out…</span></div></div>}
+              {!loading && (
+                <React.Fragment>
+                  <div className="mb-scope-note">
+                    🔁 Auto-renew across <strong data-ar-base={arStats.paidActive}>{arStats.paidActive.toLocaleString()} active paid memberships</strong> purchased in this window
+                    <span className="mb-scope-sub">
+                      Free residency records are excluded — they have no charge to renew.
+                      {arStats.passes > 0 && <React.Fragment> So are <strong>{arStats.passes.toLocaleString()} passes</strong> ({money(arStats.passValue)}): day passes and gate admissions cannot auto-renew at all — the pass record has no subscription to attach one to — so counting them here would measure the rate against a base that can never move.</React.Fragment>}
+                      {' '}Season passes are counted, but never appear as conversion candidates: a season pass expiring is the season closing, not a member lapsing.
+                    </span>
+                  </div>
+
+                  <div className="summary-cards">
+                    <div className="summary-card">
+                      <div className="card-label">On Auto-Renew</div>
+                      <div className="card-value green" data-ar-count={arStats.count}>{arStats.count.toLocaleString()}</div>
+                      <div className="card-sub">{arStats.paidActive ? Math.round(arStats.count / arStats.paidActive * 1000) / 10 : 0}% of paid memberships</div>
+                    </div>
+                    <div className="summary-card">
+                      <div className="card-label">Billed Per Cycle</div>
+                      <div className="card-value blue">{money(arStats.perCycle)}</div>
+                      <div className="card-sub">{money(arStats.avgCharge)} average charge</div>
+                    </div>
+                    {arStats.hasEconomics ? (
+                      <React.Fragment>
+                        <div className="summary-card">
+                          <div className="card-label">Monthly Revenue</div>
+                          <div className="card-value green" data-ar-mrr={Math.round(arStats.monthly)}>{money(arStats.monthly)}</div>
+                          <div className="card-sub">{arStats.withCycle.toLocaleString()} with a known cycle</div>
+                        </div>
+                        <div className="summary-card">
+                          <div className="card-label">Median Cycle</div>
+                          <div className="card-value">{arStats.medianCycle == null ? '—' : Math.round(arStats.medianCycle) + ' days'}</div>
+                          <div className="card-sub">how often these actually bill</div>
+                        </div>
+                        <div className="summary-card">
+                          <div className="card-label">Revenue Per Member</div>
+                          <div className="card-value purple">{arStats.arpu == null ? '—' : money(arStats.arpu)}</div>
+                          <div className="card-sub">per month, per auto-renewing membership</div>
+                        </div>
+                      </React.Fragment>
+                    ) : (
+                      <div className="summary-card" style={{flex:'2 1 320px'}} data-ar-pending="1">
+                        <div className="card-label">Monthly Revenue</div>
+                        <div className="card-value" style={{color:'#9ca3af'}}>Not in this feed yet</div>
+                        <div className="card-sub">Monthly value, cycle length and revenue per member need the billing cycle, which arrives with card 17301 v2. Showing a $0 here would say this org earns nothing from auto-renew, when the truth is that this feed cannot tell us.</div>
+                      </div>
+                    )}
+                    {arStats.hasKind ? (
+                      <div className="summary-card">
+                        <div className="card-label">Could Convert</div>
+                        <div className="card-value amber" data-ar-cands={arStats.candidates}>{arStats.candidates.toLocaleString()}</div>
+                        <div className="card-sub">{money(arStats.candidateValue)} on recurring plans, renewing by hand</div>
+                      </div>
+                    ) : (
+                      <div className="summary-card" style={{flex:'2 1 320px'}} data-ar-nokind="1">
+                        <div className="card-label">Could Convert</div>
+                        <div className="card-value" style={{color:'#9ca3af'}}>Not in this feed yet</div>
+                        <div className="card-sub">Separating memberships from passes needs the Product Kind column, which arrives with card 17301 v3. Until then nothing is offered for conversion: a 0 here would look like an answer, and the previous version&rsquo;s non-zero was worse — it counted day passes and gate fees as subscriptions.</div>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="ci-panel">
+                    <div className="ci-chart-title">Auto-renew by plan</div>
+                    <div style={{fontSize:11,color:'#9ca3af',marginBottom:10,marginTop:-6}}>
+                      Auto-renew is set on the plan, not chosen by the member — platform-wide, 268 of 317 paid plans have nobody on it and 47 have everybody. So the plan is the unit worth looking at, and a plan sitting at 0% is a setting to review rather than a campaign to run.
+                    </div>
+                    {arPlans.length === 0 ? (
+                      <div className="empty-state">No paid memberships in this window.</div>
+                    ) : (
+                      <table className="report">
+                        <thead><tr><th>Plan</th><th>Shape</th><th className="num">Members</th><th className="num">Price</th><th className="num">On auto-renew</th></tr></thead>
+                        <tbody>
+                          {arPlans.slice(0, 40).map(function(p) {
+                            var pct = p.n ? Math.round(p.on / p.n * 100) : 0;
+                            return (
+                              <tr key={p.plan} data-ar-plan={p.plan}>
+                                <td><strong>{p.plan}</strong></td>
+                                <td><span className="pill-shape">{p.shape === 'unknown' ? 'not in feed' : p.shape}</span></td>
+                                <td className="num">{p.n.toLocaleString()}</td>
+                                <td className="num">{money(p.price)}</td>
+                                <td className="num" data-ar-plan-pct={pct} style={{color: pct === 0 ? '#d97706' : pct === 100 ? '#15803d' : '#6b7280', fontWeight:600}}>
+                                  {p.on.toLocaleString()} · {pct}%
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                </React.Fragment>
+              )}
+            </div>
+          )}
+
+          {activeTab === 'salesmix' && (
+            <div style={{maxWidth:1100, margin:'0 auto'}}>
+              {loading && <div className="loading"><div className="spinner" /><div className="juice-msg"><span>Squeezing the oranges…</span><span>Adding up the months…</span><span>Pouring it out…</span></div></div>}
+              {!loading && salesMonths.length === 0 && <div className="empty-state">No paid memberships or passes sold in this window.</div>}
+              {!loading && salesMonths.length > 0 && (() => {
+                var maxRev = Math.max.apply(null, salesMonths.map(function(m){ return m.revenue; })) || 1;
+                var last = salesMonths[salesMonths.length - 1];
+                var prev = salesMonths.length > 1 ? salesMonths[salesMonths.length - 2] : null;
+                var dec = mbDecompose(prev, last);
+                return (
+                  <React.Fragment>
+                    <div className="summary-cards">
+                      <div className="summary-card">
+                        <div className="card-label">Sold</div>
+                        <div className="card-value" data-sm-units={salesMonths.reduce(function(s,m){return s+m.units;},0)}>{salesMonths.reduce(function(s,m){return s+m.units;},0).toLocaleString()}</div>
+                        <div className="card-sub">paid memberships + passes</div>
+                      </div>
+                      <div className="summary-card">
+                        <div className="card-label">Contract Value</div>
+                        <div className="card-value blue">{money(salesMonths.reduce(function(s,m){return s+m.revenue;},0))}</div>
+                        <div className="card-sub">by purchase date</div>
+                      </div>
+                      {dec && (
+                        <React.Fragment>
+                          <div className="summary-card">
+                            <div className="card-label">Units {ciMonthShort(prev.month)} → {ciMonthShort(last.month)}</div>
+                            <div className={'card-value ' + (last.units >= prev.units ? 'green' : 'red')} data-sm-unit-delta={last.units - prev.units}>
+                              {last.units >= prev.units ? '+' : ''}{prev.units ? Math.round((last.units - prev.units) / prev.units * 1000) / 10 : 0}%
+                            </div>
+                            <div className="card-sub">{prev.units.toLocaleString()} → {last.units.toLocaleString()}</div>
+                          </div>
+                          <div className="summary-card">
+                            <div className="card-label">Revenue {ciMonthShort(prev.month)} → {ciMonthShort(last.month)}</div>
+                            <div className={'card-value ' + (dec.total >= 0 ? 'green' : 'red')} data-sm-rev-delta={Math.round(dec.total)}>
+                              {dec.total >= 0 ? '+' : ''}{prev.revenue ? Math.round(dec.total / prev.revenue * 1000) / 10 : 0}%
+                            </div>
+                            <div className="card-sub">{money(prev.revenue)} → {money(last.revenue)}</div>
+                          </div>
+                          <div className="summary-card">
+                            <div className="card-label">Average Price</div>
+                            <div className="card-value amber">{money(last.avgPrice)}</div>
+                            <div className="card-sub">was {money(prev.avgPrice)} in {ciMonthShort(prev.month)}</div>
+                          </div>
+                        </React.Fragment>
+                      )}
+                    </div>
+
+                    <div className="ci-panel">
+                      <div className="ci-chart-title">What you sold, month by month</div>
+                      <div style={{fontSize:11,color:'#9ca3af',marginBottom:14,marginTop:-6}}>Bar height is revenue. The count under each month is how many you sold.</div>
+                      <div style={{display:'flex',alignItems:'flex-end',gap:6,height:150}}>
+                        {salesMonths.map(function(m) {
+                          return (
+                            <div key={m.month} style={{flex:1,display:'flex',flexDirection:'column',justifyContent:'flex-end',height:'100%'}}
+                                 title={ciMonthLong(m.month) + ' — ' + m.units.toLocaleString() + ' sold, ' + money(m.revenue) + ', ' + money(m.avgPrice) + ' each'}>
+                              <div style={{fontSize:9.5,textAlign:'center',color:'#6b7280',marginBottom:3,whiteSpace:'nowrap'}}>{money(m.revenue)}</div>
+                              <div style={{background:'#15803d',opacity:.85,borderRadius:'2px 2px 0 0',height: Math.max(2, m.revenue / maxRev * 100) + '%'}} />
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <div style={{display:'flex',gap:6,marginTop:6}}>
+                        {salesMonths.map(function(m) {
+                          return (
+                            <div key={m.month} style={{flex:1,textAlign:'center'}}>
+                              <div style={{fontSize:10,color:'#6b7280'}}>{ciMonthShort(m.month)}</div>
+                              <div style={{fontSize:11,fontWeight:600,color:'#111'}} data-sm-mo-units={m.units}>{m.units.toLocaleString()}</div>
+                              <div style={{fontSize:9,color:'#9ca3af'}}>sold</div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {dec && (
+                      <div className="ci-panel" data-sm-decomp="1">
+                        {/* The direction is on the attribute, not just its presence: a headline that
+                            renders "more" for a month that fell reads exactly like a working one,
+                            and only a computed value can tell the two apart. */}
+                        <div className="ci-chart-title" data-sm-headline={dec.total < 0 ? 'down' : 'up'}>
+                          {ciMonthLong(last.month)} brought in {money(Math.abs(dec.total))} {dec.total < 0 ? 'less than' : 'more than'} {ciMonthLong(prev.month)}
+                        </div>
+                        <div style={{fontSize:11,color:'#9ca3af',marginBottom:14,marginTop:-6}}>Two things move revenue: how many you sold, and what each one was worth. This splits the change between them.</div>
+                        <div style={{display:'flex',flexDirection:'column',gap:10,maxWidth:640}}>
+                          <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',gap:16,paddingBottom:9,borderBottom:'1px solid #eee'}}>
+                            <span style={{fontSize:13}}>
+                              You sold <strong>{Math.abs(last.units - prev.units).toLocaleString()} {last.units < prev.units ? 'fewer' : 'more'}</strong>
+                              <span style={{color:'#9ca3af'}}> · {prev.units.toLocaleString()} → {last.units.toLocaleString()}</span>
+                            </span>
+                            <strong className="num" data-sm-volume={Math.round(dec.volume)} style={{color: dec.volume >= 0 ? '#15803d' : '#b91c1c', whiteSpace:'nowrap'}}>
+                              {dec.volume >= 0 ? '+' : '−'}{money(Math.abs(dec.volume))}
+                            </strong>
+                          </div>
+                          <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',gap:16,paddingBottom:9,borderBottom:'1px solid #eee'}}>
+                            <span style={{fontSize:13}}>
+                              What you sold was worth <strong>{last.avgPrice >= prev.avgPrice ? 'more' : 'less'}</strong> each
+                              <span style={{color:'#9ca3af'}}> · {money(prev.avgPrice)} → {money(last.avgPrice)}</span>
+                            </span>
+                            <strong className="num" data-sm-price={Math.round(dec.price)} style={{color: dec.price >= 0 ? '#15803d' : '#b91c1c', whiteSpace:'nowrap'}}>
+                              {dec.price >= 0 ? '+' : '−'}{money(Math.abs(dec.price))}
+                            </strong>
+                          </div>
+                          <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',gap:16,fontSize:13}}>
+                            <span><strong>Net change</strong></span>
+                            <strong className="num" style={{color: dec.total >= 0 ? '#15803d' : '#b91c1c'}}>
+                              {dec.total >= 0 ? '+' : '−'}{money(Math.abs(dec.total))}
+                            </strong>
+                          </div>
+                        </div>
+                        <div style={{fontSize:12,color:'#374151',marginTop:16,borderLeft:'2px solid #db2777',paddingLeft:11,lineHeight:1.6}}
+                             data-sm-verdict={Math.abs(dec.price) > Math.abs(dec.volume) ? 'mix' : 'volume'}>
+                          {Math.abs(dec.price) > Math.abs(dec.volume)
+                            ? <React.Fragment><strong>This is about what you sold, not how much.</strong> The mix shifted toward {last.avgPrice < prev.avgPrice ? 'cheaper' : 'pricier'} products. Nobody cancelled — cancellations are on the Retention tab.</React.Fragment>
+                            : <React.Fragment><strong>This is about how many you sold, not the price.</strong> Prices held roughly steady; the volume changed. If that is a drop, the Retention tab says whether members left or simply did not buy.</React.Fragment>}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="ci-panel">
+                      <div className="ci-chart-title">Every paid plan, by units sold</div>
+                      <div style={{fontSize:11,color:'#9ca3af',marginBottom:10,marginTop:-6}}>With the price beside it, because the two together are the only way &ldquo;why is this one unpopular&rdquo; is answerable.</div>
+                      <table className="report">
+                        <thead><tr><th>Plan</th><th>Shape</th><th className="num">Sold</th><th className="num">Price</th><th className="num">Revenue</th><th className="num">Auto-renew</th></tr></thead>
+                        <tbody>
+                          {planMix.slice(0, 40).map(function(p) {
+                            return (
+                              <tr key={p.plan} data-sm-plan={p.plan}>
+                                <td><strong>{p.plan}</strong></td>
+                                <td><span className="pill-shape">{p.shape === 'unknown' ? 'not in feed' : p.shape}</span></td>
+                                <td className="num" data-sm-plan-units={p.units}>{p.units.toLocaleString()}</td>
+                                <td className="num">{money(p.price)}</td>
+                                <td className="num" style={{fontWeight:600}}>{money(p.revenue)}</td>
+                                <td className="num">{p.units ? Math.round(p.on / p.units * 100) : 0}%</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </React.Fragment>
+                );
+              })()}
+            </div>
+          )}
 
           {activeTab === 'checkins' && (
             <div style={{maxWidth:1100,margin:'0 auto',padding:'0'}}>

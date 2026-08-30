@@ -157,6 +157,9 @@ jobs:
       - name: Tab chips (a chip never lands on a tab the page will not honour)
         run: node scripts/report-tabs.spec.js
 
+      - name: Memberships paid book (season re-buy is not churn; auto-renew is a plan setting)
+        run: node scripts/memberships-revenue.spec.js
+
       - name: ePACT export (her five columns, her DISTINCT, cancellations out; 14-day default)
         run: node scripts/roster-epact.spec.js
 

@@ -3782,7 +3782,7 @@ setTimeout(() => { checkCardParamTypes().catch(() => {}); }, 150 * 1000).unref?.
 // Inert if the env var is unset. Fire-and-forget — never blocks or breaks logging.
 // To change what pings Slack, edit SLACK_NOTIFY. High-frequency events (view/fetch)
 // are debounced per org+report so Slack isn't a firehose.
-const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "campmap-filter", "campmap-amenity", "pdf", "excel", "print", "summary", "game", "map", "outdoor", "fields", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email", "checkin-loc", "checkin-member", "checkin-failed", "form-open", "epact", "settings-open", "settings-save", "settings-reset", "deadlink", "generate", "wizard-save"]);
+const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "campmap-filter", "campmap-amenity", "pdf", "excel", "print", "summary", "game", "map", "outdoor", "fields", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email", "checkin-loc", "checkin-member", "checkin-failed", "form-open", "epact", "settings-open", "settings-save", "settings-reset", "deadlink", "generate", "wizard-save", "mb-autorenew", "mb-salesmix"]);
 const SLACK_DEBOUNCE_MS = { view: 30 * 60 * 1000, fetch: 30 * 60 * 1000,
   // A broken report stays broken. The health check only reports NEW failures,
   // but a flapping card would otherwise post every hour.
@@ -3838,6 +3838,8 @@ const SLACK_EVENT_META = {
   // Which desk someone narrows the check-in report to is a planning fact about
   // that building, not just a click — so the location travels with the ping.
   "checkin-loc":    { emoji: "\uD83C\uDFE2", verb: "filtered check-ins by location on" },
+  "mb-autorenew":   { emoji: "\uD83D\uDD01", verb: "opened auto-renew revenue on" },
+  "mb-salesmix":    { emoji: "\uD83D\uDCCA", verb: "opened sales & mix on" },
   "checkin-failed": { emoji: "\uD83D\uDEAB", verb: "opened the failed check-ins on" },
   // A staff member jumping from a check-in row into that member's Rec account is
   // the report handing off to the product, which is the whole point of the link.
@@ -6468,7 +6470,7 @@ app.post("/:org/:report/api/log", resolveOrg, (req, res) => {
   const { event, game, location, view } = req.query;
   // view-apply is events.jsonl-only by design — it is not in SLACK_NOTIFY, so
   // logEvent records it without pinging the feed (see the saved-views block).
-  const ALLOWED = ["excel", "print", "summary", "game", "map", "view-apply", "checkin-loc", "checkin-member", "checkin-failed", "form-open", "epact", "settings-open"];
+  const ALLOWED = ["excel", "print", "summary", "game", "map", "view-apply", "checkin-loc", "checkin-member", "checkin-failed", "form-open", "epact", "settings-open", "mb-autorenew", "mb-salesmix"];
   if (!ALLOWED.includes(event)) return res.status(400).json({ ok: false, error: "Unknown event" });
   const ciN = Number(req.query.n);
   const extra = event === "game" && game ? { game: String(game).slice(0, 60) }
@@ -6496,6 +6498,18 @@ app.post("/:org/:report/api/log", resolveOrg, (req, res) => {
               // Opening the settings panel. `custom` says whether this org has
               // already moved off the platform defaults — clamped to "1"/"0"
               // server-side rather than echoed, like every other extra here.
+              // Opening the Auto-Renew tab. The COUNT travels with it: an org
+              // with 200 auto-renewing members looking at the tab is a
+              // different signal from one with none looking at an empty page.
+              : event === "mb-autorenew"
+                ? { members: Number.isFinite(Number(req.query.members)) && Number(req.query.members) >= 0 && Number(req.query.members) <= 9999999
+                      ? String(Math.round(Number(req.query.members))) : "0" }
+              // Opening Sales & Mix. `months` says how much history was on
+              // screen, which is the difference between a glance and an
+              // actual look at the trend.
+              : event === "mb-salesmix"
+                ? { months: Number.isFinite(Number(req.query.months)) && Number(req.query.months) >= 0 && Number(req.query.months) <= 999
+                      ? String(Math.round(Number(req.query.months))) : "0" }
               : event === "settings-open"
                 ? { custom: String(req.query.custom) === "1" ? "1" : "0" }
               : event === "epact"

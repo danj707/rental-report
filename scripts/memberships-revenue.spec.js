@@ -1,0 +1,499 @@
+// Spec for the paid-book metrics added to the Memberships report on
+// 2026-08-29: the Auto-Renew tab and the Sales & Mix tab, plus card 17301 v2.
+//
+// WHAT THE INVESTIGATION FOUND, and why these shapes exist. Measured on prod
+// (db 4) on 2026-08-29:
+//
+//   · A `group` IS the membership record, so 141,128 "active memberships" is
+//     mostly a residency file — 130,170 of them are priced at $0. The paid book
+//     is 10,958 memberships ($2,563,002) plus 13,802 passes ($737,628).
+//
+//   · AUTO-RENEW IS A PLAN SETTING, NOT A MEMBER CHOICE. Of the 317 plans
+//     carrying a paid membership, 268 have zero members on auto-renew and 47
+//     have every member on it. Exactly 2 plans are mixed, covering 4 members.
+//     So the useful unit is the plan.
+//
+//   · SEASON PASSES ARE NOT CHURN. 4,637 active paid memberships sit on plans
+//     with a fixed `group.end_date`, and not one can auto-renew. Of the
+//     $846,397 expiring within 90 days, $807,142 is season passes reaching the
+//     end of their season — a dated re-buy, not members leaving. Folding the
+//     two together is the error this whole split exists to prevent.
+//
+//   · `membership.last_used_at` is NULL on all 155,853 memberships and all
+//     73,888 passes, so member dormancy cannot come from the feed's own column.
+//
+// Run: node scripts/memberships-revenue.spec.js
+"use strict";
+
+// The Retention-window assertions below turn on a UTC-vs-local off-by-one, which
+// is MEANINGLESS in a UTC process — and both this sandbox and GitHub Actions run
+// UTC. Caught by mutation: swapping mbISODate for toISOString().slice(0,10)
+// passed the whole spec until the timezone was forced. That is the exact shape
+// of a guard that looks like one and is not (see fasttrack-dates.spec.js, which
+// learned it first).
+//
+// America/Los_Angeles is chosen for the property, not the org: it is BEHIND UTC,
+// so a local evening is already tomorrow in UTC and the two implementations
+// diverge. A zone ahead of UTC would not discriminate for an evening timestamp.
+const TZ = "America/Los_Angeles";
+if (process.env.TZ !== TZ) {
+  const r = require("child_process").spawnSync(process.execPath, [__filename],
+    { env: Object.assign({}, process.env, { TZ }), stdio: "inherit" });
+  process.exit(r.status == null ? 1 : r.status);
+}
+
+const assert = require("assert");
+const fs = require("fs");
+const path = require("path");
+
+const ROOT = path.join(__dirname, "..");
+const page = fs.readFileSync(path.join(ROOT, "public", "memberships.html"), "utf8");
+const sql  = fs.readFileSync(path.join(ROOT, "sql", "report-cards", "17301-memberships.sql"), "utf8");
+const server = fs.readFileSync(path.join(ROOT, "server.js"), "utf8");
+
+let passed = 0;
+const test = (name, fn) => { fn(); console.log("  ✓ " + name); passed++; };
+
+// ── Lift the helpers and RUN them ───────────────────────────────────────────
+// Running beats regexing: a regex over our own patch passes on an inverted
+// comparison (the nightStateFrom lesson).
+function cut(name) {
+  const i = page.indexOf("function " + name + "(");
+  assert.ok(i > 0, name + " should be a named module-scope function");
+  let d = 0, end = -1;
+  for (let k = page.indexOf("{", i); k < page.length; k++) {
+    if (page[k] === "{") d++;
+    else if (page[k] === "}") { d--; if (d === 0) { end = k + 1; break; } }
+  }
+  assert.ok(end > i, "could not bound " + name);
+  return page.slice(i, end);
+}
+const NAMES = ["mbIsPaid", "mbProductShape", "mbIsAutoRenew", "mbCycleDays",
+               "mbMonthlyValue", "mbHasProductKind", "mbHasEconomics", "mbDecompose",
+               "mbEffectiveTab", "mbRetentionWindow", "mbISODate"];
+const api = new Function(
+  "var MB_URL_TABS = ['memberships','autorenew','salesmix','checkins','retention'];\n" +
+  NAMES.map(cut).join("\n") + "\nreturn { " + NAMES.join(", ") + " };")();
+const { mbIsPaid, mbProductShape, mbIsAutoRenew, mbCycleDays,
+        mbMonthlyValue, mbHasProductKind, mbHasEconomics, mbDecompose, mbEffectiveTab,
+        mbRetentionWindow, mbISODate } = api;
+
+// The same membership, as the two feeds that are live at once describe it.
+// A 4-hour cache means a pre-v2 response and a v2 response are both in flight
+// for four hours after the card ships.
+const V3_MONTHLY = { price: 20, renewalType: "Auto-renew", autoRenew: true,
+  productKind: "membership", hasPlanTerms: true, hasCycle: true,
+  planSeasonEnd: "", planTermDays: null,
+  periodStart: "2026-08-29", nextRenewal: "2026-09-29" };
+// The SAME membership as v2 described it — plan columns present, "Product Kind"
+// absent. Indistinguishable from a gate fee, which is exactly the v2 bug.
+const V2_MONTHLY_NO_KIND = { price: 20, renewalType: "Auto-renew", autoRenew: true,
+  hasPlanTerms: true, hasCycle: true, planSeasonEnd: "", planTermDays: null,
+  periodStart: "2026-08-29", nextRenewal: "2026-09-29" };
+// A $6 gate admission. NOTHING about its plan columns distinguishes it from the
+// monthly subscription above — a pass has no `group`, so both come back NULL.
+// Norman sells 4,518 of these; v2 offered every one as a conversion candidate.
+const V3_GATE_PASS = { price: 6, renewalType: "One-time", autoRenew: false,
+  productKind: "pass", hasPlanTerms: true, hasCycle: true,
+  planSeasonEnd: "", planTermDays: null, periodStart: "", nextRenewal: "" };
+// A pass that DOES carry a term rule, now that pass_schema is joined. Still a
+// pass: the kind is settled before any term test, or a dated pass would be
+// filed as a season membership and land in the re-buy number.
+const V3_SEASON_PASS = { price: 40, renewalType: "One-time", autoRenew: false,
+  productKind: "pass", hasPlanTerms: true, hasCycle: true,
+  planSeasonEnd: "2026-09-30", planTermDays: null,
+  periodStart: "", nextRenewal: "" };
+const PRE_V2_MONTHLY = { price: 20, renewalType: "Auto-renew", autoRenew: undefined,
+  hasPlanTerms: false, hasCycle: false, planSeasonEnd: "", planTermDays: null,
+  periodStart: "", nextRenewal: "2026-09-29" };
+const V2_SEASON = { price: 240, renewalType: "One-time", autoRenew: false,
+  hasPlanTerms: true, hasCycle: true, planSeasonEnd: "2026-09-30", planTermDays: null,
+  periodStart: "", nextRenewal: "" };
+const V2_ANNUAL_TERM = { price: 240, renewalType: "One-time", autoRenew: false,
+  hasPlanTerms: true, hasCycle: true, planSeasonEnd: "", planTermDays: 365,
+  periodStart: "", nextRenewal: "" };
+
+// ── Paid vs free ────────────────────────────────────────────────────────────
+test("a $0 residency record is not part of the paid book", () => {
+  assert.strictEqual(mbIsPaid({ price: 0 }), false,
+    "130,170 of the platform's 141,128 active memberships are free resident " +
+    "records; counting them as revenue is the whole reason this test exists");
+  assert.strictEqual(mbIsPaid({ price: 20 }), true);
+  assert.strictEqual(mbIsPaid(null), false);
+});
+
+// ── Product shape ───────────────────────────────────────────────────────────
+test("a plan with a fixed end date is a SEASON, not a subscription", () => {
+  assert.strictEqual(mbProductShape(V2_SEASON), "season");
+});
+
+test("a rolling term is its own shape — it expires and cannot auto-renew today", () => {
+  assert.strictEqual(mbProductShape(V2_ANNUAL_TERM), "term");
+});
+
+test("no end date and no term length is open-ended", () => {
+  assert.strictEqual(mbProductShape(V3_MONTHLY), "open");
+});
+
+test("a pass is a PASS, whatever its plan columns say", () => {
+  // The v2 bug, pinned. A pass has no `group`, so "Plan Season End" and
+  // "Plan Term Days" are both NULL — byte-identical to an open-ended
+  // subscription. Absence of a group term rule is not evidence of a
+  // subscription, and no field-level test can tell the two apart; only the
+  // product kind can. At Norman 16,940 of 20,341 rows are passes and 10,669
+  // of them carried neither term rule.
+  assert.strictEqual(mbProductShape(V3_GATE_PASS), "pass",
+    "a $6 gate admission was being offered as an auto-renew conversion");
+});
+
+test("the pass test is settled FIRST, before any term rule", () => {
+  // pass_schema now gives a pass its own end date. If the season test ran
+  // first, a dated pass would read "season" and its value would land in the
+  // next-season re-buy figure, which is a membership question.
+  assert.strictEqual(mbProductShape(V3_SEASON_PASS), "pass");
+});
+
+test("a pre-v3 feed says UNKNOWN rather than guessing subscription", () => {
+  // THE CACHE INVARIANT DOES NOT HOLD HERE, and that is deliberate: v2 and v3
+  // genuinely cannot answer the same question, because v2 has no column that
+  // separates a $20 monthly membership from a $6 gate fee. The resolution is
+  // the presence gate below — the panels HIDE on a pre-v3 feed instead of
+  // rendering a number built on a guess. Same rule as hasAbsent/ciHasStatus.
+  assert.strictEqual(mbProductShape(V2_MONTHLY_NO_KIND), "unknown",
+    "without Product Kind this row is indistinguishable from a day pass");
+});
+
+test("the conversion panels gate on the COLUMN, not on any row being a pass", () => {
+  assert.strictEqual(mbHasProductKind([V2_MONTHLY_NO_KIND, PRE_V2_MONTHLY]), false,
+    "a warm pre-v3 cache entry must hide the conversion count, not zero it");
+  assert.strictEqual(mbHasProductKind([V2_MONTHLY_NO_KIND, V3_MONTHLY]), true,
+    "presence of the column is the test — an org that sells no passes still " +
+    "gets its conversion count");
+  assert.strictEqual(mbHasProductKind([]), false);
+  assert.strictEqual(mbHasProductKind(null), false);
+});
+
+test("a pre-v2 feed reads UNKNOWN, never open-ended", () => {
+  // This is the load-bearing one. Guessing "open" on a feed with no plan
+  // columns would file all 4,637 season passes as subscriptions and put
+  // $807,142 of season-end re-buy into the churn number.
+  assert.strictEqual(mbProductShape(PRE_V2_MONTHLY), "unknown");
+  assert.strictEqual(mbProductShape({ hasPlanTerms: false, planSeasonEnd: "" }), "unknown");
+});
+
+// ── The cache invariant ─────────────────────────────────────────────────────
+test("a membership on auto-renew reads that way on both feed shapes", () => {
+  assert.strictEqual(mbIsAutoRenew(V3_MONTHLY), true);
+  assert.strictEqual(mbIsAutoRenew(PRE_V2_MONTHLY), true,
+    "both feed shapes are live at once for four hours after the card ships");
+});
+
+test("the pre-v2 fallback can only ever UNDERCOUNT, never overcount", () => {
+  // Measured over active memberships on prod 2026-08-29: 1,760 carry both
+  // signals, 88 carry a live subscription with no renewal date, and NOT ONE
+  // carries a renewal date without a subscription. So the only possible
+  // disagreement is a pre-v2 feed missing someone — a 4.8% undercount that
+  // corrects upward when the cache turns over.
+  //
+  // The dangerous direction is the other one: reporting a member as
+  // auto-renewing when no subscription exists would put revenue in the forecast
+  // that nothing will collect.
+  const renewalDateButNoSubscription = { autoRenew: false, renewalType: "Auto-renew" };
+  assert.strictEqual(mbIsAutoRenew(renewalDateButNoSubscription), false,
+    "where v2 can speak it must win — a renewal date without a subscription " +
+    "is not auto-renew, and prod has zero such memberships anyway");
+});
+
+test("the explicit column wins over the inferred one", () => {
+  // Renewal Type is inferred from membership_next_renewal_at; Auto Renew is
+  // stripe_subscription_id. Where they disagree, the subscription is the truth.
+  assert.strictEqual(mbIsAutoRenew({ autoRenew: false, renewalType: "Auto-renew" }), false);
+  assert.strictEqual(mbIsAutoRenew({ autoRenew: true, renewalType: "One-time" }), true);
+});
+
+// ── Cycle and monthly value ─────────────────────────────────────────────────
+test("the billing cycle is measured, and an unknown cycle stays null", () => {
+  assert.strictEqual(mbCycleDays(V3_MONTHLY), 31);
+  assert.strictEqual(mbCycleDays(PRE_V2_MONTHLY), null,
+    "a missing cycle is 'we do not know how often this bills', not 'monthly'");
+  assert.strictEqual(mbCycleDays(V2_SEASON), null);
+});
+
+test("monthly value is null when the cycle is unknown — never defaulted", () => {
+  const mv = mbMonthlyValue(V3_MONTHLY);
+  assert.ok(Math.abs(mv - 19.639) < 0.01, "20 over a 31-day cycle is ~$19.64/mo, got " + mv);
+  assert.strictEqual(mbMonthlyValue(PRE_V2_MONTHLY), null,
+    "defaulting this would turn a per-cycle charge into a fabricated monthly figure");
+});
+
+test("a weekly plan is worth more per month than its charge", () => {
+  // Measured on prod: 50 memberships bill on a 7-day cycle. Reading the charge
+  // as monthly would understate them 4x. This is also the arithmetic that
+  // caught a wrong MRR construction during the investigation.
+  const weekly = { price: 55, periodStart: "2026-08-01", nextRenewal: "2026-08-08" };
+  const mv = mbMonthlyValue(weekly);
+  assert.ok(mv > 200 && mv < 250, "55 every 7 days is ~$239/mo, got " + mv);
+});
+
+// ── Presence, not count ─────────────────────────────────────────────────────
+test("the economics panels gate on the COLUMN, not on any row having a value", () => {
+  assert.strictEqual(mbHasEconomics([V2_SEASON]), true,
+    "a season pass has no cycle, but the feed still carries the columns — an org " +
+    "with genuinely no auto-renew must see the panel and read a real zero");
+  assert.strictEqual(mbHasEconomics([PRE_V2_MONTHLY]), false,
+    "rendering $0 here would say this org earns nothing from auto-renew when the " +
+    "truth is that this feed cannot tell us (the hasAbsent / ciHasStatus rule)");
+  assert.strictEqual(mbHasEconomics([]), false);
+  assert.strictEqual(mbHasEconomics(null), false);
+});
+
+// ── The price / volume bridge ───────────────────────────────────────────────
+test("volume is priced at the PRIOR month's average, not the new one", () => {
+  // Norman, measured: June 1,401 units / $88,362 → July 1,546 / $22,200.
+  // June's average is $63.07, July's is $14.36. Pricing the extra 145 units at
+  // July's average would credit volume with $2,082 instead of $9,145 and quietly
+  // move $7,000 of the explanation into the wrong bucket.
+  //
+  // Asserting only that volume + price == total cannot catch this: price is
+  // DEFINED as total - volume, so that identity holds however volume is
+  // computed. The value is what has to be pinned.
+  const d = mbDecompose({ units: 1401, revenue: 88362 }, { units: 1546, revenue: 22200 });
+  assert.ok(Math.abs(d.volume - 9145) < 25, "expected ~+$9,145 of volume, got " + d.volume);
+  assert.ok(Math.abs(d.price - (-75307)) < 25, "expected ~-$75,307 of price, got " + d.price);
+  assert.ok(Math.abs((d.volume + d.price) - d.total) < 0.01, "the parts must still sum");
+});
+
+test("units up and revenue down is attributed to price, not to churn", () => {
+  const d = mbDecompose({ units: 1401, revenue: 88362 }, { units: 1546, revenue: 22200 });
+  assert.ok(d.volume > 0, "10.4% more units sold is a POSITIVE volume contribution");
+  assert.ok(d.price < 0, "the whole fall is price and mix");
+  assert.ok(Math.abs(d.price) > Math.abs(d.volume) * 5,
+    "price must dominate, or the panel would send an admin hunting for churn " +
+    "that is not there — nobody left, a $224 season pass simply stopped selling");
+});
+
+test("a first month with no prior returns null rather than a fabricated delta", () => {
+  assert.strictEqual(mbDecompose(null, { units: 10, revenue: 100 }), null);
+  assert.strictEqual(mbDecompose({ units: 0, revenue: 0 }, { units: 10, revenue: 100 }), null);
+});
+
+// ── Deep links ──────────────────────────────────────────────────────────────
+test("both new tabs are reachable by ?tab=, and an unknown value falls back", () => {
+  assert.strictEqual(mbEffectiveTab("autorenew"), "autorenew");
+  assert.strictEqual(mbEffectiveTab("salesmix"), "salesmix");
+  assert.strictEqual(mbEffectiveTab("checkins"), "checkins");
+  assert.strictEqual(mbEffectiveTab("nonsense"), "memberships");
+  assert.strictEqual(mbEffectiveTab(null), "memberships");
+});
+
+test("the URL write-back carries the tab, so a deep link is not erased", () => {
+  // Third instance of the ?ci_rows= write-back bug across this repo: an effect
+  // rebuilds the query string on mount and wipes a tab that was read from it.
+  assert.match(page, /qs\.delete\('tab'\); else qs\.set\('tab', activeTab\)/,
+    "the write-back must set the tab generically, not list the tabs it knows");
+});
+
+// ── The Retention window only ever widens ───────────────────────────────────
+// Reported from the live preview: the cohort chart "shows briefly then
+// disappears". The pane renders from the previous `data` while a refetch is in
+// flight, so the full chart drew and then the narrow response collapsed it.
+const RET_NOW = new Date(2026, 7, 30);   // 2026-08-30, local — the day it was seen
+
+test("a 12-month window survives clicking Retention", () => {
+  // THE BUG, exactly as reported. The old condition fired on `endDate < e`
+  // alone, so a window already covering twelve months was replaced by the
+  // 31 days between Jul 31 and Aug 31.
+  const w = mbRetentionWindow("2025-09-01", "2026-08-29", RET_NOW);
+  // The invariant is directional, not a fixed date: the window may only GROW.
+  assert.ok(w.start <= "2025-09-01", "start moved forward to " + w.start + " — that narrows it");
+  assert.ok(w.end   >= "2026-08-29", "end moved backward to " + w.end + " — that narrows it");
+  const days = (Date.parse(w.end) - Date.parse(w.start)) / 86400000;
+  assert.ok(days > 300, "the window collapsed to " + days + " days — the chart would vanish");
+});
+
+test("a narrow window IS widened to twelve months, not to 30 days", () => {
+  // The other half: `start12` was `now - 30 * 86400000` despite its name and
+  // the comment above it. Even the intended expansion only gave a month.
+  const w = mbRetentionWindow("2026-08-01", "2026-08-29", RET_NOW);
+  assert.strictEqual(w.start, "2025-08-30", "twelve calendar months back");
+  assert.ok(w.changed, "a one-month window must trigger the widen");
+  const days = (Date.parse(w.end) - Date.parse(w.start)) / 86400000;
+  assert.ok(days > 360, "expected ~12 months, got " + days + " days");
+});
+
+test("an already-wide window is left completely alone", () => {
+  // No refetch, so nothing can collapse and nothing flickers.
+  const w = mbRetentionWindow("2024-01-01", "2027-01-01", RET_NOW);
+  assert.strictEqual(w.changed, false);
+  assert.strictEqual(w.start, "2024-01-01");
+  assert.strictEqual(w.end, "2027-01-01");
+});
+
+test("the window is built from LOCAL date parts, never toISOString", () => {
+  // toISOString is UTC: an evening in any US timezone rolls to tomorrow and the
+  // window shifts a day. Same trap as the fasttrack dates and campmap horizon.
+  assert.strictEqual(mbISODate(new Date(2026, 7, 30, 23, 30)), "2026-08-30");
+  assert.strictEqual(mbISODate(new Date(2026, 0, 1, 0, 0)), "2026-01-01");
+});
+
+// ── Nothing existing may be lost ────────────────────────────────────────────
+// This whole PR is additive. These pin the surfaces that were already there.
+test("every pre-existing table column is still rendered", () => {
+  ["'Email'", "'Membership Type'", "'Status'", "'Renewal'", "'Price'", "'Paid'",
+   "'Refunded'", "'Net Collected'", "'Start'", "'Next Renewal'", "'Last Used'", "'Uses'"
+  ].forEach(label => {
+    assert.ok(page.includes("label: " + label), "table column " + label + " went missing");
+  });
+});
+
+test("every pre-existing Excel column is still exported", () => {
+  // Scoped to the ROW MAP, not the whole file: several of these names also
+  // appear in the totals row and in normalizeRow, so a file-wide search passes
+  // even after a column is deleted from the export itself. (Found by mutation —
+  // the first version of this test survived exactly that edit.)
+  const i = page.indexOf("const exportExcel = () => {");
+  assert.ok(i > 0, "could not find exportExcel");
+  const map = page.slice(i, page.indexOf("// totals row", i));
+  ["'User ID'", "'First Name'", "'Last Name'", "'Email'", "'Membership ID'",
+   "'Membership Type'", "'Group / Plan'", "'Status'", "'Renewal Type'", "'Price'",
+   "'Paid'", "'Refunded'", "'Net Collected'", "'Start Date'", "'End Date'",
+   "'Next Renewal'", "'Canceled At'", "'Created At'", "'Last Used'", "'Usage Count'",
+   "'Attendance Count'"
+  ].forEach(col => {
+    assert.ok(map.includes(col + ":"), "Excel column " + col + " went missing");
+  });
+});
+
+test("all six pre-existing views are still offered", () => {
+  ["byType", "byStatus", "renewalMix", "revenueByType", "monthlyRevenue", "upcomingRenewals"]
+    .forEach(v => {
+      assert.ok(page.includes("key: '" + v + "'"), "view " + v + " went missing");
+    });
+});
+
+test("all three pre-existing tabs are still reachable", () => {
+  ["memberships", "checkins", "retention"].forEach(t => {
+    assert.strictEqual(mbEffectiveTab(t), t, "tab " + t + " is no longer reachable");
+  });
+});
+
+test("the Auto-Renew KPI and the Auto-Renew tab share one implementation", () => {
+  // Two auto-renew numbers on one page that disagree by 5% is the trap the
+  // facility Summary already shipped once. The KPI now routes through the same
+  // helper, so on a pre-v2 feed it is byte-for-byte today's behaviour and on v2
+  // both surfaces move together.
+  assert.match(page, /r\.status === 'active' && mbIsAutoRenew\(r\)/,
+    "the summary KPI must not re-derive auto-renew on its own");
+});
+
+test("the six pre-existing KPI cards are still computed", () => {
+  ["autoRenewCount", "mrrEstimate", "totalRevenue", "totalNetCollected"].forEach(k => {
+    assert.ok(page.includes(k), "summary field " + k + " went missing");
+  });
+  assert.match(page, /byStatus = \{ active:0, canceled:0, expired:0, inactive:0 \}/,
+    "the four status counts feed four KPI cards");
+});
+
+// ── Card 17301 v2 ───────────────────────────────────────────────────────────
+const sqlBody = sql.replace(/\/\*[\s\S]*?\*\//g, "").replace(/--[^\n]*/g, "");
+
+test("v2 keeps every original column, by name", () => {
+  ['"User ID"', '"First Name"', '"Last Name"', '"Email"', '"Membership ID"',
+   '"Membership Type"', '"Group / Plan"', '"Status"', '"Renewal Type"', '"Price"',
+   '"Paid"', '"Refunded"', '"Net Collected"', '"Start Date"', '"End Date"',
+   '"Next Renewal"', '"Canceled At"', '"Created At"', '"Last Used"', '"Usage Count"',
+   '"Attendance Count"'
+  ].forEach(c => {
+    assert.ok(sqlBody.includes(c), "original card column " + c + " went missing");
+  });
+});
+
+test("v2 adds exactly the five columns the new tabs need", () => {
+  ['"Coverage"', '"Plan Season End"', '"Plan Term Days"', '"Auto Renew"', '"Period Start"']
+    .forEach(c => assert.ok(sqlBody.includes(c), "missing new column " + c));
+});
+
+test("v3 states the product kind rather than leaving it to be inferred", () => {
+  assert.match(sqlBody, /mp\.product_type\s+AS "Product Kind"/,
+    "product_type was already read in the WHERE clause and thrown away; " +
+    "selecting it is what keeps 13,802 paid passes out of the auto-renew " +
+    "denominator");
+});
+
+test("v3 reads the term rule from BOTH product families", () => {
+  // The bug in one line: gg.end_date alone is NULL for every pass, and the
+  // page then concluded "no season end, no term days, therefore open-ended".
+  assert.match(sqlBody, /COALESCE\(gg\.end_date, pss\.end_date\)\s+AS "Plan Season End"/,
+    "a pass's season end lives on pass_schema, not on `group`");
+  assert.match(sqlBody, /COALESCE\(gg\.ends_after_seconds, pss\.ends_after_seconds\)/,
+    "a pass's rolling term lives on pass_schema, not on `group`");
+});
+
+test("the pass_schema join is on a primary key too, so it cannot fan out", () => {
+  // Verified against prod before the push: Norman, 20,341 rows with and
+  // without the join, every row distinct.
+  assert.match(sqlBody, /LEFT JOIN public\.pass_schema pss\s+ON pss\.id = mp\.pass_schema_id/);
+});
+
+test("both new joins are on primary keys, so neither can fan out a row", () => {
+  // Verified against prod before the push: Norman, 20,341 rows and an identical
+  // md5 over the original columns with and without the joins.
+  assert.match(sqlBody, /LEFT JOIN public\.membership mm\s+ON mm\.id = mp\.membership_id/,
+    "membership must join on its primary key");
+  assert.match(sqlBody, /LEFT JOIN public\."group" gg\s+ON gg\.id = mp\.group_id/,
+    "group must join on its primary key");
+});
+
+test("auto-renew comes from the subscription id, not from the inferred column", () => {
+  assert.match(sqlBody, /mm\.stripe_subscription_id IS NOT NULL\)?\s+AS "Auto Renew"/,
+    "Renewal Type infers auto-renew from next_renewal_at; this is the real test");
+});
+
+test("the ORDER BY is intact", () => {
+  // Dropped once already on card 17300, because `wc -l` counts newlines and the
+  // last line had none. Cheap to pin, expensive to lose.
+  assert.match(sqlBody, /ORDER BY\s+COALESCE\(mp\.membership_status, mp\.pass_status\)/);
+});
+
+// ── Beacons ─────────────────────────────────────────────────────────────────
+// A beacon whose event is not allow-listed 400s SILENTLY. That bug has now
+// shipped four times in this repo and no source assertion ever caught it, so
+// both halves are pinned here and the live half is in checkin-beacons.spec.js.
+test("both new events are on the log route's allowlist", () => {
+  const i = server.indexOf('const ALLOWED = ["excel", "print", "summary"');
+  assert.ok(i > 0, "could not find the log route allowlist");
+  const line = server.slice(i, server.indexOf("\n", i));
+  assert.ok(line.includes('"mb-autorenew"'), "mb-autorenew would 400 silently");
+  assert.ok(line.includes('"mb-salesmix"'), "mb-salesmix would 400 silently");
+});
+
+test("both new events reach Slack, per the standing activity rule", () => {
+  const i = server.indexOf("const SLACK_NOTIFY = new Set([");
+  const line = server.slice(i, server.indexOf("\n", i));
+  assert.ok(line.includes('"mb-autorenew"'), "logged but never posted");
+  assert.ok(line.includes('"mb-salesmix"'), "logged but never posted");
+});
+
+test("both new events have an emoji and a verb, or the message reads bare", () => {
+  assert.match(server, /"mb-autorenew":\s+\{ emoji: "[^"]+", verb: "[^"]+" \}/);
+  assert.match(server, /"mb-salesmix":\s+\{ emoji: "[^"]+", verb: "[^"]+" \}/);
+});
+
+test("the extras are clamped server-side, never echoed from the query string", () => {
+  const i = server.indexOf('event === "mb-autorenew"');
+  assert.ok(i > 0);
+  const block = server.slice(i, i + 400);
+  assert.match(block, /Number\.isFinite/, "an unclamped extra is attacker-controlled text in Slack");
+});
+
+// ── The dead column ─────────────────────────────────────────────────────────
+test("nothing new is built on last_used_at", () => {
+  // NULL on all 155,853 memberships and all 73,888 passes. The existing column
+  // stays (removing it is its own decision) but the new tabs must not read it.
+  const arTab = page.slice(page.indexOf("activeTab === 'autorenew' &&"),
+                           page.indexOf("activeTab === 'checkins' && ("));
+  assert.ok(!/lastUsed/.test(arTab),
+    "the new tabs must not depend on a column that has never had a value");
+});
+
+console.log("\n" + passed + " assertions passed.");
