@@ -1173,6 +1173,26 @@ can flip a tag back to Date. Check it on demand at `/api/admin/param-drift`.
 It does NOT replace the verification above; it is the net for when someone
 forgets.
 
+**The alert now carries the LINK, not the card id** (Dan, 2026-08-30, on a real
+one: *"lol if ur going to msg me in slack at least give me a link to the mb
+report"*). It printed the public uuid — `f4496307` — which **does not resolve in
+the Metabase UI**; that addresses cards by their NUMERIC id. No map was needed:
+`/api/public/card/:uuid` returns `id`, and the drift check already reads that
+exact payload, so `def.id` is simply kept. One link per CARD rather than per
+drifted tag (start_date and end_date on one card is one visit to one page), and
+a card whose id could not be read falls back to the old wording rather than
+emitting `/question/null`. Same links on `/api/admin/param-drift` as `fixLinks`.
+**Generalise it: an alert whose fix only a human can perform must contain the
+link to perform it.** Guard: `card-drift.spec.js` 22 → 29 assertions, lifting and
+RUNNING `metabaseCardUrl`, mutation-tested six ways.
+
+**Worth knowing about the flip itself:** Dan flipping the tags does not always
+collapse the parameter list back to three. Checked 2026-08-30 after a flip, card
+17301 registered **six** — `org_id/start_date/end_date` as `date/single` AND the
+same three slugs as `string/=`. The report served fine, but the watchdog reads
+those Text entries and keeps alerting, so the card needs opening and re-saving
+until the list is three again.
+
 ## Card sign-off — a report MUST return live results before you call it done (IMPORTANT)
 
 Learned the hard way (2026-08-06 → 2026-08-09): the shared Fast Track card was
