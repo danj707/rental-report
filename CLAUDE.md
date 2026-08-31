@@ -820,7 +820,135 @@ is precisely the false-zero v3 stopped rendering.
 `"settings-open"]` — the END of the log route's ALLOWED array — so appending any
 later event broke it with nothing about settings-open changing. It now tests
 membership in the array, and was re-verified to still catch settings-open being
-removed.
+removed.## Programs: a multi-select SEASON filter (2026-08-31)
+
+Dan, on Shrewsbury: *"lets add a program 'season' filter on the programs summary
+page, otherwise it's super confusing to try and contain all dates of a
+section. Using a season filter will summarize that data much more quickly."*
+Then: *"make the season filter a checkbox, multiselectable. I hate single item
+selections in pull down menus."*
+
+**No card change.** Card 17295 has always emitted `program_season`
+(`COALESCE(si.season_name,'No Season')`) and `public/programs.html` already
+mapped it onto every row and printed it in the section table. The whole feature
+is a toolbar control plus one insertion in the funnel.
+
+### A SEASON'S DECLARED SPAN DOES NOT CONTAIN ITS OWN SECTIONS
+
+The obvious build is "tick a season, jump the date range to its span" — the
+`season` table carries `start_date` and `end_date`, so it looks free. It is
+wrong, and measured at Shrewsbury it is wrong by months in both directions:
+
+| season | `season.start_date` → `end_date` | its sections' ACTUAL dates |
+|---|---|---|
+| Spring/Summer 26 | 2026-04-12 → 2026-09-05 | **2026-03-04 → 2026-11-15** |
+| Fall '26 | 2026-10-03 → 2026-11-13 | **2026-08-31 → 2027-02-06** |
+| Winter 26 | 2025-12-31 → 2026-04-10 | **2025-10-05 → 2026-06-10** |
+| Winter 2025 | 2025-09-07 → 2025-10-12 | 2025-09-08 → **2026-03-26** |
+| Pickleball | 2026-01-30 → 2027-01-30 | 2026-02-22 → 2026-03-30 |
+
+Those dates are the season's **registration/publish window**, not the period the
+programming runs. Fall '26 declares six weeks and runs five months. So setting
+the date range from them would **clip exactly the sections the filter exists to
+contain** — the precise opposite of the ask. It is also not reliably there:
+platform-wide, of 559 seasons **141 have no start and 190 no end**; only 369
+(66%) have both.
+
+So the filter **narrows what is already in view and never touches the dates**,
+and the options are built from the ROWS — which means a season with nothing in
+the current window cannot be ticked at all, so the control can never produce an
+empty result. `programs-season.spec.js` fails if `setStartDate` ever appears
+near `season`.
+
+**Still worth building later, and it needs a card change:** a truthful "fit the
+dates to these seasons" wants the section-date ENVELOPE per season (min
+first_start / max last_end across all that season's sections, unwindowed), not
+`season.start_date`. That is two more columns on 17295 and another tag flip.
+
+### ONE FUNNEL, BOTH DIMENSIONS — `locRows` is gone
+
+The location filter shipped hours earlier with `locRows` as its single funnel.
+Adding season could have been a second funnel beside it; instead `locRows` was
+**renamed `scopedRows`** and applies both. Two funnels is exactly how the
+facility Summary shipped chips that scoped some panels and not others and the
+page disagreed with itself for a week. `programs-location.spec.js` now asserts
+`locRows` is **absent**, so a panel left reading the old name fails rather than
+being silently season-unscoped.
+
+**`scopedProgramSet` had the same trap and I nearly shipped it.** It gated on
+`if (!locFilter …)`, so with only a season ticked it returned null and the
+demographics and retention tabs — which read their own feeds and have no season
+column — would have stayed unscoped while every panel beside them moved. It
+gates on **either** dimension now, with `seasonSel` in its deps.
+
+### The decisions worth keeping
+
+- **An empty tick list means ALL seasons, not none.** So there is only a
+  **Clear** button, no "Select all" — two buttons producing one state is a
+  control that looks broken.
+- **`progEffectiveSeasons` KEEPS the known ticks and drops only the unknown
+  ones**, which is where it deliberately differs from `progEffectiveLoc`.
+  Ticking three seasons and having one retire must not silently widen the report
+  back to everything; two known seasons is still a deliberate, answerable
+  request. Only when NOTHING survives does it fall back — because an empty tick
+  list and "all" render identically, and the empty one is the confusing way to
+  say it.
+- **It takes a `loaded` argument.** Third instance of that bug in this repo: a
+  feed that has not answered is not a feed without that season, and resolving on
+  mount is how `?ci_rows=failed` shipped broken.
+- **`?season=` is REPEATED, not comma-joined**, and read with `getAll`. Season
+  names are typed by humans — *"Spring/Summer 26"*, *"Fall '26"* — and nothing
+  stops one containing a comma; a `split(',')` would quietly cut it in half. The
+  write-back **deletes then appends**, because `append` alone stacks a second
+  copy of every value on each render.
+- **`seasonKey(r)` is the ONE definition of a row's season**, read by the options
+  builder, the funnel and the checkbox list. It folds `''`/null into the card's
+  own literal `'No Season'`, because a pre-v6 feed and the `Season` alias both
+  produce empty and that is the same fact. Three surfaces deriving it separately
+  is how a checkbox lights up and filters nothing.
+- **The gate is a VALUE test here, correctly.** Unlike `location`, the column is
+  always present — the card COALESCEs it and the page's mapper defaults it — so
+  "does this org run seasons" is the only meaningful question. An org with none
+  yields exactly one option, and the control hides under two.
+- Busiest season first, so the one an admin is working in leads and `No Season`
+  sinks to wherever its size puts it.
+- **A section can carry MORE THAN ONE season** — 255 of 35,929 platform-wide,
+  max 4 — and card 17295 takes `ORDER BY season.name LIMIT 1`, so those report
+  under one season only, alphabetically first. Same shape and scale as
+  `location_count` (287 of 42,457). Not fixed here; a `season_count` column
+  would let the page mark it, as `location_count` does.
+
+### Guards
+
+`scripts/programs-season.spec.js` (**43 assertions, in CI**), which LIFTS AND
+RUNS `seasonKey`, `progEffectiveSeasons` and the real `scopedRows` reducer rather
+than regexing them. Mutation-tested eleven ways, all failing by name: the season
+filter dropped from the funnel, union turned into an intersection,
+`scopedProgramSet` gated on `locFilter` alone, an unknown season widening back to
+all, the load gate removed, `getAll` reverted to a comma split, the checkboxes
+reverted to a single-select, the write-back appending without deleting,
+`seasonKey` no longer folding empty into `No Season`, the funnel split back in
+two, and a mutation that moves the date range.
+
+**A spec-harness lesson from that last one:** this spec records failures and
+reports at the end, so an exception thrown by the *sliced* code killed the
+process before a single recorded failure printed — the mutation surfaced as a
+bare `ReferenceError` stack naming nothing. The slice now runs behind a try/catch
+that records *"the scopedRows funnel THREW"*. A guard that dies instead of
+failing has not told anyone what broke.
+
+Plus **six `ci-check-render.js` cases**, keyed on the PROGRAM COUNT
+(`data-prog-count`) rather than on a control existing — "a checkbox rendered"
+passes on a filter that filters nothing. The fixture is 4 sections over 3
+programs across `Fall '26` / `Spring/Summer 26` / `No Season`, so unfiltered
+reads 3, one tick reads 1 and a union reads 2, and an intersection reads 0 —
+one number separates all three. Verified to discriminate: dropping the filter
+fails the four data cases while *options are CHECKBOXES* and *menu is CLOSED*
+keep passing; union→intersection fails only the union case; dropping `season`
+from `getParams` fails only the deep-link case. The deep-link case carries the
+apostrophe (`?season=Fall%20%2726`) on purpose, since that is what a real season
+name has to survive.
+
 ## El Segundo's aquatics asks — residency, lane hours, section location (2026-08-31)
 
 Joseph Lormans (El Segundo) asked for four aquatics reports by mid-September on a

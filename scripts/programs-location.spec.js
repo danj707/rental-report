@@ -97,18 +97,25 @@ ok(/rows\.some\(r => 'location' in r\)/.test(src),
    "progHasLocation tests for the COLUMN ('location' in r), not a truthy value — a v5 cache entry has no such key");
 
 // the funnel
-ok(/const locRows = useMemo\(/.test(src),
-   "locRows exists as the single funnel");
-ok(/const scoped = locRows \|\| \[\];/.test(src),
-   "grouped() reads locRows, not rows — every revenue panel flows from it");
-ok(/\}, \[locRows, search, activityFilter, activityInfo\]\);/.test(src),
-   "grouped()'s deps name locRows, or it will not recompute when the location changes");
+// ONE FUNNEL FOR BOTH DIMENSIONS. `locRows` was renamed `scopedRows` when the
+// season filter landed, deliberately rather than adding a second funnel beside
+// it: two funnels is how the facility Summary scoped some panels and not others.
+// programs-season.spec.js owns the season half; this asserts the location half
+// still flows through the same one.
+ok(/const scopedRows = useMemo\(/.test(src),
+   "scopedRows exists as the single funnel");
+ok(!/\blocRows\b/.test(src),
+   "the old location-only funnel is gone — a panel still reading it would be season-unscoped");
+ok(/const scoped = scopedRows \|\| \[\];/.test(src),
+   "grouped() reads scopedRows, not rows — every revenue panel flows from it");
+ok(/\}, \[scopedRows, search, activityFilter, activityInfo\]\);/.test(src),
+   "grouped()'s deps name scopedRows, or it will not recompute when the location changes");
 
 // the feeds that have no location of their own
-ok(/locProgramSet\s*\?\s*demoRows\.filter\(r => locProgramSet\.has\(r\['Program'\]\)\)/.test(src),
-   "the demographics feed is scoped by the location's program set");
-ok(/locProgramSet\s*\?\s*retRows\.filter\(r => locProgramSet\.has\(r\['Program'\]\)\)/.test(src),
-   "the retention feed is scoped by the location's program set");
+ok(/scopedProgramSet\s*\?\s*demoRows\.filter\(r => scopedProgramSet\.has\(r\['Program'\]\)\)/.test(src),
+   "the demographics feed is scoped by the funnel's program set");
+ok(/scopedProgramSet\s*\?\s*retRows\.filter\(r => scopedProgramSet\.has\(r\['Program'\]\)\)/.test(src),
+   "the retention feed is scoped by the funnel's program set");
 
 // no panel below the funnel may read the raw feed
 {
@@ -121,7 +128,7 @@ ok(/locProgramSet\s*\?\s*retRows\.filter\(r => locProgramSet\.has\(r\['Program'\
   const block = src.slice(i, j);
   const bare = block.split("\n").filter(l =>
     /(?<![A-Za-z])rows\.(filter|map|forEach|reduce)\b/.test(l) &&
-    !/locRows|demoRows|retRows|ciRows/.test(l));
+    !/scopedRows|demoRows|retRows|ciRows/.test(l));
   ok(bare.length === 0,
      "no panel downstream of the funnel reads `rows` directly: " + JSON.stringify(bare));
 }

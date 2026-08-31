@@ -494,18 +494,28 @@ function checkinRows() {
 // was never driven in a browser. Two feeds: the section-grain programs card, and
 // the per-section attendance card.
 function programRows() {
-  const sec = (prog, name, sid, enrolled, capacity) => ({
+  const sec = (prog, name, sid, enrolled, capacity, season) => ({
     "Program": prog, "Program Id": "prog-" + prog.toLowerCase().replace(/\W+/g, "-"),
     "Section": name, "Section Id": sid, "Section Status": "Open",
     "Start Date": "2026-08-01", "End Date": "2026-09-30",
     "Enrolled": enrolled, "Capacity": capacity, "Utilized": enrolled,
     "Charged": enrolled * 40, "Received": enrolled * 40, "Refunds": 0,
     "Activity": "Aquatics", "Category": "Fitness",
+    // SEASON NAMES ARE SHREWSBURY'S REAL ONES, apostrophe included: "Fall '26"
+    // is what an org actually types, and a value that has to survive a URL
+    // round-trip and an attribute selector should not be a tidy invented one.
+    // The third season is deliberately the card's own COALESCE value so the
+    // "No Season" checkbox is exercised as a real option rather than a special
+    // case bolted on in the page.
+    "program_season": season,
   });
   return [
-    sec("Aquatic Exercise",  "Aquatic Stations with Pearlena", "sec-aq-1", 21, 24),
-    sec("Aquatic Exercise",  "Water Waves with Yvette",        "sec-aq-2", 20, 24),
-    sec("Water Walking",     "Water Walking August 24",        "sec-ww-1", 12, 16),
+    sec("Aquatic Exercise",  "Aquatic Stations with Pearlena", "sec-aq-1", 21, 24, "Fall '26"),
+    sec("Aquatic Exercise",  "Water Waves with Yvette",        "sec-aq-2", 20, 24, "Fall '26"),
+    sec("Water Walking",     "Water Walking August 24",        "sec-ww-1", 12, 16, "Spring/Summer 26"),
+    // One unseasoned section, so ticking "No Season" has something to find and
+    // the option is not vacuous.
+    sec("Lap Swim",          "Open Lap Swim",                  "sec-ls-1",  9, 20, "No Season"),
   ];
 }
 
@@ -984,6 +994,19 @@ async function selectResident(page) {
   await page.select("[data-mb-residency]", "resident");
   await new Promise(r => setTimeout(r, 400));
 }
+
+// Season-filter act helpers. At module scope, not inside CASES — the array is a
+// literal and a declaration inside it is a syntax error.
+const openSeasons = async page => {
+  await page.waitForSelector('[data-prog-season-btn]', { timeout: 15000 });
+  await page.click('[data-prog-season-btn]');
+  await page.waitForSelector('[data-prog-season-menu]', { timeout: 5000 });
+};
+const tickSeason = async (page, value) => {
+  await page.waitForSelector(`[data-prog-season-opt="${value}"] input`, { timeout: 5000 });
+  await page.click(`[data-prog-season-opt="${value}"] input`);
+  await new Promise(r => setTimeout(r, 400));
+};
 
 const CASES = [
   { name: "facilities · camping",  path: "/{org}/facilities?tab=camping", needs: ".camp-cal .cc-hd" },
@@ -1750,6 +1773,48 @@ const CASES = [
   // This page had no render case at all before 2026-08-26.
   // fetchData() calls setTab('summary') on mount, so ?tab=checkins is overridden
   // and the band can only be reached by clicking — which is what `act` is for.
+  // ── The multi-select Season filter ───────────────────────────────────────
+  // The fixture is 4 sections over 3 programs: Aquatic Exercise ×2 in "Fall '26",
+  // Water Walking in "Spring/Summer 26", Lap Swim in "No Season". So the
+  // PROGRAM COUNT discriminates every case below — 3 unfiltered, 1 for Fall '26,
+  // 2 for a two-season union. Keying on "a checkbox rendered" would pass on a
+  // filter that filters nothing, which is the whole failure mode here.
+  { name: "programs · season options are CHECKBOXES", path: "/{org}/programs",
+    // Dan: "make the season filter a checkbox, multiselectable. I hate single
+    // item selections in pull down menus." A <select> renders a control too, so
+    // the assertion is on the input TYPE, not on the control existing.
+    needs: '[data-prog-season-menu] input[type="checkbox"]',
+    act: openSeasons },
+  { name: "programs · the season menu is CLOSED until asked for", path: "/{org}/programs",
+    // An always-open menu is a different and noisier control. Absence before the
+    // click is the only thing that distinguishes the two.
+    needs: "[data-prog-season-btn]", absent: "[data-prog-season-menu]" },
+  { name: "programs · unfiltered shows every program", path: "/{org}/programs",
+    needs: '[data-prog-count="3"]' },
+  { name: "programs · a ticked season scopes the report", path: "/{org}/programs",
+    // 3 programs -> 1. This is the case that fails if the funnel ignores the tick.
+    needs: '[data-prog-count="1"]',
+    act: async page => { await openSeasons(page); await tickSeason(page, "Fall '26"); } },
+  { name: "programs · two ticks are a UNION", path: "/{org}/programs",
+    // 2, not 0. An intersection — the obvious wrong reducer — empties the report,
+    // and an ignored second tick leaves it at 1, so this number separates all three.
+    needs: '[data-prog-count="2"]',
+    act: async page => {
+      await openSeasons(page);
+      await tickSeason(page, "Fall '26");
+      await tickSeason(page, "Spring/Summer 26");
+    } },
+  { name: "programs · No Season is a real option", path: "/{org}/programs",
+    // The card COALESCEs to this literal, and one fixture section carries it.
+    // If seasonKey stopped folding empty/null into it this would read 0.
+    needs: '[data-prog-count="1"]',
+    act: async page => { await openSeasons(page); await tickSeason(page, "No Season"); } },
+  { name: "programs · ?season= deep link lands scoped", path: "/{org}/programs?season=Fall%20%2726",
+    // The apostrophe is the point: a real season name has to survive the URL
+    // round-trip. Landing unscoped reads [data-prog-count="3"], so this fails
+    // both when the parameter is not whitelisted and when it is dropped on mount.
+    needs: '[data-prog-count="1"]' },
+
   { name: "programs · check-ins band", path: "/{org}/programs", needs: "[data-ci-checkins-total=\"50\"]", act: clickCheckinsTab },
   // The Absent column, keyed to a section's own figure — 4 marks on sec-aq-1.
   // "a column rendered" would pass on a column of zeros, which is the failure

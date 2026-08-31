@@ -130,6 +130,9 @@ jobs:
       - name: Programs location filter (one funnel; a stale ?loc= cannot empty the report)
         run: node scripts/programs-location.spec.js
 
+      - name: Programs season filter (multi-select; one funnel scopes both dimensions)
+        run: node scripts/programs-season.spec.js
+
       - name: Facilities hub beacons (hub log route above the generic one; 200 AND a logged row)
         run: node scripts/facilities-beacons.spec.js
 
