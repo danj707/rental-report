@@ -1446,9 +1446,22 @@ function normalizeRow(raw) {
       // a layout preference — the same call the campmap type filter makes.
       const [arOpenPlan, setArOpenPlan] = useState(null);
       const [arRetPlan, setArRetPlan] = useState(null);
+      // EVERY STATUS IS CHECKED BY DEFAULT (Dan, after hitting the bug above:
+      // "the default should be to have everything checked"). It used to be
+      // ['active'] alone, which hid every cancellation and expiry behind a pill
+      // most readers never open — so the report opened on a filtered view while
+      // presenting itself as the purchase cohort.
+      //
+      // This does NOT replace the `filteredAnyStatus` fix. Someone can still
+      // uncheck a status, and the cards above the table must not follow them
+      // down when they do.
+      //
+      // A reader who already has a saved choice keeps it — this is the default
+      // for people who have never touched the pill, not a reset.
+      const MB_ALL_STATUSES = ['active', 'canceled', 'expired', 'inactive'];
       const [statusFilter, setStatusFilter] = useState(() => {
-        try { return JSON.parse(localStorage.getItem(LS_STATUS)) || ['active']; }
-        catch { return ['active']; }
+        try { return JSON.parse(localStorage.getItem(LS_STATUS)) || MB_ALL_STATUSES.slice(); }
+        catch { return MB_ALL_STATUSES.slice(); }
       });
       const [renewalFilter, setRenewalFilter] = useState(() => {
         try { return JSON.parse(localStorage.getItem(LS_RENEWAL)) || ['Auto-renew', 'One-time']; }
@@ -1796,8 +1809,31 @@ function normalizeRow(raw) {
         [filteredAnyStatus, statusFilter]);
 
       // ── Summary metrics ──
+      //
+      // THIS ROW IS A STATUS BREAKDOWN OF THE COHORT, SO IT MAY NOT BE TAKEN
+      // FROM A VIEW THE STATUS PILL HAS ALREADY CUT. It used to read `filtered`,
+      // which meant Canceled and Expired were structurally incapable of showing
+      // anything but 0 — the pill removes those rows before the count sees them.
+      // Dan hit it on Douglas County: 0 canceled on screen against 68 in the
+      // feed, and WIDENING THE DATE RANGE COULD NOT HELP, which is the tell. It
+      // is the same bug as the churn rate one tab over, and `filteredAnyStatus`
+      // is the same fix — I applied it there and not here.
+      //
+      // The copy directly above these cards is what makes it a defect rather
+      // than a choice: "This is the purchase cohort for the selected dates.
+      // Active / Canceled / Expired show each purchase's CURRENT status."
+      // That promises a breakdown of the cohort. Now it is one.
+      //
+      // NET COLLECTED MOVES WITH THEM, deliberately (Dan: "i'd say yes"). It was
+      // $871.00 short at Douglas because the money on canceled and expired
+      // purchases was dropped — but cash that was taken does not un-collect when
+      // a membership later lapses, and the sub-line already says "by purchase
+      // date, all channels".
+      //
+      // The TABLE below still reads `filtered`; the status pill is what scopes
+      // it, and that is unchanged.
       const summary = useMemo(() => {
-        const all = filtered;
+        const all = filteredAnyStatus;
         const byStatus = { active:0, canceled:0, expired:0, inactive:0 };
         let autoRenewCount = 0, mrrEstimate = 0;
         let totalRevenue = 0, totalNetCollected = 0;
@@ -1824,7 +1860,7 @@ function normalizeRow(raw) {
           totalRevenue,
           totalNetCollected,
         };
-      }, [filtered]);
+      }, [filteredAnyStatus]);
 
       // ── Sorted rows for table ──
       const sortedRows = useMemo(
@@ -2683,7 +2719,7 @@ function normalizeRow(raw) {
 
               <MultiSelect
                 label="Status"
-                options={['active','canceled','expired','inactive']}
+                options={MB_ALL_STATUSES}
                 selected={statusFilter}
                 onChange={setStatusFilter}
               />
@@ -2769,7 +2805,11 @@ function normalizeRow(raw) {
                   </div>
                 )}
                 <div className="rh-meta">
-                  {activeTab === 'memberships' && <span>{filtered.length.toLocaleString()} memberships · {summary.total.toLocaleString()} after filters</span>}
+                  {/* These were the same number printed twice, back when
+                      `summary` read `filtered`. They differ now and the gap is
+                      the point: what the table is showing, against the whole
+                      purchase cohort the cards above describe. */}
+                  {activeTab === 'memberships' && <span>{filtered.length.toLocaleString()} shown{filtered.length !== summary.total ? ' of ' + summary.total.toLocaleString() + ' in range' : ' memberships'}</span>}
                   {activeTab === 'checkins' && ciRows && <span>{ciView.length.toLocaleString()} check-ins{ciLoc !== 'all' ? ' · ' + ciLoc : ''}</span>}
                   {activeTab === 'retention' && <span>Cohort retention analysis</span>}
                 </div>

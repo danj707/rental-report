@@ -549,6 +549,19 @@ function membershipRows() {
       "Product Kind": "membership",
     }));
   }
+  // An EXPIRED purchase. The status pill defaults to ['active'], so this row and
+  // the three cancelled ones above are exactly what the Canceled/Expired cards
+  // could never see back when `summary` read `filtered` — Dan's Douglas County
+  // screen showed 0 against 68 and 221.
+  rows.push(row({
+    "User ID": "e70fea14-be38-46db-96da-40e61ccca25e", "First Name": "Ada", "Last Name": "Lovelace",
+    "Membership ID": "m-x1", "Membership Type": "Fitness Monthly", "Group / Plan": "Monthly Individual",
+    "Status": "expired", "Renewal Type": "One-time", "Price": 20,
+    "Start Date": "2025-07-01", "End Date": "2026-06-30", "Created At": "2026-07-06",
+    "Next Renewal": "", "Coverage": "individual", "Plan Season End": null,
+    "Plan Term Days": null, "Auto Renew": false, "Period Start": "",
+    "Product Kind": "membership",
+  }));
   // Annual fitness at 12x the monthly — one buyer, renewing by hand. This is the
   // conversion candidate AND the unpopular-plan case, in one row.
   rows.push(row({
@@ -1630,6 +1643,72 @@ const CASES = [
   // ── Auto-Renew and Sales & Mix (card 17301 v2) ──────────────────────────
   // Keyed on COMPUTED VALUES, not on "a panel rendered": every one of these
   // passes on a tab that renders the wrong number.
+  // ── The status breakdown is the COHORT's, not the pill's ────────────────
+  // Dan hit this on Douglas County: Canceled read 0 against 68 in the feed, and
+  // WIDENING THE DATE RANGE DID NOT HELP — the tell that it is the pill, not the
+  // window. `summary` read `filtered`, so a status the pill excluded could never
+  // be counted.
+  //
+  // THE DEFAULT IS NOW EVERY STATUS, which means a plain page load no longer
+  // discriminates — the pill hides nothing, so the cards read correctly either
+  // way. This case therefore SETS the pill back to active-only and requires the
+  // cards to stay put. That is the actual invariant, it is what a reader who
+  // unchecks a box gets, and it is what anyone carrying a saved ['active'] from
+  // before today already has.
+  //
+  // localStorage persists between cases in this file, so the key is cleared in a
+  // finally — a guard that changes what the NEXT case sees is not a guard.
+  { name: "memberships · the cards ignore the status pill", path: "/{org}/memberships",
+    needs: ".summary-cards", act: async page => {
+      try {
+        await page.evaluate(() => localStorage.setItem(
+          "memberships.statusFilter", JSON.stringify(["active"])));
+        await page.reload({ waitUntil: "networkidle2" });
+        await page.waitForFunction(() => {
+          const val = (label) => {
+            const c = [...document.querySelectorAll(".summary-card")].find(
+              e => (e.querySelector(".card-label") || {}).textContent === label);
+            return c ? (c.querySelector(".card-value") || {}).textContent.trim() : null;
+          };
+          // 3 cancelled and 1 expired are in the feed and OUT of the pill.
+          return val("Canceled") === "3" && val("Expired") === "1";
+        }, { timeout: 45000 });
+        // …and the money counts them too (Dan: "i'd say yes"). Compared against
+        // the same page with every status checked: the two must AGREE, which is
+        // the whole claim. A hard dollar figure would go stale on any fixture
+        // edit; this cannot.
+        const scoped = await page.evaluate(() => {
+          const c = [...document.querySelectorAll(".summary-card")].find(
+            e => (e.querySelector(".card-label") || {}).textContent === "Net Collected");
+          return c ? (c.querySelector(".card-value") || {}).textContent.trim() : null;
+        });
+        await page.evaluate(() => localStorage.removeItem("memberships.statusFilter"));
+        await page.reload({ waitUntil: "networkidle2" });
+        await page.waitForSelector(".summary-cards", { timeout: 45000 });
+        const open = await page.evaluate(() => {
+          const c = [...document.querySelectorAll(".summary-card")].find(
+            e => (e.querySelector(".card-label") || {}).textContent === "Net Collected");
+          return c ? (c.querySelector(".card-value") || {}).textContent.trim() : null;
+        });
+        if (!scoped || !open) throw new Error("Net Collected did not render");
+        if (scoped !== open) throw new Error(
+          "Net Collected follows the status pill: " + scoped + " filtered vs " + open
+          + " unfiltered — cash that was taken does not un-collect");
+      } finally {
+        await page.evaluate(() => localStorage.removeItem("memberships.statusFilter"));
+      }
+    } },
+  // And the pill itself opens with everything ticked, so nobody has to discover
+  // the box to see their cancellations.
+  { name: "memberships · every status is checked by default", path: "/{org}/memberships",
+    needs: ".summary-cards", act: async page => {
+      await page.waitForFunction(() => {
+        const c = [...document.querySelectorAll(".summary-card")].find(
+          e => (e.querySelector(".card-label") || {}).textContent === "Canceled");
+        return c && (c.querySelector(".card-value") || {}).textContent.trim() === "3";
+      }, { timeout: 45000 });
+    } },
+
   { name: "memberships · auto-renew count", path: "/{org}/memberships?tab=autorenew",
     needs: "[data-ar-count=\"6\"]" },
   { name: "memberships · auto-renew monthly revenue", path: "/{org}/memberships?tab=autorenew",

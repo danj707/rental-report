@@ -518,6 +518,69 @@ out. I applied the argument to passes, wrote it down, and still left two
 identical populations in — the write-up did not stop the second instance because
 it named passes rather than the property.
 
+### Canceled and Expired could only ever read 0 (2026-08-31)
+
+Dan, reconciling Douglas County against Rec's own admin: *"what about the
+cancelled not matching? I expanded the date range, still showing 0 cancelled"*.
+
+**WIDENING THE RANGE COULD NOT HELP, AND THAT IS THE TELL** — a window bug moves
+when you move the window. `summary` read `filtered`, which is `filteredAnyStatus`
+with the status pill applied, and the pill defaulted to `['active']`. So the
+Canceled and Expired cards were structurally incapable of showing anything but
+zero, for every org, on every date range, since they shipped. Measured on the
+feed behind Dan's screen: **68 canceled and 221 expired**, both rendering 0.
+
+**Net Collected was short by the same rows** — $28,468.50 on screen against
+$29,339.50 actually taken, the missing **$871.00** being the money on canceled
+and expired purchases. Dan's call to include it (*"i'd say yes"*): cash that was
+taken does not un-collect when a membership later lapses, and the card's own
+sub-line already says *"by purchase date, all channels"*.
+
+**This is the churn bug one tab over, and I had already written it up.** The
+`filteredAnyStatus` fix went into the Auto-Renew tab and *not* into the status
+cards, which are the more obvious instance of it — the generalisation ("any
+denominator that must include an outcome cannot be taken from a view whose
+default hides that outcome") was on the page and I applied it to one caller.
+
+**TWO FIXES, AND BOTH ARE NEEDED:**
+
+- `summary` reads `filteredAnyStatus`. The pill scopes the TABLE; the cards
+  above it describe the cohort, exactly as their own copy promises — *"This is
+  the purchase cohort for the selected dates. Active / Canceled / Expired show
+  each purchase's CURRENT status."* That sentence is what makes it a defect
+  rather than a design choice.
+- **Every status is ticked by default** (Dan: *"the default should be to have
+  everything checked"*), so nobody has to discover the pill to see their
+  cancellations. `MB_ALL_STATUSES` is declared once and feeds both the default
+  and the toolbar's options, so the two cannot drift.
+
+The default alone is not enough: a reader can still untick a box, and anyone
+carrying a saved `['active']` in localStorage keeps it — the default is for
+people who never touched the pill, not a reset.
+
+**The new default made the first render case stop discriminating**, which is
+worth remembering: with nothing hidden, the cards read correctly whether or not
+the fix is present. The case now SETS the pill back to active-only, reloads, and
+requires the cards to stay put — and it clears the key in a `finally`, because
+localStorage persists between cases in `ci-check-render.js` and a guard that
+changes what the next case sees is not a guard. Verified to fail on the bug as
+Dan hit it.
+
+**Reconciliation against Rec's admin, same 30 days (the point of the exercise):**
+payments **$29,091 vs $29,090.50**, cancellations **49 vs 49**. Purchases read
+1,845 against 1,883 because Rec counts a rolling 30×24h and the card counts
+whole calendar days — 31 of them, inclusive. Against a CLOSED window (July 2026)
+the card is exact on the view it reads: 574 = 574.
+
+**One gap that is NOT ours, and is worth raising with whoever owns Epsio:** 7
+Douglas memberships created in July are in `public.membership` but absent from
+`materialized.membership_and_pass_purchases_report` — all `active`, none
+deleted, ~1.2% of the month. The card reads the view, so nothing in this repo or
+in Rec's admin can see them.
+
+Guard: `memberships-revenue.spec.js` 70 → 71 tests, mutation-tested against the
+revert (fails by name). Plus two `ci-check-render` cases.
+
 ### The Auto-Renew tab is the auto-renew BOOK, not an adoption rate (2026-08-30)
 
 Dan, after two rounds of me narrowing a denominator instead: *"the memberships

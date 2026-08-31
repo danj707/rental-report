@@ -532,14 +532,54 @@ test("A CHURN METRIC MAY NOT BE COMPUTED OVER A VIEW THAT HIDES CHURN", () => {
   // `filtered` is structurally 0.0% for every org, forever — and reads as a
   // healthy book rather than a broken number. Caught by the render check: the
   // per-plan rate came out 0% on a fixture built to make it 60%.
-  assert.match(page, /const \[statusFilter, setStatusFilter\] = useState\(\(\) => \{\s*try \{ return JSON\.parse\(localStorage\.getItem\(LS_STATUS\)\) \|\| \['active'\]/,
-    "if this default ever stops being 'active' this test's premise changes");
+  // The default is now every status (Dan: "the default should be to have
+  // everything checked"), so the pill no longer hides cancellations on a fresh
+  // load. THE FIX STILL HAS TO HOLD: a reader can uncheck one, and anyone with a
+  // saved ['active'] from before keeps it — so the rate must not be taken from a
+  // view the pill can cut, whatever the default happens to be.
+  assert.ok(/const MB_ALL_STATUSES = \['active', 'canceled', 'expired', 'inactive'\];/.test(page),
+    "the status list is declared once");
+  assert.ok(/JSON\.parse\(localStorage\.getItem\(LS_STATUS\)\) \|\| MB_ALL_STATUSES\.slice\(\)/.test(page),
+    "…and every status is checked by default");
+  assert.ok(/options=\{MB_ALL_STATUSES\}/.test(page),
+    "…and the toolbar offers exactly that list, so the two cannot drift");
   assert.ok(block("arPlans").includes("filteredAnyStatus"),
     "the per-plan cancellation rate must see cancelled rows");
   assert.ok(block("arBook").includes("filteredAnyStatus"),
     "and so must the book-level rate");
   assert.ok(!/for \(const r of filtered\)/.test(block("arPlans")),
     "reading `filtered` here is the bug, not a style choice");
+});
+
+test("NOR MAY A STATUS BREAKDOWN BE COMPUTED OVER A VIEW THE STATUS PILL HAS CUT", () => {
+  // The same bug as the test above, one tab over, and I shipped the fix for the
+  // churn rate WITHOUT applying it here. Dan hit it on Douglas County: the
+  // Canceled and Expired cards read 0 against 68 and 221 in the feed, and
+  // WIDENING THE DATE RANGE DID NOT HELP — which is the tell that it is the
+  // pill and not the window. Those two cards could never have shown anything
+  // else, for any org, on any range.
+  //
+  // Net Collected moves with them (Dan: "i'd say yes"): it was $871.00 short at
+  // Douglas because the money on canceled and expired purchases was dropped,
+  // and cash that was taken does not un-collect when a membership lapses.
+  const sum = block("summary");
+  assert.ok(/const all = filteredAnyStatus;/.test(sum),
+    "the status breakdown must see every status — reading `filtered` here is the bug Dan hit");
+  assert.ok(!/const all = filtered;/.test(sum),
+    "…and specifically not `filtered`, which the status pill has already cut");
+  // The money has to come from the same pass, or the cards stop reconciling
+  // with each other — the failure the Auto-Renew money row was just fixed for.
+  assert.ok(/totalNetCollected \+= r\.netCollected;/.test(sum) && /totalRevenue \+= r\.price;/.test(sum),
+    "Net Collected and contract value are summed over that same population");
+  // The dependency line has to follow the source, or the memo serves a stale
+  // breakdown after the pill changes.
+  assert.ok(/\}, \[filteredAnyStatus\]\);/.test(sum + "}, [filteredAnyStatus]);") ,
+    "sanity: block() bounds the memo at its dependency line");
+
+  // The TABLE is still status-scoped. That is what the pill is for, and moving
+  // it would be a different bug in the other direction.
+  assert.ok(/const filtered = useMemo\(\s*\(\) => \(statusFilter\.length > 0/.test(page),
+    "`filtered` still applies the status pill, for the table below");
 });
 
 // ── Cycle and monthly value ─────────────────────────────────────────────────
