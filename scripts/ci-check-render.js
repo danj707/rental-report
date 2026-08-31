@@ -98,6 +98,17 @@ function outdoorRows() {
   // Multi-day: hours are unknowable per day, so this must not reach the grid.
   push("Big Field Tent", "bounce-house",       "Lakeview Park",  d(5),  "08:00am", null,     1, 2, "", 300, 150);
   push("Big Field Tent", "bounce-house",       "Lakeview Park",  d(4),  null,      "06:00pm", 2, 2, "", 0, 150);
+  // ── Swim lanes, typed `court` and named with no pool/swim word ──────────
+  // This is El Segundo's real shape: the lanes only reach the Aquatics tab if
+  // refineSiteType's lane branch recovers them from the LOCATION, and the panel
+  // only counts them if it refines BEFORE filtering. A fixture typed 'pool'
+  // would pass on the broken build and prove nothing.
+  push("North Lane 1 - A", "court", "Wiseburn Aquatic Center", d(9), "06:00am", "09:00am", 1, 1, "", 90, 8);
+  push("North Lane 1 - A", "court", "Wiseburn Aquatic Center", d(8), "06:00am", "09:00am", 1, 1, "", 90, 8);
+  push("North Lane 2 - B", "court", "Wiseburn Aquatic Center", d(8), "06:00am", "08:00am", 1, 1, "", 60, 6);
+  // A road-named court at a NON-aquatic location — must stay a court, or the
+  // lane branch has lost its guards and this row lands in the pool totals.
+  push("Johnson Lane Tennis Court", "court", "Johnson Lane Park", d(8), "06:00am", "09:00am", 1, 1, "", 90, 4);
   return rows;
 }
 
@@ -1353,6 +1364,20 @@ const CASES = [
   // Keyed on the COMPUTED counts, not on "a panel rendered": the fixture has 6
   // residents and 4 non-residents, and every regression worth catching here
   // produces a different number rather than an empty page.
+  // ── Aquatics lane hours ──────────────────────────────────────────────────
+  // 3h + 3h + 2h = 8 lane hours over 3 bookings on 2 lanes. The Johnson Lane
+  // TENNIS court is 3 more hours at a non-aquatic location: if it were counted
+  // this reads 11 and 3 lanes, so the number itself is the guard.
+  { name: "facilities · lane hours", path: "/{org}/facilities?tab=aquatics",
+    needs: "[data-aq-hours=\"8\"]" },
+  { name: "facilities · lanes in use", path: "/{org}/facilities?tab=aquatics",
+    needs: "[data-aq-lanes=\"2\"]" },
+  // Coverage, not start times: all three lane bookings start at 6am, but 6am,
+  // 7am and 8am are all covered. A start-times grid peaks at 6a either way, so
+  // the discriminating assertion is the TIMED count, which excludes nothing
+  // here but changes the moment a multi-day row leaks in.
+  { name: "facilities · lane heat is coverage", path: "/{org}/facilities?tab=aquatics",
+    needs: "[data-aq-timed=\"3\"]" },
   { name: "memberships · residency split", path: "/{org}/memberships",
     needs: "[data-mb-res-count=\"6\"]" },
   { name: "memberships · residency non-resident count", path: "/{org}/memberships",
