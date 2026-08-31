@@ -59,6 +59,52 @@
     .toolbar .row-count { font-size: 11px; color: #aaa; }
     .toolbar .divider { width: 1px; height: 28px; background: rgba(255,255,255,.15); margin: 0 2px; }
 
+    /* ── Season filter menu ──────────────────────────────────────────────
+       Styled to match the toolbar it hangs off (#2c2c2c / #eee), not as a
+       white popover — Dan: "make the menu look like the other menu styles.
+       not the white background menu."
+
+       THE ROW RULES ARE RESETS, NOT DECORATION. `.toolbar label` sets
+       text-transform:uppercase, color:#aaa and flex-direction:column for the
+       date-field captions, and these options are <label>s inside .toolbar —
+       so without the resets below they render UPPERCASE, grey and STACKED
+       (checkbox over name over count), which is exactly how they first
+       shipped. Inline styles did not cover it: none of those three
+       properties were being set inline, so the toolbar rule won. */
+    .season-wrap { position: relative; }
+    .season-btn {
+      padding: 4px 10px; border: 1px solid rgba(255,255,255,.2); border-radius: 4px;
+      background: rgba(255,255,255,.1); color: #fff;
+      font-size: 12px; font-family: inherit; cursor: pointer; white-space: nowrap;
+    }
+    .season-btn:hover { background: rgba(255,255,255,.18); }
+    .season-btn.on    { background: rgba(255,255,255,.22); }
+    .season-btn .caret { margin-left: 6px; opacity: .7; }
+    .season-menu {
+      position: absolute; top: calc(100% + 6px); left: 0; z-index: 200;
+      min-width: 230px; max-width: 320px; max-height: 320px; overflow-y: auto;
+      background: #2c2c2c; color: #eee;
+      border: 1px solid rgba(255,255,255,.18); border-radius: 6px;
+      box-shadow: 0 10px 28px rgba(0,0,0,.45); padding: 6px 0;
+    }
+    .season-menu .sm-head {
+      padding: 2px 12px 7px; border-bottom: 1px solid rgba(255,255,255,.12);
+      margin-bottom: 4px;
+    }
+    .season-menu .sm-clear {
+      border: none; background: none; padding: 0; font-size: 11px;
+      font-family: inherit; color: #7fb2ff; cursor: pointer;
+    }
+    .season-menu .sm-clear:disabled { color: #6b7280; cursor: default; }
+    .toolbar .season-menu label.sm-opt {
+      display: flex; flex-direction: row; align-items: center; gap: 8px;
+      padding: 6px 12px; cursor: pointer;
+      font-size: 12px; text-transform: none; letter-spacing: normal; color: #eee;
+    }
+    .season-menu label.sm-opt:hover { background: rgba(255,255,255,.09); }
+    .season-menu .sm-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .season-menu .sm-n { color: #9ca3af; font-variant-numeric: tabular-nums; }
+
     /* ── Page ── */
     .page {
       max-width: 1400px; margin: 16px auto; padding: 24px 28px;
@@ -2286,48 +2332,40 @@ function App() {
         </React.Fragment>)}
         {seasonOptions.length > 1 && (<React.Fragment>
           <div className="divider" />
-          <div data-prog-season-wrap style={{position:'relative'}}>
+          <div data-prog-season-wrap className="season-wrap">
             <button type="button" data-prog-season-btn
+              className={'season-btn' + (seasonSel.length ? ' on' : '')}
               onClick={function() { setSeasonOpen(!seasonOpen); }}
-              title="Scopes the whole report — every tab, every total"
-              style={{padding:'4px 10px',border:'1px solid rgba(255,255,255,.2)',borderRadius:4,
-                      background: seasonSel.length ? 'rgba(255,255,255,.22)' : 'rgba(255,255,255,.1)',
-                      color:'#fff',fontSize:12,fontFamily:'inherit',cursor:'pointer',whiteSpace:'nowrap'}}>
+              title="Scopes the whole report — every tab, every total">
               {seasonSel.length
                 ? 'Seasons: ' + seasonSel.length + ' of ' + seasonOptions.length
                 : 'All Seasons (' + seasonOptions.length + ')'}
-              <span aria-hidden="true" style={{marginLeft:6,opacity:.7}}>{seasonOpen ? '\u25b4' : '\u25be'}</span>
+              <span className="caret" aria-hidden="true">{seasonOpen ? '\u25b4' : '\u25be'}</span>
             </button>
             {seasonOpen && (
-              <div data-prog-season-menu
-                style={{position:'absolute',top:'calc(100% + 6px)',left:0,zIndex:60,minWidth:220,maxWidth:320,
-                        maxHeight:320,overflowY:'auto',background:'#fff',color:'#333',borderRadius:6,
-                        boxShadow:'0 8px 24px rgba(0,0,0,.28)',padding:'8px 0'}}>
-                <div style={{display:'flex',gap:12,padding:'2px 12px 8px',borderBottom:'1px solid #eee',fontSize:11}}>
+              <div data-prog-season-menu className="season-menu">
+                <div className="sm-head">
                   {/* An empty tick list IS "all", so Clear and Select all are the
                       same state. Only Clear is offered — two buttons that produce
                       one result is a control that looks broken. */}
-                  <button type="button" data-prog-season-clear
+                  <button type="button" data-prog-season-clear className="sm-clear"
                     onClick={function() { setSeasonSel([]); setInsights(null); setInsightsMeta(null); }}
-                    disabled={!seasonSel.length}
-                    style={{border:'none',background:'none',padding:0,cursor: seasonSel.length ? 'pointer' : 'default',
-                            color: seasonSel.length ? '#2563eb' : '#bbb',fontSize:11,fontFamily:'inherit'}}>
+                    disabled={!seasonSel.length}>
                     Clear (show all)
                   </button>
                 </div>
                 {seasonOptions.map(function(o) {
                   const on = seasonSel.indexOf(o.value) >= 0;
                   return (
-                    <label key={o.value} data-prog-season-opt={o.value}
-                      style={{display:'flex',alignItems:'center',gap:8,padding:'5px 12px',cursor:'pointer',fontSize:12}}>
+                    <label key={o.value} data-prog-season-opt={o.value} className="sm-opt">
                       <input type="checkbox" checked={on}
                         onChange={function() {
                           setSeasonSel(on ? seasonSel.filter(function(v) { return v !== o.value; })
                                           : seasonSel.concat(o.value));
                           setInsights(null); setInsightsMeta(null);
                         }} />
-                      <span style={{flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{o.label}</span>
-                      <span style={{color:'#888',fontVariantNumeric:'tabular-nums'}}>{o.n}</span>
+                      <span className="sm-name">{o.label}</span>
+                      <span className="sm-n">{o.n}</span>
                     </label>
                   );
                 })}

@@ -939,7 +939,25 @@ bare `ReferenceError` stack naming nothing. The slice now runs behind a try/catc
 that records *"the scopedRows funnel THREW"*. A guard that dies instead of
 failing has not told anyone what broke.
 
-Plus **six `ci-check-render.js` cases**, keyed on the PROGRAM COUNT
+**The menu was styled wrong twice over, and only half of it was colour** (Dan:
+*"make the menu look like the other menu styles. not the white background
+menu."*). It shipped as a white popover in a `#2c2c2c` toolbar — but the rows
+also rendered **UPPERCASE, grey and STACKED**, because `.toolbar label` sets
+`text-transform: uppercase`, `color: #aaa` and `flex-direction: column` for the
+date-field captions and these options are `<label>`s inside `.toolbar`. Inline
+styles did not save it: none of those three properties were being set inline, so
+the toolbar rule simply won. It is real scoped CSS now, and the row rules are
+**resets, not decoration**. Generalise it: an inline style only beats the
+cascade for the properties it actually names.
+
+Two render cases cover it, and they are the only thing that could — no source
+assertion can tell a white popover from a dark one. `act` stamps the menu's
+COMPUTED styles onto `<body>` so a `needs` selector can assert them
+(`[data-sm-bg="rgb(44, 44, 44)"]`, `[data-sm-transform="none"][data-sm-dir="row"]`).
+Both were seen to fail on the real bug: reverting the background fails only the
+colour case, and removing the resets fails only the inheritance case.
+
+Plus **eight `ci-check-render.js` cases**, six of them keyed on the PROGRAM COUNT
 (`data-prog-count`) rather than on a control existing — "a checkbox rendered"
 passes on a filter that filters nothing. The fixture is 4 sections over 3
 programs across `Fall '26` / `Spring/Summer 26` / `No Season`, so unfiltered

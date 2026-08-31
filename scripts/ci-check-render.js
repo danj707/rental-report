@@ -1002,6 +1002,27 @@ const openSeasons = async page => {
   await page.click('[data-prog-season-btn]');
   await page.waitForSelector('[data-prog-season-menu]', { timeout: 5000 });
 };
+// Stamp the menu's COMPUTED styles onto the body so a `needs` selector can
+// assert them. No source assertion can tell a white popover from a dark one,
+// and the bug Dan reported was half colour and half inheritance: `.toolbar
+// label` sets text-transform:uppercase / color:#aaa / flex-direction:column for
+// the date captions, and the option rows are <label>s inside .toolbar, so they
+// rendered UPPERCASE, grey and STACKED until the resets landed.
+const stampSeasonStyle = async page => {
+  await openSeasons(page);
+  await page.evaluate(() => {
+    const menu = document.querySelector('[data-prog-season-menu]');
+    const opt  = document.querySelector('[data-prog-season-opt]');
+    const b = document.body;
+    if (menu) b.setAttribute('data-sm-bg', getComputedStyle(menu).backgroundColor);
+    if (opt) {
+      const cs = getComputedStyle(opt);
+      b.setAttribute('data-sm-transform', cs.textTransform);
+      b.setAttribute('data-sm-dir', cs.flexDirection);
+    }
+  });
+};
+
 const tickSeason = async (page, value) => {
   await page.waitForSelector(`[data-prog-season-opt="${value}"] input`, { timeout: 5000 });
   await page.click(`[data-prog-season-opt="${value}"] input`);
@@ -1785,6 +1806,15 @@ const CASES = [
     // the assertion is on the input TYPE, not on the control existing.
     needs: '[data-prog-season-menu] input[type="checkbox"]',
     act: openSeasons },
+  // Dan: "make the menu look like the other menu styles. not the white
+  // background menu." #2c2c2c is the toolbar's own background, so this fails if
+  // the popover goes back to white — which is a thing only a browser can see.
+  { name: "programs · the season menu matches the toolbar", path: "/{org}/programs",
+    needs: '[data-sm-bg="rgb(44, 44, 44)"]', act: stampSeasonStyle },
+  // The inheritance half of the same bug, and the more interesting one: these
+  // rows are <label>s inside .toolbar, which uppercases and stacks its labels.
+  { name: "programs · season rows escape the toolbar label rule", path: "/{org}/programs",
+    needs: '[data-sm-transform="none"][data-sm-dir="row"]', act: stampSeasonStyle },
   { name: "programs · the season menu is CLOSED until asked for", path: "/{org}/programs",
     // An always-open menu is a different and noisier control. Absence before the
     // click is the only thing that distinguishes the two.
