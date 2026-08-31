@@ -1082,6 +1082,31 @@ function mbHasProductKind(rows) {
   return false;
 }
 
+// PRESENCE, NOT COUNT — the mbHasProductKind rule. An org with no residency
+// group gets NULL from the card, and a feed from before v5 has no column at
+// all. Both must HIDE the residency surfaces rather than render "0% resident",
+// which is a confident answer to a question the data cannot address.
+// Deliberately keyed on the column, not on finding a 'Yes': an org where every
+// member happens to be a non-resident still has a working residency setup and
+// should keep its filter.
+function mbHasResidency(rows) {
+  if (!rows || !rows.length) return false;
+  for (var i = 0; i < rows.length; i++) {
+    if (rows[i] && rows[i].hasResidency && rows[i].residency) return true;
+  }
+  return false;
+}
+
+// The row's residency as a filter key. Module scope so the spec can RUN it,
+// and so the filter, the split panel and the table cannot each derive it
+// differently — three surfaces reading one rule (the mbPlanKey lesson).
+function mbResidencyKey(r) {
+  if (!r || !r.hasResidency) return null;      // no column: unknowable
+  if (r.residency === 'Yes') return 'resident';
+  if (r.residency === 'No')  return 'nonresident';
+  return null;                                  // org runs no residency group
+}
+
 function mbHasEconomics(rows) {
   if (!rows || !rows.length) return false;
   for (var i = 0; i < rows.length; i++) {
@@ -1154,6 +1179,12 @@ function normalizeRow(raw) {
         autoRenew:     Object.prototype.hasOwnProperty.call(raw, 'Auto Renew') ? !!raw['Auto Renew'] : undefined,
         hasCycle:      Object.prototype.hasOwnProperty.call(raw, 'Period Start'),
         periodStart:   raw['Period Start'] || '',
+        // v5. Presence is tracked apart from the value for the same reason
+        // hasCycle is: the card emits NULL for an org with no residency group
+        // at all, and null must not read as "not a resident".
+        hasResidency:  Object.prototype.hasOwnProperty.call(raw, 'Resident?'),
+        // 'Yes' | 'No' | '' — '' means the org runs no residency group.
+        residency:     raw['Resident?'] == null ? '' : String(raw['Resident?']),
       };
     }
 
@@ -1454,6 +1485,14 @@ function normalizeRow(raw) {
         try { return JSON.parse(localStorage.getItem(LS_RENEWAL)) || ['Auto-renew', 'One-time']; }
         catch { return ['Auto-renew', 'One-time']; }
       });
+      // Residency scopes the WHOLE report. It is a DIMENSION, not a subject —
+      // "do residents retain better", "do non-residents auto-renew" and "what
+      // share of the book is resident" are the same cut applied to panels that
+      // already exist, which is why it is a filter here rather than a fifth
+      // tab that would duplicate every one of them. Not persisted: a search
+      // intent, not a layout preference, and someone returning to a silently
+      // narrowed book would read one half as the whole thing.
+      const [residencyFilter, setResidencyFilter] = useState('');   // '' | 'resident' | 'nonresident'
       const [typeFilter, setTypeFilter] = useState(null);   // null = all (initialized from data)
       const [priceMin, setPriceMin] = useState(() => localStorage.getItem(LS_PRICEMIN) || '');
       const [priceMax, setPriceMax] = useState(() => localStorage.getItem(LS_PRICEMAX) || '');
@@ -1779,6 +1818,15 @@ function normalizeRow(raw) {
         return data.filter(r => {
           if (renewalFilter.length > 0 && !renewalFilter.includes(r.renewalType)) return false;
           if (typeFilter && typeFilter.length > 0 && !typeFilter.includes(r.type)) return false;
+          // In filteredAnyStatus, so it scopes every panel — the Auto-Renew tab
+          // reads this, everything else reads `filtered`, which derives from it.
+          // A row whose residency is unknowable (no column, or an org with no
+          // residency group) is never excluded: narrowing a book on a guess is
+          // the denominator mistake this report has already made twice.
+          if (residencyFilter) {
+            const rk = mbResidencyKey(r);
+            if (rk !== null && rk !== residencyFilter) return false;
+          }
           if (pMin !== null && r.price < pMin) return false;
           if (pMax !== null && r.price > pMax) return false;
           if (q) {
@@ -1787,13 +1835,47 @@ function normalizeRow(raw) {
           }
           return true;
         });
-      }, [data, renewalFilter, typeFilter, priceMin, priceMax, search]);
+      }, [data, renewalFilter, typeFilter, priceMin, priceMax, search, residencyFilter]);
 
       const filtered = useMemo(
         () => (statusFilter.length > 0
           ? filteredAnyStatus.filter(r => statusFilter.includes(r.status))
           : filteredAnyStatus),
         [filteredAnyStatus, statusFilter]);
+
+      // ── Resident vs non-resident ───────────────────────────────────────
+      // Computed over filteredAnyStatus, NOT `filtered`: this panel is a
+      // breakdown of the book, and the status filter defaults to ['active'],
+      // so taking it from `filtered` would silently answer a different
+      // question than the one the heading asks. (The same trap that made the
+      // cancellation rate structurally 0.0% for every org.)
+      //
+      // It reads mbResidencyKey — the SAME predicate the toolbar filter reads,
+      // so the panel and the filter cannot disagree about who is a resident.
+      //
+      // Deliberately shown even when a residency filter is active: it then
+      // reports the slice you are looking at, which is what a reader expects
+      // of a breakdown sitting under a scoped page.
+      const residencySplit = useMemo(() => {
+        if (!mbHasResidency(data)) return null;
+        const acc = {
+          resident:    { n: 0, revenue: 0, autoRenew: 0 },
+          nonresident: { n: 0, revenue: 0, autoRenew: 0 },
+          unknown:     { n: 0, revenue: 0, autoRenew: 0 },
+        };
+        for (const r of filteredAnyStatus) {
+          const k = mbResidencyKey(r) || 'unknown';
+          acc[k].n++;
+          acc[k].revenue += (r.netCollected || 0);
+          if (mbIsAutoRenew(r)) acc[k].autoRenew++;
+        }
+        const known = acc.resident.n + acc.nonresident.n;
+        return {
+          ...acc,
+          known,
+          residentPct: known > 0 ? Math.round(acc.resident.n / known * 1000) / 10 : null,
+        };
+      }, [data, filteredAnyStatus]);
 
       // ── Summary metrics ──
       const summary = useMemo(() => {
@@ -2211,6 +2293,9 @@ function normalizeRow(raw) {
           'Last Used':      toXlDate(r.lastUsed),
           'Usage Count':    r.usageCount,
           'Attendance Count': r.attendanceCount,
+          // '' rather than 'No' where residency is unknowable, so a spreadsheet
+          // pivot cannot quietly file the unknown as non-resident.
+          'Resident?':      mbResidencyKey(r) === 'resident' ? 'Yes' : mbResidencyKey(r) === 'nonresident' ? 'No' : '',
         }));
         // totals row
         rows.push({
@@ -2227,6 +2312,7 @@ function normalizeRow(raw) {
           'Paid': rows.reduce((s, x) => s + safeNum(x.Paid), 0),
           'Refunded': rows.reduce((s, x) => s + safeNum(x.Refunded), 0),
           'Net Collected': rows.reduce((s, x) => s + safeNum(x['Net Collected']), 0),
+          'Resident?': '',
           'Start Date': '',
           'End Date': '',
           'Next Renewal': '',
@@ -2702,6 +2788,20 @@ function normalizeRow(raw) {
                   selected={typeFilter || []}
                   onChange={setTypeFilter}
                 />
+              )}
+
+              {/* ABSENT, not disabled, when the org runs no residency group or
+                  the feed predates card 17301 v5 — a control that can only ever
+                  answer "unknown" is a dead end. */}
+              {mbHasResidency(data) && (
+                <select data-mb-residency value={residencyFilter}
+                  onChange={function(e) { setResidencyFilter(e.target.value); }}
+                  title="Scopes the whole report — every tab, every total"
+                  style={{padding:'5px 8px',border:'1px solid #d4d4d8',borderRadius:4,background:'#fff',fontSize:12,fontFamily:'inherit',outline:'none',cursor:'pointer'}}>
+                  <option value="">All residency</option>
+                  <option value="resident">Resident</option>
+                  <option value="nonresident">Non-resident</option>
+                </select>
               )}
 
               <input
@@ -3936,6 +4036,45 @@ function normalizeRow(raw) {
                 <div className="card-sub">{money(summary.totalRevenue)} contract · by purchase date, all channels</div>
               </div>
             </div>
+
+            {/* Resident vs non-resident. A FILTER shows one side at a time;
+                this is the comparison, which is the thing worth looking at.
+                Hidden entirely — not zeroed — when the org runs no residency
+                group or the feed predates card 17301 v5. */}
+            {residencySplit && residencySplit.known > 0 && (
+              <div className="summary-cards" data-mb-residency-split>
+                <div className="summary-card" style={{borderLeft:'3px solid #0d6c78'}}>
+                  <div className="card-label">Resident</div>
+                  <div className="card-value" style={{color:'#0d6c78'}} data-mb-res-count={residencySplit.resident.n}>
+                    {residencySplit.resident.n.toLocaleString()}
+                  </div>
+                  <div className="card-sub" data-mb-res-pct={residencySplit.residentPct == null ? '' : residencySplit.residentPct}>
+                    {residencySplit.residentPct}% of the book · {money(residencySplit.resident.revenue)}
+                  </div>
+                </div>
+                <div className="summary-card" style={{borderLeft:'3px solid #8a5c0c'}}>
+                  <div className="card-label">Non-Resident</div>
+                  <div className="card-value" style={{color:'#8a5c0c'}} data-mb-nonres-count={residencySplit.nonresident.n}>
+                    {residencySplit.nonresident.n.toLocaleString()}
+                  </div>
+                  <div className="card-sub">
+                    {residencySplit.residentPct == null ? '' : (Math.round((100 - residencySplit.residentPct) * 10) / 10) + '% of the book · '}
+                    {money(residencySplit.nonresident.revenue)}
+                  </div>
+                </div>
+                {residencySplit.unknown.n > 0 && (
+                  <div className="summary-card">
+                    <div className="card-label">Residency Unknown</div>
+                    <div className="card-value" data-mb-res-unknown={residencySplit.unknown.n}>
+                      {residencySplit.unknown.n.toLocaleString()}
+                    </div>
+                    <div className="card-sub">
+                      excluded from the split rather than filed as non-resident
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
 
 
