@@ -127,6 +127,9 @@ jobs:
       - name: Aquatics lane spec (court-typed swim lanes recovered; Johnson Lane Park is not a pool)
         run: node scripts/aquatics-lanes.spec.js
 
+      - name: Programs location filter (one funnel; a stale ?loc= cannot empty the report)
+        run: node scripts/programs-location.spec.js
+
       - name: Facilities hub beacons (hub log route above the generic one; 200 AND a logged row)
         run: node scripts/facilities-beacons.spec.js
 

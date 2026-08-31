@@ -580,9 +580,23 @@ function progEffectiveTab(urlTab, hasProgram, hasSectionId, cfg) {
   return 'summary';
 }
 
+// A ?loc= naming a location this feed does not have must not empty the report.
+// Same shape as ciEffectiveRowSet, INCLUDING the `loaded` argument: a feed that
+// has not answered yet is not an empty answer, and resolving on mount — when
+// there are no options *yet* — is exactly how ?ci_rows=failed shipped broken.
+// At module scope so programs-location.spec.js can run it rather than regex it.
+function progEffectiveLoc(want, options, loaded) {
+  if (!want) return '';
+  if (!loaded) return want;
+  return (options || []).some(o => o.value === want) ? want : '';
+}
+
 function getParams() {
   const p = new URLSearchParams(window.location.search);
-  return { start_date: p.get('start_date'), end_date: p.get('end_date'), _print: p.get('_print'), tab: p.get('tab'), section_id: p.get('section_id'), program: p.get('program') };
+  // NOTE: this is an explicit whitelist. A parameter missing from here reads
+  // as undefined and its deep link silently does nothing — that is exactly how
+  // ?ci_rows= shipped broken on the check-ins tab.
+  return { start_date: p.get('start_date'), end_date: p.get('end_date'), _print: p.get('_print'), tab: p.get('tab'), section_id: p.get('section_id'), program: p.get('program'), loc: p.get('loc') };
 }
 
 function getCurrentMonthRange() {
@@ -1098,6 +1112,11 @@ function App() {
 
   const [search, setSearch] = useState(() => new URLSearchParams(window.location.search).get('program') || new URLSearchParams(window.location.search).get('search') || '');
   const [activityFilter, setActivityFilter] = useState('');
+  // Location scopes the WHOLE report. Not persisted — it is a search intent,
+  // not a layout preference, and someone returning to a silently narrowed
+  // report would read one site as the whole department. It IS in the URL, so a
+  // link lands on the location the sender was looking at.
+  const [locFilter, setLocFilter] = useState(params.loc || '');
 
   const [demoRows, setDemoRows] = useState(null);
   const [demoLoading, setDemoLoading] = useState(false);
@@ -1135,9 +1154,14 @@ function App() {
   useEffect(() => { if (demoRows && demoRows.length > 0) { var sample = demoRows[0]; console.log('[activity-debug] demoRows[0] keys:', Object.keys(sample).join(', ')); console.log('[activity-debug] Activity value:', sample['Activity']); console.log('[activity-debug] activityInfo.list:', activityInfo.list); } }, [demoRows, activityInfo]);
 
   const fDemoRows = useMemo(() => {
-    if (!demoRows || !activityFilter) return demoRows;
-    return demoRows.filter(r => (r['Activity'] || activityInfo.map[r['Program']||''] || '') === activityFilter);
-  }, [demoRows, activityFilter, activityInfo]);
+    if (!demoRows) return demoRows;
+    // Scoped by the PROGRAM set at the chosen location — this feed carries no
+    // location of its own (only card 17295 does), so this is coarser than the
+    // section-level scoping on the revenue tabs and the panel says so.
+    let out = locProgramSet ? demoRows.filter(r => locProgramSet.has(r['Program'])) : demoRows;
+    if (!activityFilter) return out;
+    return out.filter(r => (r['Activity'] || activityInfo.map[r['Program']||''] || '') === activityFilter);
+  }, [demoRows, activityFilter, activityInfo, locProgramSet]);
 
   const [colPresence, setColPresence] = useState({ regMode: false, cancellations: false, waitlist: false });
   const [insights,        setInsights]        = useState(null);
@@ -1377,7 +1401,8 @@ function App() {
 
   var retStats = useMemo(() => {
     if (!retRows || retRows.length === 0) return null;
-    var fRet = activityFilter ? retRows.filter(r => (activityInfo.map[r['Program']||'']||'') === activityFilter) : retRows;
+    var scopedRet = locProgramSet ? retRows.filter(r => locProgramSet.has(r['Program'])) : retRows;
+    var fRet = activityFilter ? scopedRet.filter(r => (activityInfo.map[r['Program']||'']||'') === activityFilter) : scopedRet;
     if (fRet.length === 0) return null;
     var programs = fRet.map(r => {
       var total = parseInt(r['Total Participants']) || 0;
@@ -1411,7 +1436,7 @@ function App() {
       .filter(function(a) { return a.total >= 20; })
       .sort(function(a, b) { return b.retPct - a.retPct; })[0] || null;
     return { programs: programs, totalP: totalP, totalR: totalR, totalL: totalL, totalS: totalS, orgRetPct: orgRetPct, avgSec: avgSec, progsWithReturners: progsWithReturners, topRetaining: topRetaining, topActivity: topActivity };
-  }, [retRows, activityFilter, activityInfo]);
+  }, [retRows, activityFilter, activityInfo, locProgramSet]);
 
   // ── Cohort retention + cross-program affinity from enrollment data ──
   var cohortAnalytics = useMemo(() => {
@@ -1738,10 +1763,84 @@ function App() {
     } catch {}
   }
 
+  // Mirror the location into the URL so a shared link lands where the sender
+  // was. MUTATE ONLY THIS KEY — rebuilding the whole query string is how the
+  // Fast Track share-link effect destroyed ?tab=, and ?token=, ?section_id= and
+  // ?program= all ride on this URL too. The default CLEARS the parameter rather
+  // than writing ?loc=.
+  useEffect(() => {
+    try {
+      const u = new URL(window.location.href);
+      if (locFilter) u.searchParams.set('loc', locFilter);
+      else u.searchParams.delete('loc');
+      window.history.replaceState(null, '', u.toString());
+    } catch {}
+  }, [locFilter]);
+
+  // Drop a stale ?loc= once the feed has actually answered.
+  useEffect(() => {
+    if (!rows) return;
+    const eff = progEffectiveLoc(locFilter, locOptions, true);
+    if (eff !== locFilter) setLocFilter(eff);
+  }, [rows, locOptions]);   // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Location filter ────────────────────────────────────────────────
+  // PRESENCE, NOT VALUE. Card 17295 v6 adds `location`; a warm 4-hour v5 cache
+  // entry has no such key. The control is ABSENT in that case rather than
+  // offering a single useless option — "renders an empty filter" and "renders
+  // nothing" are different claims. Same rule as mbHasProductKind / ciHasStatus.
+  const progHasLocation = useMemo(
+    () => Array.isArray(rows) && rows.some(r => 'location' in r),
+    [rows]);
+
+  // A section with no located session is a real state, not a missing one, so it
+  // gets its own option. Without it those sections vanish the moment anyone
+  // picks a location, and nothing on screen says they were dropped.
+  const LOC_NONE = '\u0000none';
+
+  const locOptions = useMemo(() => {
+    if (!rows || !progHasLocation) return [];
+    const counts = new Map();
+    let none = 0;
+    rows.forEach(r => {
+      const L = r.location;
+      if (L) counts.set(L, (counts.get(L) || 0) + 1);
+      else none++;
+    });
+    // Busiest first, so a location that falls out of use sinks on its own.
+    const out = Array.from(counts.entries())
+      .sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0])))
+      .map(([name, n]) => ({ value: name, label: name, n }));
+    if (none) out.push({ value: LOC_NONE, label: 'No location set', n: none });
+    return out;
+  }, [rows, progHasLocation]);
+
+  // THE SINGLE FUNNEL. Every panel reads locRows, never `rows`. The facility
+  // Summary shipped chips that scoped some panels and not others, and the page
+  // disagreed with itself for a week; programs-location.spec.js fails if a bare
+  // `rows` appears in the derivation block below.
+  const locRows = useMemo(() => {
+    if (!rows || !locFilter) return rows;
+    if (locFilter === LOC_NONE) return rows.filter(r => !r.location);
+    return rows.filter(r => r.location === locFilter);
+  }, [rows, locFilter]);
+
+  // The demographics, retention and check-in tabs read their OWN feeds, which
+  // carry no location column — only the programs card has one. So they are
+  // scoped by the set of PROGRAMS present at the chosen location. That is
+  // coarser than the section-level scoping above (a program running at two
+  // sites is in the set for both), and the panels say so rather than implying
+  // a precision they do not have.
+  const locProgramSet = useMemo(() => {
+    if (!locFilter || !locRows) return null;
+    return new Set(locRows.map(r => r.programName));
+  }, [locFilter, locRows]);
+
   // ── Computed values ────────────────────────────────────────────────
   const grouped = useMemo(() => {
-    if (!rows) return null;
-    const base = activityFilter ? rows.filter(function(r) { return getProgActivity(r.programName) === activityFilter; }) : rows;
+    if (!locRows) return null;
+    const scoped = locRows || [];
+    const base = activityFilter ? scoped.filter(function(r) { return getProgActivity(r.programName) === activityFilter; }) : scoped;
     const map = {};
     base.forEach(r => {
       if (!map[r.programName]) map[r.programName] = [];
@@ -1757,7 +1856,7 @@ function App() {
       if (prog.toLowerCase().includes(q)) filtered[prog] = sections;
     });
     return filtered;
-  }, [rows, search, activityFilter, activityInfo]);
+  }, [locRows, search, activityFilter, activityInfo]);
 
   // Rows remaining after the program search filter — drives summary cards + grand total
   const filteredRows = useMemo(() => (grouped ? Object.values(grouped).flat() : []), [grouped]);
@@ -2064,6 +2163,18 @@ function App() {
             </select>
           </React.Fragment>);
         })()}
+        {locOptions.length > 1 && (<React.Fragment>
+          <div className="divider" />
+          <select data-prog-loc value={locFilter}
+            onChange={function(e) { setLocFilter(e.target.value); setInsights(null); setInsightsMeta(null); }}
+            title="Scopes the whole report — every tab, every total"
+            style={{padding:'4px 8px',border:'1px solid rgba(255,255,255,.2)',borderRadius:4,background:'rgba(255,255,255,.1)',color:'#fff',fontSize:12,fontFamily:'inherit',outline:'none',cursor:'pointer',maxWidth:200}}>
+            <option value="" style={{color:'#333'}}>All Locations ({locOptions.length})</option>
+            {locOptions.map(function(o) {
+              return <option key={o.value} value={o.value} style={{color:'#333'}}>{o.label} ({o.n})</option>;
+            })}
+          </select>
+        </React.Fragment>)}
         <div className="divider" />
         <div style={{position:'relative',display:'flex',alignItems:'center'}}>
           <span style={{position:'absolute',left:8,color:'#666',fontSize:12,pointerEvents:'none'}}>🔍</span>
