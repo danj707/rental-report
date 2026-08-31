@@ -2,6 +2,46 @@
 -- (replaced by program/program_activity, same UUIDs; section.program_id is
 -- populated 1:1 with section.class_id). This file is the live card SQL with
 -- ONLY that mechanical rename applied - no logic or output changes.
+-- Card 17295: ✅ Programs Report — v6 (location + instructor) — 2026-08-31
+--
+-- v6 ADDS FOUR COLUMNS AND CHANGES NOTHING ELSE. Every pre-existing column
+-- keeps its name, position and expression, and the four new ones are appended
+-- at the END, so a warm 4-hour v5 cache entry and a fresh v6 response are both
+-- readable by public/programs.html. The page gates on PRESENCE of the column,
+-- never on its value (see progHasLocation there) — same rule as
+-- mbHasProductKind / ciHasStatus.
+--
+--   "location"          the section's primary location NAME, resolved from its
+--                       sessions. session.location_id is EITHER a court (site)
+--                       id OR a location id — card 17298 already resolves it
+--                       both ways and this mirrors that exactly. NULL when the
+--                       section has no located session; the page renders
+--                       "Unassigned" rather than inventing one.
+--   "location_count"    distinct resolved locations for the section. A section
+--                       CAN span more than one, so "location" alone would be a
+--                       confident half-truth. Measured platform-wide: 287 of
+--                       42,457 sections with a located session span >1 (0.7%),
+--                       and ZERO of those collapse to a single building — so
+--                       this is a real edge case, not a main case, and the page
+--                       marks it rather than hiding it.
+--                       "Primary" is the location holding the most sessions,
+--                       ties broken by name so two runs cannot disagree.
+--   "instructor"        comma-joined facilitator names.
+--                       THE JOIN PATH IS section_facilitator → instructor →
+--                       users, via instructor.user_id. facilitator_id points at
+--                       instructor.id, NOT users.id: joining it straight to
+--                       users matches 0 of 34,070 rows platform-wide and, as a
+--                       LEFT JOIN, would render an empty Instructor column for
+--                       every org without erroring. The expression is lifted
+--                       VERBATIM from card 17755 (Instructor Payout) so the two
+--                       reports cannot print different names for one section.
+--   "instructor_count"  distinct facilitators, so the page can say "+2 more"
+--                       instead of silently truncating.
+--
+-- All four come from LEFT JOINs on aggregates keyed by section_id, so none can
+-- fan out a row. Verify before signing off: row count identical with and
+-- without the two new CTEs.
+--
 -- Card 17295: ✅ Programs Report — v5 (section_price → pricing_policy) — 2026-08-05
 -- Changes from v4: replaced section_price lateral join (spr) with inline
 -- section.pricing_policy->'default'->>'cents' jsonb accessor.
@@ -180,6 +220,43 @@ wl AS (
   LEFT JOIN session se ON se.id = w.session_id AND se.organization_id = cfg.org_id AND se.deleted_at IS NULL
   WHERE COALESCE(w.section_id, se.section_id) IS NOT NULL
   GROUP BY COALESCE(w.section_id, se.section_id)
+),
+-- ── v6: where a section actually meets ────────────────────────────
+-- session.location_id is EITHER a court (site) id or a location id. Resolve
+-- both, exactly as card 17298 does — reading only one side silently loses
+-- every section scheduled the other way.
+sec_loc AS (
+  SELECT se.section_id,
+         COALESCE(lf.name, ld.name) AS loc_name,
+         COUNT(*)                   AS sess_n
+  FROM cfg
+  JOIN session se    ON se.organization_id = cfg.org_id
+                    AND se.deleted_at IS NULL AND se.canceled_at IS NULL
+  LEFT JOIN court    ct ON ct.id = se.location_id AND ct.deleted_at IS NULL
+  LEFT JOIN location lf ON lf.id = ct.location_id AND lf.deleted_at IS NULL
+  LEFT JOIN location ld ON ld.id = se.location_id AND ld.deleted_at IS NULL
+  WHERE COALESCE(lf.name, ld.name) IS NOT NULL
+  GROUP BY se.section_id, COALESCE(lf.name, ld.name)
+),
+sec_loc_agg AS (
+  SELECT section_id,
+         -- primary = most sessions; name breaks the tie so two runs of the
+         -- same query cannot pick different winners.
+         (ARRAY_AGG(loc_name ORDER BY sess_n DESC, loc_name))[1] AS location_name,
+         COUNT(*)::int                                           AS location_count
+  FROM sec_loc
+  GROUP BY section_id
+),
+sec_fac AS (
+  SELECT sf.section_id,
+         STRING_AGG(DISTINCT BTRIM(REGEXP_REPLACE(CONCAT_WS(' ', u.first_name, u.last_name), '\s+', ' ', 'g')), ', ') AS instructor_names,
+         COUNT(DISTINCT i.id)::int AS instructor_count
+  FROM cfg
+  JOIN section_facilitator sf ON sf.organization_id = cfg.org_id AND sf.deleted_at IS NULL
+  JOIN instructor i           ON i.id = sf.facilitator_id
+                             AND i.organization_id = cfg.org_id AND i.deleted_at IS NULL
+  JOIN users u                ON u.id = i.user_id
+  GROUP BY sf.section_id
 )
 SELECT
   o.name AS "Org Name",
@@ -219,7 +296,12 @@ SELECT
   COALESCE(wl.waitlist_active,0)                                                              AS waitlist_active,
   COALESCE(wl.waitlist_total,0)                                                               AS waitlist_total,
   COALESCE(wl.waitlist_converted,0)                                                           AS waitlist_converted,
-  ROUND(COALESCE(wl.waitlist_active,0) * COALESCE((s.pricing_policy->'default'->>'cents')::int,0) / 100.0, 2) AS waitlist_demand
+  ROUND(COALESCE(wl.waitlist_active,0) * COALESCE((s.pricing_policy->'default'->>'cents')::int,0) / 100.0, 2) AS waitlist_demand,
+  -- ── v6 additions, APPENDED so v5 cache entries stay readable ──
+  sla.location_name                 AS location,
+  COALESCE(sla.location_count, 0)   AS location_count,
+  sfx.instructor_names              AS instructor,
+  COALESCE(sfx.instructor_count, 0) AS instructor_count
 FROM cfg
 JOIN section s ON s.organization_id = cfg.org_id AND s.deleted_at IS NULL
 JOIN program p ON p.id = s.program_id AND p.organization_id = cfg.org_id AND p.deleted_at IS NULL
@@ -242,6 +324,8 @@ LEFT JOIN sec_fin f ON f.section_id = s.id
 LEFT JOIN slots    ON slots.section_id = s.id
 LEFT JOIN ppl      ON ppl.section_id = s.id
 LEFT JOIN wl       ON wl.section_id = s.id
+LEFT JOIN sec_loc_agg sla ON sla.section_id = s.id
+LEFT JOIN sec_fac     sfx ON sfx.section_id = s.id
 WHERE s.organization_id = cfg.org_id AND s.deleted_at IS NULL
   [[ AND (sd.first_start IS NULL OR (sd.first_start AT TIME ZONE cfg.tz)::date <= {{end_date}}::date) ]]
   [[ AND (sd.last_end   IS NULL OR (sd.last_end   AT TIME ZONE cfg.tz)::date >= {{start_date}}::date) ]]
