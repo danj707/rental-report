@@ -9,6 +9,17 @@
 --    overlap condition: a rental matters only if
 --    date(upper(range)) >= start AND date(lower(range)) <= end.
 --    The day-level filter after expansion is unchanged, so rows are identical.
+-- 3. 2026-08-19: added "Paid?" — Yes / Partial / No, NULL when there is no
+--    order item to pay for. Unlike Total/Add-On Fees this is a status, not
+--    money, so it repeats on every day of a multi-day booking (nothing to
+--    double-count) and each row can be read on its own.
+--
+--    The verdict covers the reservation's own item AND its add-on children,
+--    because they are billed together and paid separately: the Jolie Kulik
+--    baby shower had a $900 room marked fully paid and $288 of chiavari
+--    chairs untouched, and looking only at the parent called that PAID while
+--    Rec's billing summary said $288 due. Comped/$0 items carry fully_paid_at
+--    (and are treated as settled regardless), so comps stay green.
 WITH addons AS (
   SELECT
     STRING_AGG(
@@ -38,16 +49,32 @@ res_group AS (
     AND g.organization_id = {{org_id}}::uuid
     -- THE GROUP'S OWN TOGGLE, not a name match. Measured platform-wide
     -- 2026-08-31: the old `OR g.name ILIKE '%residen%'` swept in 96 groups
-    -- across 35 orgs that are not residency groups — 4,099 live memberships
+    -- across 35 orgs that are NOT residency groups — 4,099 live memberships
     -- and 1,446 households — because "Non-Resident" contains "Resident" as a
-    -- substring. 516 people on "2026 Summer/Annual Pool Pass (Non-residents)"
-    -- were reported as RESIDENTS, and product groups like "El Segundo Resident
-    -- ID Card - Adult" (1,088) counted too. It bought nothing in exchange:
-    -- every residency-typed group was already matched by the type half, since
-    -- 'residency' ILIKE '%residen%'. No org loses coverage (0 orgs have a
-    -- residency-NAMED group without a residency-TYPED one), and no negative
-    -- guard is needed — "Non-Resident Groups" is typed special-group, which
-    -- the toggle cannot match.
+    -- substring. Among the orgs this card serves: Reading's "Pleasant Street
+    -- Center NON-RESIDENT Membership" (38 people) and Euclid's Monthly/Annual
+    -- "Non-Resident" Rec Passes were all reported as RESIDENTS, as were
+    -- product groups like Tullahoma's "Individual Resident Basketball
+    -- Membership (Free)" (43).
+    --
+    -- It bought nothing in exchange: every residency-typed group was already
+    -- matched by the TYPE half of the same condition, since
+    -- 'residency' ILIKE '%residen%'. So this is pure false-positive removal —
+    -- 0 orgs platform-wide have a residency-NAMED group without a
+    -- residency-TYPED one — and no negative guard is needed, because
+    -- "Non-Resident Groups" is typed special-group and the toggle cannot
+    -- match it.
+    --
+    -- CONSEQUENCE, measured per org before the push: 7 of the 29 orgs this
+    -- card serves see rows move from Yes to No (Tullahoma 43, Reading 38,
+    -- Euclid 31, Pawnee 22, Windham 16, Niagara Falls 6, Clarkstown 2). Six
+    -- keep a real residency register answering (Windham 1,313 households,
+    -- Tullahoma 809, Euclid 797, Reading 469, Niagara Falls 374, Pawnee 15).
+    -- CLARKSTOWN HAS NO RESIDENCY-TYPED GROUP AT ALL, so has_res_group goes
+    -- false there and this column becomes NULL for every one of their rows —
+    -- which is the honest answer for an org that runs no residency register,
+    -- and better than today's, where their 2 "NON-RESIDENT VERIFICATION FOR
+    -- CAMP" holders read as residents.
     AND g.group_type = 'residency'
 ),
 has_res_group AS (
@@ -130,6 +157,48 @@ base AS (
          OR date(upper(r.reservation_timestamp_range)) >= date_trunc('month', now()::date)::date)
     AND (1 = 0 [[ OR {{end_date}} IS NOT NULL ]]
          OR date(lower(r.reservation_timestamp_range)) <= (date_trunc('month', now()::date) + interval '1 month' - interval '1 day')::date)
+),
+-- Every order item that makes up a booking in this window: the reservation's
+-- own item plus its add-on children, keyed back to the parent. Scoped to
+-- base's item set rather than the org's whole catalogue — this card is
+-- already the slowest in the suite and a full-org scan here is what sank the
+-- facilities-summary rebuild.
+rental_items AS (
+  SELECT DISTINCT b.order_item_id AS root_id, b.order_item_id AS item_id
+  FROM base b
+  WHERE b.order_item_id IS NOT NULL
+  UNION
+  SELECT DISTINCT b.order_item_id, ch.id
+  FROM base b
+  JOIN order_item ch ON ch.parent_order_item_id = b.order_item_id
+   AND ch.deleted_at IS NULL
+),
+-- Confirmed money actually taken against those items. Refunds are stored as
+-- positive amounts, so they are subtracted rather than summed.
+item_tx AS (
+  SELECT t.order_item_id,
+         SUM(CASE WHEN t.refund_id IS NOT NULL THEN -t.amount ELSE t.amount END) AS net_cents
+  FROM order_item_transaction t
+  JOIN rental_items ri ON ri.item_id = t.order_item_id
+  WHERE t.confirmed_at IS NOT NULL
+    AND t.deleted_at IS NULL
+  GROUP BY t.order_item_id
+),
+paid_rollup AS (
+  SELECT
+    ri.root_id,
+    COUNT(*) AS items,
+    -- an item is settled when it is marked fully paid, or when there was
+    -- nothing to pay for it in the first place (comped to $0)
+    COUNT(*) FILTER (
+      WHERE oi.fully_paid_at IS NOT NULL
+         OR COALESCE((oi.applied_pricing->'result'->>'finalCents')::numeric, 0) <= 0
+    ) AS items_settled,
+    COALESCE(SUM(tx.net_cents), 0) AS collected_cents
+  FROM rental_items ri
+  JOIN order_item oi ON oi.id = ri.item_id
+  LEFT JOIN item_tx tx ON tx.order_item_id = ri.item_id
+  GROUP BY ri.root_id
 )
 SELECT
   b.org_name                                AS "Org Name",
@@ -185,6 +254,17 @@ SELECT
     ELSE NULL
   END                                       AS "Total",
 
+  -- Paid?: settled state of everything billed under this booking, on every
+  -- day of it. NULL (blank in the report — neither tick nor cross) when there
+  -- is no order item: nothing was ever charged for, so 'unpaid' would be a
+  -- claim the data does not support.
+  CASE
+    WHEN b.order_item_id IS NULL                       THEN NULL
+    WHEN pr.items_settled = pr.items                   THEN 'Yes'
+    WHEN pr.items_settled > 0 OR pr.collected_cents > 0 THEN 'Partial'
+    ELSE 'No'
+  END                                       AS "Paid?",
+
   -- Multi-day metadata (NULL for single-day bookings)
   CASE WHEN b.checkout_date > b.local_date
     THEN (b.checkout_date - b.local_date + 1)
@@ -212,6 +292,7 @@ LEFT JOIN addons                ON addons.parent_order_item_id = b.order_item_id
 LEFT JOIN resident_households rh ON rh.household_id = b.customer_household_id
 LEFT JOIN resident_users      ru ON ru.user_id      = b.customer_user_id
 LEFT JOIN rental_notes        rn ON rn.entity_id    = b.id
+LEFT JOIN paid_rollup         pr ON pr.root_id     = b.order_item_id
 WHERE
   b.site_type IS NOT NULL
   AND b.status != 'canceled'
