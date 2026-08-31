@@ -563,11 +563,46 @@
     // so a court that merely sits at, say, "Aquatic Park" isn't miscast as a
     // pool. Only rows Rec typed `court` are ever reconsidered; anything already
     // typed specifically (field, room, pool…) is left exactly as Rec has it.
-    function refineSiteType(rawType, facility) {
+    // A BARE "LANE" IS THE ONE CASE WHERE THE LOCATION HAS TO BE CONSULTED, and
+    // it is a deliberate, narrow exception to the never-the-location rule above.
+    // That rule exists so a TENNIS COURT sitting at "Aquatic Park" is not
+    // miscast as a pool. A site literally named "Lane 3 - B" is not a tennis
+    // court — the name is genuinely ambiguous and carries no sport at all, and
+    // the location is the only thing that can resolve it.
+    //
+    // Measured platform-wide before this shipped: 487 sites match \blane\b.
+    // 373 are already typed `pool`; 305 are already recovered by the name rule
+    // below. That leaves 74 court-typed lanes the name rule misses, and 68 of
+    // them sit at a location named pool/aquatic/swim/plunge. The other 6 are
+    // exactly why both guards exist:
+    //
+    //   * 3 are El Segundo sites parked in "ZZ Archived Sites [do not use]"
+    //   * 3 are Douglas County's "Johnson Lane Tennis/Pickleball Court #1/#2"
+    //     and "Johnson Lane 2-Half Court Basketball Court" — "Lane" as a ROAD
+    //     name, at Johnson Lane Park. This is the /ball ?field/ -> "Football
+    //     Field" bug waiting to happen, and it is rejected twice over: the
+    //     names carry a competing court word, AND the location is not aquatic.
+    //
+    // Blast radius, measured: El Segundo +66 sites and Northern Door +2. Every
+    // other org's aquatics figures are byte-identical, because their lanes are
+    // either already typed `pool` or already caught by the name.
+    //
+    // Why this is not per-org config: it is a data-shape problem, not a policy
+    // one. A slug allowlist would need remembering for the next org that types
+    // its lanes `court` so they instant-book, and would silently do nothing
+    // until someone did.
+    const LANE_RX      = /\blanes?\b/;
+    const LANE_NOT_RX  = /\b(court|tennis|pickleball|basketball|volleyball|bowl\w*)\b/;
+    const LANE_LOC_RX  = /\b(pool|aquatics?|swim|natatorium|plunge)\b/;
+    function refineSiteType(rawType, facility, location) {
       if (rawType !== 'court') return rawType;
       const n = String(facility == null ? '' : facility).toLowerCase();
       if (/\b(ice|rink)\b/.test(n)) return 'rink';
       if (/\b(pool|aquatics?|natatorium|swim)\b/.test(n)) return 'pool';
+      // Bare lane + no competing court word + an aquatic location. Both guards
+      // are independently sufficient to reject Johnson Lane Park.
+      if (LANE_RX.test(n) && !LANE_NOT_RX.test(n)
+          && LANE_LOC_RX.test(String(location == null ? '' : location).toLowerCase())) return 'pool';
       // "Gymnasium" is a gym; but several orgs name basketball/volleyball courts
       // inside a gym "Gym Court 1" — those the org explicitly called courts, so
       // leave them as courts. Only reclassify a gym site that isn't named a court.
@@ -581,7 +616,7 @@
     // column set as the originals, so the Excel export is unaffected.
     function refineRows(rows) {
       return (rows || []).map(r => {
-        const refined = refineSiteType(r['Site Type'], r['Facility']);
+        const refined = refineSiteType(r['Site Type'], r['Facility'], r['Location']);
         if (refined === r['Site Type']) return r;
         return Object.assign({}, r, { 'Site Type': refined });
       });

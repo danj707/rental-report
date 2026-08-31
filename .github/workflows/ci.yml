@@ -124,6 +124,9 @@ jobs:
       - name: Outdoor events hour spec (hours covered, not hours started; multi-day excluded)
         run: node scripts/outdoor-hours.spec.js
 
+      - name: Aquatics lane spec (court-typed swim lanes recovered; Johnson Lane Park is not a pool)
+        run: node scripts/aquatics-lanes.spec.js
+
       - name: Facilities hub beacons (hub log route above the generic one; 200 AND a logged row)
         run: node scripts/facilities-beacons.spec.js
 
