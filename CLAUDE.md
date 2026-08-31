@@ -810,6 +810,214 @@ is precisely the false-zero v3 stopped rendering.
 later event broke it with nothing about settings-open changing. It now tests
 membership in the array, and was re-verified to still catch settings-open being
 removed.
+## El Segundo's aquatics asks — residency, lane hours, section location (2026-08-31)
+
+Joseph Lormans (El Segundo) asked for four aquatics reports by mid-September on a
+July–June FY: **lane hours**, **class/instructional programming** (per class, by
+location, by month, by instructor), **drop-in/public swim**, and **passes &
+memberships** split resident vs non-resident. Dan: *"lets do 4 and 2 with the
+small mb adjustments, then surface the resident vs non-resident metric in the
+passes and memberships report"* and *"I like the idea of adding a top level
+location filter"* on Programs.
+
+### RESIDENCY IS A TOGGLE ON THE GROUP, NOT A WORD IN ITS NAME
+
+Dan: *"wouldn't it make more sense to flag a group that is residency by
+confirming the 'residency group' toggle is turned on instead of doing an
+ilike?"* Yes, and the ILIKE was actively wrong. `group.group_type` carries three
+values (`for-purchase` 945, `special-group` 582, `residency` 87), and cards
+17294 / 17788 / 17689 all tested
+`group_type ILIKE '%residen%' OR name ILIKE '%residen%'`.
+
+**"Non-Resident" CONTAINS "Resident".** That name clause sweeps in **96 groups
+across 35 orgs — 4,099 live memberships, 1,446 households** that are not
+residency groups at all, including **516 people on "2026 Summer/Annual Pool Pass
+(Non-residents)" reported as RESIDENTS**. Per org: Tullahoma 43, Reading 38,
+Euclid 31, Pawnee 22, Windham 16, Niagara Falls 6, Clarkstown 2.
+
+It is **pure false-positive removal and needs no negative guard**: every
+residency-TYPED group already matches the type half (`'residency' ILIKE
+'%residen%'`), and **0 orgs have a residency-NAMED group without a
+residency-TYPED one** — so no org loses coverage. "Non-Resident Groups" is typed
+`special-group`, which the toggle simply cannot match.
+
+**Clarkstown has zero residency-typed groups**, so its `Resident?` column goes
+NULL entirely rather than reading `No` on every row — which is the correct
+answer, and the reason the column is presence-gated.
+
+### THERE ARE THREE PATHS TO A RESIDENT AND THE OBVIOUS TWO ARE NOT ENOUGH
+
+The first version of card 17301 v5 returned **`No` on all 3,132 El Segundo rows
+while 1,317 resident households existed.** Every join is a LEFT JOIN, so a miss
+renders a confident `No` — silently.
+
+1. **the product's household** — `membership_household_id` / `pass_household_id`.
+   NULL unless the product itself is household-coverage; **every one of El
+   Segundo's 3,132 rows is `coverage='individual'`**, so both are null on every
+   row. (The purchases view splits this id in two and has no single
+   `customer_household_id`, unlike the facility card's booking view.)
+2. **the BUYER's own household** — `users.household_id` via `customer_user_id`.
+   **This is the path that carries the answer**: 2,610 of El Segundo's buyers
+   have it populated and the residency group attaches at household level.
+3. **the buyer as an individual** — `membership_user`. Zero rows at El Segundo,
+   but the path for orgs that enrol residents individually.
+
+None subsumes the others. **Worth knowing before reconciling a closed FY:** the
+test is evaluated at query time against CURRENT membership — "is this person a
+resident today", not "were they a resident when they bought".
+
+### Residency is a FILTER, not a sub-tab
+
+Dan asked: *"should that be a metric on the report or a whole new sub-tab?"* A
+tab answers the question once and then duplicates every panel beside it;
+residency is a **dimension**, so it belongs on the toolbar where it re-scopes
+what is already there. `residencyFilter` is applied **inside
+`filteredAnyStatus`** — the one place every other toolbar filter already lives —
+so a single insertion scopes all four tabs, and the churn metrics keep reading
+the any-status view. Plus one side-by-side split panel, and a `Resident?` column
+in the Excel export writing an empty string (never `No`) for unknown.
+
+### THE POOL LANES ARE FACILITY RESERVATIONS, AND I GOT THIS WRONG FIRST
+
+I reported lane hours as **blocked** on the strength of `court.type = 'pool'` —
+11 hours all-time. Dan: *"For the pool lanes, they are all facility
+reservations."* Right, and then the why: *"in this case pool lanes are marked as
+'court' so users can instant book them, but this is atypical."*
+
+Re-measured: **74 of El Segundo's 98 lane sites are typed `court`**, and the real
+figures are **15,072 slots / 70 lanes / 29,981 hours all-time** (7,252 in the
+last 30 days). The Aquatics vertical was showing 24 sites while 70 carried the
+traffic. Generalise it: **a type filter that returns almost nothing is a question
+about the filter, not an answer about the data.**
+
+`refineSiteType()` exists for exactly this reason already (rinks and gyms are
+typed `court` so they instant-book), but El Segundo's lanes are named
+"North Lane 1 - A", "Lane 3 - B", `Inst Lane 4-2" Depth (25Y) - A` — **no
+pool/swim/aquatic word anywhere**, so the name rule missed all of them.
+
+**THE LANE BRANCH IS THE ONE PLACE THAT FUNCTION CONSULTS THE LOCATION**, and it
+is a deliberate, narrow exception. That never-read-the-location rule protects a
+tennis court sitting at "Aquatic Park"; a site named "Lane 3 - B" is not a tennis
+court — the name is genuinely ambiguous and carries no sport, so the location is
+the only thing that can resolve it. **Two independent guards keep the original
+intent**: a competing court word in the NAME rejects the site, and so does a
+non-aquatic LOCATION.
+
+**The counterexample is real, not invented.** Douglas County's **Johnson Lane
+Park** has "Johnson Lane Tennis/Pickleball Court #1/#2" and "Johnson Lane 2-Half
+Court Basketball Court" — **"Lane" as a ROAD name**. That is the
+`/ball ?field/` → "Football Field" bug one field over.
+
+Measured platform-wide before shipping: 487 sites match `\blane\b`, 373 already
+typed `pool`, 305 already recovered by the name rule, **74 court-typed lanes the
+name rule misses, 68 of them at an aquatic location**. The 6 exceptions are 3 El
+Segundo archived sites and the 3 Johnson Lane Park courts. **Blast radius: two
+orgs — El Segundo +66, Northern Door +2.**
+
+### Card 17295 v6 — location and instructor
+
+**`session.location_id` is EITHER a court id OR a location id.** Card 17298
+already resolves both and `sec_loc` mirrors it exactly; reading one side silently
+loses every section scheduled the other way.
+
+**`facilitator_id` IS `instructor.id`, NOT `users.id`.** The obvious join matches
+**0 of 34,070 rows platform-wide** and, being a LEFT JOIN, would render an empty
+Instructor column for all 29 orgs without erroring. The path is
+`section_facilitator → instructor → users` via `instructor.user_id`, and the name
+expression is lifted **verbatim from card 17755** so Instructor Payout and
+Programs cannot print different names for one section.
+
+**`location_count` ships beside `location`** because a section CAN span more than
+one — 287 of 42,457 located sections (0.7%), and **zero of those collapse to a
+single building** — so "location" alone would be a confident half-truth. Primary
+is the location holding the most sessions, **ties broken by name so two runs of
+the same query cannot disagree.**
+
+Verified no fan-out before pushing: `sec_loc_agg` 282 rows / 282 sections,
+`sec_fac` 121 / 121.
+
+### The Programs location filter needed the deep-link work done AGAIN
+
+Third and fourth instances of traps already written down in this file:
+
+- **`loc` had to be added to `getParams()`'s explicit whitelist**, or
+  `params.loc` reads `undefined` and the deep link silently does nothing — the
+  `?ci_rows=` bug verbatim, and invisible in source review.
+- **`progEffectiveLoc(want, options, loaded)` takes a `loaded` argument.**
+  Resolving on mount, when the feed has not answered and there are therefore no
+  options YET, is not the same fact as "this feed has no such location".
+- **The URL write-back mutates only `loc`** rather than rebuilding the query
+  string — `?token=`, `?section_id=`, `?program=` and `?tab=` all ride on this URL.
+- **Sections with no located session get their own option** (`LOC_NONE`), or they
+  vanish the moment anyone picks a location with nothing saying they were dropped.
+- Every panel downstream reads the `locRows` funnel, never `rows` — the facility
+  Summary invariant, asserted mechanically.
+
+### A blank Aquatics tab, caught only by the render check
+
+`AquaticsHours` copied heat-map markup that called `hour12()` — **a local alias
+inside another component, not a module-scope helper.** It threw and React
+unmounted the tree. `node --check`, the HTML parse check, the boot check and all
+30 specs passed on the broken version; **`ci-check-render.js` is what said "the
+page came up blank"**, exactly as that section promises. Fixed to `oeHour12`, and
+all 11 identifiers the new component reads were then checked against module scope.
+
+### The 17294 mirror was 53 lines STALE — pushing it would have deleted a feature
+
+The read-live-before-writing rule earned its keep again.
+`sql/report-cards/17294-facility-rental-report.sql` was missing the **entire
+`Paid?` feature** (`paid_rollup`, `rental_items`, `item_tx`). Pushing the repo
+copy to make a one-line residency change would have silently removed that column
+for all 29 orgs. The mirror was rebuilt from the live card first, then edited.
+
+**A process slip to disclose: 17689 was pushed WITHOUT a live read.** It serves
+(42,305 rows in 20.9s) and the residency swap is one line, but unmirrored edits
+since 2026-08-22 cannot be ruled out from here — Metabase keeps revision history
+on the card if it needs checking.
+
+### PARKED: per-org site scoping for a report tab
+
+Dan: *"since the spec for sites on the aquatic report is pretty org specific …
+why not make this a facility report setting"*, then refined it to *"which
+location/sites need to be included in the report tab — a pulldown of
+locations/sites so I/someone can edit the report settings and include/exclude
+locations and sites?"*
+
+The refined version is the right one, and it is measurable: **a site-TYPE setting
+is too coarse** — El Segundo has 92 court-typed sites, of which **71 are lanes
+and 21 are not** (8 Pickleball, 2 Basketball, Paddle Tennis, 3 Stair Areas), so
+"include type court" drags 21 non-aquatic sites onto the tab. A **LOCATION
+picker includes 74, misses 0 lanes, and over-includes exactly 3** — the Stair
+Areas at El Segundo Wiseburn Aquatic Center. Two locations to tick: El Segundo
+Wiseburn Aquatic Center, Urho Saari Swim Stadium.
+
+Not started. Two things to settle first: `REPORT_SETTINGS_SCHEMA` registers only
+`roster` today, and the whole panel is **super-admin gated behind the
+`reportSettings` flag** by Dan's own earlier call (*"this power is too much for
+an org user to handle"*) — so "the org admin could set it" is a change to that
+decision, not just a new schema entry.
+
+### Guards
+
+`scripts/aquatics-lanes.spec.js` (**27 assertions, in CI**) and
+`scripts/programs-location.spec.js` (**21 assertions, in CI**), both of which
+**LIFT AND RUN** the real functions rather than regexing them — a regex passes on
+an inverted comparison. The lane spec's cases are all real site + location names
+from prod, Johnson Lane Park included.
+`memberships-revenue.spec.js` 70 → 79. Ten new `ci-check-render.js` cases over
+`prev5` and `nores` stub modes, so the pre-v5 degradation and the lane
+misclassification are proven in a browser rather than asserted in source; the
+lane fixture carries `court`-typed rows named "North Lane 1 - A" **plus a
+`Johnson Lane Tennis Court` counterexample**.
+
+**A spec-hygiene note worth keeping:** `LOC_NONE` must be written in a spec as a
+BACKSLASH-u-0000 escape, never as a raw NUL byte — a raw NUL makes **git classify the
+whole file as BINARY**, and a spec that cannot be read in a diff cannot be
+reviewed.
+
+`scripts/report-cards.manifest.json` gained **programs/apex** and
+**users/norman** rows: both are shared cards that had no cache-independent
+sign-off row at all.
 
 ## Absent and Failed check-ins (2026-08-26) — one log, two grains
 
