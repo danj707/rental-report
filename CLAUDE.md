@@ -820,7 +820,9 @@ is precisely the false-zero v3 stopped rendering.
 `"settings-open"]` — the END of the log route's ALLOWED array — so appending any
 later event broke it with nothing about settings-open changing. It now tests
 membership in the array, and was re-verified to still catch settings-open being
-removed.## Programs: a multi-select SEASON filter (2026-08-31)
+removed.
+
+## Programs: a multi-select SEASON filter (2026-08-31)
 
 Dan, on Shrewsbury: *"lets add a program 'season' filter on the programs summary
 page, otherwise it's super confusing to try and contain all dates of a
