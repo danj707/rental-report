@@ -36,7 +36,19 @@ res_group AS (
   FROM "group" g
   WHERE g.deleted_at IS NULL
     AND g.organization_id = {{org_id}}::uuid
-    AND (g.group_type ILIKE '%residen%' OR g.name ILIKE '%residen%')
+    -- THE GROUP'S OWN TOGGLE, not a name match. Measured platform-wide
+    -- 2026-08-31: the old `OR g.name ILIKE '%residen%'` swept in 96 groups
+    -- across 35 orgs that are not residency groups — 4,099 live memberships
+    -- and 1,446 households — because "Non-Resident" contains "Resident" as a
+    -- substring. 516 people on "2026 Summer/Annual Pool Pass (Non-residents)"
+    -- were reported as RESIDENTS, and product groups like "El Segundo Resident
+    -- ID Card - Adult" (1,088) counted too. It bought nothing in exchange:
+    -- every residency-typed group was already matched by the type half, since
+    -- 'residency' ILIKE '%residen%'. No org loses coverage (0 orgs have a
+    -- residency-NAMED group without a residency-TYPED one), and no negative
+    -- guard is needed — "Non-Resident Groups" is typed special-group, which
+    -- the toggle cannot match.
+    AND g.group_type = 'residency'
 ),
 has_res_group AS (
   SELECT EXISTS (SELECT 1 FROM res_group) AS val
