@@ -2596,20 +2596,20 @@
                 'data-aq-timed': String(hg.timed),
                 style: { gridTemplateColumns: '38px repeat(' + heatHours.length + ', minmax(20px, 1fr))' } },
                 e('div', { className: 'oe-h-lbl' }, ''),
-                heatHours.map((h, i) => e('div', { key: 'ah' + i, className: 'oe-h-hd' }, hour12(h))),
+                heatHours.map((h, i) => e('div', { key: 'ah' + i, className: 'oe-h-hd' }, oeHour12(h))),
                 OE_DOW.map((dname, dw) => [
                   e('div', { key: 'ad' + dw, className: 'oe-h-lbl' }, dname),
                   heatHours.map((h, i) => {
                     const v = heat[dw][h];
                     return e('div', { key: 'ac' + dw + '-' + i, className: 'oe-h-cell',
                       style: { background: v ? OE_RAMP[Math.min(5, 1 + Math.floor(v / heatMax * 4.999))] : OE_RAMP[0], color: v / heatMax > 0.6 ? '#fff' : '#8a8578' },
-                      title: dname + ' ' + hour12(h) + ' \u00b7 ' + v + ' booking' + (v === 1 ? '' : 's') + ' in use' },
+                      title: dname + ' ' + oeHour12(h) + ' \u00b7 ' + v + ' booking' + (v === 1 ? '' : 's') + ' in use' },
                       v ? String(v) : '');
                   }),
                 ]))),
             e('div', { className: 'camp-note' },
               busiestHour >= 0 && hourTotals[busiestHour] > 0
-                ? e('span', null, 'Peak is ', e('b', null, hour12(busiestHour) + 'm'), ' with ',
+                ? e('span', null, 'Peak is ', e('b', null, oeHour12(busiestHour) + 'm'), ' with ',
                     e('b', null, hourTotals[busiestHour].toLocaleString()), ' bookings in the water. ')
                 : null,
               'A booking counts in every hour it COVERS, not the hour it starts — which lane time is sold is the question, not when the paperwork begins.'))),
