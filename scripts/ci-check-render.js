@@ -376,6 +376,40 @@ function fasttrackRows() {
     // `conversions missed-revenue KPI` asserts is 925.
     "Over Demand $": 0, "Left on Table": 0,
   });
+  /* ── Needham's shape: SAME DAY, DIFFERENT TIMES ─────────────────────────
+     Measured on production 2026-08-31. Three of Needham's programs go live
+     Sep 2 09:00 ET on their early-access windows; Adult Badminton — carrying 19
+     fast-trackers against their 4, 4 and 2 — goes live Sep 2 12:00 ET on its
+     general one, three hours later. Launching Soon sorts on the go-live INSTANT
+     with headcount only as a tie-break, so Badminton correctly ranks BELOW the
+     smaller cohorts — but every chip printed calendar days, so all four read
+     "OPENS IN 2 DAYS" and the ordering looked arbitrary. Dan read it as a broken
+     sort, which is the only thing the screen let him conclude.
+
+     THE HOURS ARE PINNED TO A LOCAL CALENDAR DAY, not derived from `iso()`.
+     iso(2.125) is "now plus two and an eighth days", so what calendar day it
+     lands on — and whether the two rows even share one — depends on the hour the
+     check happens to run at. Two instants that stopped sharing a day would make
+     this fixture prove something else entirely, silently.
+
+     The pair opens LATER than Birthday Concert's Select Table (~15 min out), so
+     `pre-launch beats capacity` still owns first place. */
+  const atLocalHour = (daysAhead, hour) => {
+    const d = new Date();
+    d.setDate(d.getDate() + daysAhead);
+    d.setHours(hour, 0, 0, 0);
+    return d.toISOString();
+  };
+  const needham = (program, id, section, ft, cap, hour, kind) =>
+    Object.assign(table(section, ft, ft, cap, 2), {
+      "Program": program, "Program ID": id,
+      "Section ID": "sec-" + id + "-" + section.replace(/\W+/g, "-").toLowerCase(),
+      // `kind: early` mirrors the senior programs (an early window that opens
+      // first, general a week later); `general` mirrors Badminton, which has NO
+      // early window at all — that difference is why the two instants differ.
+      "Early Access Opens": kind === "early" ? atLocalHour(2, hour) : null,
+      "Reg Opens": kind === "early" ? atLocalHour(9, 12) : atLocalHour(2, hour),
+    });
   return [
     launchedSmall,
     launchedEarly,
@@ -384,6 +418,9 @@ function fasttrackRows() {
     birthday("General Table 50", 111, 50, 1),
     birthdaySpent("Birthday Summer: June", 14, 10),
     birthdaySpent("Birthday Summer: July", 8, 6),
+    // 4 FT opening 09:00 local, and 19 FT opening 12:00 local the SAME day.
+    needham("Needham Senior Yoga", "prog-needham-early", "Fall 2026 Fridays", 4, 60, 9, "early"),
+    needham("Needham Adult Badminton", "prog-needham-late", "2026-2027 Mondays", 19, 120, 12, "general"),
     table("Premier Table", 54, 54, 25, 1),
     table("Select Table", 18, 18, 45, 2),
     table("Preferred Table", 21, 21, 30, 3),
@@ -1031,6 +1068,42 @@ const CASES = [
     } },
   { name: "fasttrack · pre-launch beats capacity", path: "/{org}/fasttrack",
     needs: "[data-launch-list] > *:first-child[data-launch-program=\"prog-birthday\"]" },
+  /* THE ORDER IS ON THE INSTANT, AND THE CARD NOW SAYS SO.
+     Needham's pair: 4 fast-trackers opening 09:00 local and 19 opening 12:00 the
+     SAME local day. Two things have to hold together, and neither alone is the
+     bug Dan hit:
+       · the 4 ranks ABOVE the 19 (the sort reads the instant, not the headcount)
+       · and both chips print a TIME, and the two times DIFFER — so a reader can
+         see WHY the bigger cohort is second.
+     A source assertion cannot reach this: it passes on a page that sorts
+     correctly and still prints "OPENS IN 2 DAYS" on both, which is exactly the
+     state that got reported as a broken sort. */
+  { name: "fasttrack · same day, different times", path: "/{org}/fasttrack",
+    needs: "body[data-golive-time-ok=\"1\"]",
+    act: async page => {
+      await page.waitForSelector("[data-launch-list] [data-launch-golive]", { timeout: 45000 });
+      await page.evaluate(() => {
+        const card = id => document.querySelector('[data-launch-program="' + id + '"]');
+        const early = card("prog-needham-early");
+        const late  = card("prog-needham-late");
+        if (!early || !late) return;
+        // Document order: the smaller-but-sooner cohort must come first.
+        const sooner = early.compareDocumentPosition(late) & Node.DOCUMENT_POSITION_FOLLOWING;
+        const label = el => {
+          const n = el.querySelector("[data-launch-golive]");
+          return n ? n.textContent.trim() : "";
+        };
+        const a = label(early), b = label(late);
+        const hasTime = t => /\d{1,2}:\d{2}\s?(AM|PM)/i.test(t);
+        // Same calendar day is the whole premise of the fixture: if the two
+        // instants stopped sharing a day this case would be proving something
+        // else, so it is asserted rather than assumed.
+        const day = t => (t.match(/[A-Z][a-z]{2} \d{1,2}/) || [""])[0];
+        if (sooner && hasTime(a) && hasTime(b) && a !== b && day(a) && day(a) === day(b)) {
+          document.body.setAttribute("data-golive-time-ok", "1");
+        }
+      });
+    } },
   // ...and go-live must come from the EARLY-ACCESS window when that is the one
   // that opens first. Reading only "Reg Opens" yields data-golive="general",
   // which is how the report came to say "opens in 8 days" about a section going

@@ -20,6 +20,19 @@
 // Run: node scripts/fasttrack-launching-soon.spec.js
 "use strict";
 
+/* PIN THE TIMEZONE. The go-live block below asserts formatted times, and
+   this sandbox and GitHub Actions both run UTC — where a date resolved in
+   one zone and a time resolved in another agree all day, so a UTC-only
+   assertion cannot see the bug. Eastern is behind UTC, so an evening
+   instant is already tomorrow in UTC and the two diverge. Same reasoning
+   as fasttrack-dates.spec.js. */
+const TZ = "America/New_York";
+if (process.env.TZ !== TZ) {
+  const r = require("child_process").spawnSync(process.execPath, [__filename],
+    { env: Object.assign({}, process.env, { TZ }), stdio: "inherit" });
+  process.exit(r.status == null ? 1 : r.status);
+}
+
 const assert = require("assert");
 const fs = require("fs");
 const path = require("path");
@@ -218,5 +231,108 @@ ok(/'aria-pressed': on \? 'true' : 'false'/.test(src),
   "a toggle should report its state to assistive tech");
 ok(/label: false/.test(src),
   "the tight Cold Sections row should keep the icon-only form");
+
+
+/* ══════════════════════════════════════════════════════════════════════════
+   THE GO-LIVE TIME. Launching Soon sorts on the go-live INSTANT with headcount
+   only as a tie-break, and every chip printed CALENDAR DAYS — so four cohorts
+   opening at different times on one date all read "OPENS IN 2 DAYS" and the
+   ordering looked arbitrary. Measured at Needham (2026-08-31): Senior Exercise,
+   Senior Yoga and Senior Strength & Balance all go live Sep 2 09:00 ET on their
+   early-access windows, while Adult Badminton — carrying 19 fast-trackers
+   against their 4, 4 and 2 — goes live Sep 2 12:00 ET on its general one. The
+   sort was right; the display could not show why.
+
+   The time is real data, not midnight boilerplate: of ~2,030 registration
+   windows opening in the future platform-wide, only 5 sit at UTC midnight, and
+   the modes are 16:00 UTC (620 windows), 15:00 (391) and 14:00 (369).
+
+   This LIFTS AND RUNS both formatters rather than regexing them, and it runs
+   under a NON-UTC zone — see the re-exec at the top of this block. In UTC a
+   date resolved in one zone and a time resolved in another agree all day, so a
+   UTC-only assertion cannot see the bug it is here to catch.
+   ══════════════════════════════════════════════════════════════════════════ */
+{
+  const fmtCtx = {};
+  vm.createContext(fmtCtx);
+  for (const name of ["fmtGoLive", "fmtTimeShort"]) {
+    const s = src.indexOf("function " + name + "(");
+    ok(s > 0, name + " should be declared at MODULE scope so this spec can RUN it");
+    let depth = 0, i = src.indexOf("{", s);
+    for (; i < src.length; i++) {
+      if (src[i] === "{") depth++;
+      else if (src[i] === "}") { depth--; if (depth === 0) break; }
+    }
+    vm.runInContext(src.slice(s, i + 1), fmtCtx);
+  }
+  const { fmtGoLive, fmtTimeShort } = fmtCtx;
+
+  // Needham's real pair, as instants. 13:00Z is 09:00 EDT, 16:00Z is 12:00 EDT.
+  const early   = new Date("2026-09-02T13:00:00Z");
+  const general = new Date("2026-09-02T16:00:00Z");
+
+  ok(/\d{1,2}:\d{2}\s?(AM|PM)/i.test(fmtGoLive(early)),
+    "fmtGoLive must print a TIME — printing the date alone is the bug: "
+    + JSON.stringify(fmtGoLive(early)));
+  ok(fmtGoLive(early) !== fmtGoLive(general),
+    "two cohorts opening the same DAY at different times must not format identically — "
+    + "that is exactly what made a correct sort look arbitrary");
+
+  // The zone abbreviation. These are timestamptz rendered in the READER's
+  // browser zone, so a Needham admin sees 9:00 AM EDT and a Californian sees
+  // 6:00 AM PDT for the same instant. Both true; "9:00 AM" bare is a number two
+  // people would disagree about while looking at one screen.
+  ok(/\b[A-Z]{2,5}\b\s*$/.test(fmtGoLive(early)),
+    "fmtGoLive must name the timezone it resolved in: " + JSON.stringify(fmtGoLive(early)));
+
+  // ONE toLocaleString call. Composing the date and the time from two calls lets
+  // them resolve in different zones, and then a card prints Sep 2 beside a time
+  // belonging to Sep 3. Pinned by VALUE under a known zone rather than by
+  // counting calls, because the value is what a reader sees.
+  if (process.env.TZ === "America/New_York") {
+    eq(fmtGoLive(early), "Sep 2, 9:00 AM EDT",
+      "fmtGoLive under America/New_York");
+    eq(fmtGoLive(general), "Sep 2, 12:00 PM EDT",
+      "fmtGoLive under America/New_York, the later window");
+    eq(fmtTimeShort(early), "9:00 AM", "fmtTimeShort is the bare time");
+    // THE CROSS-MIDNIGHT CASE, which is why the zone is forced. This instant is
+    // Sep 2 in UTC and Sep 1 in Eastern, so a date and a time resolved in
+    // different zones disagree by a day here and nowhere else in this block.
+    const late = new Date("2026-09-02T01:00:00Z");
+    eq(fmtGoLive(late), "Sep 1, 9:00 PM EDT",
+      "an instant that is tomorrow in UTC must print ONE consistent local day");
+  }
+
+  ok(fmtGoLive(null) === "" && fmtTimeShort(null) === "",
+    "a missing go-live formats to nothing rather than throwing — the facility "
+    + "feed can carry a null and a formatter that throws blanks the tab");
+
+  /* EVERY go-live display carries a time. The panel that reads worst is not
+     necessarily the one being edited: leaving one surface on a bare date makes
+     it disagree with the card above it about the same section, which is worse
+     than either alone. These are the five sites. */
+  const GOLIVE_SITES = [
+    [/Early access opens ' : 'Reg opens '\)\s*\n?\s*\+ fmtGoLive\(rt\.nextOpen\)/,
+      "the section countdown line"],
+    [/'Early access ' : 'Reg opens '\)\s*\n?\s*\+ fmtGoLive\(opens\)/,
+      "the Launching Soon chip sub-line"],
+    [/\+ fmtDateShort\(od\) \+ ' ' \+ fmtTimeShort\(od\)/,
+      "the per-section rows on a Launching Soon card"],
+    [/\+ fmtGoLive\(sectionGoLive\(r\)\.at\)/,
+      "the Cold Sections pill"],
+    [/fmtDateShort\(glc\.at\) \+ ' ' \+ fmtTimeShort\(glc\.at\)/,
+      "the flow board's pre-launch label"],
+    [/general registration opens '\s*\n?\s*\+ \(r\.regOpens \? fmtGoLive\(new Date\(r\.regOpens\)\)/,
+      "the early-access tooltip"],
+  ];
+  for (const [rx, what] of GOLIVE_SITES) {
+    ok(rx.test(src), what + " must print the go-live TIME, not the date alone");
+  }
+
+  // And the attribute a render case can key on, so the browser half asserts the
+  // ORDER against the real instants rather than against rendered prose.
+  ok(/'data-launch-golive': opens\.toISOString\(\)/.test(src),
+    "the Launching Soon chip should carry its go-live instant as an attribute");
+}
 
 console.log(`✓ fasttrack-launching-soon.spec.js — ${n} assertions passed`);

@@ -639,6 +639,46 @@ function parseCardDate(v) {
   return isNaN(d.getTime()) ? null : d;
 }
 function fmtDateShort(d) { return d ? d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : ''; }
+/* A GO-LIVE IS AN INSTANT, AND THE PANEL SORTS ON IT — so the panel has to
+   print it. Launching Soon orders on the go-live instant with headcount only as
+   a tie-break, but every chip printed CALENDAR DAYS, so four cohorts opening at
+   different times on one date all read "OPENS IN 2 DAYS" and a correct ordering
+   looked arbitrary. Measured at Needham (2026-08-31): three programs open
+   Sep 2 09:00 ET on their early-access window and Adult Badminton — carrying 19
+   fast-trackers against their 4, 4 and 2 — opens Sep 2 12:00 ET on its general
+   one, three hours later. Dan read that as a broken sort, correctly, because
+   nothing on screen could show the difference.
+
+   The time is REAL DATA, not midnight boilerplate: of ~2,030 registration
+   windows opening in the future platform-wide, only 5 are at UTC midnight, and
+   the modes are 16:00 UTC (620 windows), 15:00 (391) and 14:00 (369) — staff
+   picking a business hour to open registration.
+
+   THE ZONE ABBREVIATION IS NOT DECORATION. `Reg Opens` / `Early Access Opens`
+   are timestamptz, so these render in the READER's browser zone: a Needham
+   admin sees 9:00 AM EDT and someone opening the same report from California
+   sees 6:00 AM PDT. Both are the same instant and both are true, but "9:00 AM"
+   bare is a number two people would disagree about while looking at one screen.
+   Card 17300 emits no org timezone, so naming the reader's zone is the honest
+   option available without a card push — see the PACIFIC section in CLAUDE.md
+   for what guessing a timezone costs.
+
+   ONE toLocaleString CALL, deliberately. Composing this from fmtDateShort plus
+   a separate time format lets the date and the time be resolved in different
+   zones if either ever grows an option, and then a card prints Sep 2 beside a
+   time from Sep 3. */
+function fmtGoLive(d) {
+  if (!d) return '';
+  return d.toLocaleString('en-US', { month: 'short', day: 'numeric',
+                                     hour: 'numeric', minute: '2-digit',
+                                     timeZoneName: 'short' });
+}
+/* Bare time, for the per-section rows. The card's own chip sub-line carries the
+   zone once, and repeating it on every section row is noise — every instant on
+   one card resolves in the same zone, so one label covers them all. */
+function fmtTimeShort(d) {
+  return d ? d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) : '';
+}
 /* When can anyone actually register for this section?
    A section can carry TWO registration windows: an early-access one (card 17300
    emits it as "Early Access Opens", a `group` window scoped to a member group)
@@ -857,7 +897,7 @@ function RegChip(props) {
     var soon = rt.daysUntilOpen <= 7;
     return React.createElement('div', { style: { marginTop: 4, fontSize: 11, fontWeight: 700, color: soon ? '#dc2626' : '#2563eb' } },
       (soon ? '🔴 ' : '📅 ') + (rt.nextOpenKind === 'early' ? 'Early access opens ' : 'Reg opens ')
-        + fmtDateShort(rt.nextOpen) + ' · ' + dayPhrase(rt.daysUntilOpen));
+        + fmtGoLive(rt.nextOpen) + ' · ' + dayPhrase(rt.daysUntilOpen));
   }
   if (rt.openNow) return React.createElement('div', { style: { marginTop: 4, fontSize: 11, fontWeight: 700, color: '#16a34a' } },
     '🟢 Registration open' + (rt.nextClose ? (' · closes ' + fmtDateShort(rt.nextClose)) : ''));
@@ -1039,9 +1079,12 @@ function PipelineLaunchCard(props) {
             React.createElement('strong', { style: { color: accent, fontVariantNumeric: 'tabular-nums' } }, fmtInt(s2.ftSignups)),
             React.createElement('span', null, s2.section),
             React.createElement('span', { style: { color: '#9ca3af' } },
-              '\u00b7 ' + (gl2.kind === 'early' ? 'early access ' : 'opens ') + fmtDateShort(od)
+              '\u00b7 ' + (gl2.kind === 'early' ? 'early access ' : 'opens ')
+              + fmtDateShort(od) + ' ' + fmtTimeShort(od)
               + ' (' + dayShort(dd) + ')'
-              + (gl2.kind === 'early' && gl2.general ? ', general ' + fmtDateShort(gl2.general) : '')),
+              + (gl2.kind === 'early' && gl2.general
+                   ? ', general ' + fmtDateShort(gl2.general) + ' ' + fmtTimeShort(gl2.general)
+                   : '')),
             s2.sectionId && React.createElement('a', {
               href: adminSectionUrl(p.orgId, s2.sectionId), target: '_blank', rel: 'noopener',
               style: { color: '#3b82f6', fontWeight: 600, fontSize: 10, textDecoration: 'none' }
@@ -1080,8 +1123,9 @@ function PipelineLaunchCard(props) {
           heat.flameCount ? React.createElement(FlameRow, { n: heat.flameCount, blazing: heat.tier >= 4,
                                                             style: { marginRight: 5 } }) : null,
           countdown)),
-      opens && React.createElement('div', { style: { fontSize: 11, color: '#6b7280', marginTop: 5 } },
-        (p._launchKind === 'early' ? 'Early access ' : 'Reg opens ') + fmtDateShort(opens))
+      opens && React.createElement('div', { 'data-launch-golive': opens.toISOString(),
+        style: { fontSize: 11, color: '#6b7280', marginTop: 5 } },
+        (p._launchKind === 'early' ? 'Early access ' : 'Reg opens ') + fmtGoLive(opens))
     )
   );
 }
@@ -1209,7 +1253,7 @@ function ColdPipelineStrip(props) {
           color: urgent ? '#b45309' : '#0369a1', background: urgent ? '#fef3c7' : '#e0f2fe',
           padding: '4px 10px', borderRadius: 999 } },
           '📅 ' + (x.kind === 'early' ? 'Early access ' : 'Reg opens ')
-            + fmtDateShort(sectionGoLive(r).at) + ' · ' + dayShort(x.days)),
+            + fmtGoLive(sectionGoLive(r).at) + ' · ' + dayShort(x.days)),
         React.createElement(PinBtn, { ctl: props.pinCtl, id: r.sectionId, label: false })
       );
     }),
@@ -2295,12 +2339,13 @@ function App() {
                        here printed nothing at all for an early-access launch,
                        because that timestamp is still in the future. */
                     pre
-                      ? ' · ' + (glc.kind === 'early' ? 'early access ' : 'opens ') + fmtDateShort(glc.at)
+                      ? ' · ' + (glc.kind === 'early' ? 'early access ' : 'opens ')
+                          + fmtDateShort(glc.at) + ' ' + fmtTimeShort(glc.at)
                       : ((r._openedAt || r.regOpens) ? ' · ' + hoursAgoLabel(r._openedAt || r.regOpens) : ''),
                     (!pre && r._openedKind === 'early') && React.createElement('span', {
                       style: { marginLeft: 5, fontWeight: 700, color: '#7c3aed' },
                       title: 'Early access is open; general registration opens '
-                        + (r.regOpens ? fmtDateShort(new Date(r.regOpens)) : 'later')
+                        + (r.regOpens ? fmtGoLive(new Date(r.regOpens)) : 'later')
                     }, '· early access'))
                 ),
                 React.createElement('div', { style: { display: 'flex', gap: 6, alignItems: 'center', flexShrink: 0 } },
