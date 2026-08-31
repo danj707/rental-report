@@ -497,6 +497,13 @@ function membershipRows() {
       delete r["Auto Renew"]; delete r["Period Start"]; delete r["Product Kind"];
       delete r["Cancel Scheduled At"]; delete r["Cancel Reason"];
     }
+    // stubMode "prev5" is a warm cache entry from before card 17301 v5 — the
+    // Resident? column simply is not there. Distinct from "nores", which KEEPS
+    // the column and fills it with NULL, i.e. an org that runs no residency
+    // group. The page must hide the residency surfaces in BOTH cases, and they
+    // are different states, so both are driven.
+    if (STUB_MODE === "prev5") delete r["Resident?"];
+    else if (STUB_MODE === "nores") r["Resident?"] = null;
     return r;
   };
   const rows = [];
@@ -510,6 +517,8 @@ function membershipRows() {
       "Next Renewal": "", "Coverage": "group", "Plan Season End": "2026-09-30",
       "Plan Term Days": null, "Auto Renew": false, "Period Start": "",
       "Product Kind": "membership",
+      // 6 season-pass holders, all residents.
+      "Resident?": "Yes",
     }));
   }
   // Monthly fitness — 4 sold in June at $20, every one auto-renewing on a 31-day
@@ -523,6 +532,10 @@ function membershipRows() {
       "Next Renewal": "2026-09-29", "Coverage": "individual", "Plan Season End": null,
       "Plan Term Days": null, "Auto Renew": true, "Period Start": "2026-08-29",
       "Product Kind": "membership",
+      // 4 monthly auto-renewers, all NON-residents. The two families differ on
+      // residency AND on auto-renew, so a split that read the wrong field, or
+      // the wrong row set, produces a different number rather than the same one.
+      "Resident?": "No",
     }));
   }
   // A second auto-renewing plan that CHURNS — 2 still billing, 3 cancelled, so
@@ -890,6 +903,16 @@ const RENDER_ADMIN_KEY = require("crypto").createHash("sha256")
 // ── Pages to prove ──────────────────────────────────────────────────────────
 // `needs` is a selector that only exists once the page has really rendered, so
 // a blank page fails instead of passing on "no errors thrown".
+// Picks Resident in the residency filter. React tracks a controlled select's
+// value internally, so the change event has to come from a real interaction —
+// assigning .value and dispatching a synthetic event is ignored (the range-input
+// lesson from the report-settings cases).
+async function selectResident(page) {
+  await page.waitForSelector("[data-mb-residency]", { timeout: 15000 });
+  await page.select("[data-mb-residency]", "resident");
+  await new Promise(r => setTimeout(r, 400));
+}
+
 const CASES = [
   { name: "facilities · camping",  path: "/{org}/facilities?tab=camping", needs: ".camp-cal .cc-hd" },
 
@@ -1326,6 +1349,33 @@ const CASES = [
   // parse of the date string makes it S); the desk filter was built from the feed;
   // a member's name links to their Rec account; and the monthly bars carry a
   // clickable month header.
+  // ── Residency (card 17301 v5) ────────────────────────────────────────────
+  // Keyed on the COMPUTED counts, not on "a panel rendered": the fixture has 6
+  // residents and 4 non-residents, and every regression worth catching here
+  // produces a different number rather than an empty page.
+  { name: "memberships · residency split", path: "/{org}/memberships",
+    needs: "[data-mb-res-count=\"6\"]" },
+  { name: "memberships · residency non-resident count", path: "/{org}/memberships",
+    needs: "[data-mb-nonres-count=\"4\"]" },
+  // 6 of 10 known = 60%. A split taken from `filtered` would read 6 of 7 (the
+  // status filter defaults to active and 3 rows are cancelled), i.e. 85.7% —
+  // so this one number separates the two row sets.
+  { name: "memberships · split is the whole book, not the active view", path: "/{org}/memberships",
+    needs: "[data-mb-res-pct=\"60\"]" },
+  // The filter must scope the WHOLE report, so picking Resident has to move a
+  // panel that is not the split — the header count is the cheapest proof.
+  { name: "memberships · residency filter scopes the page", path: "/{org}/memberships",
+    needs: "[data-mb-res-count=\"6\"]", act: selectResident },
+  // Absent, not zeroed, on a feed that predates the column…
+  { name: "memberships · no residency surfaces pre-v5", path: "/{org}/memberships",
+    stubMode: "prev5", needs: ".summary-cards",
+    absent: "[data-mb-residency-split]" },
+  { name: "memberships · no residency control pre-v5", path: "/{org}/memberships",
+    stubMode: "prev5", needs: ".summary-cards", absent: "[data-mb-residency]" },
+  // …and on an org that HAS the column but runs no residency group, which is a
+  // different state and would otherwise render "0% resident".
+  { name: "memberships · no residency surfaces without a residency group", path: "/{org}/memberships",
+    stubMode: "nores", needs: ".summary-cards", absent: "[data-mb-residency-split]" },
   { name: "memberships · check-ins",      path: "/{org}/memberships?tab=checkins", needs: "[data-ci-hour-line]" },
   { name: "memberships · peak hour",      path: "/{org}/memberships?tab=checkins", needs: "[data-ci-hour-line=\"5p\"]" },
   { name: "memberships · weekday marks",  path: "/{org}/memberships?tab=checkins", needs: "[data-ci-dow=\"M\"]" },
