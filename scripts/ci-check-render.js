@@ -86,6 +86,16 @@ function outdoorRows() {
     "Site Type": type, "Purpose": "Birthday party", "Head Cnt": head,
     "Reservee": "Test Renter", "Email": "t@example.com", "Phone": null, "Resident?": "Yes",
     "Booking Type": "Managed", "Instructions": null, "Notes": null,
+    // STATUS IS NOT OPTIONAL, and leaving it off is why the three lane cases
+    // failed while the outdoor and field ones passed on the same rows. Card
+    // 17294 always emits it, and AquaticsView scopes on
+    // `statusSel.has(lc(r['Status']))` — so an undefined Status reads as "" ,
+    // matches no chip, and every lane row is dropped before the panel ever
+    // computes an hour. The tab then renders its "no bookings in this range"
+    // empty state, which looks exactly like a blank page in the check output.
+    // The outdoor and field views do not apply the status filter, so the same
+    // missing field was invisible there.
+    "Status": "Confirmed",
     "Add Ons": addOns, "Add-On Fees": addOns ? 25 : 0, "Total": total, "Paid?": "Paid",
     "Multi-Day Days": totDays, "Multi-Day Day#": dayNum,
     "Lighting": null, "Lit From": null, "Lit Until": null, "Lighting Sync": null,
@@ -781,6 +791,20 @@ const STUBS = [
   // One feed, both tabs: Camping filters it to campsite rows and Outdoor Events
   // to its three types, so each tab has to do its own scoping.
   { match: /\/facility\/api\/data/,        body: () => ({ rows: campsiteRows().concat(outdoorRows()).concat(fieldRows()).concat(addonFormRows()), meta: { org_id: "org-uuid-1" } }) },
+  /* THE HUB'S OWN FEED (card 19570), and it was never stubbed — it fell through
+     to the catch-all /api/ and got `rows: []`. So every vertical badge on the
+     Facilities hub read 0 and the Aquatics tab short-circuited to its "no
+     bookings in this range" empty state before AquaticsHours could mount. The
+     three lane cases COULD NOT HAVE PASSED, and I reported them green off a run
+     whose filter matched nothing.
+     It answers the same reservations as 17294 on purpose: the hub summary and
+     the rental schedule describe one set of bookings, and a fixture where they
+     disagree would let a tab pass on rows the hub says do not exist. The page
+     applies refineRows() to this feed, which is what recovers the court-typed
+     swim lanes into the aquatics vertical. */
+  { match: /\/facilities\/api\/summary/, body: () => ({
+      rows: campsiteRows().concat(outdoorRows()).concat(fieldRows()).concat(addonFormRows()),
+      meta: { org_id: "org-uuid-1" } }) },
 
   // Two of the three fixture rentals have Required Information; the third has
   // none, which is the 62%-of-a-week case that must render as nothing.
