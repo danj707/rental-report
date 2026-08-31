@@ -557,7 +557,11 @@ function membershipRows() {
     "User ID": "e70fea14-be38-46db-96da-40e61ccca25e", "First Name": "Ada", "Last Name": "Lovelace",
     "Membership ID": "m-x1", "Membership Type": "Fitness Monthly", "Group / Plan": "Monthly Individual",
     "Status": "expired", "Renewal Type": "One-time", "Price": 20,
-    "Start Date": "2025-07-01", "End Date": "2026-06-30", "Created At": "2026-07-06",
+    // CREATED IN MAY, DELIBERATELY. Sales & Mix bridges the LAST TWO months in
+    // the feed (Jul -> Aug here) and four cases pin its exact volume/price
+    // split; a row dropped into either of those months moves all four. May is
+    // in the cohort, so the status cards still see it, and is outside the pair.
+    "Start Date": "2025-05-20", "End Date": "2026-05-19", "Created At": "2026-05-20",
     "Next Renewal": "", "Coverage": "individual", "Plan Season End": null,
     "Plan Term Days": null, "Auto Renew": false, "Period Start": "",
     "Product Kind": "membership",
@@ -1906,13 +1910,13 @@ const CASES = [
   // Passes ARE counted here, unlike on the Auto-Renew tab. They are real sales;
   // what they cannot do is auto-renew.
   { name: "memberships · sales decomposition", path: "/{org}/memberships?tab=salesmix",
-    needs: "[data-sm-decomp] [data-sm-volume=\"960\"]" },
+    needs: "[data-sm-decomp] [data-sm-volume=\"440\"]" },
   { name: "memberships · price half of the bridge", path: "/{org}/memberships?tab=salesmix",
-    needs: "[data-sm-decomp] [data-sm-price=\"-1220\"]" },
+    needs: "[data-sm-decomp] [data-sm-price=\"-820\"]" },
   { name: "memberships · units rose", path: "/{org}/memberships?tab=salesmix",
-    needs: "[data-sm-unit-delta=\"9\"]" },
+    needs: "[data-sm-unit-delta=\"6\"]" },
   { name: "memberships · revenue fell in the same month", path: "/{org}/memberships?tab=salesmix",
-    needs: "[data-sm-rev-delta=\"-260\"]" },
+    needs: "[data-sm-rev-delta=\"-380\"]" },
   { name: "memberships · plan mix ranks by units", path: "/{org}/memberships?tab=salesmix",
     needs: "[data-sm-plan=\"Summer Season Pass\"] [data-sm-plan-units=\"6\"]" },
   { name: "memberships · the unpopular annual is on the table", path: "/{org}/memberships?tab=salesmix",
