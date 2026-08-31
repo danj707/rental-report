@@ -55,7 +55,9 @@
     {
       "label": "facility / apex (heaviest rental schedule \u2014 worst case)",
       "card": "f6787f45-3a36-4501-8a5f-b0f647451a85",
-      "org": "aeba47d0-c97f-49cb-a0e9-93c5af3a68fa"
+      "org": "aeba47d0-c97f-49cb-a0e9-93c5af3a68fa",
+      "timeout": 180,
+      "note": "TIMEOUT RAISED 60 -> 180 on 2026-08-31 to match the app's own budget (60s first try + 120s retry). Measured four times that day on identical input: 31.0s, 41.5s, 46.8s, 71.3s \u2014 always the same 5,085 rows. At 60s this row failed for something users never see, which is the slow-vs-broken distinction the health check already draws."
     },
     {
       "label": "facility / smyrna (weekly rental schedule + Paid? column)",
@@ -114,11 +116,12 @@
       "timeout": 120
     },
     {
-      "label": "programs / apex (heaviest programs feed. ADDED 2026-08-31 with card 17295 v6, which appends location + instructor: this shared card had NO manifest row at all, so a dropped column or a date tag reset to Text would have been discovered as a blank Programs tab. TWO THINGS ARE DELIBERATE HERE. (1) It sends a WINDOW, because this is the only card in this manifest that uses {{start_date}} OUTSIDE an optional block - Metabase enforces it and the card 400s with 'missing required parameters' however healthy it is, which is the same permanent false alarm the daily health check had against _shared/programs. (2) The window is SEVEN DAYS, the one the page itself requests on load, and not a wider 'worst case': this card scales badly with the range - measured at apex 2026-08-31, 7d 1,042 rows in 57.8s, 14d 81.5s, 30d 104.5s, 90d TIMED OUT past 150s. A row that always fails proves nothing and poisons the whole sweep, so this mirrors production load rather than inventing more. The slowness is PRE-EXISTING, not v6's: the two new CTEs cost 0.88s at apex, measured in isolation)",
+      "label": "programs / apex (heaviest programs feed \u2014 card 17295 v6, location + instructor)",
       "card": "e35f2b47-87c9-40e3-8507-3d9b56f9ce62",
       "org": "aeba47d0-c97f-49cb-a0e9-93c5af3a68fa",
-      "timeout": 120,
-      "days": 7
+      "timeout": 180,
+      "days": 7,
+      "note": "ADDED 2026-08-31 with v6. This shared card had no manifest row at all, so a dropped column or a date tag reset to Text would have surfaced as a blank Programs tab. SENDS A WINDOW: it is the only card here using {{start_date}} outside an optional block, so Metabase enforces it and the card 400s with 'missing required parameters' however healthy it is \u2014 the same false alarm the health check had on _shared/programs. 7 DAYS is what the page itself requests; this card scales badly with the range (apex 2026-08-31: 7d 1,042 rows/57.8s, 14d 81.5s, 30d 104.5s, 90d timed out past 150s). TIMEOUT 180 = the app's own ceiling (60s first try + 120s retry): it answers in ~58s alone but has been seen to blow 120s inside a full sweep, and this card has measured 7.7s-59.8s on identical inputs, so a single slow run is not evidence of breakage. The slowness is PRE-EXISTING, not v6's \u2014 the two new CTEs cost 0.88s at apex in isolation."
     },
     {
       "label": "users / norman (Community Intel. ADDED 2026-08-31 with the residency fix to card 17689 \u2014 its Residency? column reads the same res_group CTE as the facility cards, and nothing was watching this card)",
