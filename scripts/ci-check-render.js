@@ -2231,7 +2231,11 @@ const CASES = [
   // One month is not a series. A single bar labelled "by month" is noise, so the
   // panel hides itself rather than drawing it.
   { name: "programs · no by-month panel in a one-month window", path: "/{org}/programs?start_date=2026-09-01&end_date=2026-09-30",
-    needs: ".summary-cards", absent: "[data-prog-bymonth]" },
+    // .sum-cards, not .summary-cards: this lands on the SUMMARY tab and the
+    // latter is the Revenue tab's class. An absent-assertion whose `needs`
+    // never matches proves nothing at all, so getting this right is the whole
+    // difference between a guard and a vacuous pass.
+    needs: ".sum-cards", absent: "[data-prog-bymonth]" },
   // Card 21055 is org-wide and month-grain — there is no location, season or
   // instructor on it to filter by. So a filtered page WITHDRAWS the money chart
   // rather than leaving it beside an activity chart describing a different
