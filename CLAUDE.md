@@ -1437,6 +1437,10 @@ name rule misses, 68 of them at an aquatic location**. The 6 exceptions are 3 El
 Segundo archived sites and the 3 Johnson Lane Park courts. **Blast radius: two
 orgs — El Segundo +66, Northern Door +2.**
 
+**THIS IS THE END OF THE LINE FOR IT, by Dan's 2026-09-01 call** — the branch
+stays and nothing else gets built on court-typed lanes. See *"CLOSED — nothing
+further gets built on courts-as-pool-lanes"* below before extending anything here.
+
 ### Card 17295 v6 — location and instructor
 
 **`session.location_id` is EITHER a court id OR a location id.** Card 17298
@@ -1498,7 +1502,39 @@ for all 29 orgs. The mirror was rebuilt from the live card first, then edited.
 since 2026-08-22 cannot be ruled out from here — Metabase keeps revision history
 on the card if it needs checking.
 
-### PARKED: per-org site scoping for a report tab
+### CLOSED — nothing further gets built on courts-as-pool-lanes (Dan, 2026-09-01)
+
+Dan, after walking through the lane classification: *"lets skip 2 for now, since
+using courts as pool lanes as a total hack, I don't want to build any of this into
+our reporting. pools are pools, courts are not pools."* Asked whether to rip the
+lane branch back out or leave it, he chose **leave it, build nothing further on
+it.**
+
+So the split is exact, and worth keeping straight:
+
+- **What stays.** `refineSiteType()`'s lane branch and its two guards, the
+  Aquatics tab reading 70 lanes / 29,981 hours instead of 24 sites / 11 hours,
+  `aquatics-lanes.spec.js` and its render cases. El Segundo keeps the numbers they
+  asked for. Removing it would take them back to 11 hours all-time, which is a
+  worse answer than the hack.
+- **What is dead.** The per-org site/location picker described below — *the whole
+  reason this section was PARKED* — plus El Segundo ask #2's aquatics-facing
+  location/instructor page work and ask #3 (drop-in / public swim) insofar as
+  either would read court-typed lanes. Not deferred, not waiting on
+  `REPORT_SETTINGS_SCHEMA`: not being built.
+
+**THE HACK IS A PRODUCT CAPABILITY GAP, AND THAT IS WHY IT DOES NOT BELONG IN
+REPORTING.** Dan's own earlier explanation of how the lanes got typed that way:
+*"in this case pool lanes are marked as 'court' so users can instant book them,
+but this is atypical."* Instant booking is a `court` capability, so an org that
+wants a self-bookable lane has no option but to lie about the type. Every report
+feature built on top of that lie encodes it further and has to be unwound when
+the product grows bookable pools. The fix is on the product side; reporting's job
+is to not deepen the workaround.
+
+Reasoning kept below, because it is measured and would otherwise be re-derived.
+
+### PARKED → NOT BUILDING: per-org site scoping for a report tab
 
 Dan: *"since the spec for sites on the aquatic report is pretty org specific …
 why not make this a facility report setting"*, then refined it to *"which
@@ -1514,11 +1550,13 @@ picker includes 74, misses 0 lanes, and over-includes exactly 3** — the Stair
 Areas at El Segundo Wiseburn Aquatic Center. Two locations to tick: El Segundo
 Wiseburn Aquatic Center, Urho Saari Swim Stadium.
 
-Not started. Two things to settle first: `REPORT_SETTINGS_SCHEMA` registers only
-`roster` today, and the whole panel is **super-admin gated behind the
-`reportSettings` flag** by Dan's own earlier call (*"this power is too much for
-an org user to handle"*) — so "the org admin could set it" is a change to that
-decision, not just a new schema entry.
+Never started, and now closed by the decision above. Two things would have had to
+be settled anyway: `REPORT_SETTINGS_SCHEMA` registers only `roster` today, and the
+whole panel is **super-admin gated behind the `reportSettings` flag** by Dan's own
+earlier call (*"this power is too much for an org user to handle"*) — so "the org
+admin could set it" was a change to that decision, not just a new schema entry.
+Neither is the reason it is dead; the reason is that it would scope a report tab
+by which courts are pretending to be pools.
 
 ### Guards
 
