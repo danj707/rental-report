@@ -186,17 +186,66 @@ async function enrichMetabaseCardUrl(url) {
   }
 }
 
+// A STALE PARAMETER ID IS A PLATFORM-WIDE OUTAGE OF ONE REPORT, and it took a
+// live one to find that out (2026-09-01, the Waitlist report). The ids above are
+// cached for an hour per card, and SAVING A CARD IN METABASE REGENERATES THEM —
+// which is the routine end of every card change in this repo, including the flip
+// of the date tags that a programmatic push always requires. From that save until
+// the entry expires, every org's request carries the previous id, Metabase binds
+// nothing to the tag, and a REQUIRED tag then fails the query outright:
+//
+//   HTTP 400 {"error_type":"missing-required-parameter",
+//             "error":"Cannot run the query: missing required parameters: #{\"org_id\"}"}
+//
+// Measured that day: prewarm warmed 15 orgs off card 19273 at 22:10, the card was
+// re-saved minutes later, and every live request for the next hour failed for
+// EVERY org while the card itself answered a hand-built request perfectly. It
+// self-heals on the TTL, which is the worst shape a bug can have — long enough to
+// be reported, short enough to be gone before anyone looks.
+//
+// So a 400 is treated as evidence about the CACHE, not about the card: drop the
+// entry, re-resolve, and retry once. The retry only fires when re-resolution
+// actually yields a different URL, so a card that is genuinely broken costs one
+// definition read and not a second query.
+const _MB_STALE_ID_RE = /missing-required-parameter|missing required parameters/i;
+
+function invalidateCardParamMeta(mbUuid) { _cardParamMeta.delete(mbUuid); }
+
 // Guarded global fetch wrapper: transparently stamps parameter ids onto Metabase
 // public-card QUERY requests only. Every other fetch — including card-definition
 // reads (/api/public/card/:uuid with no /query/json) used above — passes through
 // untouched, so there is no recursion and no effect on non-Metabase traffic.
 globalThis.fetch = async function (resource, init) {
-  if (typeof resource === "string"
-      && resource.includes("/api/public/card/")
-      && resource.includes("/query/json?parameters=")) {
-    resource = await enrichMetabaseCardUrl(resource);
+  const isCardQuery = typeof resource === "string"
+    && resource.includes("/api/public/card/")
+    && resource.includes("/query/json?parameters=");
+  if (!isCardQuery) return _origFetch(resource, init);
+
+  const original = resource;
+  const sent = await enrichMetabaseCardUrl(original);
+  const resp = await _origFetch(sent, init);
+  if (resp.ok) return resp;
+
+  // Only a 400 can be a stale id; a 404 is a card that is gone and a 5xx is
+  // Metabase itself, and re-resolving would tell us nothing about either.
+  if (resp.status !== 400) return resp;
+  try {
+    const body = await resp.clone().text();
+    if (!_MB_STALE_ID_RE.test(body)) return resp;
+    const m = /\/api\/public\/card\/([^/?]+)\//.exec(original);
+    if (!m) return resp;
+    invalidateCardParamMeta(m[1]);
+    const retryUrl = await enrichMetabaseCardUrl(original);
+    // Same ids means the card really is refusing, and an UNSTAMPED url means the
+    // definition read just failed — retrying with no ids at all is a query we
+    // already know the answer to. Neither is worth a second heavy request.
+    if (retryUrl === sent || retryUrl === original) return resp;
+    console.warn(`[mb-params] card ${m[1].slice(0, 8)} rejected our parameter ids; re-resolved and retrying`);
+    return await _origFetch(retryUrl, init);
+  } catch (e) {
+    console.warn(`[mb-params] stale-id retry failed: ${e.message}`);
+    return resp;
   }
-  return _origFetch(resource, init);
 };
 
 

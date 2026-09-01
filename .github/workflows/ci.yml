@@ -58,6 +58,14 @@ jobs:
       - name: Card-drift spec (probe the served card; catch a Date tag reset to Text)
         run: node scripts/card-drift.spec.js
 
+      # Saving a card in Metabase regenerates its parameter ids, and the app
+      # caches those for an hour — so for that hour every org's request carried
+      # the pre-save id and a REQUIRED tag failed the query outright. It took the
+      # Waitlist report down platform-wide on 2026-09-01 and self-healed on the
+      # TTL, which is the worst shape a bug can have.
+      - name: Metabase parameter ids (a stale id is re-resolved, a timeout is not re-queried)
+        run: node scripts/mb-param-ids.spec.js
+
       - name: Report-activity spec (only alert on reports someone actually uses)
         run: node scripts/report-activity.spec.js
 

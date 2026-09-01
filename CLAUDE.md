@@ -2385,6 +2385,71 @@ same three slugs as `string/=`. The report served fine, but the watchdog reads
 those Text entries and keeps alerting, so the card needs opening and re-saving
 until the list is three again.
 
+## SAVING A CARD BREAKS EVERY REPORT ON IT FOR AN HOUR (2026-09-01, fixed)
+
+Dan, on El Segundo's Waitlist report: *"hmm, missing a route somewhere?"* — a
+screenshot reading **"Server returned 400"**. Not a route, not El Segundo, and
+not that branch: **the Waitlist report was down for EVERY org on production**,
+and my card 19273 push is what did it.
+
+Metabase's public card endpoint binds a supplied parameter by the card's own
+registered **`id`** (the 2026-08-09 incident recorded above). server.js resolves
+those ids from each card's public definition and caches them **one hour** per
+card in `_cardParamMeta`. **Saving a card in Metabase REGENERATES the ids** —
+which is the routine end of every card change here, the date-tag flip a
+programmatic push always needs included.
+
+Measured that evening from the production logs: prewarm warmed **15 orgs** off
+card 19273 at **22:10**, the card was re-saved minutes later, and from 22:28
+onwards every live request came back
+
+```
+HTTP 400 {"error_type":"missing-required-parameter",
+          "error":"Cannot run the query: missing required parameters: #{\"org_id\"}"}
+```
+
+while a hand-built request carrying the **current** id answered in full. Bisected
+to the id, not the value: right id → 200 and rows; wrong id + right target →
+that exact error, byte for byte.
+
+**IT SELF-HEALS ON THE TTL, WHICH IS THE WORST SHAPE A BUG CAN HAVE** — long
+enough to be reported, gone before anyone looks. And it only bites on a
+**required** tag: a tag that is not required still substitutes by target, so the
+same staleness passes unnoticed on most cards and surfaces at random, months
+apart, on whichever card happens to have one.
+
+**Why every other report was fine at the same moment.** Their ids had not
+changed, so a stale entry was still a correct one. Roster, memberships and
+programs all served normally throughout — which is exactly why this reads as an
+org problem or a route problem when it is neither. *A report that is down for one
+org and healthy for another is not evidence about that org*: check a second org
+on the same report before believing it.
+
+**The fix is in the fetch wrapper, so it covers all ~17 call sites.** A 400 whose
+body names a missing required parameter is treated as evidence about the CACHE,
+not the card: drop the entry, re-resolve, retry once. Two guards keep it from
+becoming a load source — a re-resolution yielding the **same** url means the card
+genuinely is refusing (one query, not two), and an **unstamped** url means the
+definition read just failed, which is a query whose answer we already know. And
+it is gated on 400 alone: a 404 is a card that is gone, a 5xx is Metabase, and a
+statement timeout is a heavy card that must never be asked twice.
+
+**A diagnosis note worth keeping:** the `[proxy]` log line prints the URL
+**before** the wrapper stamps it, so an id-less URL in the logs is expected and
+proves nothing. Read `[mb-params]` lines instead.
+
+Guard: `scripts/mb-param-ids.spec.js` (**19 assertions, in CI**), which LIFTS AND
+RUNS the real wrapper against a fake Metabase rather than regexing it.
+Mutation-tested six ways, all failing by name: no retry at all (the bug as it
+shipped), a retry on any 400 (the heavy card queried twice), either guard
+dropped, the cache never invalidated, and the gate on the wrong status.
+
+**One mutation survived the first draft**, and the reason is the usual one: the
+timeout case ran with a FRESH cache, so a body-blind retry re-resolved to the
+same url and the same-ids guard rescued it. The fixture now seeds a stale id as
+well, which is the only shape where the body test is load-bearing. *Plausible is
+not the same as discriminating.*
+
 ## Card sign-off — a report MUST return live results before you call it done (IMPORTANT)
 
 Learned the hard way (2026-08-06 → 2026-08-09): the shared Fast Track card was
