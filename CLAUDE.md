@@ -5385,6 +5385,60 @@ the **keyboard**, not by assigning `.value`. React tracks a controlled input's
 value internally, so a direct assignment plus a synthetic `input` event is
 ignored — the case would have failed on a perfectly good dial.
 
+## GL code multi-select (2026-09-01)
+
+Dan: *"lets do the gl code multicheckbox option on the gl code report. everything
+starts as selected/checked, there's an unselect all, select all, and individual
+checkboxes."*
+
+**THE OPTIONS COME FROM THE ROWS, NOT THE CHART OF ACCOUNTS**, and that was
+measured before choosing: at apex the chart holds **974 accounts (888
+unarchived)** while only **220 codes carry any activity in twelve months**.
+Sourcing from the chart opens a menu of 900+ rows most of which can never match a
+receipt in view. Offered to swap it if Dan wants the full chart.
+
+- **An unmapped receipt is its own option, never a dropped row.** `glOptionKey()`
+  folds null, `''` and the card's own literal `'none'` into one
+  *(Unmapped — no GL code)* entry — three spellings of the same fact would
+  otherwise be three checkboxes, and hiding the rows outright is how a total
+  stops reconciling against the ledger it came from.
+- **`DeskFilter` is GONE — it was generalised into `CheckFilter`**, used by both
+  the desk and GL pickers with a per-caller `slug` driving its `data-*` handles.
+  A third copy of that markup is how the facility Summary shipped chips that
+  scoped some panels and not others. (The payment-method picker keeps its own
+  copy: it toggles differently and predates this.)
+- **"None" has to STICK.** The reconcile effect runs only when the DATA changes,
+  guarded by a signature — on a checkbox click it would widen an empty selection
+  straight back to all and the button would look broken. Same shape as the desk
+  effect it mirrors.
+- **Numeric-aware sort**, so 9 precedes 100 and unmapped sinks last. A GL chart
+  in string order is unusable for finding a code.
+- **Print and PDF reconstruct the selection from the URL**, because they have no
+  React state — an export quietly carrying codes the reader excluded is worse
+  than one that fails. `gl_codes` is in `getParams()`'s explicit whitelist and in
+  the intent builder, and rides both the share link and the export params.
+
+Guard: `scripts/gl-code-filter.spec.js` (**30 assertions, in CI**), which LIFTS
+AND RUNS `glOptionKey`, the comparator and `reconcileFilterSelection`.
+Mutation-tested: unmapped folded away, the unmapped sink removed, `None` widened
+back to all, the funnel re-deriving its own key, and `gl_codes` dropped from
+`getParams()`.
+
+**Three spec bugs of mine worth recording, all found by mutation and all fixed in
+the SPEC rather than the mutation:**
+
+- The comparator lift matched **the DESK sort**, which orders fine either way, so
+  it proved nothing. It is scoped to the `allGlCodes` memo now.
+- `liftFn` counted braces from the first `{`, which for
+  `reconcileFilterSelection({ available, … })` is the **destructured parameter**
+   — it lifted half a function and threw. It skips the parameter list first.
+- A single `.test()` for `glCodes: csv('gl_codes')` passed with either reader
+  alone, so dropping it from `getParams()` survived. It counts both.
+
+And one mutation is only discriminating **as a pair**: a stable sort leaves an
+element in place on a 0, so removing either unmapped-sink branch alone can still
+come out ordered correctly. Removing both fails by name.
+
 ## Saved views on the Class Roster (2026-08-27)
 
 Dan: *"can we add the ability to save filtered views into this as well. That

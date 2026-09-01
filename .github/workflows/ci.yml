@@ -184,6 +184,9 @@ jobs:
       - name: Report Wizard disabled (cannot see it, cannot click it, and it pages nobody)
         run: node scripts/wizard-disabled.spec.js
 
+      - name: GL code multi-select (unmapped money is an option; None sticks; one menu)
+        run: node scripts/gl-code-filter.spec.js
+
       - name: Report settings (one cache-key builder; a setting seeds and never overrides; TTL floor)
         run: node scripts/report-settings.spec.js
 
