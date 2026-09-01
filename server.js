@@ -1431,15 +1431,12 @@ const SHARED_UUIDS = {
   // figure for the whole window, not a series, so the series needs its own
   // month-grain card.
   //
-  // READ FROM THE ENVIRONMENT AND ABSENT UNTIL SET, deliberately. Until someone
-  // creates the public link in Metabase there is no UUID, and an entry here
-  // pointing at nothing would make the feed fail for every org. Unset ⇒ the key
-  // is simply not present ⇒ the route 404s ⇒ programs.html hides the money
-  // chart and still draws the activity one, which is the correct degradation:
-  // a feed that has not answered is not a month that earned nothing.
-  ...(process.env.MB_PROGRAMS_MONTHLY_UUID
-      ? { "programs-monthly": process.env.MB_PROGRAMS_MONTHLY_UUID }
-      : {}),
+  //
+  // The page degrades correctly whatever this card does: a feed that errors or
+  // 404s leaves the money chart ABSENT and the activity chart still drawing,
+  // because a row of confident $0 bars would say the org collected nothing when
+  // the truth is that nothing answered.
+  "programs-monthly": process.env.MB_PROGRAMS_MONTHLY_UUID || "a9f6a60e-43bf-4368-ada9-c6a7245f639c",
 };
 
 // Which card does the app ACTUALLY query for a given org + report?
