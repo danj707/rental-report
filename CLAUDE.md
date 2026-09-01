@@ -2056,6 +2056,18 @@ the card actually returns fresh, non-empty rows via a cache-independent live
 request — for the HEAVIEST org (biggest = worst case for timeouts), not a small
 one.** Never sign off on a warm-cache render alone.
 
+**RUN THE SWEEP ALONE, or it invents failures on cards you never touched.**
+Measured 2026-09-01: a full manifest run made concurrently with one heavy apex
+probe reported `facilities-summary / apex` TIMEOUT at 120s and
+`facilities-summary / douglas-county-nv` TIMEOUT at 60s — card 19570, untouched by
+that branch. Re-run alone minutes later: **833 rows in 11.3s and 4,392 rows in
+31.1s**, both FASTER than their recorded baselines (15.5s and 74.8s). So the two
+red rows were entirely self-inflicted contention. This is the local-server timing
+caveat below with a second cause: it is not just `node server.js` prewarming ~28
+orgs, it is any other query you have in flight. Before reading a TIMEOUT here as
+a regression, re-run that row on its own — and never report one as a finding
+without doing so.
+
 Tooling for this:
 
 ```
