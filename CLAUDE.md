@@ -1320,6 +1320,24 @@ The cost is a full scan of the 1230 MB single-index table — survivable behind 
 - `generate_series` gives every month a row, so a month with no money is a real 0
   and the page never does date arithmetic to build an axis.
 
+**SHIPPED AND SIGNED OFF 2026-09-01.** Public UUID
+`a9f6a60e-43bf-4368-ada9-c6a7245f639c`, tags flipped to Date by Dan, and verified
+through the public endpoint **with the app's own `date/single` parameters** —
+apex **12 rows in 1.9s** over Sep 2025–Aug 2026. The push→flip dance behaved
+exactly as this file predicts and is worth recording as a clean example: the card
+registered **three** parameters rather than six, so there were no duplicates, but
+both dates came back `string/=`. Probed both shapes before and after the flip:
+
+| parameter shape | before the flip | after |
+|---|---|---|
+| the card's own types (`string/=`) | 200, 6 rows, 4.8s | **400** |
+| what the app sends (`date/single`) | **400 "An error occurred."** | 200, 6 rows, 1.7s |
+
+`buildMetabaseParams` hardcodes `date/single`, so a Text tag is not a cosmetic
+problem — it is the whole feed. **The UUID was wired BEFORE the flip on purpose**,
+because the page treats an erroring feed exactly as it treats a missing card, so
+the panel completed itself the moment the tags changed with no redeploy.
+
 **It is ABSENT until someone creates the public link.** `SHARED_UUIDS` takes it
 from `MB_PROGRAMS_MONTHLY_UUID` and omits the key entirely when unset, so the
 route 404s and the page draws the activity chart alone. A row of confident $0

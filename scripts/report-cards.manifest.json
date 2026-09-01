@@ -130,7 +130,7 @@
       "timeout": 120
     },
     {
-      "label": "programs-monthly / apex (card 21055, ADDED 2026-09-01 — the money half of the Programs by-month panel. Apex is the worst case: a full scan of materialized.item_log_report, measured 21.4s all-time against the base-table join which TIMED OUT past 60s on a single month. If this row starts returning 'An error occurred.', the start_date/end_date tags have been reset to Text and the app's date/single parameters no longer match — only a human re-flipping them in the Metabase UI fixes that)",
+      "label": "programs-monthly / apex (card 21055, ADDED 2026-09-01 — the money half of the Programs by-month panel. SIGNED OFF 2026-09-01: 12 rows in 1.9s for Sep 2025–Aug 2026, through the public endpoint with the app's own date/single parameters. Apex is the worst case: a full scan of materialized.item_log_report, measured 21.4s unfiltered all-time against the base-table join which TIMED OUT past 60s on a single month. If this row starts returning 'An error occurred.', the start_date/end_date tags have been reset to Text and the app's date/single parameters no longer match — only a human re-flipping them in the Metabase UI fixes that)",
       "card": "a9f6a60e-43bf-4368-ada9-c6a7245f639c",
       "org": "aeba47d0-c97f-49cb-a0e9-93c5af3a68fa",
       "timeout": 120
