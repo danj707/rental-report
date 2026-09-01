@@ -91,7 +91,19 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "event-cache-"));
 let fileSeq = 0;
 function newFile() { return path.join(tmp, `events-${++fileSeq}.jsonl`); }
 
-const NOW = Date.UTC(2026, 7, 24, 12, 0, 0);
+/* THE FIXTURE CLOCK MUST BE THE IMPLEMENTATION'S CLOCK.
+   This was a hardcoded Date.UTC(2026, 7, 24, 12, 0, 0) — the day the spec was
+   written. Every fixture event is stamped RELATIVE to it (see ev(daysAgo)),
+   but readEvents() takes its cutoff from the real Date.now(), so once the
+   wall clock moved more than 7 days past 2026-08-24 the whole fixture fell
+   outside every narrow window and "appends land in the windowed read too"
+   started asserting 0 !== 2. It failed on 2026-08-31 and would have failed
+   on every PR from then on — the CI failure was a DATE, not a code change,
+   and it was blocking Railway from building any preview (checkSuites: true).
+   Freezing a fixture clock is only coherent when the code under test reads
+   the same frozen clock; this one reads the wall clock, so the fixture has
+   to as well. */
+const NOW = Date.now();
 function ev(daysAgo, org, event) {
   return { ts: new Date(NOW - daysAgo * 86400000).toISOString(), org, report: "gl", event };
 }

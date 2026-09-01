@@ -1,18 +1,18 @@
 {
-  "_comment": "Sign-off smoke test for shared Metabase report cards. After editing ANY card, run: node scripts/verify-report-live.js --manifest scripts/report-cards.manifest.json — every entry must return live, non-empty results or the edit is NOT signed off. Test the heaviest org for each card (biggest = worst case for timeouts). Add a card+org row here whenever a new shared card or large org is onboarded. org_ids come from the ORGS map in server.js; card UUIDs are the public UUIDs (SHARED_UUIDS / per-org mbUuid). TIMEOUTS: the default 60s is a tripwire, but the APP's real budget is 60s then a 120s retry (see FIRST_TIMEOUT/RETRY_TIMEOUT in server.js), so a card between those two still serves live data. Rows carrying an explicit timeout of 120 are pinned to the app's true ceiling, with the measurement in the label — a failure there means the card has passed what the app itself can survive, not that it was slow once. Do NOT raise a timeout without recording the measured number and the date.",
+  "_comment": "Sign-off smoke test for shared Metabase report cards. After editing ANY card, run: node scripts/verify-report-live.js --manifest scripts/report-cards.manifest.json \u2014 every entry must return live, non-empty results or the edit is NOT signed off. Test the heaviest org for each card (biggest = worst case for timeouts). Add a card+org row here whenever a new shared card or large org is onboarded. org_ids come from the ORGS map in server.js; card UUIDs are the public UUIDs (SHARED_UUIDS / per-org mbUuid). TIMEOUTS: the default 60s is a tripwire, but the APP's real budget is 60s then a 120s retry (see FIRST_TIMEOUT/RETRY_TIMEOUT in server.js), so a card between those two still serves live data. Rows carrying an explicit timeout of 120 are pinned to the app's true ceiling, with the measurement in the label \u2014 a failure there means the card has passed what the app itself can survive, not that it was slow once. Do NOT raise a timeout without recording the measured number and the date.",
   "defaults": {
     "timeout": 60,
     "minRows": 1
   },
   "checks": [
     {
-      "label": "checkins / apex (biggest — 22,880 rows for Aug 1-23 in 22.3s, measured 2026-08-24 right after the User ID column was added; here so a lost column or a re-Texted date tag is caught rather than discovered by a blank Check-Ins tab)",
+      "label": "checkins / apex (biggest \u2014 22,880 rows for Aug 1-23 in 22.3s, measured 2026-08-24 right after the User ID column was added; here so a lost column or a re-Texted date tag is caught rather than discovered by a blank Check-Ins tab)",
       "card": "574324e0-b5a1-46c5-8770-8c466631fdcf",
       "org": "aeba47d0-c97f-49cb-a0e9-93c5af3a68fa",
       "timeout": 120
     },
     {
-      "label": "fasttrack / apex (biggest — worst case; measured 78s on a quiet network 2026-08-21, so 60s cries wolf. The app absorbs it: 60s first try, 120s retry. If THIS fails, the card has passed what the app itself can survive)",
+      "label": "fasttrack / apex (biggest \u2014 worst case; measured 78s on a quiet network 2026-08-21, so 60s cries wolf. The app absorbs it: 60s first try, 120s retry. If THIS fails, the card has passed what the app itself can survive)",
       "card": "9d38ab95-8562-42ca-b6c2-2582b7452457",
       "org": "aeba47d0-c97f-49cb-a0e9-93c5af3a68fa",
       "timeout": 120
@@ -28,12 +28,12 @@
       "org": "2d147f38-068c-409e-890d-a8acc88d8079"
     },
     {
-      "label": "fasttrack / smyrna (TIMEZONE regression case — Eastern org. v17 computes the schedule columns in the section's own timezone; before it, Smyrna's 5pm concert was emitted as 02:00pm in Metabase's Pacific report timezone. A Pacific org cannot catch that regression, so an Eastern one is pinned here. Measured 9.0s / 10,629 rows 2026-08-24)",
+      "label": "fasttrack / smyrna (TIMEZONE regression case \u2014 Eastern org. v17 computes the schedule columns in the section's own timezone; before it, Smyrna's 5pm concert was emitted as 02:00pm in Metabase's Pacific report timezone. A Pacific org cannot catch that regression, so an Eastern one is pinned here. Measured 9.0s / 10,629 rows 2026-08-24)",
       "card": "9d38ab95-8562-42ca-b6c2-2582b7452457",
       "org": "efc0724c-8f32-481a-bab3-fc19c724f3a7"
     },
     {
-      "label": "instructor-payout / san-francisco-rec-park (heaviest — 60+ instructor lessons marketplace)",
+      "label": "instructor-payout / san-francisco-rec-park (heaviest \u2014 60+ instructor lessons marketplace)",
       "card": "a8db6d86-eddc-4511-a28c-ad4bf636859e",
       "org": "17380e28-7e02-4b52-82c5-fab18557fd7a"
     },
@@ -43,7 +43,7 @@
       "org": "0312ebc8-40de-4fc8-a737-8afa26334e13"
     },
     {
-      "label": "gl / apex (heaviest GL feed — worst case for the check-number CTE)",
+      "label": "gl / apex (heaviest GL feed \u2014 worst case for the check-number CTE)",
       "card": "4374b344-06a7-42c5-996c-e1845bda3ff1",
       "org": "aeba47d0-c97f-49cb-a0e9-93c5af3a68fa"
     },
@@ -53,9 +53,11 @@
       "org": "992ee322-4927-4558-827d-7f8768580b85"
     },
     {
-      "label": "facility / apex (heaviest rental schedule — worst case)",
+      "label": "facility / apex (heaviest rental schedule \u2014 worst case)",
       "card": "f6787f45-3a36-4501-8a5f-b0f647451a85",
-      "org": "aeba47d0-c97f-49cb-a0e9-93c5af3a68fa"
+      "org": "aeba47d0-c97f-49cb-a0e9-93c5af3a68fa",
+      "timeout": 180,
+      "note": "TIMEOUT RAISED 60 -> 180 on 2026-08-31 to match the app's own budget (60s first try + 120s retry). Measured four times that day on identical input: 31.0s, 41.5s, 46.8s, 71.3s \u2014 always the same 5,085 rows. At 60s this row failed for something users never see, which is the slow-vs-broken distinction the health check already draws."
     },
     {
       "label": "facility / smyrna (weekly rental schedule + Paid? column)",
@@ -63,17 +65,17 @@
       "org": "efc0724c-8f32-481a-bab3-fc19c724f3a7"
     },
     {
-      "label": "facility-permits / watertown (largest permit list — 1,412 issued)",
+      "label": "facility-permits / watertown (largest permit list \u2014 1,412 issued)",
       "card": "6771e2fe-1d9c-41c1-a921-7d875115305e",
       "org": "d781690b-c5a0-43c5-8443-9ae43899528c"
     },
     {
-      "label": "facility-permits / douglas-county-nv (campsite stays — permits issued 2026-08-21)",
+      "label": "facility-permits / douglas-county-nv (campsite stays \u2014 permits issued 2026-08-21)",
       "card": "6771e2fe-1d9c-41c1-a921-7d875115305e",
       "org": "0312ebc8-40de-4fc8-a737-8afa26334e13"
     },
     {
-      "label": "facilities-summary / apex (heaviest — the Summary tab's own card, which had NO manifest row until 2026-08-23; measured 74.8s live that day, above the app's 60s first try and inside its 120s retry)",
+      "label": "facilities-summary / apex (heaviest \u2014 the Summary tab's own card, which had NO manifest row until 2026-08-23; measured 74.8s live that day, above the app's 60s first try and inside its 120s retry)",
       "card": "4c070d95-ab02-4b9d-ac43-ac86257162d5",
       "org": "aeba47d0-c97f-49cb-a0e9-93c5af3a68fa",
       "timeout": 120
@@ -84,32 +86,46 @@
       "org": "0312ebc8-40de-4fc8-a737-8afa26334e13"
     },
     {
-      "label": "ice-calendar / apex (per-org card 18052 — the `class` model was dropped 2026-08-22 and this card 400'd for days with nothing catching it; measured 60.5s with the date filter, so pinned to the app's 120s ceiling)",
+      "label": "ice-calendar / apex (per-org card 18052 \u2014 the `class` model was dropped 2026-08-22 and this card 400'd for days with nothing catching it; measured 60.5s with the date filter, so pinned to the app's 120s ceiling)",
       "card": "6f02d09d-6694-462f-9471-7a4cb8b90d01",
       "org": "aeba47d0-c97f-49cb-a0e9-93c5af3a68fa",
       "timeout": 120
     },
     {
-      "label": "schema-catalog (card 20263 — the breaking-drift watchdog's own card; parameterless, org-independent, measured ~1s. If THIS goes dark the watchdog goes quiet without saying so)",
+      "label": "schema-catalog (card 20263 \u2014 the breaking-drift watchdog's own card; parameterless, org-independent, measured ~1s. If THIS goes dark the watchdog goes quiet without saying so)",
       "card": "926cefe5-78dd-4bdd-a1c9-58aef3f45827",
       "org": "aeba47d0-c97f-49cb-a0e9-93c5af3a68fa",
       "timeout": 30
     },
     {
-      "label": "program-checkins / watertown (the Absent column shipped 2026-08-26; watertown is the org with real absence data — 40 surviving marks over 32 people on live sections, so a lost column or a re-Texted date tag fails here rather than showing an empty Absent column on the Programs Check-Ins band)",
+      "label": "program-checkins / watertown (the Absent column shipped 2026-08-26; watertown is the org with real absence data \u2014 40 surviving marks over 32 people on live sections, so a lost column or a re-Texted date tag fails here rather than showing an empty Absent column on the Programs Check-Ins band)",
       "card": "cb6fd909-72d3-446b-930b-c0382da02d62",
       "org": "d781690b-c5a0-43c5-8443-9ae43899528c",
       "timeout": 120
     },
     {
-      "label": "memberships / clarksville (heaviest — 25,971 rows in 3.9s, measured 2026-08-29 right after card 17301 v2 added Coverage / Plan Season End / Plan Term Days / Auto Renew / Period Start; here so a lost column or a re-Texted date tag is caught rather than discovered as a blank Memberships report — this card had NO manifest row before)",
+      "label": "memberships / clarksville (heaviest \u2014 25,971 rows in 3.9s, measured 2026-08-29 right after card 17301 v2 added Coverage / Plan Season End / Plan Term Days / Auto Renew / Period Start; here so a lost column or a re-Texted date tag is caught rather than discovered as a blank Memberships report \u2014 this card had NO manifest row before)",
       "card": "f4496307-d965-4637-b048-ecc703f2d37f",
       "org": "460566d3-3a51-4387-a7a0-0b010923e40d",
       "timeout": 120
     },
     {
-      "label": "memberships / norman (v2 COLUMN regression case — clarksville has zero subscriptions and zero term plans, so it structurally cannot catch a dropped Auto Renew or Period Start. Norman carries 404 subscriptions and 2,859 season-plan memberships, so the new columns are exercised here or nowhere)",
+      "label": "memberships / norman (v2 COLUMN regression case \u2014 clarksville has zero subscriptions and zero term plans, so it structurally cannot catch a dropped Auto Renew or Period Start. Norman carries 404 subscriptions and 2,859 season-plan memberships, so the new columns are exercised here or nowhere)",
       "card": "f4496307-d965-4637-b048-ecc703f2d37f",
+      "org": "574923bd-9e7b-43e0-9e5f-7ce256189cbf",
+      "timeout": 120
+    },
+    {
+      "label": "programs / apex (heaviest programs feed \u2014 card 17295 v6, location + instructor)",
+      "card": "e35f2b47-87c9-40e3-8507-3d9b56f9ce62",
+      "org": "aeba47d0-c97f-49cb-a0e9-93c5af3a68fa",
+      "timeout": 180,
+      "days": 7,
+      "note": "ADDED 2026-08-31 with v6. This shared card had no manifest row at all, so a dropped column or a date tag reset to Text would have surfaced as a blank Programs tab. SENDS A WINDOW: it is the only card here using {{start_date}} outside an optional block, so Metabase enforces it and the card 400s with 'missing required parameters' however healthy it is \u2014 the same false alarm the health check had on _shared/programs. 7 DAYS is what the page itself requests; this card scales badly with the range (apex 2026-08-31: 7d 1,042 rows/57.8s, 14d 81.5s, 30d 104.5s, 90d timed out past 150s). TIMEOUT 180 = the app's own ceiling (60s first try + 120s retry): it answers in ~58s alone but has been seen to blow 120s inside a full sweep, and this card has measured 7.7s-59.8s on identical inputs, so a single slow run is not evidence of breakage. The slowness is PRE-EXISTING, not v6's \u2014 the two new CTEs cost 0.88s at apex in isolation."
+    },
+    {
+      "label": "users / norman (Community Intel. ADDED 2026-08-31 with the residency fix to card 17689 \u2014 its Residency? column reads the same res_group CTE as the facility cards, and nothing was watching this card)",
+      "card": "0aa0f55d-738f-4df7-837a-eb21f3ee1793",
       "org": "574923bd-9e7b-43e0-9e5f-7ce256189cbf",
       "timeout": 120
     }

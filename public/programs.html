@@ -59,6 +59,52 @@
     .toolbar .row-count { font-size: 11px; color: #aaa; }
     .toolbar .divider { width: 1px; height: 28px; background: rgba(255,255,255,.15); margin: 0 2px; }
 
+    /* ── Season filter menu ──────────────────────────────────────────────
+       Styled to match the toolbar it hangs off (#2c2c2c / #eee), not as a
+       white popover — Dan: "make the menu look like the other menu styles.
+       not the white background menu."
+
+       THE ROW RULES ARE RESETS, NOT DECORATION. `.toolbar label` sets
+       text-transform:uppercase, color:#aaa and flex-direction:column for the
+       date-field captions, and these options are <label>s inside .toolbar —
+       so without the resets below they render UPPERCASE, grey and STACKED
+       (checkbox over name over count), which is exactly how they first
+       shipped. Inline styles did not cover it: none of those three
+       properties were being set inline, so the toolbar rule won. */
+    .season-wrap { position: relative; }
+    .season-btn {
+      padding: 4px 10px; border: 1px solid rgba(255,255,255,.2); border-radius: 4px;
+      background: rgba(255,255,255,.1); color: #fff;
+      font-size: 12px; font-family: inherit; cursor: pointer; white-space: nowrap;
+    }
+    .season-btn:hover { background: rgba(255,255,255,.18); }
+    .season-btn.on    { background: rgba(255,255,255,.22); }
+    .season-btn .caret { margin-left: 6px; opacity: .7; }
+    .season-menu {
+      position: absolute; top: calc(100% + 6px); left: 0; z-index: 200;
+      min-width: 230px; max-width: 320px; max-height: 320px; overflow-y: auto;
+      background: #2c2c2c; color: #eee;
+      border: 1px solid rgba(255,255,255,.18); border-radius: 6px;
+      box-shadow: 0 10px 28px rgba(0,0,0,.45); padding: 6px 0;
+    }
+    .season-menu .sm-head {
+      padding: 2px 12px 7px; border-bottom: 1px solid rgba(255,255,255,.12);
+      margin-bottom: 4px;
+    }
+    .season-menu .sm-clear {
+      border: none; background: none; padding: 0; font-size: 11px;
+      font-family: inherit; color: #7fb2ff; cursor: pointer;
+    }
+    .season-menu .sm-clear:disabled { color: #6b7280; cursor: default; }
+    .toolbar .season-menu label.sm-opt {
+      display: flex; flex-direction: row; align-items: center; gap: 8px;
+      padding: 6px 12px; cursor: pointer;
+      font-size: 12px; text-transform: none; letter-spacing: normal; color: #eee;
+    }
+    .season-menu label.sm-opt:hover { background: rgba(255,255,255,.09); }
+    .season-menu .sm-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .season-menu .sm-n { color: #9ca3af; font-variant-numeric: tabular-nums; }
+
     /* ── Page ── */
     .page {
       max-width: 1400px; margin: 16px auto; padding: 24px 28px;
@@ -580,9 +626,58 @@ function progEffectiveTab(urlTab, hasProgram, hasSectionId, cfg) {
   return 'summary';
 }
 
+// A ?loc= naming a location this feed does not have must not empty the report.
+// Same shape as ciEffectiveRowSet, INCLUDING the `loaded` argument: a feed that
+// has not answered yet is not an empty answer, and resolving on mount — when
+// there are no options *yet* — is exactly how ?ci_rows=failed shipped broken.
+// At module scope so programs-location.spec.js can run it rather than regex it.
+function progEffectiveLoc(want, options, loaded) {
+  if (!want) return '';
+  if (!loaded) return want;
+  return (options || []).some(o => o.value === want) ? want : '';
+}
+
+// ONE definition of what a row's season IS, read by the options builder, the
+// funnel and the checkbox list alike. Card 17295 COALESCEs to the literal
+// 'No Season', but a pre-v6 feed (or the `Season` alias) can leave it empty, and
+// those two are the same fact — a section nobody put in a season. Three surfaces
+// deriving it separately is how a checkbox lights up and filters nothing.
+const SEASON_NONE = 'No Season';
+function seasonKey(r) {
+  const v = r && r.season;
+  return (v == null || v === '') ? SEASON_NONE : String(v);
+}
+
+// The season equivalent, and it takes an ARRAY because seasons are ticked, not
+// picked. Same `loaded` argument and the same reason: a feed that has not
+// answered is not a feed without that season.
+//
+// IT DROPS UNKNOWN SEASONS AND KEEPS THE REST rather than falling back to "all"
+// the way progEffectiveLoc does. Ticking three seasons and having one of them
+// retire must not silently widen the report back to everything — the two known
+// ones are still a deliberate, answerable request. Only when NOTHING survives
+// does it fall back, because an empty tick list and "all seasons" render the
+// same and the empty one is the confusing way to say it.
+// At module scope so programs-season.spec.js can RUN it rather than regex it.
+function progEffectiveSeasons(want, options, loaded) {
+  const list = Array.isArray(want) ? want.filter(Boolean) : [];
+  if (!list.length) return [];
+  if (!loaded) return list;
+  const have = new Set((options || []).map(o => o.value));
+  const kept = list.filter(v => have.has(v));
+  return kept;
+}
+
 function getParams() {
   const p = new URLSearchParams(window.location.search);
-  return { start_date: p.get('start_date'), end_date: p.get('end_date'), _print: p.get('_print'), tab: p.get('tab'), section_id: p.get('section_id'), program: p.get('program') };
+  // NOTE: this is an explicit whitelist. A parameter missing from here reads
+  // as undefined and its deep link silently does nothing — that is exactly how
+  // ?ci_rows= shipped broken on the check-ins tab.
+  return { start_date: p.get('start_date'), end_date: p.get('end_date'), _print: p.get('_print'), tab: p.get('tab'), section_id: p.get('section_id'), program: p.get('program'), loc: p.get('loc'),
+    // REPEATED, not comma-joined: a season is named by a human ("Spring/Summer
+    // 26", "Fall '26") and nothing stops one containing a comma. getAll is
+    // encoding-safe for any name; a split(',') would quietly cut one in half.
+    seasons: p.getAll('season') };
 }
 
 function getCurrentMonthRange() {
@@ -1098,6 +1193,13 @@ function App() {
 
   const [search, setSearch] = useState(() => new URLSearchParams(window.location.search).get('program') || new URLSearchParams(window.location.search).get('search') || '');
   const [activityFilter, setActivityFilter] = useState('');
+  // Location scopes the WHOLE report. Not persisted — it is a search intent,
+  // not a layout preference, and someone returning to a silently narrowed
+  // report would read one site as the whole department. It IS in the URL, so a
+  // link lands on the location the sender was looking at.
+  const [locFilter, setLocFilter] = useState(params.loc || '');
+  const [seasonSel, setSeasonSel] = useState(params.seasons || []);
+  const [seasonOpen, setSeasonOpen] = useState(false);
 
   const [demoRows, setDemoRows] = useState(null);
   const [demoLoading, setDemoLoading] = useState(false);
@@ -1135,9 +1237,14 @@ function App() {
   useEffect(() => { if (demoRows && demoRows.length > 0) { var sample = demoRows[0]; console.log('[activity-debug] demoRows[0] keys:', Object.keys(sample).join(', ')); console.log('[activity-debug] Activity value:', sample['Activity']); console.log('[activity-debug] activityInfo.list:', activityInfo.list); } }, [demoRows, activityInfo]);
 
   const fDemoRows = useMemo(() => {
-    if (!demoRows || !activityFilter) return demoRows;
-    return demoRows.filter(r => (r['Activity'] || activityInfo.map[r['Program']||''] || '') === activityFilter);
-  }, [demoRows, activityFilter, activityInfo]);
+    if (!demoRows) return demoRows;
+    // Scoped by the PROGRAM set at the chosen location — this feed carries no
+    // location of its own (only card 17295 does), so this is coarser than the
+    // section-level scoping on the revenue tabs and the panel says so.
+    let out = scopedProgramSet ? demoRows.filter(r => scopedProgramSet.has(r['Program'])) : demoRows;
+    if (!activityFilter) return out;
+    return out.filter(r => (r['Activity'] || activityInfo.map[r['Program']||''] || '') === activityFilter);
+  }, [demoRows, activityFilter, activityInfo, scopedProgramSet]);
 
   const [colPresence, setColPresence] = useState({ regMode: false, cancellations: false, waitlist: false });
   const [insights,        setInsights]        = useState(null);
@@ -1377,7 +1484,8 @@ function App() {
 
   var retStats = useMemo(() => {
     if (!retRows || retRows.length === 0) return null;
-    var fRet = activityFilter ? retRows.filter(r => (activityInfo.map[r['Program']||'']||'') === activityFilter) : retRows;
+    var scopedRet = scopedProgramSet ? retRows.filter(r => scopedProgramSet.has(r['Program'])) : retRows;
+    var fRet = activityFilter ? scopedRet.filter(r => (activityInfo.map[r['Program']||'']||'') === activityFilter) : scopedRet;
     if (fRet.length === 0) return null;
     var programs = fRet.map(r => {
       var total = parseInt(r['Total Participants']) || 0;
@@ -1411,7 +1519,7 @@ function App() {
       .filter(function(a) { return a.total >= 20; })
       .sort(function(a, b) { return b.retPct - a.retPct; })[0] || null;
     return { programs: programs, totalP: totalP, totalR: totalR, totalL: totalL, totalS: totalS, orgRetPct: orgRetPct, avgSec: avgSec, progsWithReturners: progsWithReturners, topRetaining: topRetaining, topActivity: topActivity };
-  }, [retRows, activityFilter, activityInfo]);
+  }, [retRows, activityFilter, activityInfo, scopedProgramSet]);
 
   // ── Cohort retention + cross-program affinity from enrollment data ──
   var cohortAnalytics = useMemo(() => {
@@ -1738,10 +1846,156 @@ function App() {
     } catch {}
   }
 
+  // Mirror the location into the URL so a shared link lands where the sender
+  // was. MUTATE ONLY THIS KEY — rebuilding the whole query string is how the
+  // Fast Track share-link effect destroyed ?tab=, and ?token=, ?section_id= and
+  // ?program= all ride on this URL too. The default CLEARS the parameter rather
+  // than writing ?loc=.
+  useEffect(() => {
+    try {
+      const u = new URL(window.location.href);
+      if (locFilter) u.searchParams.set('loc', locFilter);
+      else u.searchParams.delete('loc');
+      window.history.replaceState(null, '', u.toString());
+    } catch {}
+  }, [locFilter]);
+
+  // Drop a stale ?loc= once the feed has actually answered.
+  useEffect(() => {
+    if (!rows) return;
+    const eff = progEffectiveLoc(locFilter, locOptions, true);
+    if (eff !== locFilter) setLocFilter(eff);
+  }, [rows, locOptions]);   // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Same for ?season=, and the same MUTATE-ONE-KEY rule: ?token=, ?section_id=,
+  // ?program=, ?tab= and ?loc= all ride on this URL, and rebuilding the query
+  // string is how the Fast Track share-link effect destroyed ?tab=.
+  // delete-then-append is the only way to write a repeated parameter without
+  // stacking a second copy on every keystroke.
+  useEffect(() => {
+    try {
+      const u = new URL(window.location.href);
+      u.searchParams.delete('season');
+      seasonSel.forEach(v => u.searchParams.append('season', v));
+      window.history.replaceState(null, '', u.toString());
+    } catch {}
+  }, [seasonSel]);
+
+  // A popover that only closes via its own button feels stuck. Listener is added
+  // ONLY while the menu is open, so the page carries no permanent document
+  // handler, and it ignores clicks inside the menu or the tick would close it.
+  useEffect(() => {
+    if (!seasonOpen) return;
+    const onDoc = ev => {
+      const wrap = ev.target && ev.target.closest && ev.target.closest('[data-prog-season-wrap]');
+      if (!wrap) setSeasonOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [seasonOpen]);
+
+  // Drop seasons this feed does not have, once it has actually answered.
+  // Compared as a SET, not by reference: this effect depends on seasonOptions,
+  // which is a new array on every render, so setting state unconditionally
+  // would re-render forever.
+  useEffect(() => {
+    if (!rows) return;
+    const eff = progEffectiveSeasons(seasonSel, seasonOptions, true);
+    if (eff.length !== seasonSel.length || eff.some((v, i) => v !== seasonSel[i])) setSeasonSel(eff);
+  }, [rows, seasonOptions]);   // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Location filter ────────────────────────────────────────────────
+  // PRESENCE, NOT VALUE. Card 17295 v6 adds `location`; a warm 4-hour v5 cache
+  // entry has no such key. The control is ABSENT in that case rather than
+  // offering a single useless option — "renders an empty filter" and "renders
+  // nothing" are different claims. Same rule as mbHasProductKind / ciHasStatus.
+  const progHasLocation = useMemo(
+    () => Array.isArray(rows) && rows.some(r => 'location' in r),
+    [rows]);
+
+  // A section with no located session is a real state, not a missing one, so it
+  // gets its own option. Without it those sections vanish the moment anyone
+  // picks a location, and nothing on screen says they were dropped.
+  const LOC_NONE = '\u0000none';
+
+  const locOptions = useMemo(() => {
+    if (!rows || !progHasLocation) return [];
+    const counts = new Map();
+    let none = 0;
+    rows.forEach(r => {
+      const L = r.location;
+      if (L) counts.set(L, (counts.get(L) || 0) + 1);
+      else none++;
+    });
+    // Busiest first, so a location that falls out of use sinks on its own.
+    const out = Array.from(counts.entries())
+      .sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0])))
+      .map(([name, n]) => ({ value: name, label: name, n }));
+    if (none) out.push({ value: LOC_NONE, label: 'No location set', n: none });
+    return out;
+  }, [rows, progHasLocation]);
+
+  // ── Season filter ──────────────────────────────────────────────────
+  // Card 17295 already emits program_season, COALESCEd to the literal string
+  // 'No Season', so unlike `location` there is no such thing as a row without
+  // the key — the page's own mapper defaults it too. The gate is therefore
+  // "does this org run seasons at all", which is a value question and correctly
+  // so: the column is always present, and an org with none yields exactly one
+  // option, which the control hides.
+  const seasonOptions = useMemo(() => {
+    if (!rows) return [];
+    const counts = new Map();
+    rows.forEach(r => {
+      const v = seasonKey(r);
+      counts.set(v, (counts.get(v) || 0) + 1);
+    });
+    // Busiest first, so the season an admin is actually working in leads, and
+    // "No Season" sinks to wherever its size puts it rather than being pinned
+    // anywhere flattering.
+    return Array.from(counts.entries())
+      .sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0])))
+      .map(([name, n]) => ({ value: name, label: name, n }));
+  }, [rows]);
+
+  // THE SINGLE FUNNEL, and it applies BOTH dimensions. There is deliberately no
+  // `scopedRows` any more: two funnels is how the facility Summary ended up with
+  // chips that scoped some panels and not others and a page that disagreed with
+  // itself for a week. One name, both filters, and the spec fails if a bare
+  // `rows` OR a stale `scopedRows` appears in the derivation block below.
+  const scopedRows = useMemo(() => {
+    if (!rows) return rows;
+    let out = rows;
+    if (locFilter) {
+      out = locFilter === LOC_NONE ? out.filter(r => !r.location)
+                                   : out.filter(r => r.location === locFilter);
+    }
+    // An empty tick list means ALL seasons, not none — see progEffectiveSeasons.
+    if (seasonSel.length) {
+      const want = new Set(seasonSel);
+      out = out.filter(r => want.has(seasonKey(r)));
+    }
+    return out;
+  }, [rows, locFilter, seasonSel]);
+
+  // The demographics, retention and check-in tabs read their OWN feeds, which
+  // carry neither a location nor a season column — only the programs card
+  // does. So they are scoped by the set of PROGRAMS surviving the funnel.
+  // That is coarser than the section-level scoping above (a program running
+  // at two sites, or across two seasons, is in the set for both), and the
+  // panels say so rather than implying a precision they do not have.
+  const scopedProgramSet = useMemo(() => {
+    // EITHER dimension narrows it. Gating on locFilter alone is how the
+    // demographics and retention tabs would have stayed season-unscoped while
+    // every panel beside them moved — the scoped-some-panels-not-others bug.
+    if ((!locFilter && !seasonSel.length) || !scopedRows) return null;
+    return new Set(scopedRows.map(r => r.programName));
+  }, [locFilter, seasonSel, scopedRows]);
+
   // ── Computed values ────────────────────────────────────────────────
   const grouped = useMemo(() => {
-    if (!rows) return null;
-    const base = activityFilter ? rows.filter(function(r) { return getProgActivity(r.programName) === activityFilter; }) : rows;
+    if (!scopedRows) return null;
+    const scoped = scopedRows || [];
+    const base = activityFilter ? scoped.filter(function(r) { return getProgActivity(r.programName) === activityFilter; }) : scoped;
     const map = {};
     base.forEach(r => {
       if (!map[r.programName]) map[r.programName] = [];
@@ -1757,7 +2011,7 @@ function App() {
       if (prog.toLowerCase().includes(q)) filtered[prog] = sections;
     });
     return filtered;
-  }, [rows, search, activityFilter, activityInfo]);
+  }, [scopedRows, search, activityFilter, activityInfo]);
 
   // Rows remaining after the program search filter — drives summary cards + grand total
   const filteredRows = useMemo(() => (grouped ? Object.values(grouped).flat() : []), [grouped]);
@@ -2064,6 +2318,61 @@ function App() {
             </select>
           </React.Fragment>);
         })()}
+        {locOptions.length > 1 && (<React.Fragment>
+          <div className="divider" />
+          <select data-prog-loc value={locFilter}
+            onChange={function(e) { setLocFilter(e.target.value); setInsights(null); setInsightsMeta(null); }}
+            title="Scopes the whole report — every tab, every total"
+            style={{padding:'4px 8px',border:'1px solid rgba(255,255,255,.2)',borderRadius:4,background:'rgba(255,255,255,.1)',color:'#fff',fontSize:12,fontFamily:'inherit',outline:'none',cursor:'pointer',maxWidth:200}}>
+            <option value="" style={{color:'#333'}}>All Locations ({locOptions.length})</option>
+            {locOptions.map(function(o) {
+              return <option key={o.value} value={o.value} style={{color:'#333'}}>{o.label} ({o.n})</option>;
+            })}
+          </select>
+        </React.Fragment>)}
+        {seasonOptions.length > 1 && (<React.Fragment>
+          <div className="divider" />
+          <div data-prog-season-wrap className="season-wrap">
+            <button type="button" data-prog-season-btn
+              className={'season-btn' + (seasonSel.length ? ' on' : '')}
+              onClick={function() { setSeasonOpen(!seasonOpen); }}
+              title="Scopes the whole report — every tab, every total">
+              {seasonSel.length
+                ? 'Seasons: ' + seasonSel.length + ' of ' + seasonOptions.length
+                : 'All Seasons (' + seasonOptions.length + ')'}
+              <span className="caret" aria-hidden="true">{seasonOpen ? '\u25b4' : '\u25be'}</span>
+            </button>
+            {seasonOpen && (
+              <div data-prog-season-menu className="season-menu">
+                <div className="sm-head">
+                  {/* An empty tick list IS "all", so Clear and Select all are the
+                      same state. Only Clear is offered — two buttons that produce
+                      one result is a control that looks broken. */}
+                  <button type="button" data-prog-season-clear className="sm-clear"
+                    onClick={function() { setSeasonSel([]); setInsights(null); setInsightsMeta(null); }}
+                    disabled={!seasonSel.length}>
+                    Clear (show all)
+                  </button>
+                </div>
+                {seasonOptions.map(function(o) {
+                  const on = seasonSel.indexOf(o.value) >= 0;
+                  return (
+                    <label key={o.value} data-prog-season-opt={o.value} className="sm-opt">
+                      <input type="checkbox" checked={on}
+                        onChange={function() {
+                          setSeasonSel(on ? seasonSel.filter(function(v) { return v !== o.value; })
+                                          : seasonSel.concat(o.value));
+                          setInsights(null); setInsightsMeta(null);
+                        }} />
+                      <span className="sm-name">{o.label}</span>
+                      <span className="sm-n">{o.n}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </React.Fragment>)}
         <div className="divider" />
         <div style={{position:'relative',display:'flex',alignItems:'center'}}>
           <span style={{position:'absolute',left:8,color:'#666',fontSize:12,pointerEvents:'none'}}>🔍</span>
@@ -2193,8 +2502,11 @@ function App() {
               <div className="pb-title">🤸 Programs</div>
               <div className="pb-sub">Classes, camps, leagues &amp; lessons.</div>
               <div className="pb-pills">
-                <span className="pb-pill"><b>{programCount.toLocaleString()}</b> programs</span>
-                <span className="pb-pill"><b>{(totals ? totals.sections : 0).toLocaleString()}</b> sections</span>
+                {/* Keyed by the render check: the season and location filters are
+                    only real if a COUNT moves. "a checkbox rendered" passes on a
+                    filter that filters nothing. */}
+                <span className="pb-pill" data-prog-count={String(programCount)}><b>{programCount.toLocaleString()}</b> programs</span>
+                <span className="pb-pill" data-prog-sections={String(totals ? totals.sections : 0)}><b>{(totals ? totals.sections : 0).toLocaleString()}</b> sections</span>
                 <span className="pb-pill"><b>{(totals ? totals.enrollments : 0).toLocaleString()}</b> participants</span>
                 {bannerFill > 0 && <span className="pb-pill"><b>{bannerFill}%</b> avg fill</span>}
               </div>

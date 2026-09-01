@@ -13,7 +13,17 @@ res_group AS (
   FROM "group" g
   WHERE g.deleted_at IS NULL
     AND g.organization_id = (SELECT org_id FROM params)
-    AND (g.group_type ILIKE '%residen%' OR g.name ILIKE '%residen%')
+    -- THE GROUP'S OWN TOGGLE, not a name match — see cards 17294/17788, fixed
+    -- in the same change. Measured 2026-08-31: the old name clause swept in 96
+    -- groups across 35 orgs that are not residency groups (4,099 live
+    -- memberships, 1,446 households), because "Non-Resident" contains
+    -- "Resident" as a substring — 516 people on "Pool Pass (Non-residents)"
+    -- were reported as residents. It gained nothing: every residency-typed
+    -- group was already matched by the type half ('residency' ILIKE
+    -- '%residen%'). This card's "Residency?" column reads the same CTE, so
+    -- leaving it on the old rule would make Community Intel and the facility
+    -- reports disagree about the same person.
+    AND g.group_type = 'residency'
 ),
 
 org_households AS (

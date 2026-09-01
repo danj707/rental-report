@@ -72,6 +72,7 @@ const NAMES = ["mbIsPaid", "mbProductShape", "mbIsAutoRenew", "mbCanAutoRenew",
                "mbCycleDays", "mbMonthlyValue", "mbPlanCycles", "mbCadence",
                "mbChurnPerCycle", "mbRenewalsSoFar", "mbIsCanceled",
                "mbCancelPending", "mbHasCancelSchedule", "mbPlanKey", "mbHasProductKind",
+               "mbHasResidency", "mbResidencyKey",
                "mbHasEconomics", "mbDecompose", "mbEffectiveTab", "mbRetentionWindow",
                "mbISODate"];
 const api = new Function(
@@ -81,6 +82,7 @@ const { mbIsPaid, mbProductShape, mbIsAutoRenew, mbCanAutoRenew, mbCycleDays,
         mbMonthlyValue, mbPlanCycles, mbCadence, mbChurnPerCycle,
         mbRenewalsSoFar, mbIsCanceled, mbCancelPending,
         mbHasCancelSchedule, mbPlanKey, mbHasProductKind, mbHasEconomics, mbDecompose,
+        mbHasResidency, mbResidencyKey,
         mbEffectiveTab, mbRetentionWindow, mbISODate } = api;
 
 // The same membership, as the two feeds that are live at once describe it.
@@ -785,10 +787,25 @@ test("v4 carries the forward-looking cancellation signal", () => {
     "canceled_at is the past; this is the only column that says who is about " +
     "to leave, and nothing else in the schema exposes it");
   assert.match(sqlBody, /mm\.cancel_reason\s+AS "Cancel Reason"/);
-  // Both come off the membership join v2 already made, so v4 adds no joins.
+  // Both come off the membership join v2 already made, so v4 added no joins.
+  // v5 adds three (users, resident_households, resident_users) for the
+  // Resident? column, so a bare count is no longer the invariant — what
+  // matters is that EVERY join can still only match one row. Each of the three
+  // is on a unique key: users.id is the primary key, and both resident CTEs
+  // are SELECT DISTINCT over a single column. Verified against prod as well as
+  // asserted here — el-segundo-recreation returns 3,132 rows with and without
+  // them.
   const joins = (sqlBody.match(/LEFT JOIN/g) || []).length;
-  assert.strictEqual(joins, 6,
-    "v4 must add NO join — if this count moved, a row count can move with it");
+  assert.strictEqual(joins, 9,
+    "v5 adds exactly three joins for Resident? — a fourth means a join arrived " +
+    "without anyone checking whether it can fan out a row");
+  assert.match(sqlBody, /LEFT JOIN public\.users cu\s*\n\s*ON cu\.id = mp\.customer_user_id/,
+    "the buyer join is on users.id, the primary key, so it cannot fan out");
+  assert.match(sqlBody, /resident_households AS \(\s*\n\s*SELECT DISTINCT/,
+    "resident_households is DISTINCT — without it a household with two live " +
+    "residency memberships would duplicate every purchase row it made");
+  assert.match(sqlBody, /resident_users AS \(\s*\n\s*SELECT DISTINCT/,
+    "resident_users is DISTINCT, for the same reason");
 });
 
 test("the ORDER BY is intact", () => {
@@ -836,6 +853,125 @@ test("nothing new is built on last_used_at", () => {
                            page.indexOf("activeTab === 'checkins' && ("));
   assert.ok(!/lastUsed/.test(arTab),
     "the new tabs must not depend on a column that has never had a value");
+});
+
+/* ── Residency: a DIMENSION, not a fifth tab ───────────────────────────────
+ * Card 17301 v5 adds "Resident?". The surfaces are a toolbar filter that
+ * scopes the whole report and one split panel — not a sub-tab, because every
+ * question residency raises ("do residents retain better", "do non-residents
+ * auto-renew", "what share of the book is resident") is the same cut applied
+ * to panels that already exist. A tab could answer it once; a filter answers
+ * it everywhere.
+ * ------------------------------------------------------------------------ */
+const RES_YES  = { hasResidency: true,  residency: "Yes", netCollected: 100, autoRenew: true,  productKind: "membership" };
+const RES_NO   = { hasResidency: true,  residency: "No",  netCollected: 50,  autoRenew: false, productKind: "membership" };
+const RES_NULL = { hasResidency: true,  residency: "",    netCollected: 25,  autoRenew: false, productKind: "membership" };
+const PRE_V5   = { hasResidency: false, residency: "",    netCollected: 25,  autoRenew: false, productKind: "membership" };
+
+test("residency is PRESENCE-gated, so a pre-v5 feed shows nothing rather than 0%", () => {
+  assert.strictEqual(mbHasResidency([PRE_V5, PRE_V5]), false,
+    "a feed with no Resident? column must hide the surfaces, not render every " +
+    "member as a non-resident");
+  assert.strictEqual(mbHasResidency([RES_NO, RES_NO]), true,
+    "an org where every member happens to be a NON-resident still has a working " +
+    "residency setup and keeps its filter — the gate is the column, not a 'Yes'");
+  assert.strictEqual(mbHasResidency([RES_NULL, RES_NULL]), false,
+    "an org that runs no residency group gets NULL from the card, which is " +
+    "unknowable, not 'nobody is a resident'");
+});
+
+test("an unknowable row is never filed as a non-resident", () => {
+  assert.strictEqual(mbResidencyKey(RES_YES),  "resident");
+  assert.strictEqual(mbResidencyKey(RES_NO),   "nonresident");
+  assert.strictEqual(mbResidencyKey(RES_NULL), null,
+    "an org with no residency group is unknown, NOT non-resident");
+  assert.strictEqual(mbResidencyKey(PRE_V5),   null,
+    "a pre-v5 row is unknown, NOT non-resident");
+});
+
+test("the filter lives in the ONE funnel, so it scopes every tab", () => {
+  // filteredAnyStatus is where every toolbar filter already lives, and the
+  // Auto-Renew tab reads it directly while everything else reads `filtered`,
+  // which derives from it. Putting residency anywhere else would scope some
+  // panels and not others — the facility Summary bug.
+  // Bound it FORWARD from filteredAnyStatus. "const filtered = useMemo" also
+  // appears in an earlier component, so indexOf finds that one and the slice
+  // comes out empty — the block() gotcha recorded in CLAUDE.md, hit again.
+  const fStart = page.indexOf("const filteredAnyStatus = useMemo");
+  const funnel = page.slice(fStart, page.indexOf("const filtered = useMemo", fStart));
+  assert.ok(fStart > 0 && funnel.length > 200, "the funnel slice is non-empty");
+  assert.match(funnel, /if \(residencyFilter\) \{/,
+    "residency is applied inside filteredAnyStatus");
+  assert.match(funnel, /mbResidencyKey\(r\)/,
+    "and it reads the shared predicate rather than testing r.residency inline");
+  assert.match(page, /\}, \[data, renewalFilter, typeFilter, priceMin, priceMax, search, residencyFilter\]\);/,
+    "residencyFilter is in the funnel's dependency list, or the page will not " +
+    "recompute when it changes");
+});
+
+test("filtering never excludes a row whose residency is unknowable", () => {
+  // The same safety valve as mbCanAutoRenew's `unknown` branch. Narrowing a
+  // book on a guess is the denominator mistake this report has already made
+  // twice.
+  // Bound it FORWARD from filteredAnyStatus. "const filtered = useMemo" also
+  // appears in an earlier component, so indexOf finds that one and the slice
+  // comes out empty — the block() gotcha recorded in CLAUDE.md, hit again.
+  const fStart = page.indexOf("const filteredAnyStatus = useMemo");
+  const funnel = page.slice(fStart, page.indexOf("const filtered = useMemo", fStart));
+  assert.ok(fStart > 0 && funnel.length > 200, "the funnel slice is non-empty");
+  assert.match(funnel, /if \(rk !== null && rk !== residencyFilter\) return false;/,
+    "a null key falls through rather than being excluded");
+});
+
+test("the split is taken over filteredAnyStatus, not the status-filtered view", () => {
+  // statusFilter defaults to ['active'], so a breakdown of "the book" taken
+  // from `filtered` would silently answer a different question than its own
+  // heading — the same trap that made the cancellation rate structurally 0.0%.
+  const sStart = page.indexOf("const residencySplit = useMemo");
+  const split = page.slice(sStart, page.indexOf("// ── Summary metrics ──", sStart));
+  assert.ok(sStart > 0 && split.length > 200, "the split slice is non-empty");
+  assert.match(split, /for \(const r of filteredAnyStatus\)/,
+    "the split iterates filteredAnyStatus");
+  assert.doesNotMatch(split, /of filtered\)/,
+    "and never the status-filtered view");
+  assert.match(split, /mbResidencyKey\(r\)/,
+    "the panel and the filter read the SAME predicate, so they cannot disagree");
+  assert.match(split, /if \(!mbHasResidency\(data\)\) return null;/,
+    "the panel is absent, not zeroed, when residency is unknowable");
+});
+
+test("the unknown bucket is shown, not folded into non-resident", () => {
+  assert.match(page, /data-mb-res-unknown=/,
+    "an excluded population is named on screen with its count — a silent " +
+    "exclusion is how a number stops being trusted");
+  assert.match(page, /excluded from the split rather than filed as non-resident/);
+});
+
+test("the control is ABSENT where residency is unknowable", () => {
+  assert.match(page, /\{mbHasResidency\(data\) && \(\s*\n\s*<select data-mb-residency/,
+    "the select renders only behind the presence gate — a control that can " +
+    "only answer 'unknown' is a dead end, and 'renders disabled' and 'renders " +
+    "nothing' are different claims");
+});
+
+test("the Excel export writes blank, not No, where residency is unknowable", () => {
+  assert.match(page, /'Resident\?':\s*mbResidencyKey\(r\) === 'resident' \? 'Yes' : mbResidencyKey\(r\) === 'nonresident' \? 'No' : ''/,
+    "a spreadsheet pivot must not be able to file the unknown as non-resident");
+});
+
+test("the card reads the group's residency TOGGLE, never its name", () => {
+  assert.match(sqlBody, /g\.group_type = 'residency'/,
+    "the toggle is the test");
+  assert.doesNotMatch(sqlBody, /name ILIKE '%residen/i,
+    "a name match sweeps in 'Non-Resident' groups — 516 people on " +
+    "'Pool Pass (Non-residents)' were reported as residents platform-wide");
+  assert.match(sqlBody, /COALESCE\(mp\.membership_household_id, mp\.pass_household_id, cu\.household_id\)/,
+    "all three paths to a resident are used. The two-path version was measured " +
+    "and returned 'No' on all 3,132 El Segundo rows while 1,317 resident " +
+    "households existed, because every row there is coverage='individual' and " +
+    "the product-household columns are null");
+  assert.match(sqlBody, /WHEN NOT \(SELECT val FROM has_res_group\) THEN NULL/,
+    "an org with no residency group gets NULL, never 'No'");
 });
 
 console.log("\n" + passed + " assertions passed.");

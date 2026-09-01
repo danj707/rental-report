@@ -71,7 +71,39 @@ function buildParams(registered, { org, start, end }) {
   return out;
 }
 
-async function checkCard({ label, card, org, start, end, timeout = 60, minRows = 1 }) {
+/* A WINDOW, WHEN A ROW ASKS FOR ONE.
+   Every check in the manifest used to run with NO date parameters at all, which
+   works only while a card's date tags are OPTIONAL — `[[ ... ]]` blocks simply
+   drop out. Card 17295 is the first manifest card that uses {{start_date}}
+   OUTSIDE an optional block (inside the item_tx CTE), so Metabase enforces it
+   and the card 400s with `missing required parameters` however healthy it is.
+   That is the same failure the daily health check had against _shared/programs,
+   recorded in CLAUDE.md — a permanent false alarm that no flap protection can
+   silence.
+
+   IT CANNOT BE DETECTED FROM THE CARD. The public definition reports
+   `required: false` on all three of 17295's parameters; the requirement comes
+   from where the tag sits in the SQL, which the definition does not describe. So
+   the row declares it, with `days`.
+
+   WHY NOT WINDOW EVERY ROW BY DEFAULT: an empty result is a FAILURE here
+   (minRows), and a genuinely quiet week is not a broken card — gl/littleton
+   returns 14 rows over all time and douglas-county-nv 66 permits. Windowing
+   everything would make this check cry wolf on small orgs, which is how a
+   sign-off tool stops being read. Opt-in per row keeps that decision explicit.
+
+   The window ENDS TODAY and is computed at run time, never stored: a hardcoded
+   date in a JSON manifest is a check that silently drifts out of the data. */
+function relativeWindow(days) {
+  const end = new Date();
+  const start = new Date(end.getTime() - (Number(days) - 1) * 86400000);
+  const ymd = d => d.toISOString().slice(0, 10);
+  return { start: ymd(start), end: ymd(end) };
+}
+
+async function checkCard({ label, card, org, start, end, days, timeout = 60, minRows = 1 }) {
+  // An explicit --start/--end always wins; `days` only fills a gap.
+  if (days && !start && !end) ({ start, end } = relativeWindow(days));
   let registered;
   try {
     registered = await fetchCardParams(card, timeout);
@@ -120,11 +152,12 @@ async function main() {
     checks = [{
       label: args.label || `${args.card.slice(0, 8)}/${args.org.slice(0, 8)}`,
       card: args.card, org: args.org, start: args.start, end: args.end,
+      days: args.days ? Number(args.days) : undefined,
       timeout: args.timeout ? Number(args.timeout) : undefined,
       minRows: args["min-rows"] ? Number(args["min-rows"]) : undefined,
     }];
   } else {
-    console.error("Usage: --card <uuid> --org <orgId> [--start --end --timeout --min-rows]  |  --manifest <file>");
+    console.error("Usage: --card <uuid> --org <orgId> [--start --end --days --timeout --min-rows]  |  --manifest <file>");
     process.exit(2);
   }
 

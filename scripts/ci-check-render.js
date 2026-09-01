@@ -86,6 +86,16 @@ function outdoorRows() {
     "Site Type": type, "Purpose": "Birthday party", "Head Cnt": head,
     "Reservee": "Test Renter", "Email": "t@example.com", "Phone": null, "Resident?": "Yes",
     "Booking Type": "Managed", "Instructions": null, "Notes": null,
+    // STATUS IS NOT OPTIONAL, and leaving it off is why the three lane cases
+    // failed while the outdoor and field ones passed on the same rows. Card
+    // 17294 always emits it, and AquaticsView scopes on
+    // `statusSel.has(lc(r['Status']))` — so an undefined Status reads as "" ,
+    // matches no chip, and every lane row is dropped before the panel ever
+    // computes an hour. The tab then renders its "no bookings in this range"
+    // empty state, which looks exactly like a blank page in the check output.
+    // The outdoor and field views do not apply the status filter, so the same
+    // missing field was invisible there.
+    "Status": "Confirmed",
     "Add Ons": addOns, "Add-On Fees": addOns ? 25 : 0, "Total": total, "Paid?": "Paid",
     "Multi-Day Days": totDays, "Multi-Day Day#": dayNum,
     "Lighting": null, "Lit From": null, "Lit Until": null, "Lighting Sync": null,
@@ -98,6 +108,17 @@ function outdoorRows() {
   // Multi-day: hours are unknowable per day, so this must not reach the grid.
   push("Big Field Tent", "bounce-house",       "Lakeview Park",  d(5),  "08:00am", null,     1, 2, "", 300, 150);
   push("Big Field Tent", "bounce-house",       "Lakeview Park",  d(4),  null,      "06:00pm", 2, 2, "", 0, 150);
+  // ── Swim lanes, typed `court` and named with no pool/swim word ──────────
+  // This is El Segundo's real shape: the lanes only reach the Aquatics tab if
+  // refineSiteType's lane branch recovers them from the LOCATION, and the panel
+  // only counts them if it refines BEFORE filtering. A fixture typed 'pool'
+  // would pass on the broken build and prove nothing.
+  push("North Lane 1 - A", "court", "Wiseburn Aquatic Center", d(9), "06:00am", "09:00am", 1, 1, "", 90, 8);
+  push("North Lane 1 - A", "court", "Wiseburn Aquatic Center", d(8), "06:00am", "09:00am", 1, 1, "", 90, 8);
+  push("North Lane 2 - B", "court", "Wiseburn Aquatic Center", d(8), "06:00am", "08:00am", 1, 1, "", 60, 6);
+  // A road-named court at a NON-aquatic location — must stay a court, or the
+  // lane branch has lost its guards and this row lands in the pool totals.
+  push("Johnson Lane Tennis Court", "court", "Johnson Lane Park", d(8), "06:00am", "09:00am", 1, 1, "", 90, 4);
   return rows;
 }
 
@@ -365,6 +386,40 @@ function fasttrackRows() {
     // `conversions missed-revenue KPI` asserts is 925.
     "Over Demand $": 0, "Left on Table": 0,
   });
+  /* ── Needham's shape: SAME DAY, DIFFERENT TIMES ─────────────────────────
+     Measured on production 2026-08-31. Three of Needham's programs go live
+     Sep 2 09:00 ET on their early-access windows; Adult Badminton — carrying 19
+     fast-trackers against their 4, 4 and 2 — goes live Sep 2 12:00 ET on its
+     general one, three hours later. Launching Soon sorts on the go-live INSTANT
+     with headcount only as a tie-break, so Badminton correctly ranks BELOW the
+     smaller cohorts — but every chip printed calendar days, so all four read
+     "OPENS IN 2 DAYS" and the ordering looked arbitrary. Dan read it as a broken
+     sort, which is the only thing the screen let him conclude.
+
+     THE HOURS ARE PINNED TO A LOCAL CALENDAR DAY, not derived from `iso()`.
+     iso(2.125) is "now plus two and an eighth days", so what calendar day it
+     lands on — and whether the two rows even share one — depends on the hour the
+     check happens to run at. Two instants that stopped sharing a day would make
+     this fixture prove something else entirely, silently.
+
+     The pair opens LATER than Birthday Concert's Select Table (~15 min out), so
+     `pre-launch beats capacity` still owns first place. */
+  const atLocalHour = (daysAhead, hour) => {
+    const d = new Date();
+    d.setDate(d.getDate() + daysAhead);
+    d.setHours(hour, 0, 0, 0);
+    return d.toISOString();
+  };
+  const needham = (program, id, section, ft, cap, hour, kind) =>
+    Object.assign(table(section, ft, ft, cap, 2), {
+      "Program": program, "Program ID": id,
+      "Section ID": "sec-" + id + "-" + section.replace(/\W+/g, "-").toLowerCase(),
+      // `kind: early` mirrors the senior programs (an early window that opens
+      // first, general a week later); `general` mirrors Badminton, which has NO
+      // early window at all — that difference is why the two instants differ.
+      "Early Access Opens": kind === "early" ? atLocalHour(2, hour) : null,
+      "Reg Opens": kind === "early" ? atLocalHour(9, 12) : atLocalHour(2, hour),
+    });
   return [
     launchedSmall,
     launchedEarly,
@@ -373,6 +428,9 @@ function fasttrackRows() {
     birthday("General Table 50", 111, 50, 1),
     birthdaySpent("Birthday Summer: June", 14, 10),
     birthdaySpent("Birthday Summer: July", 8, 6),
+    // 4 FT opening 09:00 local, and 19 FT opening 12:00 local the SAME day.
+    needham("Needham Senior Yoga", "prog-needham-early", "Fall 2026 Fridays", 4, 60, 9, "early"),
+    needham("Needham Adult Badminton", "prog-needham-late", "2026-2027 Mondays", 19, 120, 12, "general"),
     table("Premier Table", 54, 54, 25, 1),
     table("Select Table", 18, 18, 45, 2),
     table("Preferred Table", 21, 21, 30, 3),
@@ -436,18 +494,28 @@ function checkinRows() {
 // was never driven in a browser. Two feeds: the section-grain programs card, and
 // the per-section attendance card.
 function programRows() {
-  const sec = (prog, name, sid, enrolled, capacity) => ({
+  const sec = (prog, name, sid, enrolled, capacity, season) => ({
     "Program": prog, "Program Id": "prog-" + prog.toLowerCase().replace(/\W+/g, "-"),
     "Section": name, "Section Id": sid, "Section Status": "Open",
     "Start Date": "2026-08-01", "End Date": "2026-09-30",
     "Enrolled": enrolled, "Capacity": capacity, "Utilized": enrolled,
     "Charged": enrolled * 40, "Received": enrolled * 40, "Refunds": 0,
     "Activity": "Aquatics", "Category": "Fitness",
+    // SEASON NAMES ARE SHREWSBURY'S REAL ONES, apostrophe included: "Fall '26"
+    // is what an org actually types, and a value that has to survive a URL
+    // round-trip and an attribute selector should not be a tidy invented one.
+    // The third season is deliberately the card's own COALESCE value so the
+    // "No Season" checkbox is exercised as a real option rather than a special
+    // case bolted on in the page.
+    "program_season": season,
   });
   return [
-    sec("Aquatic Exercise",  "Aquatic Stations with Pearlena", "sec-aq-1", 21, 24),
-    sec("Aquatic Exercise",  "Water Waves with Yvette",        "sec-aq-2", 20, 24),
-    sec("Water Walking",     "Water Walking August 24",        "sec-ww-1", 12, 16),
+    sec("Aquatic Exercise",  "Aquatic Stations with Pearlena", "sec-aq-1", 21, 24, "Fall '26"),
+    sec("Aquatic Exercise",  "Water Waves with Yvette",        "sec-aq-2", 20, 24, "Fall '26"),
+    sec("Water Walking",     "Water Walking August 24",        "sec-ww-1", 12, 16, "Spring/Summer 26"),
+    // One unseasoned section, so ticking "No Season" has something to find and
+    // the option is not vacuous.
+    sec("Lap Swim",          "Open Lap Swim",                  "sec-ls-1",  9, 20, "No Season"),
   ];
 }
 
@@ -497,6 +565,13 @@ function membershipRows() {
       delete r["Auto Renew"]; delete r["Period Start"]; delete r["Product Kind"];
       delete r["Cancel Scheduled At"]; delete r["Cancel Reason"];
     }
+    // stubMode "prev5" is a warm cache entry from before card 17301 v5 — the
+    // Resident? column simply is not there. Distinct from "nores", which KEEPS
+    // the column and fills it with NULL, i.e. an org that runs no residency
+    // group. The page must hide the residency surfaces in BOTH cases, and they
+    // are different states, so both are driven.
+    if (STUB_MODE === "prev5") delete r["Resident?"];
+    else if (STUB_MODE === "nores") r["Resident?"] = null;
     return r;
   };
   const rows = [];
@@ -510,6 +585,8 @@ function membershipRows() {
       "Next Renewal": "", "Coverage": "group", "Plan Season End": "2026-09-30",
       "Plan Term Days": null, "Auto Renew": false, "Period Start": "",
       "Product Kind": "membership",
+      // 6 season-pass holders, all residents.
+      "Resident?": "Yes",
     }));
   }
   // Monthly fitness — 4 sold in June at $20, every one auto-renewing on a 31-day
@@ -523,6 +600,10 @@ function membershipRows() {
       "Next Renewal": "2026-09-29", "Coverage": "individual", "Plan Season End": null,
       "Plan Term Days": null, "Auto Renew": true, "Period Start": "2026-08-29",
       "Product Kind": "membership",
+      // 4 monthly auto-renewers, all NON-residents. The two families differ on
+      // residency AND on auto-renew, so a split that read the wrong field, or
+      // the wrong row set, produces a different number rather than the same one.
+      "Resident?": "No",
     }));
   }
   // A second auto-renewing plan that CHURNS — 2 still billing, 3 cancelled, so
@@ -720,6 +801,20 @@ const STUBS = [
   // One feed, both tabs: Camping filters it to campsite rows and Outdoor Events
   // to its three types, so each tab has to do its own scoping.
   { match: /\/facility\/api\/data/,        body: () => ({ rows: campsiteRows().concat(outdoorRows()).concat(fieldRows()).concat(addonFormRows()), meta: { org_id: "org-uuid-1" } }) },
+  /* THE HUB'S OWN FEED (card 19570), and it was never stubbed — it fell through
+     to the catch-all /api/ and got `rows: []`. So every vertical badge on the
+     Facilities hub read 0 and the Aquatics tab short-circuited to its "no
+     bookings in this range" empty state before AquaticsHours could mount. The
+     three lane cases COULD NOT HAVE PASSED, and I reported them green off a run
+     whose filter matched nothing.
+     It answers the same reservations as 17294 on purpose: the hub summary and
+     the rental schedule describe one set of bookings, and a fixture where they
+     disagree would let a tab pass on rows the hub says do not exist. The page
+     applies refineRows() to this feed, which is what recovers the court-typed
+     swim lanes into the aquatics vertical. */
+  { match: /\/facilities\/api\/summary/, body: () => ({
+      rows: campsiteRows().concat(outdoorRows()).concat(fieldRows()).concat(addonFormRows()),
+      meta: { org_id: "org-uuid-1" } }) },
 
   // Two of the three fixture rentals have Required Information; the third has
   // none, which is the 62%-of-a-week case that must render as nothing.
@@ -890,6 +985,50 @@ const RENDER_ADMIN_KEY = require("crypto").createHash("sha256")
 // ── Pages to prove ──────────────────────────────────────────────────────────
 // `needs` is a selector that only exists once the page has really rendered, so
 // a blank page fails instead of passing on "no errors thrown".
+// Picks Resident in the residency filter. React tracks a controlled select's
+// value internally, so the change event has to come from a real interaction —
+// assigning .value and dispatching a synthetic event is ignored (the range-input
+// lesson from the report-settings cases).
+async function selectResident(page) {
+  await page.waitForSelector("[data-mb-residency]", { timeout: 15000 });
+  await page.select("[data-mb-residency]", "resident");
+  await new Promise(r => setTimeout(r, 400));
+}
+
+// Season-filter act helpers. At module scope, not inside CASES — the array is a
+// literal and a declaration inside it is a syntax error.
+const openSeasons = async page => {
+  await page.waitForSelector('[data-prog-season-btn]', { timeout: 15000 });
+  await page.click('[data-prog-season-btn]');
+  await page.waitForSelector('[data-prog-season-menu]', { timeout: 5000 });
+};
+// Stamp the menu's COMPUTED styles onto the body so a `needs` selector can
+// assert them. No source assertion can tell a white popover from a dark one,
+// and the bug Dan reported was half colour and half inheritance: `.toolbar
+// label` sets text-transform:uppercase / color:#aaa / flex-direction:column for
+// the date captions, and the option rows are <label>s inside .toolbar, so they
+// rendered UPPERCASE, grey and STACKED until the resets landed.
+const stampSeasonStyle = async page => {
+  await openSeasons(page);
+  await page.evaluate(() => {
+    const menu = document.querySelector('[data-prog-season-menu]');
+    const opt  = document.querySelector('[data-prog-season-opt]');
+    const b = document.body;
+    if (menu) b.setAttribute('data-sm-bg', getComputedStyle(menu).backgroundColor);
+    if (opt) {
+      const cs = getComputedStyle(opt);
+      b.setAttribute('data-sm-transform', cs.textTransform);
+      b.setAttribute('data-sm-dir', cs.flexDirection);
+    }
+  });
+};
+
+const tickSeason = async (page, value) => {
+  await page.waitForSelector(`[data-prog-season-opt="${value}"] input`, { timeout: 5000 });
+  await page.click(`[data-prog-season-opt="${value}"] input`);
+  await new Promise(r => setTimeout(r, 400));
+};
+
 const CASES = [
   { name: "facilities · camping",  path: "/{org}/facilities?tab=camping", needs: ".camp-cal .cc-hd" },
 
@@ -997,6 +1136,42 @@ const CASES = [
     } },
   { name: "fasttrack · pre-launch beats capacity", path: "/{org}/fasttrack",
     needs: "[data-launch-list] > *:first-child[data-launch-program=\"prog-birthday\"]" },
+  /* THE ORDER IS ON THE INSTANT, AND THE CARD NOW SAYS SO.
+     Needham's pair: 4 fast-trackers opening 09:00 local and 19 opening 12:00 the
+     SAME local day. Two things have to hold together, and neither alone is the
+     bug Dan hit:
+       · the 4 ranks ABOVE the 19 (the sort reads the instant, not the headcount)
+       · and both chips print a TIME, and the two times DIFFER — so a reader can
+         see WHY the bigger cohort is second.
+     A source assertion cannot reach this: it passes on a page that sorts
+     correctly and still prints "OPENS IN 2 DAYS" on both, which is exactly the
+     state that got reported as a broken sort. */
+  { name: "fasttrack · same day, different times", path: "/{org}/fasttrack",
+    needs: "body[data-golive-time-ok=\"1\"]",
+    act: async page => {
+      await page.waitForSelector("[data-launch-list] [data-launch-golive]", { timeout: 45000 });
+      await page.evaluate(() => {
+        const card = id => document.querySelector('[data-launch-program="' + id + '"]');
+        const early = card("prog-needham-early");
+        const late  = card("prog-needham-late");
+        if (!early || !late) return;
+        // Document order: the smaller-but-sooner cohort must come first.
+        const sooner = early.compareDocumentPosition(late) & Node.DOCUMENT_POSITION_FOLLOWING;
+        const label = el => {
+          const n = el.querySelector("[data-launch-golive]");
+          return n ? n.textContent.trim() : "";
+        };
+        const a = label(early), b = label(late);
+        const hasTime = t => /\d{1,2}:\d{2}\s?(AM|PM)/i.test(t);
+        // Same calendar day is the whole premise of the fixture: if the two
+        // instants stopped sharing a day this case would be proving something
+        // else, so it is asserted rather than assumed.
+        const day = t => (t.match(/[A-Z][a-z]{2} \d{1,2}/) || [""])[0];
+        if (sooner && hasTime(a) && hasTime(b) && a !== b && day(a) && day(a) === day(b)) {
+          document.body.setAttribute("data-golive-time-ok", "1");
+        }
+      });
+    } },
   // ...and go-live must come from the EARLY-ACCESS window when that is the one
   // that opens first. Reading only "Reg Opens" yields data-golive="general",
   // which is how the report came to say "opens in 8 days" about a section going
@@ -1326,6 +1501,47 @@ const CASES = [
   // parse of the date string makes it S); the desk filter was built from the feed;
   // a member's name links to their Rec account; and the monthly bars carry a
   // clickable month header.
+  // ── Residency (card 17301 v5) ────────────────────────────────────────────
+  // Keyed on the COMPUTED counts, not on "a panel rendered": the fixture has 6
+  // residents and 4 non-residents, and every regression worth catching here
+  // produces a different number rather than an empty page.
+  // ── Aquatics lane hours ──────────────────────────────────────────────────
+  // 3h + 3h + 2h = 8 lane hours over 3 bookings on 2 lanes. The Johnson Lane
+  // TENNIS court is 3 more hours at a non-aquatic location: if it were counted
+  // this reads 11 and 3 lanes, so the number itself is the guard.
+  { name: "facilities · lane hours", path: "/{org}/facilities?tab=aquatics",
+    needs: "[data-aq-hours=\"8\"]" },
+  { name: "facilities · lanes in use", path: "/{org}/facilities?tab=aquatics",
+    needs: "[data-aq-lanes=\"2\"]" },
+  // Coverage, not start times: all three lane bookings start at 6am, but 6am,
+  // 7am and 8am are all covered. A start-times grid peaks at 6a either way, so
+  // the discriminating assertion is the TIMED count, which excludes nothing
+  // here but changes the moment a multi-day row leaks in.
+  { name: "facilities · lane heat is coverage", path: "/{org}/facilities?tab=aquatics",
+    needs: "[data-aq-timed=\"3\"]" },
+  { name: "memberships · residency split", path: "/{org}/memberships",
+    needs: "[data-mb-res-count=\"6\"]" },
+  { name: "memberships · residency non-resident count", path: "/{org}/memberships",
+    needs: "[data-mb-nonres-count=\"4\"]" },
+  // 6 of 10 known = 60%. A split taken from `filtered` would read 6 of 7 (the
+  // status filter defaults to active and 3 rows are cancelled), i.e. 85.7% —
+  // so this one number separates the two row sets.
+  { name: "memberships · split is the whole book, not the active view", path: "/{org}/memberships",
+    needs: "[data-mb-res-pct=\"60\"]" },
+  // The filter must scope the WHOLE report, so picking Resident has to move a
+  // panel that is not the split — the header count is the cheapest proof.
+  { name: "memberships · residency filter scopes the page", path: "/{org}/memberships",
+    needs: "[data-mb-res-count=\"6\"]", act: selectResident },
+  // Absent, not zeroed, on a feed that predates the column…
+  { name: "memberships · no residency surfaces pre-v5", path: "/{org}/memberships",
+    stubMode: "prev5", needs: ".summary-cards",
+    absent: "[data-mb-residency-split]" },
+  { name: "memberships · no residency control pre-v5", path: "/{org}/memberships",
+    stubMode: "prev5", needs: ".summary-cards", absent: "[data-mb-residency]" },
+  // …and on an org that HAS the column but runs no residency group, which is a
+  // different state and would otherwise render "0% resident".
+  { name: "memberships · no residency surfaces without a residency group", path: "/{org}/memberships",
+    stubMode: "nores", needs: ".summary-cards", absent: "[data-mb-residency-split]" },
   { name: "memberships · check-ins",      path: "/{org}/memberships?tab=checkins", needs: "[data-ci-hour-line]" },
   { name: "memberships · peak hour",      path: "/{org}/memberships?tab=checkins", needs: "[data-ci-hour-line=\"5p\"]" },
   { name: "memberships · weekday marks",  path: "/{org}/memberships?tab=checkins", needs: "[data-ci-dow=\"M\"]" },
@@ -1578,6 +1794,57 @@ const CASES = [
   // This page had no render case at all before 2026-08-26.
   // fetchData() calls setTab('summary') on mount, so ?tab=checkins is overridden
   // and the band can only be reached by clicking — which is what `act` is for.
+  // ── The multi-select Season filter ───────────────────────────────────────
+  // The fixture is 4 sections over 3 programs: Aquatic Exercise ×2 in "Fall '26",
+  // Water Walking in "Spring/Summer 26", Lap Swim in "No Season". So the
+  // PROGRAM COUNT discriminates every case below — 3 unfiltered, 1 for Fall '26,
+  // 2 for a two-season union. Keying on "a checkbox rendered" would pass on a
+  // filter that filters nothing, which is the whole failure mode here.
+  { name: "programs · season options are CHECKBOXES", path: "/{org}/programs",
+    // Dan: "make the season filter a checkbox, multiselectable. I hate single
+    // item selections in pull down menus." A <select> renders a control too, so
+    // the assertion is on the input TYPE, not on the control existing.
+    needs: '[data-prog-season-menu] input[type="checkbox"]',
+    act: openSeasons },
+  // Dan: "make the menu look like the other menu styles. not the white
+  // background menu." #2c2c2c is the toolbar's own background, so this fails if
+  // the popover goes back to white — which is a thing only a browser can see.
+  { name: "programs · the season menu matches the toolbar", path: "/{org}/programs",
+    needs: '[data-sm-bg="rgb(44, 44, 44)"]', act: stampSeasonStyle },
+  // The inheritance half of the same bug, and the more interesting one: these
+  // rows are <label>s inside .toolbar, which uppercases and stacks its labels.
+  { name: "programs · season rows escape the toolbar label rule", path: "/{org}/programs",
+    needs: '[data-sm-transform="none"][data-sm-dir="row"]', act: stampSeasonStyle },
+  { name: "programs · the season menu is CLOSED until asked for", path: "/{org}/programs",
+    // An always-open menu is a different and noisier control. Absence before the
+    // click is the only thing that distinguishes the two.
+    needs: "[data-prog-season-btn]", absent: "[data-prog-season-menu]" },
+  { name: "programs · unfiltered shows every program", path: "/{org}/programs",
+    needs: '[data-prog-count="3"]' },
+  { name: "programs · a ticked season scopes the report", path: "/{org}/programs",
+    // 3 programs -> 1. This is the case that fails if the funnel ignores the tick.
+    needs: '[data-prog-count="1"]',
+    act: async page => { await openSeasons(page); await tickSeason(page, "Fall '26"); } },
+  { name: "programs · two ticks are a UNION", path: "/{org}/programs",
+    // 2, not 0. An intersection — the obvious wrong reducer — empties the report,
+    // and an ignored second tick leaves it at 1, so this number separates all three.
+    needs: '[data-prog-count="2"]',
+    act: async page => {
+      await openSeasons(page);
+      await tickSeason(page, "Fall '26");
+      await tickSeason(page, "Spring/Summer 26");
+    } },
+  { name: "programs · No Season is a real option", path: "/{org}/programs",
+    // The card COALESCEs to this literal, and one fixture section carries it.
+    // If seasonKey stopped folding empty/null into it this would read 0.
+    needs: '[data-prog-count="1"]',
+    act: async page => { await openSeasons(page); await tickSeason(page, "No Season"); } },
+  { name: "programs · ?season= deep link lands scoped", path: "/{org}/programs?season=Fall%20%2726",
+    // The apostrophe is the point: a real season name has to survive the URL
+    // round-trip. Landing unscoped reads [data-prog-count="3"], so this fails
+    // both when the parameter is not whitelisted and when it is dropped on mount.
+    needs: '[data-prog-count="1"]' },
+
   { name: "programs · check-ins band", path: "/{org}/programs", needs: "[data-ci-checkins-total=\"50\"]", act: clickCheckinsTab },
   // The Absent column, keyed to a section's own figure — 4 marks on sec-aq-1.
   // "a column rendered" would pass on a column of zeros, which is the failure
