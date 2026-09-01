@@ -1368,7 +1368,7 @@ const ORGS = {
   },
 };
 
-const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "products", "memberships", "court-utilization", "calendar", "fasttrack", "waitlist", "users", "program-demographics", "instructor-payout", "retention", "annual-report", "section-detail", "ice-calendar", "qoq", "checkins", "program-checkins", "selfservice"];
+const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "products", "memberships", "court-utilization", "calendar", "fasttrack", "waitlist", "users", "program-demographics", "instructor-payout", "retention", "annual-report", "section-detail", "ice-calendar", "qoq", "checkins", "program-checkins", "selfservice", "programs-monthly"];
 
 // ── Friendly report directory — label + emoji per report type ──────────
 // Powers the smart Project-Update composer (auto-draft from the changelog):
@@ -1395,6 +1395,7 @@ const REPORT_DIRECTORY = {
   "ice-calendar":      { label: "Ice Participant Calendar", emoji: "❄️" },
   qoq:                 { label: "QoQ Revenue Comparison",   emoji: "📉" },
   selfservice:         { label: "Self-Service Mix",         emoji: "🖱️" },
+  "programs-monthly":  { label: "Programs by Month",        emoji: "📅" },
 };
 
 // ── Shared Metabase UUIDs (one query per report type, parameterized by org_id) ──
@@ -1425,6 +1426,20 @@ const SHARED_UUIDS = {
   // Metabase question #19174 ("✅ Self-Service Mix Report") — powers the
   // Self-Service & Staff Workload band on the Program Summary tab.
   selfservice: "358f6b85-8af3-429e-ba24-ad2cd3207ac9",
+  // Metabase question #21055 ("✅ Programs Revenue by Month") — the money half
+  // of the Programs Summary "by month" panel. Card 17295 returns one period
+  // figure for the whole window, not a series, so the series needs its own
+  // month-grain card.
+  //
+  // READ FROM THE ENVIRONMENT AND ABSENT UNTIL SET, deliberately. Until someone
+  // creates the public link in Metabase there is no UUID, and an entry here
+  // pointing at nothing would make the feed fail for every org. Unset ⇒ the key
+  // is simply not present ⇒ the route 404s ⇒ programs.html hides the money
+  // chart and still draws the activity one, which is the correct degradation:
+  // a feed that has not answered is not a month that earned nothing.
+  ...(process.env.MB_PROGRAMS_MONTHLY_UUID
+      ? { "programs-monthly": process.env.MB_PROGRAMS_MONTHLY_UUID }
+      : {}),
 };
 
 // Which card does the app ACTUALLY query for a given org + report?
@@ -1988,12 +2003,12 @@ const AMENITY_TAGS = {
 
 // Report types that are valid system-wide but should NOT be offered in the
 // dashboard "+ Add report" flow (e.g. not yet ready for self-serve onboarding).
-const NON_ADDABLE_REPORTS = new Set(["program-demographics", "retention", "annual-report", "section-detail", "qoq", "checkins", "program-checkins", "selfservice"]);
+const NON_ADDABLE_REPORTS = new Set(["program-demographics", "retention", "annual-report", "section-detail", "qoq", "checkins", "program-checkins", "selfservice", "programs-monthly"]);
 // Reports that require extra params (e.g. section_id) and cannot be health-checked with org_id alone
 // How many consecutive failed probes before a report is called down. One is
 // load; two in a row is a report. See the flap note in checkOne().
 const HEALTH_ALERT_AFTER = Number(process.env.HEALTH_ALERT_AFTER || 2);
-const HEALTH_SKIP_REPORTS = new Set(["section-detail", "annual-report", "qoq", "qbr-stats", "checkins", "program-checkins", "selfservice"]);
+const HEALTH_SKIP_REPORTS = new Set(["section-detail", "annual-report", "qoq", "qbr-stats", "checkins", "program-checkins", "selfservice", "programs-monthly"]);
 const RENTAL_CALENDAR_ORGS = new Set(["watertown", "norman", "niagarafalls"]);
 // Director's Report (quarterly executive summary) — org-wide since 2026-08-04
 // (piloted on Watertown earlier the same day). With ALL_ORGS true every org

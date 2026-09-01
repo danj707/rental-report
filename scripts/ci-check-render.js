@@ -535,10 +535,20 @@ function programRows() {
   // them NOT add up to Outstanding, which is the one thing the breakdown must
   // refuse to hide.
   const V8 = STUB_MODE !== "prev8";
-  const sec = (prog, name, sid, enrolled, capacity, season, loc, ap, out) => ({
+  // stubMode "previnstr" drops the instructor column — a pre-v6 cache entry, on
+  // which the columns must be ABSENT rather than a row of dashes claiming
+  // nobody teaches anything.
+  const VINSTR = STUB_MODE !== "previnstr";
+  const sec = (prog, name, sid, enrolled, capacity, season, loc, ap, out, instr, dates) => ({
     "Program": prog, "Program Id": "prog-" + prog.toLowerCase().replace(/\W+/g, "-"),
     "Section": name, "Section Id": sid, "Section Status": "Open",
-    "Start Date": "2026-08-01", "End Date": "2026-09-30",
+    // PER-SECTION SPANS, so the by-month activity chart has a shape to find.
+    // They run Jul->Dec with the overlap deliberately peaking in SEPTEMBER,
+    // while the money stub peaks in AUGUST — the whole point of the panel is
+    // that those two months differ, and a fixture where they coincide cannot
+    // tell a correct panel from one drawing the same series twice.
+    "Start Date": (dates && dates[0]) || "2026-08-01",
+    "End Date":   (dates && dates[1]) || "2026-09-30",
     "Enrolled": enrolled, "Capacity": capacity, "Utilized": enrolled,
     "Charged": enrolled * 40, "Received": enrolled * 40, "Refunds": 0,
     "Activity": "Aquatics", "Category": "Fitness",
@@ -547,6 +557,11 @@ function programRows() {
     // caught it either. `location` is deliberately null on one section so the
     // "No location set" option is a real option rather than a special case.
     "location": loc, "location_count": loc ? 1 : 0,
+    // v6 instructor. `instr` is [name, count]; a null name is a section with
+    // NOBODY on file, which at El Segundo is 155 of 286 sections and therefore
+    // a real filter option rather than an edge case. sec-aq-2 carries a count
+    // of 2 so the "+1" marker has something to mark.
+    ...(VINSTR ? { "instructor": instr && instr[0], "instructor_count": (instr && instr[1]) || 0 } : {}),
     // v7. The two readings DISAGREE ON PURPOSE: one $2,400 auto-pay plan
     // against nineteen small manual ones is 54.5% of plan DOLLARS and 5% of
     // plan REGISTRATIONS. A card computing the wrong one renders a plausible
@@ -582,13 +597,13 @@ function programRows() {
     // of programs on prod do. Filtering to Urho must keep only sec-aq-1, so the
     // auto-pay share reads 100% — filtering whole PROGRAMS keeps sec-aq-2's
     // $800 of manual plans too and reads 75%. One number separates the two.
-    sec("Aquatic Exercise",  "Aquatic Stations with Pearlena", "sec-aq-1", 21, 24, "Fall '26",           URHO,   [1, 2400, 0,    0], [600, 100, 500,   0,   0]),
-    sec("Aquatic Exercise",  "Water Waves with Yvette",        "sec-aq-2", 20, 24, "Fall '26",           GORDON, [0,    0, 8,  800], [250,  50,   0, 200,   0]),
-    sec("Water Walking",     "Water Walking August 24",        "sec-ww-1", 12, 16, "Spring/Summer 26",   GORDON, [0,    0, 10, 1000], [400,   0,   0, 300, 100]),
+    sec("Aquatic Exercise",  "Aquatic Stations with Pearlena", "sec-aq-1", 21, 24, "Fall '26",           URHO,   [1, 2400, 0,    0], [600, 100, 500,   0,   0], ["Pearlena Sok", 1],                 ["2026-08-01", "2026-10-31"]),
+    sec("Aquatic Exercise",  "Water Waves with Yvette",        "sec-aq-2", 20, 24, "Fall '26",           GORDON, [0,    0, 8,  800], [250,  50,   0, 200,   0], ["Eric Stenberg, Penny Finders", 2], ["2026-09-01", "2026-12-31"]),
+    sec("Water Walking",     "Water Walking August 24",        "sec-ww-1", 12, 16, "Spring/Summer 26",   GORDON, [0,    0, 10, 1000], [400,   0,   0, 300, 100], ["Pearlena Sok", 1],                 ["2026-07-01", "2026-09-30"]),
     // One unseasoned section, so ticking "No Season" has something to find and
     // the option is not vacuous — and with no location, so "No location set" is
     // a real option.
-    sec("Lap Swim",          "Open Lap Swim",                  "sec-ls-1",  9, 20, "No Season",          null,   [0,    0, 1,  200], [ 75,  25,   0,  50,   0]),
+    sec("Lap Swim",          "Open Lap Swim",                  "sec-ls-1",  9, 20, "No Season",          null,   [0,    0, 1,  200], [ 75,  25,   0,  50,   0], null,                                ["2026-09-01", "2026-09-30"]),
   ];
 }
 
@@ -863,6 +878,23 @@ let STUB_MODE = "";
 
 const STUBS = [
   { match: /\/facilities\/api\/campsites/, body: () => campsitesGeo },
+  /* Card 21055, the money half of the by-month panel. MUST PEAK IN A DIFFERENT
+     MONTH FROM THE ACTIVITY SERIES — August here against September in
+     programRows() — because that disagreement is the entire reason the panel
+     draws two charts. A fixture where both peak in the same month cannot tell a
+     correct panel from one that drew the same series twice.
+     stubMode "nomonthly" answers 404, i.e. the card has no public link yet: the
+     money chart must then be ABSENT rather than a row of confident $0 bars. */
+  { match: /\/programs-monthly\/api\/data/,
+    status: () => (STUB_MODE === "nomonthly" ? 404 : 200),
+    body: () => (STUB_MODE === "nomonthly" ? { error: true } : { rows: [
+      { Month: "2026-07", Collected:  1200, Refunds:   0, Net:  1200 },
+      { Month: "2026-08", Collected: 18400, Refunds: 400, Net: 18000 },
+      { Month: "2026-09", Collected:  2600, Refunds: 100, Net:  2500 },
+      { Month: "2026-10", Collected:     0, Refunds:   0, Net:     0 },
+      { Month: "2026-11", Collected:     0, Refunds:   0, Net:     0 },
+      { Month: "2026-12", Collected:     0, Refunds:   0, Net:     0 },
+    ], meta: { org_id: "org-uuid-1" } }) },
   // Must precede the catch-all /api/ stub. Realistic enough that the case below
   // asserts a NUMBER off the payload rather than merely that a strip appeared.
   { match: /\/facilities\/api\/campmap-activity/, body: () => ({
@@ -1121,6 +1153,37 @@ const openFtProgram = async (page, program) => {
   await page.waitForSelector(`[data-ft-progrow="${program}"]`, { timeout: 45000 });
   await page.click(`[data-ft-progrow="${program}"]`);
   await page.waitForSelector("[data-ft-secrow]", { timeout: 10000 });
+};
+
+// Expand a program group on the Revenue tab. Section rows live behind
+// `isOpen && r._sections.map(...)`, so nothing under a collapsed program is in
+// the DOM at all — the same trap the Fast Track CSV cases hit, where four cases
+// waited 45s on a selector that could never appear.
+// BY NAME, not "the first row": filteredRows is sorted, so clicking whichever
+// program happens to sort first makes the case depend on the sort rather than on
+// the column it is meant to be testing.
+const openProgram = async (page, name) => {
+  await page.waitForSelector(`[data-prog-progrow="${name}"]`, { timeout: 30000 });
+  await page.click(`[data-prog-progrow="${name}"]`);
+  await page.waitForSelector("tr.section-row", { timeout: 10000 });
+};
+
+// Ticked BY ITS VISIBLE LABEL, because the option's value is not always its
+// label — "No instructor on file" is the label for INSTR_NONE, which is a
+// \u0000-prefixed sentinel and cannot go in an attribute selector.
+const pickInstructor = async (page, label) => {
+  await page.waitForSelector("[data-prog-instructor-btn]", { timeout: 15000 });
+  await page.click("[data-prog-instructor-btn]");
+  await page.waitForSelector("[data-prog-instructor-menu] .sm-opt", { timeout: 5000 });
+  const clicked = await page.evaluate(t => {
+    const rows = Array.from(document.querySelectorAll("[data-prog-instructor-menu] .sm-opt"));
+    const row = rows.find(r => (r.querySelector(".sm-name") || {}).textContent === t);
+    if (!row) return false;
+    row.querySelector('input[type="checkbox"]').click();
+    return true;
+  }, label);
+  if (!clicked) throw new Error('no instructor option labelled "' + label + '"');
+  await new Promise(r => setTimeout(r, 400));
 };
 
 const tickSeason = async (page, value) => {
@@ -2120,6 +2183,63 @@ const CASES = [
   { name: "programs · no Outstanding split on a pre-v8 feed", path: "/{org}/programs?tab=revenue",
     stubMode: "prev8", needs: ".summary-cards", absent: "[data-out-split]" },
 
+  // ── Location + Instructor columns, and the instructor filter ─────────────
+  // Card 17295 has emitted `instructor` since v6 and the page mapped it at line
+  // 957 and rendered it NOWHERE for a day — the same shape as the location
+  // filter that shipped unable to render. A case keyed on the CELL is the only
+  // thing that catches a mapped-but-never-displayed column.
+  { name: "programs · the section rows name their location", path: "/{org}/programs?tab=revenue",
+    act: p => openProgram(p, "Aquatic Exercise"), needs: '[data-prog-seccell-location="Urho Saari Swim Stadium"]' },
+  { name: "programs · ...and who teaches them", path: "/{org}/programs?tab=revenue",
+    act: p => openProgram(p, "Aquatic Exercise"), needs: '[data-prog-seccell-instructor="Pearlena Sok"]' },
+  // A section with more than one facilitator says so. Printing only the primary
+  // is a confident half-truth, which is why location_count shipped beside
+  // location in the first place.
+  { name: "programs · a second facilitator is marked", path: "/{org}/programs?tab=revenue",
+    act: p => openProgram(p, "Aquatic Exercise"), needs: '[data-prog-secmore-instructor="2"]' },
+  // PRESENCE, NOT VALUE: on a pre-v6 feed the columns are ABSENT, not a column
+  // of dashes claiming nobody teaches anything.
+  { name: "programs · no instructor column on a pre-v6 feed", path: "/{org}/programs?tab=revenue",
+    stubMode: "previnstr", needs: ".summary-cards", absent: "[data-prog-seccell-instructor]" },
+  // The filter itself. Keyed on the PROGRAM COUNT, not on the control existing —
+  // "a checkbox rendered" passes on a filter that filters nothing. Pearlena
+  // teaches sec-aq-1 and sec-ww-1, which are two DIFFERENT programs, so ticking
+  // her reads 2 of 3; an ignored tick reads 3 and an over-eager one reads 1.
+  { name: "programs · an instructor filter EXISTS", path: "/{org}/programs",
+    needs: "[data-prog-instructor-btn]" },
+  { name: "programs · a ticked instructor scopes the report", path: "/{org}/programs",
+    act: p => pickInstructor(p, "Pearlena Sok"), needs: '[data-prog-count="2"]' },
+  // "No instructor on file" is an option because it is the largest bucket most
+  // orgs have — 155 of 286 sections at El Segundo. Without it those sections
+  // vanish the moment anyone ticks a name and nothing says they were dropped.
+  { name: "programs · unassigned sections are their own option", path: "/{org}/programs",
+    act: p => pickInstructor(p, "No instructor on file"), needs: '[data-prog-count="1"]' },
+
+  // ── By month: two readings, and they must peak in DIFFERENT months ────────
+  // The whole design claim is that programming and money peak apart — measured
+  // at El Segundo, September against August. The fixture forces that gap, so a
+  // panel drawing one series twice fails rather than looking plausible.
+  { name: "programs · the activity peak is its own month", path: "/{org}/programs?start_date=2026-07-01&end_date=2026-12-31",
+    needs: '[data-prog-peak-activity="2026-09"]' },
+  { name: "programs · the money peak is a DIFFERENT month", path: "/{org}/programs?start_date=2026-07-01&end_date=2026-12-31",
+    needs: '[data-prog-peak-money="2026-08"]' },
+  // A feed that has not answered is not a month that earned nothing. Until card
+  // 21055 has a public link the route 404s, and the money chart must be ABSENT
+  // while the activity chart still draws.
+  { name: "programs · no money chart without its card", path: "/{org}/programs?start_date=2026-07-01&end_date=2026-12-31",
+    stubMode: "nomonthly", needs: "[data-prog-peak-activity]", absent: "[data-prog-peak-money]" },
+  // One month is not a series. A single bar labelled "by month" is noise, so the
+  // panel hides itself rather than drawing it.
+  { name: "programs · no by-month panel in a one-month window", path: "/{org}/programs?start_date=2026-09-01&end_date=2026-09-30",
+    needs: ".summary-cards", absent: "[data-prog-bymonth]" },
+  // Card 21055 is org-wide and month-grain — there is no location, season or
+  // instructor on it to filter by. So a filtered page WITHDRAWS the money chart
+  // rather than leaving it beside an activity chart describing a different
+  // population. Two panels disagreeing is the facility Summary bug.
+  { name: "programs · a filter withdraws the unscopeable chart", path: "/{org}/programs?start_date=2026-07-01&end_date=2026-12-31",
+    act: p => pickInstructor(p, "Pearlena Sok"),
+    needs: "[data-prog-peak-activity]", absent: "[data-prog-peak-money]" },
+
   { name: "programs · two ticks are a UNION", path: "/{org}/programs",
     // 2, not 0. An intersection — the obvious wrong reducer — empties the report,
     // and an ignored second tick leaves it at 1, so this number separates all three.
@@ -2680,7 +2800,12 @@ function waitForServer(started) {
         // exists on a failure — the settings unlock renders its error from a
         // 401, and a stub that always says 200 makes the page look like it
         // succeeded and reload, which is indistinguishable from working.
-        return req.respond({ status: (stub && stub.status) || 200, contentType: "application/json",
+        // A status may also be a FUNCTION, for the same reason `body` is one:
+        // STUBS is built once at module load, so a status that depends on
+        // STUB_MODE has to be evaluated per request or every case gets whatever
+        // mode happened to be set when the file was required.
+        const st = stub && stub.status;
+        return req.respond({ status: (typeof st === "function" ? st() : st) || 200, contentType: "application/json",
                              body: JSON.stringify(stub ? stub.body(u, org) : { ok: true }) });
       }
       if (!u.startsWith(`http://127.0.0.1:${PORT}`)) return serveVendored(req);

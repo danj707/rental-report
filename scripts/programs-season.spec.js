@@ -157,8 +157,14 @@ function liftRollup() {
   // recorded failure is printed — a mutation that makes the funnel throw (say,
   // one that calls setStartDate inside it) would surface as a bare stack trace
   // naming nothing. A throw is a failure and must say so like any other.
+  // instrSel/instructorKey arrive with the third dimension (2026-09-01). This
+  // spec RUNS the real funnel, so every argument the funnel reads has to be
+  // supplied or the slice throws — which is the honest signal that a dimension
+  // was added, and is why the throw is caught and recorded below rather than
+  // being allowed to kill the process.
   const raw = new Function("rows", "progSections", "sectionGrain", "locFilter",
-                           "seasonSel", "LOC_NONE", "seasonKey", "rollupToPrograms", body);
+                           "seasonSel", "instrSel", "LOC_NONE", "seasonKey",
+                           "instructorKey", "rollupToPrograms", body);
   const SECS = [
     { programName: "Pickleball", season: "Fall '26",         location: "Oak Middle" },
     { programName: "Yoga",       season: "Fall '26",         location: "Senior Center" },
@@ -167,9 +173,11 @@ function liftRollup() {
   ];
   // sectionGrain false, so the survivors come back as themselves and this half
   // is purely about which rows the two filters keep.
-  const run = (locFilter, seasonSel, rows) => {
+  const instructorKey = r => (r && r.instructor) || "\u0000noinstructor";
+  const run = (locFilter, seasonSel, rows, instrSel) => {
     try {
-      return raw(rows || SECS, SECS, false, locFilter, seasonSel, "\u0000none", seasonKey, x => x);
+      return raw(rows || SECS, SECS, false, locFilter, seasonSel, instrSel || [],
+                 "\u0000none", seasonKey, instructorKey, x => x);
     } catch (e) { failures.push("the scopedRows funnel THREW: " + e.message); return []; }
   };
   const names = rs => (rs || []).map(r => r.programName).sort();
@@ -206,7 +214,8 @@ function liftRollup() {
   let out;
   try {
     out = raw([{ programName: "Aquatics", programId: "p-aq", _sections: SPANNING }],
-              SPANNING, true, "Urho Saari", [], "\u0000none", seasonKey, rollup);
+              SPANNING, true, "Urho Saari", [], [], "\u0000none", seasonKey,
+              r => (r && r.instructor) || "\u0000noinstructor", rollup);
   } catch (e) { failures.push("the re-rollup THREW: " + e.message); out = []; }
   // EVERY read is defensive, for the reason this file already records: a
   // mutation that drops the re-rollup hands back bare SECTION rows, and
@@ -228,7 +237,8 @@ function liftRollup() {
   // flattening/re-rolling on every render for nothing is wasted work.
   let none;
   try {
-    none = raw(["ROLLUPS"], SPANNING, true, "", [], "\u0000none", seasonKey, rollup);
+    none = raw(["ROLLUPS"], SPANNING, true, "", [], [], "\u0000none", seasonKey,
+               r => (r && r.instructor) || "\u0000noinstructor", rollup);
   } catch (e) { failures.push("the unfiltered path THREW: " + e.message); none = null; }
   eq(Array.isArray(none) ? none[0] : null, "ROLLUPS",
      "with nothing ticked the funnel returns `rows` as-is");
@@ -249,10 +259,10 @@ ok(/const scoped = scopedRows \|\| \[\];/.test(src),
    "grouped() reads scopedRows — every revenue panel flows from the composed funnel");
 
 // The program-set gate must respond to EITHER dimension.
-ok(/if \(\(!locFilter && !seasonSel\.length\) \|\| !scopedRows\) return null;/.test(src),
-   "scopedProgramSet fires on either dimension (locFilter alone leaves the demo/retention tabs season-unscoped)");
-ok(/\}, \[locFilter, seasonSel, scopedRows\]\);/.test(src),
-   "...and seasonSel is in its deps, or it will not recompute when a season is ticked");
+ok(/if \(\(!locFilter && !seasonSel\.length && !instrSel\.length\) \|\| !scopedRows\) return null;/.test(src),
+   "scopedProgramSet fires on ANY dimension (locFilter alone leaves the demo/retention tabs season-unscoped; instructor joined them 2026-09-01)");
+ok(/\}, \[locFilter, seasonSel, instrSel, scopedRows\]\);/.test(src),
+   "...and seasonSel and instrSel are in its deps, or it will not recompute when either is ticked");
 
 // No panel below the funnel may read the raw feed.
 {
@@ -280,7 +290,16 @@ ok(/seasonOptions\.length > 1 && \(<React\.Fragment>/.test(src),
 
 // It is CHECKBOXES, per Dan: "make the season filter a checkbox,
 // multiselectable. I hate single item selections in pull down menus".
-ok(/data-prog-season-opt=\{o\.value\}/.test(src), "each season is its own tickable option");
+// The markup moved into the shared MultiPicker on 2026-09-01 (Seasons and
+// Instructor are the same control), so the attribute is built from the slug.
+// Asserted by INTENT rather than by its old spelling: one tickable option per
+// season, carrying that season's own value, rendered as a real checkbox.
+ok(/\['data-prog-' \+ slug \+ '-opt'\]: o\.value/.test(src),
+   "each season is its own tickable option, keyed by its own value");
+ok(/<MultiPicker[\s\S]{0,400}slug="season"/.test(src),
+   "...and the season control is that picker, so the handle really is data-prog-season-opt");
+ok(/type="checkbox" checked=\{on\}/.test(src),
+   "...and it is a CHECKBOX — Dan: \"I hate single item selections in pull down menus\"");
 ok(/<input type="checkbox" checked=\{on\}/.test(src),
    "the options are real checkboxes, not a <select> (a select cannot multi-select)");
 ok(!/<select[^>]*data-prog-season/.test(src), "the season control is not a <select>");

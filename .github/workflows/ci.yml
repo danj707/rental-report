@@ -136,6 +136,9 @@ jobs:
       - name: Programs auto-pay share (dollars vs registrations; no plan money is null, never 0%)
         run: node scripts/programs-autopay.spec.js
 
+      - name: Programs instructor filter + by-month panel (one picker, three dimensions, no date parsing)
+        run: node scripts/programs-instructor.spec.js
+
       - name: Fast Track CSV export (one row per participant; the beacon records, not just 200s)
         run: node scripts/fasttrack-export.spec.js
 

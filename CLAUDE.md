@@ -1186,6 +1186,184 @@ https://rec.metabaseapp.com/question/17295 — and the cache-independent sign-of
 it, because the verifier fails the same way during the window and its failure
 carries no extra information.
 
+## Programs: instructor + location on screen, and "by month" (2026-09-01)
+
+Dan: *"lets build out the enhancements to the programs report, including
+instructors and locations."* El Segundo ask #2 — *per class, by location, by
+month, by instructor* — minus the parts he ruled out.
+
+**Four decisions, all his, all made before any code:** no per-instructor
+leaderboard yet; the by-month panel shows BOTH readings stacked; the two columns
+go into the Excel export as well as on screen; and the report says **nothing**
+about instructor coverage — blank cells, no nudge.
+
+### THE COLUMNS WERE MAPPED AND RENDERED NOWHERE, for a day
+
+`normalizeRow` has carried `instructor` and `instructorCount` since card 17295
+v6 shipped on 2026-08-31, and no surface printed either. Exactly the shape of the
+location filter that shipped unable to render — and invisible to the same checks,
+for the same reason: **a source assertion cannot see a column that is mapped and
+never displayed.** The render cases key on the CELL
+(`data-prog-seccell-instructor`), not on the column existing.
+
+- A location and an instructor are facts about a **SECTION**, so they sit on
+  section rows and a program rollup prints a dash. Summing them into a program
+  row would invent *"this program is at Urho Saari"* for the 11.6% of programs
+  that span sites.
+- **`+N` marks a primary, not a whole truth.** 23 of El Segundo's 286 sections
+  carry more than one facilitator and one spans two locations.
+- `leftCols` had to grow with them or the Grand Total row's money lands under the
+  wrong headers.
+
+### ONE PICKER, TWO CONTROLS — the season menu is now shared
+
+Instructor is a multi-select, same as Seasons (*"I hate single item selections in
+pull down menus"*), so it is the **same component**: `MultiPicker` with a `slug`
+that drives `data-prog-<slug>-btn|menu|opt|clear`, which is why every existing
+season selector in the specs and render cases kept working untouched. The CSS
+classes went `season-*` → `mpick-*` for the same reason.
+
+Two copies would have drifted, and the thing that would drift is the part that
+already broke once: `.toolbar label` sets `text-transform: uppercase`, `color`
+and `flex-direction: column` for the date captions, so the menu rows need
+explicit **resets**, not decoration. A fix landing in one copy and not the other
+is precisely how that bug comes back.
+
+### "No instructor on file" is an OPTION, and the report says nothing else
+
+**155 of El Segundo's 286 live sections have nobody on file, and they hold 1,170
+of 1,418 enrolments (83%) and $39,941.** Three of their biggest programs are
+named after the person teaching — *Naomi's HIIT Water Aerobics* (244 enrolled),
+*Mary's Water Fitness* (99) — with the field empty; *Cue the Tap Shoes with Jenna
+Lockwood* is the one that filled it in.
+
+Dan's call was **say nothing**: no coverage note, no nudge, blank cells. The
+bucket stays in the FILTER only, on the `LOC_NONE` argument — without it, ticking
+any instructor silently drops 155 sections and nothing on screen says so.
+
+### THE INSTRUCTOR KEY IS THE WHOLE COMMA-JOINED STRING
+
+Card 17295 emits facilitators as one `STRING_AGG(..., ', ')` value, so
+**"Penny Finders" and "Eric Stenberg, Penny Finders" are two different options** —
+5 sections and 2 at El Segundo, and *neither is that vendor's real total*.
+
+That is honest for a filter (tick the pairing you mean) and would be wrong for a
+leaderboard, which is **why there is no leaderboard** — Dan's call, given the fix
+is a decision rather than a refactor. Splitting the string is safe today
+(**0 of 1,056 instructor names platform-wide contain a comma**) and silently
+wrong the first time a vendor is called `Acme, Inc.`. The alternative is a card
+change emitting a JSON array; both are open.
+
+### The by-month panel: two peaks, eight weeks apart
+
+Measured at El Segundo: **programming peaks in September (165 sections running),
+money peaks in August ($77,813 collected)**, because people pay at registration
+and then attend for a term. One chart labelled "by month" is read as whichever
+the reader assumed, so both are drawn on one axis with the question each answers
+printed on it.
+
+- **The activity series is derived from the feed's own section spans**, which is
+  an APPROXIMATION of "has a session this month" and was checked before shipping:
+  against real session data over twelve months it is identical in nine and over
+  by exactly **one section** in three (a run straddling a month with no sessions
+  in it). It over-counts, never under-counts, by at most one in sixty.
+- **Future months are hatched.** El Segundo drops from 59 sections in December to
+  4 in January — that is unpublished programming, not a collapse in demand, and a
+  flat future month drawn like a real zero says the opposite.
+- **The panel hides itself under two months.** A single bar labelled "by month"
+  is noise; a one-month window correctly gets nothing.
+- Nothing in this path touches `new Date()`. `'YYYY-MM'` compares correctly as a
+  string and the month range counts integers — `new Date("2026-08-01")` is UTC
+  midnight and renders as July 31 across the US, which is the bug already
+  recorded for fasttrack dates, check-in day-of-week and the ePACT export.
+
+### Card 21055, and why the money half needed its own card
+
+**Card 17295 returns ONE period figure for the whole window, not a series**, and
+is section-grain, so it has nowhere to put twelve numbers. A separate card, not
+columns on 17295: that card already runs 104s at apex and is parked on
+performance, and a new card cannot regress the report every org opens.
+
+**THE BASE TABLES ARE NOT USABLE HERE, which inverts the usual advice in this
+file.** Measured 2026-09-01:
+
+| path | scope | time |
+|---|---|---|
+| `payment → order_item_transaction → order_item → booking` | apex, **one month** | **TIMEOUT past 60s** |
+| `materialized.item_log_report` | apex, all time | **21.4s** |
+| `materialized.item_log_report` | el-segundo | 1.7s |
+
+The Tyler export prefers base tables because it needs one org-month and can ride
+`order_item_transaction (organization_id, confirmed_at)`. This card needs a year
+**aggregated**, and deciding whether a transaction is programme revenue means
+joining four tables before it can group. The item log has already done that join.
+The cost is a full scan of the 1230 MB single-index table — survivable behind the
+4-hour feed cache, and not survivable per request.
+
+- **The filter is `order_item_type = 'reservation-enrollment'.`** The other values
+  at apex are `product` (memberships/passes/merch), `site-reservation` (facility),
+  `event-ticket`, `deposit`.
+- **Verified against the other path rather than assumed.** El Segundo monthly,
+  this card against the base-table query: **2026-06 $149 / 2026-07 $5,967 /
+  2026-08 $77,813 — identical on all three CLOSED months.** September differed by
+  $214 and that is the open-window trap from the Clarksville backcheck, not a
+  discrepancy: the two reads were 40 minutes apart.
+- **`datetime_at_primary_timezone` is ALREADY localized**, so it is cast bare and
+  the card never writes `AT TIME ZONE`. That removes the whole Pacific-rendering
+  class of bug from a rollup where it would land boundary payments in the wrong
+  month.
+- **The basis is the transaction, not `payment.created_at`** (what 17295's Period
+  Received uses). Platform-wide over 12 months, **33 of 2,008,894 transactions
+  across 8 orgs** fall in a different MONTH under the two bases, max gap 98 days.
+  0.0016%, but real — so the panel is labelled collection activity and never
+  presented as reconciling to Period Received.
+- `generate_series` gives every month a row, so a month with no money is a real 0
+  and the page never does date arithmetic to build an axis.
+
+**It is ABSENT until someone creates the public link.** `SHARED_UUIDS` takes it
+from `MB_PROGRAMS_MONTHLY_UUID` and omits the key entirely when unset, so the
+route 404s and the page draws the activity chart alone. A row of confident $0
+bars would say this org collected nothing when the truth is that nothing
+answered — the `hasAbsent` / `ciHasStatus` rule.
+
+### THE EXCEL EXPORT WAS IGNORING EVERY FILTER, and that predates this
+
+Found while adding the two columns Dan asked for. `downloadExcel` read `rows` —
+the **unscoped** program rollups — so an admin who narrowed to one location, one
+season or a search term and hit Excel got the whole org. It reads `filteredRows`
+now, the same set the grand total and the summary cards already use.
+
+The two new columns carry the **distinct set** across the program's sections
+(`progDistinctFromSections`), not a dash: a spreadsheet row cannot be expanded,
+so where the screen makes you open a program the file has to carry the answer.
+Joined with **`"; "` and not `", "`**, because the values themselves can contain
+a comma and a comma-joined set could never be taken apart again.
+
+### Guards
+
+`scripts/programs-instructor.spec.js` (**67 assertions, in CI**), which LIFTS AND
+RUNS the seven helpers rather than regexing them, and reads the card mirror and
+`server.js`. Plus **12 new `ci-check-render.js` cases**, keyed on computed values
+— the instructor CELL, the program COUNT under a tick, and the two peak MONTHS —
+over a fixture where the activity peak (September) and the money peak (August)
+are deliberately different months, because a fixture where they coincide cannot
+tell a correct panel from one drawing the same series twice. New stub modes:
+`previnstr` (a pre-v6 feed, columns absent) and `nomonthly` (card 21055 answers
+404, money chart absent while the activity chart still draws).
+
+**Two of my own cases were wrong in ways only the browser shows**, both fixed
+before the run reported: `openFirstProgram` clicked whichever program sorted
+first, making the case depend on the sort rather than the column; and
+`pickInstructor` selected by attribute value, which cannot work for
+"No instructor on file" — its value is the `\u0000` sentinel. It ticks by visible
+label now.
+
+**A spec-harness note:** the source assertions run over a comment-stripped copy,
+because the comments quote the broken forms (`new Date(`, a comma split) on
+purpose — and one assertion still failed on correct code first time by matching
+`data-prog-season-btn` when it meant the CSS class `.season-btn`. Third instance
+of that in this file.
+
 ## Programs: a multi-select SEASON filter (2026-08-31)
 
 Dan, on Shrewsbury: *"lets add a program 'season' filter on the programs summary
