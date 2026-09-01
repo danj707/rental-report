@@ -420,7 +420,39 @@ function fasttrackRows() {
       "Early Access Opens": kind === "early" ? atLocalHour(2, hour) : null,
       "Reg Opens": kind === "early" ? atLocalHour(9, 12) : atLocalHour(2, hour),
     });
+  /* ── ft_booking rows: the people who fast-tracked ───────────────────────
+     ESSEX JUNCTION'S REAL SHAPE, measured 2026-09-01. A per-session vacation
+     camp over 9 days makes one hold per child per DAY, and one of the accounts
+     carries TWO children — which is exactly why the export is per PARTICIPANT
+     and the section badge (which counts ACCOUNTS) cannot answer "who".
+     Alyssa Callan holds 3 across two kids; the badge says 2 people and the CSV
+     has to say 3 rows.
+
+     Attached to sec-premier-early, a launched section on the Overview flow
+     board, so the CSV button is reachable without navigating a tab. */
+  const ftBooking = (account, email, participant, status, day, secId) => ({
+    "Row Type": "ft_booking", "Season": "Fall",
+    "Program": "Concert Series", "Section": "Premier Table Early", "Reg Mode": "per-session",
+    "Section ID": secId || "sec-premier-early", "Org ID": "org-1", "Program ID": "prog-concert",
+    "User ID": "acct-" + account.toLowerCase().replace(/\W+/g, "-"),
+    "User Name": account, "User Email": email,
+    "Participant Name": participant, "FT Status": status,
+    "Signup Date": "2026-08-" + String(day).padStart(2, "0"),
+  });
+  const ftBookings = [
+    ftBooking("Aislyn Allen", "allenaislynm@gmail.com", "Carter Allen", "Pending", 12),
+    ftBooking("Aislyn Allen", "allenaislynm@gmail.com", "Carter Allen", "Pending", 11),
+    ftBooking("Aislyn Allen", "allenaislynm@gmail.com", "Carter Allen", "Pending", 14),
+    // TWO CHILDREN ON ONE ACCOUNT — the row the badge hides.
+    ftBooking("Alyssa Callan", "acallan@ejrp.org", "Layla Callan", "Converted", 13),
+    ftBooking("Alyssa Callan", "acallan@ejrp.org", "Layla Callan", "Pending", 13),
+    ftBooking("Alyssa Callan", "acallan@ejrp.org", "Tiger Callan", "Pending", 13),
+    // A DIFFERENT section's hold, so a per-section export that forgot to filter
+    // exports a stranger — and the render case can see it.
+    ftBooking("Wrong Section", "wrong@example.com", "Nope Nobody", "Pending", 10, "sec-tiny"),
+  ];
   return [
+    ...ftBookings,
     launchedSmall,
     launchedEarly,
     launchedEarlyV18,
@@ -494,13 +526,48 @@ function checkinRows() {
 // was never driven in a browser. Two feeds: the section-grain programs card, and
 // the per-section attendance card.
 function programRows() {
-  const sec = (prog, name, sid, enrolled, capacity, season) => ({
+  // stubMode "prev7" drops the four v7 payment-plan columns, i.e. a warm
+  // pre-v7 cache entry. Both shapes are live at once for four hours after the
+  // card ships, so the page has to be right on either — and the pre-v7 one must
+  // HIDE the card rather than render 0%.
+  const V7 = STUB_MODE !== "prev7";
+  // stubMode "prev8" drops the four v8 columns; "badsplit" keeps them but makes
+  // them NOT add up to Outstanding, which is the one thing the breakdown must
+  // refuse to hide.
+  const V8 = STUB_MODE !== "prev8";
+  const sec = (prog, name, sid, enrolled, capacity, season, loc, ap, out) => ({
     "Program": prog, "Program Id": "prog-" + prog.toLowerCase().replace(/\W+/g, "-"),
     "Section": name, "Section Id": sid, "Section Status": "Open",
     "Start Date": "2026-08-01", "End Date": "2026-09-30",
     "Enrolled": enrolled, "Capacity": capacity, "Utilized": enrolled,
     "Charged": enrolled * 40, "Received": enrolled * 40, "Refunds": 0,
     "Activity": "Aquatics", "Category": "Fitness",
+    // v6. The location filter shipped unable to render because NOTHING mapped
+    // this onto a row, and no fixture carried it — so no render case could have
+    // caught it either. `location` is deliberately null on one section so the
+    // "No location set" option is a real option rather than a special case.
+    "location": loc, "location_count": loc ? 1 : 0,
+    // v7. The two readings DISAGREE ON PURPOSE: one $2,400 auto-pay plan
+    // against nineteen small manual ones is 54.5% of plan DOLLARS and 5% of
+    // plan REGISTRATIONS. A card computing the wrong one renders a plausible
+    // number, so only a fixture where they differ can tell them apart.
+    ...(V7 ? {
+      "autopay_plan_items": ap[0], "autopay_plan_value": ap[1],
+      "manual_plan_items":  ap[2], "manual_plan_value":  ap[3],
+    } : {}),
+    // v8. `out` is [outstanding, past due, scheduled on auto-pay, scheduled
+    // manual, no-plan balance] and the last four SUM to the first — that is the
+    // card's own invariant, so the fixture has to honour it or the page would be
+    // right to complain. The four org-wide totals are deliberately all
+    // DIFFERENT (175 / 550 / 500 / 100), so swapping any two labels fails a
+    // case rather than rendering four plausible numbers.
+    "Outstanding": out[0],
+    ...(V8 ? {
+      "past_due_value":          STUB_MODE === "badsplit" ? 1 : out[1],
+      "scheduled_autopay_value": out[2],
+      "scheduled_manual_value":  out[3],
+      "no_plan_balance_value":   out[4],
+    } : {}),
     // SEASON NAMES ARE SHREWSBURY'S REAL ONES, apostrophe included: "Fall '26"
     // is what an org actually types, and a value that has to survive a URL
     // round-trip and an attribute selector should not be a tidy invented one.
@@ -509,13 +576,19 @@ function programRows() {
     // case bolted on in the page.
     "program_season": season,
   });
+  const URHO = "Urho Saari Swim Stadium", GORDON = "George E. Gordon Clubhouse";
   return [
-    sec("Aquatic Exercise",  "Aquatic Stations with Pearlena", "sec-aq-1", 21, 24, "Fall '26"),
-    sec("Aquatic Exercise",  "Water Waves with Yvette",        "sec-aq-2", 20, 24, "Fall '26"),
-    sec("Water Walking",     "Water Walking August 24",        "sec-ww-1", 12, 16, "Spring/Summer 26"),
+    // AQUATIC EXERCISE SPANS TWO LOCATIONS, and that is the whole point: 11.6%
+    // of programs on prod do. Filtering to Urho must keep only sec-aq-1, so the
+    // auto-pay share reads 100% — filtering whole PROGRAMS keeps sec-aq-2's
+    // $800 of manual plans too and reads 75%. One number separates the two.
+    sec("Aquatic Exercise",  "Aquatic Stations with Pearlena", "sec-aq-1", 21, 24, "Fall '26",           URHO,   [1, 2400, 0,    0], [600, 100, 500,   0,   0]),
+    sec("Aquatic Exercise",  "Water Waves with Yvette",        "sec-aq-2", 20, 24, "Fall '26",           GORDON, [0,    0, 8,  800], [250,  50,   0, 200,   0]),
+    sec("Water Walking",     "Water Walking August 24",        "sec-ww-1", 12, 16, "Spring/Summer 26",   GORDON, [0,    0, 10, 1000], [400,   0,   0, 300, 100]),
     // One unseasoned section, so ticking "No Season" has something to find and
-    // the option is not vacuous.
-    sec("Lap Swim",          "Open Lap Swim",                  "sec-ls-1",  9, 20, "No Season"),
+    // the option is not vacuous — and with no location, so "No location set" is
+    // a real option.
+    sec("Lap Swim",          "Open Lap Swim",                  "sec-ls-1",  9, 20, "No Season",          null,   [0,    0, 1,  200], [ 75,  25,   0,  50,   0]),
   ];
 }
 
@@ -907,6 +980,15 @@ const STUBS = [
           columns: [{ field: "Facility", label: "Program" }, { field: "Total", label: "Revenue", format: "currency" }],
           sort: { field: "Total", dir: "desc" }, limit: 10 },
       ] }) },
+  // THE UNLOCK ALWAYS REFUSES HERE, and that is deliberate. Every /api/ request
+  // in this harness is answered from these stubs, so the browser never reaches
+  // the real route — which means a render case CANNOT prove the server refuses a
+  // wrong password (report-settings-unlock.spec.js drives that for real, against
+  // a booted server). What only a browser can show is that the page SURFACES the
+  // refusal instead of silently reloading as though it worked, so this stub
+  // answers 401 the way the real route does.
+  { match: /\/api\/settings-unlock/, status: 401,
+    body: () => ({ error: "That password is not right. 4 attempts left.", left: 4 }) },
   { match: /\/api\//,                       body: () => ({ ok: true, rows: [] }) },
 ];
 
@@ -1021,6 +1103,24 @@ const stampSeasonStyle = async page => {
       b.setAttribute('data-sm-dir', cs.flexDirection);
     }
   });
+};
+
+// Pick a location in the top-level filter. The control is a <select>, so the
+// value is set with select() rather than a click; React reads the change event.
+const pickLocation = async (page, value) => {
+  await page.waitForSelector('[data-prog-loc]', { timeout: 15000 });
+  await page.select('[data-prog-loc]', value);
+  await new Promise(r => setTimeout(r, 400));
+};
+
+// Expand a Fast Track program group. The section rows are rendered behind
+// `isOpen && p.sections.map(...)`, so nothing under a collapsed group exists in
+// the DOM — the first draft of the CSV cases waited 45s on a selector that could
+// never appear, and the render check is what said so.
+const openFtProgram = async (page, program) => {
+  await page.waitForSelector(`[data-ft-progrow="${program}"]`, { timeout: 45000 });
+  await page.click(`[data-ft-progrow="${program}"]`);
+  await page.waitForSelector("[data-ft-secrow]", { timeout: 10000 });
 };
 
 const tickSeason = async (page, value) => {
@@ -1228,6 +1328,84 @@ const CASES = [
   // The CSV itself, built by the real click path in a real browser. Every
   // source assertion in roster-epact.spec.js passes on a button wired to the
   // wrong row set; this is what proves the bytes.
+  // ── Fast Track · per-section CSV export ───────────────────────────────────
+  // Dan: "add an 'export CSV' button/link to each Fast Track section in this
+  // bottom table." The button only renders where there are fast-trackers, so its
+  // presence is a real assertion; the bytes are what proves it exports the right
+  // people, and every source assertion in fasttrack-export.spec.js passes on a
+  // button wired to the wrong row set.
+  { name: "fasttrack · a section with fast-trackers offers a CSV", path: "/{org}/fasttrack",
+    needs: '[data-ft-export="sec-premier-early"]',
+    act: page => openFtProgram(page, "Concert Series") },
+  // ...and a section with NOBODY does not. sec-select-table is in the SAME
+  // program and carries FT totals on its section row but no ft_booking rows.
+  // `needs` is the ROW, not just any button: asserting only the absence would
+  // pass on a row that never rendered at all — the vacuous-assertion trap
+  // already recorded for the zero-deadlink check.
+  { name: "fasttrack · no CSV where there is nobody to export", path: "/{org}/fasttrack",
+    needs: '[data-ft-secrow="sec-select-table"]', absent: '[data-ft-export="sec-select-table"]',
+    act: page => openFtProgram(page, "Concert Series") },
+  { name: "fasttrack · the CSV is the people, not the accounts", path: "/{org}/fasttrack",
+    needs: 'body[data-ftx-hdr="1"][data-ftx-lines="3"][data-ftx-sibling="1"]'
+         + '[data-ftx-scoped="1"][data-ftx-bom="1"][data-ftx-tsv="1"]',
+    act: async page => {
+      await openFtProgram(page, "Concert Series");
+      await page.waitForSelector('[data-ft-export="sec-premier-early"]', { timeout: 45000 });
+      // Stub window.open, NOT saveTextViaPopup: a headless browser has nowhere to
+      // put a download, but stubbing the writer would skip the delivery path —
+      // which is where the BOM lives. This reads the bytes the popup is handed.
+      await page.evaluate(() => {
+        window.__payload = null;
+        window.open = () => ({
+          document: { write() {}, close() {} },
+          set __recExport(v) { window.__payload = v; },
+          get __recExport() { return window.__payload; },
+        });
+      });
+      await page.click('[data-ft-export="sec-premier-early"]');
+      await page.evaluate(() => {
+        const p = window.__payload;
+        if (!p) return;   // the button never reached the writer at all
+        const set = (k, v) => { if (v) document.body.setAttribute(k, v); };
+        // On the BYTES, not a decoded string: TextDecoder strips the BOM by
+        // default, so decoding first passes either way — and bytes are what
+        // Excel sniffs.
+        const b = p.bytes;
+        set("data-ftx-bom", b[0] === 0xEF && b[1] === 0xBB && b[2] === 0xBF ? "1" : "");
+        const body = new TextDecoder().decode(b);
+        const lines = body.replace(/\r\n$/, "").split("\r\n");
+        set("data-ftx-hdr", lines[0] === "Program,Section,Season,Reg Mode,Participant,Account Name,Account Email,Fast Tracks,Converted,Pending,First Signup" ? "1" : "");
+        // THREE data rows from TWO accounts. Per-account grouping gives 2, which
+        // is the bug this export exists to avoid — the badge already says 2.
+        document.body.setAttribute("data-ftx-lines", String(lines.length - 1));
+        // Each sibling carries its OWN hold count: Layla 2, Tiger 1. A shared
+        // per-account count would print 3 for both.
+        set("data-ftx-sibling",
+          lines.some(l => l.indexOf("Layla Callan") >= 0 && l.indexOf(",2,1,1,") >= 0) &&
+          lines.some(l => l.indexOf("Tiger Callan") >= 0 && l.indexOf(",1,0,1,") >= 0) ? "1" : "");
+        // Scoped to THIS section — another section's holder must not be in it.
+        set("data-ftx-scoped", body.indexOf("Nope Nobody") < 0 ? "1" : "");
+        // The clipboard copy is TAB-separated and carries NO BOM: pasted into a
+        // sheet a BOM is a stray character in the first cell, and a
+        // comma-separated paste drops the whole row into one column.
+        set("data-ftx-tsv", p.tsv && p.tsv.charCodeAt(0) !== 0xFEFF
+          && p.tsv.split("\n")[0].indexOf("\tParticipant\t") >= 0 ? "1" : "");
+      });
+    } },
+  // Clicking the export must NOT also open the expander — the row's own onClick
+  // toggles it, and two things happening on one click reads as a bug.
+  { name: "fasttrack · exporting does not open the panel", path: "/{org}/fasttrack",
+    needs: '[data-ft-export="sec-premier-early"]', absent: ".sec-users-row",
+    act: async page => {
+      await openFtProgram(page, "Concert Series");
+      await page.waitForSelector('[data-ft-export="sec-premier-early"]', { timeout: 45000 });
+      await page.evaluate(() => {
+        window.open = () => ({ document: { write() {}, close() {} }, set __recExport(v) {}, get __recExport() { return null; } });
+      });
+      await page.click('[data-ft-export="sec-premier-early"]');
+      await new Promise(r => setTimeout(r, 300));
+    } },
+
   { name: "roster · epact csv is her output", path: "/{org}/roster",
     needs: "body[data-ep-hdr=\"1\"][data-ep-lines=\"3\"][data-ep-email=\"1\"][data-ep-label=\"1\"]"
          + "[data-ep-nocancel=\"1\"][data-ep-bom=\"1\"][data-ep-tsv=\"1\"]",
@@ -1357,12 +1535,43 @@ const CASES = [
     } },
 
   // ── Class Roster: the settings panel ────────────────────────────────────
-  // THE DOOR FIRST. An org staffer holds a valid token — that is what the report
-  // link is — and must not even see the gear. Asserted as ABSENT from the DOM
-  // rather than disabled: "renders a greyed button" and "renders nothing" are
-  // different claims, and only one of them keeps the power away from an org user.
-  { name: "roster · no gear without the admin key", path: "/{org}/roster",
-    needs: ".toolbar", absent: "[data-rs-open]" },
+  // THE DOOR FIRST, and its rule CHANGED on 2026-09-01. The gear used to be
+  // absent from the DOM for a token holder so nobody learned the surface
+  // existed. Dan reversed that: "show the settings icon, but require the admin
+  // un/pw to be entered when the settings icon is clicked." So a staffer now
+  // sees a LOCKED gear — and what still must not appear is the working one,
+  // because that is the control that edits an org's defaults.
+  { name: "roster · no WORKING gear without the admin key", path: "/{org}/roster",
+    needs: "[data-rs-locked]", absent: "[data-rs-open]" },
+  // Clicking it asks for a password rather than opening the panel. The settings
+  // sheet must be ABSENT here: if it opened, the prompt would be decorative and
+  // the reveal client-side.
+  { name: "roster · the locked gear asks for a password", path: "/{org}/roster",
+    needs: "[data-rs-unlock] input[type=\"password\"]",
+    absent: "[aria-label=\"Class Roster settings\"]",
+    act: async page => {
+      await page.waitForSelector("[data-rs-locked]", { timeout: 15000 });
+      await page.click("[data-rs-locked]");
+      await page.waitForSelector("[data-rs-unlock]", { timeout: 5000 });
+    } },
+  // A REFUSAL REACHES THE READER. The stub answers 401 (see its note above — the
+  // browser cannot reach the real route in this harness), so what this pins is
+  // the page's half: the error is shown, and the panel does NOT open. Without
+  // it, a page that ignored the status would reload and look like it worked.
+  { name: "roster · a refused password is surfaced, not swallowed", path: "/{org}/roster",
+    needs: "[data-rs-unlock-err]",
+    absent: "[aria-label=\"Class Roster settings\"]",
+    act: async page => {
+      await page.waitForSelector("[data-rs-locked]", { timeout: 15000 });
+      await page.click("[data-rs-locked]");
+      await page.waitForSelector("[data-rs-unlock-pw]", { timeout: 5000 });
+      await page.type("[data-rs-unlock-pw]", "definitely-not-the-password");
+      await page.waitForFunction(
+        () => { const b = document.querySelector("[data-rs-unlock-go]"); return b && !b.disabled; },
+        { timeout: 5000 });
+      await page.click("[data-rs-unlock-go]");
+      await page.waitForSelector("[data-rs-unlock-err]", { timeout: 8000 });
+    } },
   // The gear sits at the far right of the toolbar (Dan: "a standard gear wheel
   // settings looking icon in the upper right corner").
   { name: "roster · settings gear is last in the toolbar", path: "/{org}/roster?admin=" + RENDER_ADMIN_KEY,
@@ -1452,8 +1661,8 @@ const CASES = [
   // exit — which is exactly how "not seeing it" got reported. Runs LAST of the
   // settings cases and restores the flag in a finally, because the flag is
   // server state every earlier case depends on.
-  { name: "roster · flag off says where the switch is", path: "/{org}/roster?admin=" + RENDER_ADMIN_KEY,
-    needs: "[data-rs-flagoff]", absent: "[data-rs-open]",
+  { name: "roster · flag off says where the switch is, ON SCREEN", path: "/{org}/roster?admin=" + RENDER_ADMIN_KEY,
+    needs: "[data-rs-flagnote]", absent: "[data-rs-open]",
     pre: async page => {
       await page.setCookie({ name: "rs_admin", value: RENDER_ADMIN_KEY,
                              domain: "127.0.0.1", path: "/" });
@@ -1474,6 +1683,13 @@ const CASES = [
       await page.reload({ waitUntil: "domcontentloaded" });
       try {
         await page.waitForSelector("[data-rs-flagoff]", { timeout: 45000 });
+        // IT HAS TO BE CLICKABLE. It shipped as a DISABLED button whose only
+        // explanation was a title attribute, and Dan clicked it, got nothing,
+        // and reported the feature as broken — the explanation was behind a
+        // hover. So the case now clicks it and requires the notice on screen; a
+        // disabled button makes this fail, which is the whole point.
+        await page.click("[data-rs-flagoff]");
+        await page.waitForSelector("[data-rs-flagnote]", { timeout: 8000 });
       } finally {
         await flip(true);
       }
@@ -1825,6 +2041,85 @@ const CASES = [
     // 3 programs -> 1. This is the case that fails if the funnel ignores the tick.
     needs: '[data-prog-count="1"]',
     act: async page => { await openSeasons(page); await tickSeason(page, "Fall '26"); } },
+  // ── The Location filter, which SHIPPED UNABLE TO RENDER ──────────────────
+  // normalizeRow never mapped `location` and rollupToPrograms never carried it,
+  // so progHasLocation was false on every feed and the select was gated out at
+  // locOptions.length > 1. programs-location.spec.js fed the reducer rows that
+  // already had `location` on them and there was no render case at all, so
+  // nothing in CI could see it. This is that case.
+  { name: "programs · the location filter EXISTS", path: "/{org}/programs",
+    needs: "[data-prog-loc]" },
+  { name: "programs · a picked location scopes the report", path: "/{org}/programs",
+    // 3 programs -> 1: only Aquatic Exercise has a section at Urho.
+    needs: '[data-prog-count="1"]',
+    act: page => pickLocation(page, "Urho Saari Swim Stadium") },
+  // AND IT FILTERS SECTIONS, NOT PROGRAMS. Aquatic Exercise runs at both sites;
+  // 100% is the share over sec-aq-1 alone, while keeping the whole program
+  // drags in sec-aq-2's $800 of manual plans and reads 75%. Measured on prod:
+  // 659 of 5,699 programs (11.6%) span locations, so this is a main case.
+  { name: "programs · location filters SECTIONS, not whole programs", path: "/{org}/programs",
+    needs: '[data-prog-autopay-pct="100"]',
+    act: page => pickLocation(page, "Urho Saari Swim Stadium") },
+  // ...and the auto-pay share adds its sections up: ticking Fall '26 keeps BOTH
+  // of Aquatic Exercise's sections, $2,400 auto-pay against $800 manual = 75%.
+  { name: "programs · a program's share sums its surviving sections", path: "/{org}/programs",
+    needs: '[data-prog-autopay-pct="75"]',
+    act: async page => { await openSeasons(page); await tickSeason(page, "Fall '26"); } },
+  // ...AND THE SURVIVORS ARE RE-ROLLED UP, which the share above CANNOT prove:
+  // progAutopayShare sums whatever rows it is handed, so section rows and their
+  // rollup give the same percentage. What breaks without the re-rollup is the
+  // Summary tab's own progMap, which is keyed by program and therefore
+  // OVERWRITTEN once per section — the program keeps only its LAST section, so
+  // Fall '26 reads 20 participants instead of 21 + 20. Verified to fail on that
+  // exact mutation; two earlier attempts at this case did not discriminate.
+  { name: "programs · a filtered program keeps ALL its surviving sections", path: "/{org}/programs",
+    needs: '[data-prog-participants="41"]',
+    act: async page => { await openSeasons(page); await tickSeason(page, "Fall '26"); } },
+
+  // ── On Auto-Pay ──────────────────────────────────────────────────────────
+  // Dan: "% on Auto-Pay vs % on manual collection". The fixture makes the two
+  // readings differ 11x, so a card computing the wrong one still renders a
+  // plausible number and only the VALUE can tell them apart.
+  { name: "programs · auto-pay share is by DOLLARS", path: "/{org}/programs",
+    // $2,400 of $4,400. By registrations it would read 5.
+    needs: '[data-prog-autopay-pct="54.5"]' },
+  { name: "programs · ...and the count reading is printed too", path: "/{org}/programs",
+    // 1 of 20. Both are on screen because either alone reads as the whole answer.
+    needs: '[data-prog-autopay-items="5"]' },
+  // PRESENCE, NOT VALUE: a warm pre-v7 cache entry must HIDE the card. A 0%
+  // there says "nobody uses auto-pay" when the truth is "this feed cannot tell
+  // us" — and "renders a 0" and "renders nothing" are different claims.
+  { name: "programs · no auto-pay card on a pre-v7 feed", path: "/{org}/programs",
+    stubMode: "prev7", needs: ".sum-cards", absent: "[data-prog-autopay-pct]" },
+
+  // ── Outstanding, split by WHY ─────────────────────────────────────────────
+  // Dan: "we'd like to have past-due from scheduled and on autopay". One
+  // Outstanding figure hides the only actionable part — at apex it was 96%
+  // not-yet-due money with $24,728 genuinely late inside it. All four org-wide
+  // totals differ (175 / 550 / 500 / 100), so a swapped label fails a case
+  // rather than rendering a plausible number.
+  { name: "programs · Outstanding says how much is PAST DUE", path: "/{org}/programs?tab=revenue",
+    needs: '[data-out-pastdue="175"]' },
+  { name: "programs · ...and how much is merely scheduled", path: "/{org}/programs?tab=revenue",
+    needs: '[data-out-sched="550"]' },
+  { name: "programs · ...and how much collects itself", path: "/{org}/programs?tab=revenue",
+    needs: '[data-out-autopay="500"]' },
+  // A balance with no payment plan has no due date, so it can be neither late
+  // nor scheduled. Its row renders only where there is one.
+  { name: "programs · a no-plan balance gets its own row", path: "/{org}/programs?tab=revenue",
+    needs: '[data-out-noplan="100"]' },
+  // THE PARTS ADD BACK UP, and the page says so when they do not. This is the
+  // only case that can catch a breakdown quietly failing to sum, which is how a
+  // number stops being trusted.
+  { name: "programs · a breakdown that does not sum SAYS SO", path: "/{org}/programs?tab=revenue",
+    stubMode: "badsplit", needs: "[data-out-residual]" },
+  { name: "programs · ...and stays quiet when it does", path: "/{org}/programs?tab=revenue",
+    needs: "[data-out-split]", absent: "[data-out-residual]" },
+  // PRESENCE, NOT VALUE: a warm pre-v8 cache entry keeps the old single figure
+  // rather than four confident zeros.
+  { name: "programs · no Outstanding split on a pre-v8 feed", path: "/{org}/programs?tab=revenue",
+    stubMode: "prev8", needs: ".summary-cards", absent: "[data-out-split]" },
+
   { name: "programs · two ticks are a UNION", path: "/{org}/programs",
     // 2, not 0. An intersection — the obvious wrong reducer — empties the report,
     // and an ignored second tick leaves it at 1, so this number separates all three.
@@ -2381,7 +2676,11 @@ function waitForServer(started) {
       const u = req.url();
       if (u.includes("/api/")) {
         const stub = STUBS.find(s => s.match.test(u));
-        return req.respond({ status: 200, contentType: "application/json",
+        // A stub may declare a STATUS. Needed because some page behaviour only
+        // exists on a failure — the settings unlock renders its error from a
+        // 401, and a stub that always says 200 makes the page look like it
+        // succeeded and reload, which is indistinguishable from working.
+        return req.respond({ status: (stub && stub.status) || 200, contentType: "application/json",
                              body: JSON.stringify(stub ? stub.body(u, org) : { ok: true }) });
       }
       if (!u.startsWith(`http://127.0.0.1:${PORT}`)) return serveVendored(req);

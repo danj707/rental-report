@@ -600,6 +600,16 @@ function rsCustomised() {
 function rsFlagOff() {
   try { return !!(window.ORG_CONFIG || {}).settingsFlagOff; } catch (_) { return false; }
 }
+// The gear is VISIBLE but locked: clicking it asks for the admin password rather
+// than opening the panel (Dan: "show the settings icon, but require the admin
+// un/pw to be entered when the settings icon is clicked").
+//
+// This is the presentation half only. The server still gates every settings
+// route on the derived key, so skipping the modal gets a 404 from the API — the
+// prompt is how you OBTAIN the credential, not a way around it.
+function rsLockable() {
+  try { return !!(window.ORG_CONFIG || {}).settingsLockable; } catch (_) { return false; }
+}
 
 const LS_COLS = 'roster_cols_v2';
 
@@ -1490,6 +1500,51 @@ function App() {
   const [setDraft, setSetDraft] = useState(null);
   const [setBusy, setSetBusy] = useState(false);
   const [setErr, setSetErr] = useState(null);
+  // The unlock prompt. Its own state, not folded into the settings panel's:
+  // they are different dialogs at different trust levels, and sharing `setErr`
+  // would let a failed password render inside the panel it never opened.
+  const [unlockOpen, setUnlockOpen] = useState(false);
+  const [unlockPw, setUnlockPw]     = useState('');
+  const [unlockBusy, setUnlockBusy] = useState(false);
+  const [unlockErr, setUnlockErr]   = useState(null);
+  // The flag-off notice. It used to be a DISABLED button with a title
+  // attribute: Dan clicked it, nothing happened, and the explanation was
+  // behind a hover. A disabled control that owes the reader an explanation is
+  // the dead end this repo keeps writing down — so it is clickable and says
+  // its piece on screen.
+  const [flagNoteOpen, setFlagNoteOpen] = useState(false);
+
+  async function submitUnlock() {
+    if (!unlockPw || unlockBusy) return;
+    setUnlockBusy(true); setUnlockErr(null);
+    try {
+      const resp = await fetch(withToken('/' + orgSlug + '/roster/api/settings-unlock'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: unlockPw }),
+      });
+      const d = await resp.json().catch(function() { return {}; });
+      if (!resp.ok) {
+        // A 404 here is the deliberate refusal, not a broken route — no password
+        // configured, the flag off, or this report not registered. Say something
+        // truthful rather than echoing "Not found" at someone typing a password.
+        setUnlockErr(resp.status === 404
+          ? 'Report settings are not available on this report.'
+          : (d.error || ('Could not unlock (HTTP ' + resp.status + ')')));
+        setUnlockBusy(false);
+        return;
+      }
+      // RELOAD rather than flipping state. `settingsAdmin` is injected by the
+      // server and decides the first render, so the panel cannot be revealed
+      // client-side without lying about what the server authorised. The cookie
+      // is already set, so the reload comes back as an admin — and the URL is
+      // reused verbatim, so no key is ever appended to it.
+      window.location.reload();
+    } catch (e) {
+      setUnlockErr(String((e && e.message) || e));
+      setUnlockBusy(false);
+    }
+  }
 
   function openSettings() {
     setSetErr(null);
@@ -1527,6 +1582,82 @@ function App() {
     } finally {
       setSetBusy(false);
     }
+  }
+
+  // Reuses the settings sheet's own chrome, so the two dialogs cannot drift
+  // apart visually — but it is a SEPARATE dialog: this one is shown to someone
+  // who has not proved anything yet.
+  function renderUnlock() {
+    if (!unlockOpen) return null;
+    const close = function() { if (!unlockBusy) { setUnlockOpen(false); setUnlockPw(''); setUnlockErr(null); } };
+    return (
+      <div className="rs-back" onClick={function(e) { if (e.target === e.currentTarget) close(); }}>
+        <div className="rs-sheet rs-unlock" role="dialog" aria-label="Admin password required" data-rs-unlock>
+          <div className="rs-head">
+            <h3>{'\uD83D\uDD13 Admin password'}</h3>
+            <span className="rs-who">Report settings apply to everyone with this report&rsquo;s link</span>
+            <button className="rs-x" onClick={close} aria-label="Close">✕</button>
+          </div>
+          <div style={{padding:'18px 22px 20px'}}>
+            <p style={{margin:'0 0 14px',fontSize:13,lineHeight:1.5,color:'#444'}}>
+              Enter the <b>admin dashboard password</b> to change what this report opens on
+              for this organization.
+            </p>
+            <form onSubmit={function(e) { e.preventDefault(); submitUnlock(); }}>
+              {/* autoFocus so it is typeable immediately, and a real password
+                  input so browsers mask it and offer to store it. */}
+              <input type="password" value={unlockPw} autoFocus data-rs-unlock-pw
+                onChange={function(e) { setUnlockPw(e.target.value); setUnlockErr(null); }}
+                placeholder="Admin password" autoComplete="current-password"
+                style={{width:'100%',boxSizing:'border-box',padding:'9px 11px',fontSize:14,
+                        fontFamily:'inherit',border:'1px solid #ccc',borderRadius:6}} />
+              {unlockErr && (
+                <div data-rs-unlock-err style={{marginTop:10,fontSize:12.5,color:'#b91c1c'}}>{unlockErr}</div>
+              )}
+              <div style={{marginTop:16,display:'flex',gap:10,justifyContent:'flex-end'}}>
+                <button type="button" onClick={close} disabled={unlockBusy}
+                  style={{padding:'8px 14px',fontSize:13,fontFamily:'inherit',borderRadius:6,
+                          border:'1px solid #ccc',background:'#fff',cursor:'pointer'}}>Cancel</button>
+                <button type="submit" data-rs-unlock-go disabled={unlockBusy || !unlockPw}
+                  style={{padding:'8px 16px',fontSize:13,fontFamily:'inherit',borderRadius:6,
+                          border:'none',background: (unlockBusy || !unlockPw) ? '#9ca3af' : '#2563eb',
+                          color:'#fff',cursor:(unlockBusy || !unlockPw) ? 'default' : 'pointer'}}>
+                  {unlockBusy ? 'Checking…' : 'Unlock'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  function renderFlagNote() {
+    if (!flagNoteOpen) return null;
+    return (
+      <div className="rs-back" onClick={function(e) { if (e.target === e.currentTarget) setFlagNoteOpen(false); }}>
+        <div className="rs-sheet" role="dialog" aria-label="Report settings are switched off" data-rs-flagnote>
+          <div className="rs-head">
+            <h3>{'\u2699 Report settings are switched off'}</h3>
+            <button className="rs-x" onClick={function() { setFlagNoteOpen(false); }} aria-label="Close">✕</button>
+          </div>
+          <div style={{padding:'18px 22px 20px',fontSize:13,lineHeight:1.6,color:'#444'}}>
+            <p style={{margin:'0 0 12px'}}>
+              Your admin sign-in is fine — the <b>Report Settings</b> feature flag is off, so the
+              panel is not available to anyone yet.
+            </p>
+            <p style={{margin:'0 0 12px'}}>
+              Turn on <b>{'\u2699\uFE0F Report Settings'}</b> in the admin dashboard&rsquo;s
+              <b> Feature Flags</b> block, then reload this page.
+            </p>
+            <p style={{margin:0,fontSize:12,color:'#777'}}>
+              Each PR preview is a fresh volume, so the flag starts off there and has to be
+              switched on in that environment separately.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   function renderSettings() {
@@ -1998,6 +2129,8 @@ function App() {
       {renderSaveDialog()}
       {renderUndoToast()}
       {renderSettings()}
+      {renderUnlock()}
+      {renderFlagNote()}
       <div className="toolbar" data-roster-days={rangeDays}>
         <span className="toolbar-title">Class Roster</span>
 
@@ -2113,9 +2246,16 @@ function App() {
           title="Report settings — what this report opens on for everyone in this organization"
           aria-label="Report settings">⚙</button>
         )}
+        {!rsIsAdmin() && rsLockable() && (
+        <button className="btn-settings" onClick={function() { setUnlockOpen(true); setUnlockErr(null); setUnlockPw(''); }}
+          data-rs-locked
+          title="Report settings — admin password required"
+          aria-label="Report settings (admin password required)">{'\u2699'}</button>
+        )}
         {!rsIsAdmin() && rsFlagOff() && (
-        <button className="btn-settings is-off" disabled data-rs-flagoff
-          title={'Report settings are switched off. Turn on \u2699\uFE0F Report Settings in the admin dashboard\u2019s Feature Flags block, then reload this page.'}
+        <button className="btn-settings is-off" data-rs-flagoff
+          onClick={function() { setFlagNoteOpen(true); }}
+          title={'Report settings are switched off \u2014 click to see where the switch is.'}
           aria-label="Report settings are switched off">⚙</button>
         )}
 

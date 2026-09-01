@@ -821,6 +821,370 @@ is precisely the false-zero v3 stopped rendering.
 later event broke it with nothing about settings-open changing. It now tests
 membership in the array, and was re-verified to still catch settings-open being
 removed.
+## The settings gear asks for the admin password (2026-09-01)
+
+Dan: *"lets tie those in with the admin un/pw. So show the settings icon, but
+require the admin un/pw to be entered when the settings icon is clicked."*
+
+**THIS DELIBERATELY REVERSES the absent-not-greyed rule, for this one control.**
+The gear used to be missing from the DOM for anyone without the derived key, so
+an org staffer never learned the surface existed — that was the earlier call, and
+this trades that concealment for discoverability. Worth stating because the rule
+still holds everywhere else, and the render case that used to assert the gear was
+ABSENT now asserts a LOCKED one is present.
+
+**THE PROMPT IS NOT THE GATE.** Every settings route still requires the key, so
+the modal is a way to OBTAIN the credential and never a way to skip it: a client
+that skips it and PUTs anyway still gets a 404. `report-settings-unlock.spec.js`
+asserts both routes still refuse without the key — that is the assertion that
+fails the day someone "simplifies" this into a client-side reveal.
+
+### THERE IS NO USERNAME, because nothing checks one
+
+`dashboardAuth` reads Basic auth and compares the **password alone** — it never
+looks at the username. So the modal asks for a password and names which one
+("the admin dashboard password") rather than rendering a username box that is
+ignored. A field that looks like it is checked and is not is a lie in the UI.
+
+### What showing the gear COSTS, and the throttle that pays for it
+
+A password prompt reachable by anyone holding an org token is a brute-force
+surface against ONE shared secret, and it did not exist while the control was
+hidden. So the unlock route is throttled: **5 attempts per IP per 15 minutes**,
+then 429.
+
+- **The correct password is ALSO refused while locked out.** Otherwise the
+  throttle counts attempts without stopping the next one, and an attacker who
+  guesses on try six still gets in. The spec drives exactly that case.
+- **Already-unlocked short-circuits BEFORE the throttle**, or a reload storm
+  locks the real admin out of their own panel.
+- A success **clears** the address, so an admin who mistypes twice does not carry
+  those strikes for the rest of the window.
+- The map is bounded and swept, so a spray from many addresses cannot grow it.
+
+### The credential never reaches JavaScript
+
+Success sets the **same HttpOnly cookie `dashboardAuth` sets**, carrying the
+DERIVED key rather than the password, and returns `{ok:true}`. The body contains
+neither secret; the spec asserts the response and the event log contain neither
+the password nor the key.
+
+**The page then RELOADS rather than flipping state.** `settingsAdmin` is injected
+server-side and decides the first render, so revealing the panel client-side
+would be claiming an authorisation the server never granted. The reload reuses
+the URL verbatim, so no key is ever appended to it — the same reasoning that
+keeps the org token off the campmap card link.
+
+### THE REFUSALS ARE MARKED DELIBERATE, and this is the part that bites
+
+No password configured, the flag off, or an unregistered report all 404 — and
+`noteDeadLink()` alerts on *"a 404 that arrived with a valid-looking token"*,
+which is byte-identical to the shape of every one of those refusals. Without
+`refuse404()` each gear click posts a DEAD LINK alert naming the path the 404
+exists to keep quiet. Same trap as the settings routes themselves in August.
+
+**And the spec nearly missed it.** The zero-deadlink assertion was vacuous at
+first: with the password set and the flag on, none of the refusal branches ever
+ran, so the mutation that reverted `refuse404` to a plain 404 SURVIVED. The live
+half now drives a real refusal (`POST /:org/facility/api/settings-unlock` —
+`facility` is not in `REPORT_SETTINGS_SCHEMA`) with a perfectly valid token,
+which is what makes the assertion mean anything.
+
+### Only the LOCKOUT posts to Slack
+
+`settings-unlock` (🔓) on success and `settings-locked` (🚨) when the throttle
+trips. A single wrong entry posts nothing: somebody guessing the admin password
+on an org report is a security event, one typo by the person who set it is not.
+
+**The gear renders locked only when the FLAG is on** (`reportSettingsLockable`).
+With `reportSettings` off there is nothing to unlock into, and a gear that can
+never work for anybody is the dead end this repo keeps writing down. The existing
+flag-off notice for a proven key holder is unchanged.
+
+### Guards
+
+`scripts/report-settings-unlock.spec.js` (**69 assertions, in CI**), which LIFTS
+AND RUNS the throttle, the password comparison and the lockable gate, plus a live
+half that boots a server and drives the real route — wrong password, right
+password, the cookie it sets actually opening the settings API, the sixth attempt
+429ing, and the correct password refused while locked. `SKIP_SOURCE=1` drops the
+source assertions so the live half can be shown to catch a regression alone.
+
+Mutation-tested: the throttle check removed, the derived key returned in the
+body, the already-unlocked short-circuit deleted, `refuse404` reverted to a plain
+404, the key check removed from `GET /api/settings` (the prompt becoming the
+gate), both events dropped from `SLACK_NOTIFY`, and the lockable gate ignoring
+the feature flag. **Two of those survived the first draft** — one was a bad
+mutation of mine that hit an identical `res.json({ ok: true });` in an unrelated
+route (there are ten in server.js), and one was the vacuous deadlink assertion
+above, fixed in the spec rather than the mutation.
+
+Three `ci-check-render.js` cases, all of which had to change or be added because
+the door's rule changed: the locked gear is present while the WORKING gear is
+absent, clicking it opens a password prompt and NOT the settings sheet, and a
+refused password is surfaced rather than swallowed.
+
+**That last case cannot prove the server refuses**, and says so in its own
+comment: every `/api/` request in that harness is answered from `STUBS`, so the
+browser never reaches the real route. The stub answers 401 the way the route
+does, and what the case pins is the page's half — the error is shown and the
+panel stays shut. Without it, a page that ignored the status would reload and
+look exactly like success. `ci-check-render.js` gained an optional per-stub
+`status` for this, since a stub that always says 200 cannot express a refusal.
+
+**A spec-brittleness note, second instance in this same file:**
+`report-settings.spec.js` pinned the literal `"epact", "settings-open",
+"settings-save"` in `SLACK_NOTIFY`, so inserting an event BETWEEN two of them
+broke it with nothing about settings-open changing — exactly the failure already
+recorded here for `"settings-open"]` at the end of the log route's ALLOWED array.
+It tests membership now, and was re-verified to still catch `settings-open` being
+removed. Its `refuse404` count also had to scope its split pattern to
+`/api/settings",` with the closing quote, or it swallows `/api/settings-unlock`
+and counts that route's refusals too.
+
+### "I can't even click it" — the flag-off gear was a dead end
+
+Dan, on production, before any of this deployed: *"the goal here was to make the
+settings option clickable, then unlock after entering the password/un for the
+admin user. I can't even click it."*
+
+Diagnosed rather than guessed: **production had `reportSettings: false`**
+(`/api/admin/flags`), so what he was clicking was the pre-existing FLAG-OFF gear
+— `disabled`, with its explanation in a `title` attribute. It only renders for a
+proven key holder, so it also confirmed his cookie was working.
+
+Two separate things, and worth keeping apart: the flag being off is a switch, not
+a bug. **The gear being unclickable IS a bug**, and it is the dead-end pattern
+already written down twice in this file — the explanation was behind a hover, so
+clicking did nothing and the feature read as broken.
+
+It is a real button now, opening a notice that names the switch, says the admin
+sign-in is fine, and mentions that a PR preview starts with the flag off because
+each preview is a fresh volume.
+
+**`report-settings.spec.js` WAS PINNING THE BUG.** Its assertion required
+`disabled` on that button, so the fix failed the spec until the assertion's
+intent was corrected — the spec had encoded the dead end as the desired
+behaviour. The render case now CLICKS the gear and requires the notice on screen;
+reverting to `disabled` fails it by name.
+
+## Programs: % on Auto-Pay vs manual collection, and the location filter that could never render (2026-09-01)
+
+Dan: *"Lets add the single metric on the programs summary page. % on Auto-Pay vs
+% on manual collection"* — autopay being the new payment-plan type that keeps a
+card on file and charges it at each installment date.
+
+One `sum-card` in the summary row, on card 17295 **v7**. The four columns are
+additive per section and come off the `pp` LATERAL that `sec_fin` was **already**
+running for `pending_cents`, so this costs **no new scan** on a card that is
+already past the app's 60s+120s ceiling — the same fold as v6.1's location.
+
+### THE DENOMINATOR IS PAYMENT-PLAN REGISTRATIONS ONLY
+
+`on_autopay` is `BOOL_OR(COALESCE(pl.autopay_enabled, FALSE))` over the item's
+installments, so it is **NULL when the item has none** — paid in full — and such
+an item is counted on **neither** side. Somebody who paid up front is not "on
+manual collection"; folding them in turns the figure into a statement about how
+many people use plans rather than how the plan money arrives.
+
+`IS TRUE` / `IS FALSE`, never `IS NOT TRUE`: the near-miss **includes NULL** and
+would report every paid-in-full registration as collected manually. The spec
+COUNTS both aggregates on each side — a single `.test()` matched the `*_cents`
+line and let a mutation of the `*_items` line through on the first draft.
+
+`COALESCE(autopay_enabled, FALSE)` makes an unresolvable plan row read as
+**manual**, the safe direction: it is certainly not proven autopay. Measured
+before the push: `payment_plan` has 58,304 rows with **zero NULL**
+`autopay_enabled` (228 true / 58,076 false), and of 76,370 order items with
+installments **zero span more than one plan**, so `BOOL_OR` cannot disagree with
+itself between runs.
+
+`plan_cents` is **every** installment, paid and unpaid — the size of the book on
+each method. Reusing `pending_cents` here would make the metric *shrink as an org
+collects*, which is the opposite of adoption.
+
+### THE TWO READINGS DISAGREE BY 26x, so both are printed
+
+Measured at apex over 22,109 plan registrations:
+
+| | auto-pay | manual |
+|---|---|---|
+| registrations | **79** | 22,030 |
+| plan value | **$211,200.50** | $1,793,561.68 |
+| average | $2,673 | $81 |
+
+**10.5% by DOLLARS against 0.4% by COUNT.** Autopay is being used for the
+expensive plans. Either number alone reads as the whole answer and is wrong about
+the other half, so dollars lead (it sits in a revenue row) and the registration
+share is printed beneath *with its own percentage* — two raw counts would leave
+the reader to spot the gap. The render fixture makes them differ 11x on purpose,
+because a card computing the wrong one renders a perfectly plausible number.
+
+**No plan money at all is `null`, never 0%** — "nobody uses autopay" and "this
+org runs no payment plans" are different facts. A **real** 0% must still show:
+Shrewsbury has 87 manual plan registrations worth $32,494 and not one on autopay,
+and that is an answer. Presence-gated on the column (`colPresence.autopay`) so a
+warm pre-v7 cache entry hides the card instead of rendering a confident 0.
+
+### Outstanding now says WHY it is outstanding (card v8, same afternoon)
+
+Dan: *"lets fix the outstanding revenue metric, we'd like to have past-due from
+scheduled and on autopay, that's a helpful distinction."*
+
+Four more columns off the **same** `pp` LATERAL, so still no new scan. They
+**partition `outstanding` exactly** — every branch mirrors the `pending_cents`
+CASE it decomposes, including its `ic.payment_plan IS NULL` test, or an item with
+no plan but with installments is counted twice and the parts overshoot.
+
+Measured at apex, all-time over 67,458 unpaid installments:
+
+| | |
+|---|---|
+| past due | **$24,727.58** (6,952) |
+| scheduled, manual | $360,847.84 (59,716) |
+| scheduled, on auto-pay | $191,999.90 (790) |
+| total | $577,575.32 |
+
+**The single Outstanding figure was 96% not-yet-due money**, and the $24,728 that
+is actually late was invisible inside it. That is the whole argument for the
+split.
+
+**A NULL `due_at` IS SCHEDULED, NEVER PAST DUE — and apex cannot test that.**
+Platform-wide, **15,231 of 166,507 unpaid installments (9%) across 76 orgs have
+no due date**, and apex has zero. So `due_at < NOW()` is the strict test (false
+for a NULL) and the scheduled side spells `(due_at >= NOW() OR due_at IS NULL)`
+out rather than leaning on an implicit ELSE — leaving it implicit drops every
+dateless installment from all three buckets and the four silently stop summing to
+Outstanding, for those 76 orgs only. Verified platform-wide over **all 76,423
+order items with installments: ZERO partition breaks**, and $2,692,752.48 of
+dateless money lands in scheduled with $0 in past due. Third instance of *"one
+org's clean data is not evidence about what a column MEANS."*
+
+**PAST DUE IS DELIBERATELY NOT SPLIT BY COLLECTION METHOD**, per Dan: *"declines
+are flagged in product, they are the same as a non-auto payment past due CC
+payment installment."* A past-due auto-pay installment IS a declined card, and
+filing it under "on auto-pay" would report it as collecting on schedule when it
+is the opposite. It is $121.39 of $24,727.58 at apex anyway. The spec fails if a
+`data-out-pastdue-autopay` attribute ever appears.
+
+**A fourth bucket exists because a balance with no plan has no due date.**
+`no_plan_balance_value` is the other half of the same CASE — it can be neither
+late nor scheduled, and calling it either is a claim about a date that is not
+there. Its row renders only where there is one.
+
+**AND THE PARTS ARE CHECKED AGAINST THE TOTAL ON SCREEN.** `progOutstandingSplit`
+returns the **residual** rather than trusting the four to add up, and the page
+renders an *"Unexplained"* row when it is over 50c — far above per-row rounding
+(five figures each rounded to the cent independently) and far below anything that
+matters as money. The card guarantees the partition, so that row should never
+appear; a breakdown whose parts quietly fail to sum is how a number stops being
+trusted, and a pre-v8 row reaching the helper reports its whole balance as
+unexplained rather than as scheduled.
+
+**Not done, on purpose:** the Excel export and the per-program Outstanding column
+are unchanged. Dan asked for the metric; four more columns on a 13-column table
+and on a file people parse is a separate decision.
+
+### THE LOCATION FILTER SHIPPED UNABLE TO RENDER, and no guard could see it
+
+Found while wiring the KPI's presence gate. `progHasLocation` tested
+`rows.some(r => 'location' in r)` — and **nothing ever wrote that key**:
+`normalizeRow` did not map `location`, and `rollupToPrograms` builds program rows
+with a fixed key set. So the gate was false on every feed and the select was
+gated out at `locOptions.length > 1`. The filter Dan asked for **never appeared**,
+in PR #182, for two days.
+
+**Nothing in CI could catch it, and that is the lesson.**
+`programs-location.spec.js` LIFTS AND RUNS the reducer — but it feeds it fixture
+rows that already carry `location`, so it proved the reducer filters correctly on
+data the page never produces. And there was **no render case for the control at
+all**; the season cases were added later and the fixture carried no location
+either. Generalise it: *a unit test that supplies the field under test cannot
+tell you whether anything supplies it in production.* The presence gate now reads
+the RAW response (`raw.some(r => 'location' in r)`), like every other entry in
+`colPresence` — a column question has to be asked of the response, never of a
+derived object — and the spec asserts the MAPPER carries the field.
+
+### ...and the funnel had to become SECTION-grain, which is a real fix not a tidy-up
+
+`rows` are program rollups; a location and a season are facts about a **section**.
+Measured before choosing: **659 of 5,699 programs with a located section (11.6%)
+run at more than one location**, max 24 — against **0.7% of sections**. So
+filtering whole programs by a primary location keeps money and enrolments from a
+site the reader just excluded, for one program in nine. This is a program-grain
+problem specifically, and the same argument applies to season (the rollup carried
+its FIRST section's season).
+
+So `scopedRows` flattens to sections, filters both dimensions, and **re-rolls up**
+with the pure `rollupToPrograms` — giving a program row whose totals are the sum
+of exactly the sections still in view, which is the parent-reconciles-to-children
+invariant the rollup was built for. With nothing ticked it hands `rows` straight
+back rather than flattening and re-rolling for nothing.
+
+**IT TOOK THREE ATTEMPTS TO WRITE A CASE THAT PROVES THE RE-ROLLUP, and the two
+failures are the useful part.** Both passed on a build with the re-rollup deleted:
+
+1. `location filters SECTIONS` asserts 100% under a Urho filter (75% if whole
+   programs are kept) — but only ONE section survives that filter, so there is
+   nothing for a rollup to combine.
+2. Ticking `Fall '26` keeps both of Aquatic Exercise's sections and reads 75% —
+   and **still passed**, because `progAutopayShare` sums whatever rows it is
+   handed and a program row's totals ARE its sections' by construction. The KPI
+   is structurally invariant to the re-rollup, so no assertion on it can ever
+   discriminate. Neither can `data-prog-count` or `data-prog-sections`: one
+   program row with `sections: 2` and two section rows with `sections: 1` add up
+   the same.
+
+What actually breaks is the Summary tab's `progMap`, which is keyed by program
+and therefore **overwritten once per section** — handed section rows it keeps
+only the LAST one, so Fall '26 reads **20 participants instead of 21 + 20**.
+`data-prog-participants` is the number that moves, and that case was verified to
+fail on the mutation. A case that passes on the regression it names is not a
+guard, and *plausible* is not the same as *discriminating*.
+
+### Guards
+
+`scripts/programs-autopay.spec.js` (**48 assertions, in CI**), which LIFTS AND
+RUNS `progAutopayShare` against the real apex proportions and reads the SQL
+mirror. `programs-location.spec.js` 21 → 27, `programs-season.spec.js` 43 → 49 —
+the latter now lifts and runs `rollupToPrograms` too, because a stub would prove
+the funnel calls something rather than that the numbers it produces are the
+surviving sections'.
+
+Mutation-tested twelve ways, all failing by name: the headline computed by
+registration count, non-plan registrations folded into the denominator, no-plan
+money reading 0% instead of hiding, the presence gate dropped, the share read off
+the unscoped feed, the rollup overwriting instead of summing, `location` left
+unmapped (the bug as it shipped), the re-rollup dropped, the manual side using
+`IS NOT TRUE`, `plan_cents` reusing the pending filter, the plan-row COALESCE
+removed, and a second pass over `payment_plan_installment`.
+
+**Three of those survived the first draft**, all fixed in the spec rather than the
+mutation: the paid-in-full fixture row carried no `enrollments`, so a mutation
+adding the enrolment count to the manual side had nothing to add; the `IS FALSE`
+assertion matched the `*_cents` line and missed a mutated `*_items` line; and the
+season spec's `out[0]._sections.length` **THREW** on bare section rows instead of
+failing by name — the same "a guard that dies instead of failing has not told
+anyone what broke" lesson already recorded in that file, one assertion over.
+
+Plus six `ci-check-render.js` cases, keyed on the computed VALUE rather than on a
+card existing, over a fixture where Aquatic Exercise deliberately spans two
+locations and a `prev7` stub mode drops the four v7 columns.
+
+### The push
+
+Pushed via the API and **diffed back byte-identical** to the mirror (402 lines).
+As always the date tags came back as **Text**, and the served card now registers
+**SIX** parameters — `org_id/start_date/end_date` as `date/single` AND the same
+three slugs as `string/=`. The app binds by slug, so it sends two values per
+variable and Metabase answers `An error occurred.`: **card 17295 is the shared
+Programs card, so the report and all six Program Summary bands are down for every
+org until a human opens the card and re-saves until that list is three again.**
+Nothing in the SQL can fix it. Flip link:
+https://rec.metabaseapp.com/question/17295 — and the cache-independent sign-off
+(`verify-report-live.js`, programs/apex row) has to follow the flip, not precede
+it, because the verifier fails the same way during the window and its failure
+carries no extra information.
 
 ## Programs: a multi-select SEASON filter (2026-08-31)
 
@@ -1572,7 +1936,8 @@ is already off the platform defaults), `settings-save`/
 `settings-reset` (⚙️ a per-org report default changed, naming the fields and
 flagging an ePACT template that left the verified set) (📤 a participant list
 exported for the ePACT camp-forms vendor, with the count and whether it was one
-class or the whole view), and three platform alerts —
+class or the whole view), `ft-export` (📤 the people who fast-tracked one section were exported,
+with the section, the head count and the hold count), and three platform alerts —
 `report-down` (a report's card stopped answering, links straight to the report
 with its token), `schema-break` (a table or column the reports depend on is
 gone), `param-drift` (a date template tag is no longer typed Date). The three
@@ -1690,6 +2055,18 @@ no longer returns fresh data, so "it still renders" is NOT proof it works.
 the card actually returns fresh, non-empty rows via a cache-independent live
 request — for the HEAVIEST org (biggest = worst case for timeouts), not a small
 one.** Never sign off on a warm-cache render alone.
+
+**RUN THE SWEEP ALONE, or it invents failures on cards you never touched.**
+Measured 2026-09-01: a full manifest run made concurrently with one heavy apex
+probe reported `facilities-summary / apex` TIMEOUT at 120s and
+`facilities-summary / douglas-county-nv` TIMEOUT at 60s — card 19570, untouched by
+that branch. Re-run alone minutes later: **833 rows in 11.3s and 4,392 rows in
+31.1s**, both FASTER than their recorded baselines (15.5s and 74.8s). So the two
+red rows were entirely self-inflicted contention. This is the local-server timing
+caveat below with a second cause: it is not just `node server.js` prewarming ~28
+orgs, it is any other query you have in flight. Before reading a TIMEOUT here as
+a regression, re-run that row on its own — and never report one as a finding
+without doing so.
 
 Tooling for this:
 
@@ -3403,6 +3780,154 @@ denom     = min(holds, available)             ...and had holds for
   `fasttrack · conv vs capacity` render case (`[data-conv-pct="100"]`) over a
   fixture carrying the real shape. Mutation-tested — reverting the denominator
   to holds fails the spec at the first assertion and the render case by name.
+
+### What "FT Total" COUNTS — asked and settled (Dan, 2026-09-01)
+
+Dan, on Essex Junction's Fall Vacation Camps: *"why is it 400+ FT's but only 23
+people. Is that because 1 person can have multiple sessions/sections fast
+tracked?"* — then, on the answer: *"i'm fine with seeing that higher number, it
+makes sense."*
+
+**Yes, and the multiplier is per-SESSION.** `FT Total` is
+`COUNT(DISTINCT booking_id)`, and both sections are `registration_mode =
+per-session` over **9 camp days**. Every one of the 456 FT rows is
+`type = 'session'` carrying a session id — **zero** section-level holds — so one
+child claiming 9 days is 9 bookings. That is the `Pending ×9` in the expander.
+
+| section | FT holds | badge "people" | children | sessions | days per child |
+|---|---|---|---|---|---|
+| K-2nd Vacation Camp | 282 | 37 | **43** | 9 | 6.6 |
+| 3rd-6th Vacation Camp | 174 | 23 | **26** | 9 | 6.7 |
+
+**NOTHING WAS CHANGED — this is Dan's call, and the number stays as it reads.**
+Written down because the question will be asked again and the measurement is
+otherwise a re-derivation.
+
+**One inaccuracy is knowingly left in place: the "N people" badge counts booking
+ACCOUNTS, not children.** `ft_unique_users` is
+`COUNT(DISTINCT customer_user_id)` — the parent who booked — so siblings collapse
+into one. Essex Junction: 37 accounts hold 43 children (1.16 each), and the
+expander shows the mechanism (*"Aislyn Allen · for Carter Allen"* is one account
+with one child; a parent with two kids still appears once).
+
+**And fixing it needs a CARD change, which is why it was not a drive-by.** The
+ft_booking rows carry `"User ID"` (the customer) and `"Participant Name"` but
+**no participant id**, and counting distinct NAMES would merge two same-named
+children — not hypothetical, apex has two different kids both called *Bridger
+Wall* (see the ePACT backcheck). A truthful child count is
+`fr.participant_user_id::text AS "Participant ID"` on card 17300, one column with
+no logic change, plus a tag flip. Not done.
+
+### Export CSV per section, on the flow board (2026-09-01)
+
+Dan: *"add an 'export CSV' button/link to each Fast Track section in this bottom
+table. Giving orgs the ability to export a csv of the user information who has
+these fast tracked. email, name, section/session fast tracked, etc. Use the same
+pdf/csv export functionality that works in a closed iframe sandbox."*
+
+A `⬇ CSV` button beside the people badge on every section row that has
+fast-trackers, delivered through **`saveTextViaPopup`** — the ONE popup
+implementation in `open-pdf.js` — because a download started by a sandboxed
+iframe is silently dropped. **No card change.**
+
+### ONE ROW PER PARTICIPANT PER ACCOUNT, which is the whole reason it is not the badge
+
+The badge counts booking **accounts**; the export counts **children**. Measured
+at Essex Junction: 37 accounts hold 43 children, so a parent who fast-tracked two
+kids is one line on screen and must be two in the file. Grouping by
+`(account, participant)` also gives each child its **own** hold count, which the
+badge structurally cannot — and the render fixture carries a two-child account
+whose siblings must read 2 and 1, not 3 and 3.
+
+- **The participant key is scoped to the ACCOUNT**, because all the feed has is a
+  NAME. Apex really has two different children both called *Bridger Wall* (see
+  the ePACT backcheck), so an org-wide name key would merge two families. Two
+  same-named children on ONE account still merge, and that is the honest limit.
+- **A booking made for the account holder keeps their name** rather than being
+  dropped or exported with a blank participant — it is still a real hold.
+- **The earliest signup is compared as a STRING**, never through `new Date()`: a
+  bare `YYYY-MM-DD` is UTC midnight and lands on the previous day west of UTC.
+  The trap is one function over, in `parseCardDate`.
+- Converted rows lead, then busiest, then by name, so two runs of the same export
+  cannot disagree.
+
+### WHAT IT CANNOT SAY, and why that is not a bug
+
+**It cannot name WHICH sessions.** Card 17300's `ft_booking` rows carry the
+section, the customer and the participant NAME — **no session id and no session
+date**. So for a per-session camp this exports *"9 fast tracks"* and not the nine
+camp days. Splitting the count across the section's sessions, or printing a date,
+would be a claim the feed cannot support. One column on the card
+(`fr.session_id` / a session date) would fix it; not done, and named here so the
+next person does not go looking for it.
+
+### The mechanics that are copied rather than reinvented
+
+- **CRLF and RFC4180 quoting.** A section named `Camp, Red` shifts every column
+  after it otherwise, and some Windows importers refuse a bare LF.
+- **The BOM is on the FILE ONLY.** Excel sniffs bytes rather than trusting UTF-8,
+  so an accented participant name opens as mojibake without it — while a BOM in
+  the clipboard copy is a stray character in the first cell. The spec fails if it
+  moves into the builder.
+- **Absent, not disabled, where there is nobody to export** — a control that
+  yields an empty file is the dead end this repo keeps writing down.
+- **`stopPropagation`**, because the section row's own click toggles the
+  expander, and an export that also opens a panel reads as two accidents.
+
+### The beacon, and the trap it walks past
+
+`ft-export` (📤), and **fasttrack.html had no beacon at all before this** — so
+`logClientEvent` is new on that page and copied from `roster.html` deliberately:
+the convention is **`?event=<name>` in the QUERY STRING**. A JSON body is read by
+nothing on the server, comes back `400 Unknown event`, and a fire-and-forget
+beacon never complains — that has now bitten this repo **four** times (campmap,
+the Facilities hub, Memberships, Instructor Payout). `fasttrack` IS in
+`REPORT_TYPES`, so the generic log route serves it and no dedicated route is
+needed.
+
+- **Debounced by SECTION**, like `epact`: an admin pulling four camps' lists is
+  four camps.
+- **It carries BOTH counts.** *43 people holding 282 camp-days* is a per-session
+  camp; *43 holding 43* is a normal section, and the message would read the same
+  without the second number. Both are clamped server-side, never echoed from the
+  query string.
+
+### Two gaps in my own guard, both worth keeping
+
+- **A value assertion could not catch the date bug.** `new Date(a) < new Date(b)`
+  orders two ISO dates identically, so both implementations return the same
+  earliest signup and the value test passes either way. The discriminating
+  assertion is on the SOURCE — and it failed on correct code first time, because
+  the function's own comment quotes `new Date(` on purpose. Comments are stripped
+  before the test, exactly as `checkin-status.spec.js` already had to do for the
+  uncast date tags.
+- **The "no CSV here" case asserted an absence with nothing proving the row was
+  on screen.** A vacuous absent assertion passes on a row that never rendered —
+  the same trap as the zero-deadlink check in the settings-unlock spec. It keys on
+  `data-ft-secrow` now, so the row is required present while the button is
+  required absent.
+
+**AND THE RENDER CHECK CAUGHT A DEFECT IN THE CASES THEMSELVES.** All four failed
+on the first run with *"the page came up blank"*: the section rows are rendered
+behind `isOpen && p.sections.map(...)`, so **nothing under a collapsed program
+group exists in the DOM**, and every case sat waiting 45s on a selector that
+could never appear. `openFtProgram()` clicks the group first. The button was fine;
+the tests were not — which is the same class of mistake as the two `act` hooks
+already recorded for the Director's Report flames, and it is only ever found in a
+browser.
+
+Guards: `scripts/fasttrack-export.spec.js` (**28 assertions, in CI**), which
+LIFTS AND RUNS the three builders over Essex Junction's real shape and boots a
+server for the beacon half — a source assertion has never once caught the beacon
+bug. `SKIP_SOURCE=1` drops the source half. Mutation-tested eleven ways, all
+failing by name: grouped by account only (the bug the export exists to avoid),
+the signup compared through `new Date()`, the section filter dropped, no CSV
+quoting, the BOM not requested, `stopPropagation` removed, the beacon not fired,
+dropped from `SLACK_NOTIFY`, dropped from the log route's `ALLOWED` list, and the
+beacon no longer naming its event. Plus four `ci-check-render` cases, one of which
+stubs **`window.open`** rather than `saveTextViaPopup` and asserts on the bytes
+the popup is handed, so the BOM and the TSV fallback are covered rather than
+skipped.
 
 ## "Launching Soon" is a section question, not a program question (2026-08-24)
 

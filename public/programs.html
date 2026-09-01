@@ -205,6 +205,17 @@
     .summary-card .card-value.red   { color: #b91c1c; }
     .summary-card .card-value.blue  { color: #2563eb; }
     .summary-card .card-sub { font-size: 10px; color: #999; margin-top: 2px; }
+    /* The Outstanding breakdown. Rows are label/value pairs on one line each,
+       numbers right-aligned and never wrapped — the Fast Track lesson: a value
+       clipped to "$3" is worse than a taller card. */
+    .out-split { margin-top: 5px; display: flex; flex-direction: column; gap: 2px; }
+    .out-split .os-row { display: flex; justify-content: space-between; gap: 10px; font-size: 10px; color: #777; line-height: 1.35; }
+    .out-split .os-row b { font-variant-numeric: tabular-nums; white-space: nowrap; color: #555; font-weight: 600; }
+    /* Past due is the only actionable row, so it is the only one that shouts. */
+    .out-split .os-row.late { color: #b91c1c; }
+    .out-split .os-row.late b { color: #b91c1c; font-weight: 700; }
+    .out-split .os-row.odd  { color: #92400e; }
+    .out-split .os-row.odd b { color: #92400e; }
 
     /* ── Table ── */
     .prog-table { width: 100%; border-collapse: collapse; font-size: 11.5px; font-variant-numeric: tabular-nums; }
@@ -668,6 +679,90 @@ function progEffectiveSeasons(want, options, loaded) {
   return kept;
 }
 
+// ── How the payment-plan money gets collected (card 17295 v7) ────────────
+// Dan: "% on Auto-Pay vs % on manual collection". Autopay charges a card on
+// file at each installment date; without it somebody has to collect every one.
+//
+// THE DENOMINATOR IS PAYMENT-PLAN REGISTRATIONS, NOT ALL OF THEM. Someone who
+// paid in full is on neither method, and folding them in makes the share a
+// statement about how many people use plans instead of how the plan money
+// arrives. The card enforces that too — an item with no installments is counted
+// on neither side — so the page never has to subtract anything.
+//
+// IT RETURNS BOTH READINGS BECAUSE THEY DISAGREE BY 26x. Measured at apex:
+// 10.5% of plan DOLLARS are on autopay ($211,200.50 of $2,004,762.18) against
+// 0.4% of plan REGISTRATIONS (79 of 22,109), because autopay is used for the
+// expensive plans — $2,673 average against $81. Either number alone reads as
+// the whole answer and is wrong about the other half, so the card leads with
+// dollars (it sits in a revenue row) and prints the count beside it.
+//
+// null when there is no plan money at all: 0% would say "nobody uses autopay"
+// when the truth is "this org runs no payment plans", which is a different fact
+// and not one this metric is for. At module scope so the spec can RUN it.
+function progAutopayShare(rows) {
+  let apItems = 0, manItems = 0, apValue = 0, manValue = 0;
+  (rows || []).forEach(r => {
+    apItems  += fmtNum(r.autopayPlanItems);
+    manItems += fmtNum(r.manualPlanItems);
+    apValue  += fmtNum(r.autopayPlanValue);
+    manValue += fmtNum(r.manualPlanValue);
+  });
+  const planItems = apItems + manItems;
+  const planValue = apValue + manValue;
+  if (planItems === 0 && planValue === 0) return null;
+  const pct = (part, whole) => whole > 0 ? Math.round(part / whole * 1000) / 10 : null;
+  return {
+    apItems, manItems, apValue, manValue, planItems, planValue,
+    pctValue: pct(apValue, planValue),
+    pctItems: pct(apItems, planItems),
+  };
+}
+
+// ── WHY the outstanding balance is outstanding (card 17295 v8) ───────────
+// Dan: "we'd like to have past-due from scheduled and on autopay, that's a
+// helpful distinction." One Outstanding figure answers "how much is unpaid" and
+// hides the only part anybody can act on: at apex it was 96% not-yet-due money
+// with $24,728 genuinely late buried inside it.
+//
+//   past due      the due date has passed. Somebody has to chase it.
+//   scheduled     not yet due, no card on file — somebody has to collect it.
+//   on auto-pay   not yet due, and the card will be charged. Mostly not work.
+//   no plan       owed on an item with no payment plan at all, so it has no due
+//                 date and can be neither late nor scheduled.
+//
+// PAST DUE IS NOT SPLIT BY METHOD, per Dan: a past-due auto-pay installment IS
+// a declined card, and showing it under "on auto-pay" would report it as
+// collecting on schedule when it is the opposite.
+//
+// THE FOUR MUST ADD BACK TO THE TOTAL, and this returns the residual rather
+// than trusting them to. The card partitions `outstanding` exactly, so the only
+// honest source of drift is per-row rounding (each of the five figures is
+// rounded to the cent independently); anything larger is a real defect, and a
+// breakdown whose parts quietly fail to sum is how a number stops being
+// trusted. At module scope so the spec can RUN it.
+function progOutstandingSplit(rows) {
+  let pastDue = 0, schedAutopay = 0, schedManual = 0, noPlan = 0, outstanding = 0;
+  (rows || []).forEach(r => {
+    pastDue      += fmtNum(r.pastDueValue);
+    schedAutopay += fmtNum(r.scheduledAutopayValue);
+    schedManual  += fmtNum(r.scheduledManualValue);
+    noPlan       += fmtNum(r.noPlanBalanceValue);
+    outstanding  += fmtNum(r.outstanding);
+  });
+  const parts = pastDue + schedAutopay + schedManual + noPlan;
+  // Nothing owed needs no breakdown. Note this tests the TOTAL, not the parts:
+  // a feed carrying an outstanding balance it cannot explain must still say so.
+  if (outstanding <= 0 && parts <= 0) return null;
+  const residual = Math.round((outstanding - parts) * 100) / 100;
+  return {
+    pastDue, schedAutopay, schedManual, noPlan, outstanding,
+    residual,
+    // Half a dollar is far above per-row rounding and far below anything that
+    // matters as money, so it separates "cents of rounding" from "a bug".
+    reconciles: Math.abs(residual) <= 0.5,
+  };
+}
+
 function getParams() {
   const p = new URLSearchParams(window.location.search);
   // NOTE: this is an explicit whitelist. A parameter missing from here reads
@@ -851,6 +946,26 @@ function normalizeRow(raw) {
     periodRefunds:  raw['Period Refunds'] ?? raw['period_refunds'] ?? 0,
     periodNet:      raw['Period Net'] ?? raw['period_net'] ?? 0,
     activityName:  raw['Activity Name'] ?? raw['activity_name'] ?? '',
+    // ── card 17295 v6 ──
+    // These were the location filter's inputs all along and NOTHING MAPPED
+    // THEM, so progHasLocation was false on every feed and the control was
+    // gated out at locOptions.length > 1 — a filter that could never render.
+    // programs-location.spec.js fed the reducer rows that already carried
+    // `location`, so no source or unit assertion could see it.
+    location:      raw['Location'] ?? raw['location'] ?? null,
+    locationCount: raw['location_count'] ?? 0,
+    instructor:    raw['Instructor'] ?? raw['instructor'] ?? null,
+    instructorCount: raw['instructor_count'] ?? 0,
+    // ── card 17295 v7: payment-plan collection method ──
+    autopayPlanItems: raw['autopay_plan_items'] ?? 0,
+    manualPlanItems:  raw['manual_plan_items'] ?? 0,
+    autopayPlanValue: raw['autopay_plan_value'] ?? 0,
+    manualPlanValue:  raw['manual_plan_value'] ?? 0,
+    // ── card 17295 v8: why the outstanding balance is outstanding ──
+    pastDueValue:          raw['past_due_value'] ?? 0,
+    scheduledAutopayValue: raw['scheduled_autopay_value'] ?? 0,
+    scheduledManualValue:  raw['scheduled_manual_value'] ?? 0,
+    noPlanBalanceValue:    raw['no_plan_balance_value'] ?? 0,
   };
 }
 
@@ -866,6 +981,12 @@ function rollupToPrograms(secRows) {
       regMode:'', startDate:null, endDate:null, sections:0, enrollments:0,
       _util:0, _cap:0, waitlist:0, waitlistTotal:0, waitlistConverted:0, waitlistDemand:0, cancellations:0,
       charged:0, received:0, outstanding:0, refunds:0, netRevenue:0, periodReceived:0, periodRefunds:0, periodNet:0, _sections:[],
+      // v7, and additive per section by construction — so a program's share of
+      // autopay is the sum of its sections' and cannot disagree with them.
+      autopayPlanItems:0, manualPlanItems:0, autopayPlanValue:0, manualPlanValue:0,
+      // v8, additive per section like every other money column — so a program's
+      // four buckets sum to its sections' and still partition its Outstanding.
+      pastDueValue:0, scheduledAutopayValue:0, scheduledManualValue:0, noPlanBalanceValue:0,
     });
     const g = map.get(key);
     g._sections.push(r);
@@ -886,6 +1007,14 @@ function rollupToPrograms(secRows) {
     g.periodReceived += fmtNum(r.periodReceived);
     g.periodRefunds  += fmtNum(r.periodRefunds);
     g.periodNet      += fmtNum(r.periodNet);
+    g.autopayPlanItems += fmtNum(r.autopayPlanItems);
+    g.manualPlanItems  += fmtNum(r.manualPlanItems);
+    g.autopayPlanValue += fmtNum(r.autopayPlanValue);
+    g.manualPlanValue  += fmtNum(r.manualPlanValue);
+    g.pastDueValue          += fmtNum(r.pastDueValue);
+    g.scheduledAutopayValue += fmtNum(r.scheduledAutopayValue);
+    g.scheduledManualValue  += fmtNum(r.scheduledManualValue);
+    g.noPlanBalanceValue    += fmtNum(r.noPlanBalanceValue);
     if (r.startDate && (!g.startDate || r.startDate < g.startDate)) g.startDate = r.startDate;
     if (r.endDate   && (!g.endDate   || r.endDate   > g.endDate))   g.endDate   = r.endDate;
   }
@@ -1246,7 +1375,7 @@ function App() {
     return out.filter(r => (r['Activity'] || activityInfo.map[r['Program']||''] || '') === activityFilter);
   }, [demoRows, activityFilter, activityInfo, scopedProgramSet]);
 
-  const [colPresence, setColPresence] = useState({ regMode: false, cancellations: false, waitlist: false });
+  const [colPresence, setColPresence] = useState({ regMode: false, cancellations: false, waitlist: false, location: false, autopay: false, outSplit: false });
   const [insights,        setInsights]        = useState(null);
   const [insightsMeta,    setInsightsMeta]    = useState(null); // { programCount, names }
   const [insightsLoading, setInsightsLoading] = useState(false);
@@ -1678,6 +1807,14 @@ function App() {
           cancellations: raw.some(r => (r['Cancellations'] != null) || (r['cancellations'] != null)),
           // Gated on the shared card emitting waitlist_active (v4 SQL) — hides for un-updated cards
           waitlist:      raw.some(r => r['waitlist_active'] != null || r['Waitlist'] != null),
+          // PRESENCE, NOT VALUE, and read off the RAW feed on purpose. The
+          // first version tested `'location' in r` over `rows`, which are
+          // program ROLLUPS with a fixed key set — so the gate was false on
+          // every feed and the control was silently never rendered. A column
+          // question has to be asked of the response, not of a derived object.
+          location:      raw.some(r => 'location' in r || 'Location' in r),
+          autopay:       raw.some(r => 'autopay_plan_items' in r),
+          outSplit:      raw.some(r => 'past_due_value' in r),
         });
       })
       .catch(err => setError(err.message))
@@ -1905,12 +2042,21 @@ function App() {
   }, [rows, seasonOptions]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Location filter ────────────────────────────────────────────────
-  // PRESENCE, NOT VALUE. Card 17295 v6 adds `location`; a warm 4-hour v5 cache
-  // entry has no such key. The control is ABSENT in that case rather than
+  // PRESENCE, NOT VALUE. Card 17295 v6 adds `location`; a warm 4-hour v6-less
+  // cache entry has no such key. The control is ABSENT in that case rather than
   // offering a single useless option — "renders an empty filter" and "renders
   // nothing" are different claims. Same rule as mbHasProductKind / ciHasStatus.
-  const progHasLocation = useMemo(
-    () => Array.isArray(rows) && rows.some(r => 'location' in r),
+  const progHasLocation = colPresence.location;
+
+  // A LOCATION AND A SEASON ARE FACTS ABOUT A SECTION, and `rows` are program
+  // rollups — so both filters read this, and so do their option lists.
+  // Measured before choosing: 659 of 5,699 programs with a located section
+  // (11.6%) run at MORE THAN ONE location, max 24. Filtering whole programs by
+  // a primary location would therefore report one program in nine with money
+  // and enrolments from sites the reader just excluded. The section-level rate
+  // is 0.7%, so this is a program-grain problem specifically.
+  const progSections = useMemo(
+    () => !rows ? null : rows.flatMap(r => (r._sections && r._sections.length) ? r._sections : [r]),
     [rows]);
 
   // A section with no located session is a real state, not a missing one, so it
@@ -1919,10 +2065,10 @@ function App() {
   const LOC_NONE = '\u0000none';
 
   const locOptions = useMemo(() => {
-    if (!rows || !progHasLocation) return [];
+    if (!progSections || !progHasLocation) return [];
     const counts = new Map();
     let none = 0;
-    rows.forEach(r => {
+    progSections.forEach(r => {
       const L = r.location;
       if (L) counts.set(L, (counts.get(L) || 0) + 1);
       else none++;
@@ -1933,7 +2079,7 @@ function App() {
       .map(([name, n]) => ({ value: name, label: name, n }));
     if (none) out.push({ value: LOC_NONE, label: 'No location set', n: none });
     return out;
-  }, [rows, progHasLocation]);
+  }, [progSections, progHasLocation]);
 
   // ── Season filter ──────────────────────────────────────────────────
   // Card 17295 already emits program_season, COALESCEd to the literal string
@@ -1943,9 +2089,9 @@ function App() {
   // so: the column is always present, and an org with none yields exactly one
   // option, which the control hides.
   const seasonOptions = useMemo(() => {
-    if (!rows) return [];
+    if (!progSections) return [];
     const counts = new Map();
-    rows.forEach(r => {
+    progSections.forEach(r => {
       const v = seasonKey(r);
       counts.set(v, (counts.get(v) || 0) + 1);
     });
@@ -1955,16 +2101,24 @@ function App() {
     return Array.from(counts.entries())
       .sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0])))
       .map(([name, n]) => ({ value: name, label: name, n }));
-  }, [rows]);
+  }, [progSections]);
 
   // THE SINGLE FUNNEL, and it applies BOTH dimensions. There is deliberately no
   // `scopedRows` any more: two funnels is how the facility Summary ended up with
   // chips that scoped some panels and not others and a page that disagreed with
   // itself for a week. One name, both filters, and the spec fails if a bare
   // `rows` OR a stale `scopedRows` appears in the derivation block below.
+  // IT FILTERS SECTIONS AND RE-ROLLS UP, rather than dropping whole programs.
+  // Both dimensions are section facts (above), and rollupToPrograms is pure, so
+  // re-running it over the survivors gives a program row whose totals are the
+  // sum of exactly the sections still in view — the parent-reconciles-to-
+  // children invariant the rollup was built for. Filtering the rollups instead
+  // would keep a multi-site program's revenue from the site the reader just
+  // excluded, for 11.6% of programs.
   const scopedRows = useMemo(() => {
     if (!rows) return rows;
-    let out = rows;
+    if (!locFilter && !seasonSel.length) return rows;
+    let out = progSections || [];
     if (locFilter) {
       out = locFilter === LOC_NONE ? out.filter(r => !r.location)
                                    : out.filter(r => r.location === locFilter);
@@ -1974,8 +2128,8 @@ function App() {
       const want = new Set(seasonSel);
       out = out.filter(r => want.has(seasonKey(r)));
     }
-    return out;
-  }, [rows, locFilter, seasonSel]);
+    return sectionGrain ? rollupToPrograms(out) : out;
+  }, [rows, progSections, sectionGrain, locFilter, seasonSel]);
 
   // The demographics, retention and check-in tabs read their OWN feeds, which
   // carry neither a location nor a season column — only the programs card
@@ -2036,6 +2190,12 @@ function App() {
       cancellations:      acc.cancellations      + fmtNum(r.cancellations),
     }), { charged:0, received:0, outstanding:0, refunds:0, netRevenue:0, periodReceived:0, periodRefunds:0, periodNet:0, enrollments:0, sections:0, waitlist:0, waitlistTotal:0, waitlistConverted:0, waitlistDemand:0, cancellations:0 });
   }, [filteredRows]);
+
+  // The Outstanding breakdown, off the same funnel output every other figure in
+  // that card row reads — so the split and the total it decomposes can never be
+  // scoped differently. At component scope because the Revenue tab's cards are
+  // JSX and cannot declare a local.
+  const outSplit = useMemo(() => progOutstandingSplit(filteredRows), [filteredRows]);
 
   const programCount = grouped ? Object.keys(grouped).length : 0;
 
@@ -2633,6 +2793,10 @@ function App() {
           var avgFill = withCap.length > 0 ? Math.round(withCap.reduce(function(s,p){ return s + p.fillPct; }, 0) / withCap.length) : 0;
           var hasCapacity = progs.some(function(p){ return p.capacity > 0; });
           var fmt$ = function(n) { return '$' + Math.round(n).toLocaleString(); };
+          // Read off filteredRows — the funnel's own output, exactly what every
+          // other card in this row is built from — so location, season, the
+          // date range and the program search all scope it together.
+          var apShare = progAutopayShare(filteredRows);
           var fmtD = function(d) { if (!d || String(d).length < 8) return ''; try { var dt = new Date(d + 'T12:00:00'); var s = dt.toLocaleDateString('en-US',{month:'short',day:'numeric'}); return s === 'Invalid Date' ? '' : s; } catch(e) { return ''; } };
           // By activity — compact
           var byAct = {};
@@ -2667,12 +2831,34 @@ function App() {
               {/* ── Summary Cards ── */}
               <div className="sum-cards">
                 <div className="sum-card"><div className="sc-label">Programs</div><div className="sc-val sc-blue">{progs.length}</div><div className="sc-sub">{totalSections} sections{cancelledSections > 0 ? ' (' + (totalSections - cancelledSections) + ' ran, ' + cancelledSections + ' cancelled)' : ''}</div></div>
-                <div className="sum-card"><div className="sc-label">Participants</div><div className="sc-val sc-green">{totalEnrolled.toLocaleString()}</div><div className="sc-sub">{avgFill > 0 ? avgFill + '% avg fill rate' : ''}</div>{compareOn && priorStats && <div><DeltaPill cur={totalEnrolled} prev={priorStats.enrolled} label={'vs ' + fmtRangeShort(priorStats.start, priorStats.end)} /></div>}</div>
+                <div className="sum-card"><div className="sc-label">Participants</div><div className="sc-val sc-green" data-prog-participants={String(totalEnrolled)}>{totalEnrolled.toLocaleString()}</div><div className="sc-sub">{avgFill > 0 ? avgFill + '% avg fill rate' : ''}</div>{compareOn && priorStats && <div><DeltaPill cur={totalEnrolled} prev={priorStats.enrolled} label={'vs ' + fmtRangeShort(priorStats.start, priorStats.end)} /></div>}</div>
                 <div className="sum-card"><div className="sc-label">Net Revenue</div><div className="sc-val sc-amber">{fmt$(totalRev)}</div><div className="sc-sub">total for these programs</div>{compareOn && priorStats && <div><DeltaPill cur={totalRev} prev={priorStats.net} label={'vs ' + fmtRangeShort(priorStats.start, priorStats.end)} /></div>}</div>
                 <div className="sum-card"><div className="sc-label">Collected in Period</div><div className="sc-val sc-green">{fmt$(periodTotalRev)}</div><div className="sc-sub">payments received in date range</div>{compareOn && priorStats && priorStats.periodNet != null && <div><DeltaPill cur={periodTotalRev} prev={priorStats.periodNet} label={'vs ' + fmtRangeShort(priorStats.start, priorStats.end)} /></div>}</div>
                 <div className="sum-card"><div className="sc-label">Ran / Active</div><div className="sc-val sc-green">{ranProgs.length}</div><div className="sc-sub">{ranPct}% of programs</div></div>
                 <div className="sum-card"><div className="sc-label">Cancelled</div><div className="sc-val sc-red">{cancelledSections}</div><div className="sc-sub">{cancelledSections === 1 ? '1 section' : cancelledSections + ' sections'}{cancelledProgs.length > 0 ? ' (' + cancelledProgs.length + ' full programs)' : ''}</div>{compareOn && priorStats && <div><DeltaPill cur={cancelledSections} prev={priorStats.cancelled} goodWhenDown={true} label={'vs ' + fmtRangeShort(priorStats.start, priorStats.end)} /></div>}</div>
                 <div className="sum-card"><div className="sc-label">Upcoming</div><div className="sc-val sc-purple">{upcomingProgs.length}</div><div className="sc-sub">Not yet started</div></div>
+                {/* ── On Auto-Pay ──
+                    Dan: "% on Auto-Pay vs % on manual collection". Presence-
+                    gated on the v7 column, not on its value: a warm pre-v7
+                    cache entry would render 0%, which says "nobody uses
+                    autopay" when the truth is "this feed cannot tell us".
+                    A card with a real 0% is a different and legitimate state —
+                    that is what Shrewsbury looks like (87 plan registrations,
+                    none on autopay) and it must show. */}
+                {colPresence.autopay && apShare && (
+                  <div className="sum-card" title={'Auto-pay charges a card on file at each installment date; without it somebody has to collect every one.\n\nThe denominator is payment-plan registrations only — a registration paid in full is on neither method.\n\nOn auto-pay: ' + fmt$(apShare.apValue) + ' across ' + apShare.apItems.toLocaleString() + '\nCollected manually: ' + fmt$(apShare.manValue) + ' across ' + apShare.manItems.toLocaleString() + '\n\nThe two readings differ because auto-pay tends to be used on the expensive plans.'}>
+                    <div className="sc-label">On Auto-Pay</div>
+                    <div className="sc-val sc-blue" data-prog-autopay-pct={apShare.pctValue == null ? '' : apShare.pctValue}>{apShare.pctValue == null ? '—' : apShare.pctValue + '%'}</div>
+                    {/* BOTH READINGS, because they disagree by 26x at apex and
+                        either one alone reads as the whole answer. Dollars lead
+                        (this is a revenue row); the registration share carries
+                        its own percentage so the gap is visible rather than
+                        buried in two raw counts. */}
+                    <div className="sc-sub" data-prog-autopay-items={apShare.pctItems == null ? '' : apShare.pctItems}>
+                      of {fmt$(apShare.planValue)} on payment plans · {apShare.pctItems == null ? '—' : apShare.pctItems + '%'} of {apShare.planItems.toLocaleString()} plan registrations
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* ── Self-Service & Staff Workload — orders by channel ── */}
@@ -2975,10 +3161,50 @@ function App() {
               <div className={`card-value ${fmtNum(totals.periodNet) < 0 ? 'red' : 'green'}`}>{fmtMoney(totals.periodNet)}</div>
               <div className="card-sub">collected minus refunds for period</div>
             </div>
-            <div className="summary-card">
+            {/* ── Outstanding, and WHY ──
+                The total keeps the headline: it is the number people already
+                know, and the split is the answer to "so what do I do about it".
+                Presence-gated on the v8 column, so a warm pre-v8 cache entry
+                shows the old single figure rather than four confident zeros. */}
+            <div className="summary-card" style={outSplit && colPresence.outSplit ? {minWidth:190} : undefined}>
               <div className="card-label">Outstanding</div>
               <div className={`card-value ${fmtNum(totals.outstanding) > 0 ? 'red' : ''}`}>{fmtMoney(totals.outstanding)}</div>
-              <div className="card-sub">unpaid balance across all programs</div>
+              {colPresence.outSplit && outSplit ? (
+                <div className="out-split" data-out-split>
+                  {/* Past due leads — it is the only row anybody can act on.
+                      It is NOT split by collection method: a past-due auto-pay
+                      installment is a declined card, and putting it under
+                      "on auto-pay" would read as collecting on schedule. */}
+                  <div className="os-row late" title="The due date has passed. Includes declined auto-pay charges, which are late in exactly the same way.">
+                    <span>Past due</span><b data-out-pastdue={String(Math.round(outSplit.pastDue))}>{fmtMoney(outSplit.pastDue)}</b>
+                  </div>
+                  <div className="os-row" title="Not due yet, and with no card on file — somebody has to collect each installment.">
+                    <span>Scheduled</span><b data-out-sched={String(Math.round(outSplit.schedManual))}>{fmtMoney(outSplit.schedManual)}</b>
+                  </div>
+                  <div className="os-row" title="Not due yet, and the card on file will be charged automatically.">
+                    <span>On auto-pay</span><b data-out-autopay={String(Math.round(outSplit.schedAutopay))}>{fmtMoney(outSplit.schedAutopay)}</b>
+                  </div>
+                  {/* Only where it exists. A balance with no payment plan has no
+                      due date, so it is neither late nor scheduled, and calling
+                      it either would be a claim about a date that is not there. */}
+                  {outSplit.noPlan > 0.005 && (
+                    <div className="os-row" title="Owed on a registration with no payment plan, so there is no due date to be late against.">
+                      <span>No plan</span><b data-out-noplan={String(Math.round(outSplit.noPlan))}>{fmtMoney(outSplit.noPlan)}</b>
+                    </div>
+                  )}
+                  {/* The parts must add back to the total. They do by
+                      construction, so this only ever renders when something is
+                      genuinely wrong — which is better said out loud than
+                      hidden in a breakdown that silently does not sum. */}
+                  {!outSplit.reconciles && (
+                    <div className="os-row odd" title="These parts do not add up to the total above. Treat the total as authoritative and report this.">
+                      <span>Unexplained</span><b data-out-residual={String(Math.round(outSplit.residual))}>{fmtMoney(outSplit.residual)}</b>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="card-sub">unpaid balance across all programs</div>
+              )}
             </div>
             <div className="summary-card">
               <div className="card-label">Enrollments</div>

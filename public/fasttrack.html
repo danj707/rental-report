@@ -556,6 +556,86 @@ function heatBand(convPct) {
   if (v > 0)   return { color: '#0369a1', bg: '#f0f9ff', label: 'COOL',    icon: '🌧️' };
   return              { color: '#6b7280', bg: '#f4f4f5', label: 'COLD',    icon: '🧊' };
 }
+// ── Export the people who fast-tracked a section (Dan, 2026-09-01) ───────
+// Dan: "add an 'export CSV' button/link to each Fast Track section in this
+// bottom table. Giving orgs the ability to export a csv of the user information
+// who has these fast tracked."
+//
+// ONE ROW PER PARTICIPANT PER ACCOUNT, not per account and not per hold.
+// The section row's badge counts booking ACCOUNTS, so a parent who fast-tracked
+// two children is one row there — and an org working this list needs the
+// CHILDREN. The feed is one row per booking, so grouping by (account,
+// participant) also gives each child its own hold count, which the badge cannot.
+//
+// WHAT IT CANNOT SAY, on purpose: WHICH sessions. Card 17300's ft_booking rows
+// carry the section, the customer and the participant NAME but no session id or
+// date, so for a per-session section this exports "9 holds" and not the nine
+// camp days. Inventing a date, or splitting the count across the section's
+// sessions, would be a claim the feed cannot support. One column on the card
+// (`Session Date`) would fix it.
+//
+// The participant is keyed by NAME because that is all the feed has, so two
+// same-named children in ONE account merge — apex really has two different
+// children both called Bridger Wall (see the ePACT backcheck), which is why the
+// key is scoped to the account rather than to the org. `Participants` on the
+// row object is the honest plural for that case.
+function ftExportRows(sectionId, bookingRows) {
+  const by = new Map();
+  (bookingRows || []).forEach(r => {
+    if ((r['Section ID'] || '') !== sectionId) return;
+    const account = (r['User Name'] || '').trim() || (r['User Email'] || '').trim() || 'Unknown account';
+    // A booking made for the account holder themselves carries no separate
+    // participant; it is still a real registration, so it keeps their name
+    // rather than being dropped or exported blank.
+    const participant = (r['Participant Name'] || '').trim() || account;
+    const key = (r['User ID'] || 'email:' + (r['User Email'] || account)) + '|' + participant;
+    let g = by.get(key);
+    if (!g) {
+      g = {
+        program: r['Program'] || '', section: r['Section'] || '', season: r['Season'] || '',
+        regMode: r['Reg Mode'] || '', participant: participant, account: account,
+        email: r['User Email'] || '', holds: 0, converted: 0, pending: 0, firstSignup: '',
+      };
+      by.set(key, g);
+    }
+    g.holds += 1;
+    if (r['FT Status'] === 'Converted') g.converted += 1; else g.pending += 1;
+    const d = r['Signup Date'] || '';
+    // EARLIEST signup, compared as the ISO string the card emits — never through
+    // new Date(), which reads a bare YYYY-MM-DD as UTC midnight and lands on the
+    // previous day west of UTC. Same trap as parseCardDate above.
+    if (d && (!g.firstSignup || d < g.firstSignup)) g.firstSignup = d;
+  });
+  // Converted first, then the busiest, then by name — so the rows an admin acts
+  // on lead and two runs of the same export cannot disagree.
+  return Array.from(by.values()).sort((a, b) =>
+    (b.converted > 0 ? 1 : 0) - (a.converted > 0 ? 1 : 0) ||
+    b.holds - a.holds ||
+    a.participant.localeCompare(b.participant) ||
+    a.account.localeCompare(b.account));
+}
+
+const FT_EXPORT_HEADERS = ['Program', 'Section', 'Season', 'Reg Mode', 'Participant',
+                           'Account Name', 'Account Email', 'Fast Tracks', 'Converted',
+                           'Pending', 'First Signup'];
+
+// CRLF and RFC4180 quoting: a section name with a comma ("Camp, Red") shifts
+// every column after it otherwise, and some Windows importers refuse a bare LF.
+function ftExportCsv(rows) {
+  const cell = v => {
+    const t = v == null ? '' : String(v);
+    return /[",\r\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t;
+  };
+  const body = (rows || []).map(r => [r.program, r.section, r.season, r.regMode,
+    r.participant, r.account, r.email, r.holds, r.converted, r.pending, r.firstSignup]);
+  return [FT_EXPORT_HEADERS].concat(body).map(r => r.map(cell).join(',')).join('\r\n') + '\r\n';
+}
+
+// A section name goes into a filename, so it has to survive being one.
+function ftExportFileSlug(s) {
+  return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 48);
+}
+
 function adminSectionUrl(orgId, sectionId) {
   if (!orgId || !sectionId) return null;
   return 'https://www.rec.us/admin/o/' + orgId + '/programming/sections/' + sectionId;
@@ -1997,6 +2077,44 @@ function App() {
      The feed carries one 'ft_booking' row per FT booking, so a customer
      who fast-tracks several sessions of a per-session section shows up
      multiple times — we collapse those into one person with an ×N count. */
+  // Fire-and-forget log for a client-side event the server cannot see.
+  // THE CONVENTION IS ?event=<name> IN THE QUERY STRING. A JSON body is read by
+  // nothing on the server and comes back 400 Unknown event, which a
+  // fire-and-forget beacon never complains about — that trap has now bitten this
+  // repo four times (campmap, the Facilities hub, Memberships, Instructor
+  // Payout). `fasttrack` IS in REPORT_TYPES, so the generic log route serves it.
+  function logClientEvent(event, extra) {
+    try {
+      var parts = window.location.pathname.split('/').filter(Boolean);
+      if (parts.length < 2) return;
+      var qs = new URLSearchParams({ event: event });
+      Object.keys(extra || {}).forEach(function(k) {
+        if (extra[k] !== undefined && extra[k] !== null && extra[k] !== '') qs.set(k, String(extra[k]));
+      });
+      fetch(withToken('/' + parts[0] + '/' + parts[1] + '/api/log?' + qs), { method: 'POST', keepalive: true }).catch(function() {});
+    } catch (e) {}
+  }
+
+  // Export the people who fast-tracked ONE section.
+  // Delivered through saveTextViaPopup — the single popup implementation in
+  // open-pdf.js — because a download started by a sandboxed iframe is silently
+  // dropped. The BOM goes on the FILE ONLY: Excel sniffs bytes rather than
+  // trusting UTF-8, so an accented participant name opens as mojibake without
+  // it, while a BOM in the clipboard copy shows up as a stray character in the
+  // first cell. Same split as the ePACT export.
+  function exportSectionCsv(sec) {
+    var rows = ftExportRows(sec.sectionId, ftBookingRows);
+    if (!rows.length) return;
+    var csv = ftExportCsv(rows);
+    var name = 'fast-track-' + (ftExportFileSlug(sec.section) || 'section') + '.csv';
+    if (window.saveTextViaPopup) window.saveTextViaPopup(csv, name, { bom: true });
+    // The COUNT travels with it: exporting 43 people is a different signal from
+    // testing the button on a section with three. Debounced by section, because
+    // an admin pulling four camps is four camps.
+    logClientEvent('ft-export', { section: sec.section || '', people: rows.length,
+                                  holds: rows.reduce(function(n, r) { return n + r.holds; }, 0) });
+  }
+
   var ftUsersBySection = useMemo(function() {
     var bySec = {};
     (ftBookingRows || []).forEach(function(r) {
@@ -2569,7 +2687,7 @@ function App() {
                   programs.map(function(p) {
                     var isOpen = isPrint || open.has(p.program);
                     return React.createElement(React.Fragment, { key: p.program },
-                      React.createElement('tr', { className: 'prog-row', onClick: function() { toggle(p.program); } },
+                      React.createElement('tr', { className: 'prog-row', 'data-ft-progrow': p.program, onClick: function() { toggle(p.program); } },
                         React.createElement('td', { className: 'left' },
                           !isPrint && React.createElement('span', { style: { display: 'inline-block', width: 14, color: '#888' } }, isOpen ? '▾' : '▸'),
                           p.program,
@@ -2599,7 +2717,7 @@ function App() {
                         var secIsOpen = hasUsers && openSecs.has(s.sectionId);
                         return React.createElement(React.Fragment, { key: p.program + '|' + i },
                           React.createElement('tr', {
-                            className: 'sec-row',
+                            className: 'sec-row', 'data-ft-secrow': s.sectionId,
                             style: hasUsers ? { cursor: 'pointer' } : null,
                             onClick: hasUsers ? function() { toggleSec(s.sectionId); } : null,
                             title: hasUsers ? 'Show the individual customers who fast-tracked this section' : null
@@ -2609,7 +2727,23 @@ function App() {
                                 hasUsers && React.createElement('span', { style: { display: 'inline-block', width: 12, color: '#6366f1', fontSize: 10 } }, secIsOpen ? '▾' : '▸'),
                                 s.section,
                                 React.createElement('span', { style: { color: '#bbb', marginLeft: 6, fontSize: 10 } }, s.regMode === 'per-session' ? 'per-session' : 'section'),
-                                hasUsers && React.createElement('span', { style: { color: '#6366f1', background: '#6366f114', borderRadius: 10, padding: '1px 7px', marginLeft: 8, fontSize: 10, fontWeight: 600 } }, ftUsers.length, ftUsers.length === 1 ? ' person' : ' people')
+                                hasUsers && React.createElement('span', { style: { color: '#6366f1', background: '#6366f114', borderRadius: 10, padding: '1px 7px', marginLeft: 8, fontSize: 10, fontWeight: 600 } }, ftUsers.length, ftUsers.length === 1 ? ' person' : ' people'),
+                                /* ABSENT when there is nobody to export, not
+                                   disabled and not zeroed — a control that
+                                   yields an empty file is the dead end this
+                                   repo keeps writing down. stopPropagation
+                                   because the row itself toggles the expander,
+                                   and an export that also opens a panel reads
+                                   as two things happening by accident. */
+                                hasUsers && React.createElement('button', {
+                                  type: 'button', 'data-ft-export': s.sectionId,
+                                  onClick: function(e) { e.stopPropagation(); exportSectionCsv(s); },
+                                  title: 'Download the people who fast-tracked this section — name, email and how many holds each',
+                                  style: { marginLeft: 8, fontSize: 10, fontWeight: 600, color: '#0f766e',
+                                           background: '#0f766e12', border: '1px solid #0f766e33',
+                                           borderRadius: 10, padding: '1px 7px', cursor: 'pointer',
+                                           fontFamily: 'inherit' }
+                                }, '\u2b07 CSV')
                               ),
                               schedLabel && React.createElement('div', { style: { fontSize: 10, color: '#999', marginTop: 1, marginLeft: hasUsers ? 12 : 0 } }, schedLabel)
                             ),

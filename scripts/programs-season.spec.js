@@ -65,6 +65,17 @@ const deq = (g, w, m) => ok(JSON.stringify(g) === JSON.stringify(w),
   m + " — got " + JSON.stringify(g) + ", want " + JSON.stringify(w));
 
 // ── lift and RUN the real helpers ───────────────────────────────────────────
+function liftFn(text, name) {
+  const start = text.indexOf("function " + name + "(");
+  if (start < 0) throw new Error(name + " not found at module scope — a spec cannot run what it cannot reach");
+  let depth = 0, i = text.indexOf("{", start);
+  for (; i < text.length; i++) {
+    if (text[i] === "{") depth++;
+    else if (text[i] === "}") { depth--; if (depth === 0) break; }
+  }
+  return text.slice(start, i + 1);
+}
+
 const i = src.indexOf("const SEASON_NONE");
 const j = src.indexOf("function getParams");
 ok(i > 0 && j > i, "the season helper block is still findable at module scope");
@@ -118,45 +129,109 @@ deq(progEffectiveSeasons(undefined, OPTS, true), [], "undefined is survivable");
 ok(!/setStartDate\([^)]*season/i.test(src) && !/season[^\n]*setStartDate/i.test(src),
    "ticking a season does not move the date range: a season's declared span does not contain its own sections");
 
+// rollupToPrograms is lifted and RUN too — a stub would prove the funnel calls
+// something, not that the numbers it produces are the surviving sections'.
+// It reads fmtNum and progMode, so those come along in the same scope.
+function liftRollup() {
+  return new Function(
+    liftFn(src, "fmtNum") + "\n" + liftFn(src, "progMode") + "\n" +
+    liftFn(src, "rollupToPrograms") + "; return rollupToPrograms;")();
+}
+
 // ── the funnel actually filters, run over the real reducer ──────────────────
 // Sliced and run rather than asserted in source: an inverted `want.has` passes
 // every regex in this file.
+//
+// THE DEPS LINE IS MATCHED BY PATTERN, NOT BY LITERAL. Pinning the literal
+// "}, [rows, locFilter, seasonSel]);" broke the moment the funnel gained a
+// dependency, and the slice then ran on into the next memo — the same gotcha
+// already recorded for memberships-revenue.spec.js's block().
 {
   const k = src.indexOf("const scopedRows = useMemo(");
-  const end = src.indexOf("}, [rows, locFilter, seasonSel]);", k);
-  ok(k > 0 && end > k, "the scopedRows reducer is still findable");
-  const body = src.slice(src.indexOf("{", k + 26) + 1, src.lastIndexOf("return out;", end) + "return out;".length);
+  const tail = src.slice(k);
+  const m = /\n  \}, \[[^\]]*\]\);/.exec(tail);
+  ok(k > 0 && m, "the scopedRows reducer is still findable");
+  const body = tail.slice(tail.indexOf("{", tail.indexOf("useMemo(")) + 1, m.index);
   // RUN IT BEHIND A GUARD. This spec records failures and reports at the end,
   // so an exception thrown by the sliced code kills the process before a single
   // recorded failure is printed — a mutation that makes the funnel throw (say,
   // one that calls setStartDate inside it) would surface as a bare stack trace
   // naming nothing. A throw is a failure and must say so like any other.
-  const raw = new Function("rows", "locFilter", "seasonSel", "LOC_NONE", "seasonKey", body);
-  const run = (...a) => {
-    try { return raw(...a); }
-    catch (e) { failures.push("the scopedRows funnel THREW: " + e.message); return []; }
-  };
-  const ROWS = [
+  const raw = new Function("rows", "progSections", "sectionGrain", "locFilter",
+                           "seasonSel", "LOC_NONE", "seasonKey", "rollupToPrograms", body);
+  const SECS = [
     { programName: "Pickleball", season: "Fall '26",         location: "Oak Middle" },
     { programName: "Yoga",       season: "Fall '26",         location: "Senior Center" },
     { programName: "Swim",       season: "Spring/Summer 26", location: "Oak Middle" },
     { programName: "Camp",       season: "",                 location: null },
   ];
-  const names = rs => rs.map(r => r.programName).sort();
-  deq(names(run(ROWS, "", [], " none", seasonKey)), ["Camp", "Pickleball", "Swim", "Yoga"],
+  // sectionGrain false, so the survivors come back as themselves and this half
+  // is purely about which rows the two filters keep.
+  const run = (locFilter, seasonSel, rows) => {
+    try {
+      return raw(rows || SECS, SECS, false, locFilter, seasonSel, "\u0000none", seasonKey, x => x);
+    } catch (e) { failures.push("the scopedRows funnel THREW: " + e.message); return []; }
+  };
+  const names = rs => (rs || []).map(r => r.programName).sort();
+  deq(names(run("", [])), ["Camp", "Pickleball", "Swim", "Yoga"],
       "no filters returns every row");
-  deq(names(run(ROWS, "", ["Fall '26"], " none", seasonKey)), ["Pickleball", "Yoga"],
+  deq(names(run("", ["Fall '26"])), ["Pickleball", "Yoga"],
       "one ticked season narrows to it");
-  deq(names(run(ROWS, "", ["Fall '26", "Spring/Summer 26"], " none", seasonKey)),
+  deq(names(run("", ["Fall '26", "Spring/Summer 26"])),
       ["Pickleball", "Swim", "Yoga"], "two ticked seasons are a UNION, not an intersection");
-  deq(names(run(ROWS, "", ["No Season"], " none", seasonKey)), ["Camp"],
+  deq(names(run("", ["No Season"])), ["Camp"],
       "ticking No Season finds the row whose season is empty — via seasonKey, not a literal compare");
   // BOTH dimensions, composed. This is the assertion that fails if someone
   // splits the funnel back in two.
-  deq(names(run(ROWS, "Oak Middle", ["Fall '26"], " none", seasonKey)), ["Pickleball"],
+  deq(names(run("Oak Middle", ["Fall '26"])), ["Pickleball"],
       "location AND season compose in one funnel — Swim is at Oak Middle but the wrong season");
-  deq(names(run(ROWS, "Senior Center", ["Spring/Summer 26"], " none", seasonKey)), [],
+  deq(names(run("Senior Center", ["Spring/Summer 26"])), [],
       "a combination with nothing in it returns empty rather than falling back to either half");
+  deq(names(run("\u0000none", [])), ["Camp"],
+      "the no-location option finds the row with no location, rather than being read as a name");
+
+  // ── IT FILTERS SECTIONS AND RE-ROLLS UP ───────────────────────────────────
+  // Measured on prod: 659 of 5,699 programs with a located section (11.6%) run
+  // at more than one location — against 0.7% of SECTIONS. So a funnel that
+  // drops whole programs keeps money and enrolments from a site the reader just
+  // excluded, for one program in nine. Here "Aquatics" runs at two sites with
+  // $2,400 at one and $800 at the other: the correct answer is $2,400.
+  const SPANNING = [
+    { programName: "Aquatics", programId: "p-aq", season: "Fall '26", location: "Urho Saari",
+      autopayPlanValue: 2400, autopayPlanItems: 1, manualPlanValue: 0, manualPlanItems: 0 },
+    { programName: "Aquatics", programId: "p-aq", season: "Fall '26", location: "Gordon Clubhouse",
+      autopayPlanValue: 0, autopayPlanItems: 0, manualPlanValue: 800, manualPlanItems: 8 },
+  ];
+  const rollup = liftRollup();
+  let out;
+  try {
+    out = raw([{ programName: "Aquatics", programId: "p-aq", _sections: SPANNING }],
+              SPANNING, true, "Urho Saari", [], "\u0000none", seasonKey, rollup);
+  } catch (e) { failures.push("the re-rollup THREW: " + e.message); out = []; }
+  // EVERY read is defensive, for the reason this file already records: a
+  // mutation that drops the re-rollup hands back bare SECTION rows, and
+  // `out[0]._sections.length` on one of those THREW — killing the process
+  // before a single named failure printed. A guard that dies has not told
+  // anyone what broke.
+  const one = Array.isArray(out) && out.length === 1 ? out[0] : {};
+  ok(Array.isArray(out) && out.length === 1,
+     "a program with one surviving section is still ONE program row");
+  eq(one.autopayPlanValue, 2400,
+     "the re-rolled program carries only the surviving section's auto-pay value");
+  eq(one.manualPlanValue, 0,
+     "...and NONE of the excluded site's manual plan value — the 11.6% bug");
+  eq(Array.isArray(one._sections) ? one._sections.length : null, 1,
+     "...and its _sections holds only what is in view, so the section table agrees with the totals");
+
+  // With no filter at all the funnel must hand back the ROLLUPS untouched
+  // rather than re-rolling them: rows are already program-grain there, and
+  // flattening/re-rolling on every render for nothing is wasted work.
+  let none;
+  try {
+    none = raw(["ROLLUPS"], SPANNING, true, "", [], "\u0000none", seasonKey, rollup);
+  } catch (e) { failures.push("the unfiltered path THREW: " + e.message); none = null; }
+  eq(Array.isArray(none) ? none[0] : null, "ROLLUPS",
+     "with nothing ticked the funnel returns `rows` as-is");
 }
 
 // ── source invariants ───────────────────────────────────────────────────────

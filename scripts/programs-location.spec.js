@@ -92,9 +92,33 @@ eq(progEffectiveLoc("Urho Saari Swim Stadium", [], true), "",
 ok(/return \{[^}]*\bloc:\s*p\.get\('loc'\)/.test(src),
    "getParams() whitelists `loc` (a parameter missing from it reads undefined and the deep link does nothing)");
 
-// presence, not value
-ok(/rows\.some\(r => 'location' in r\)/.test(src),
-   "progHasLocation tests for the COLUMN ('location' in r), not a truthy value — a v5 cache entry has no such key");
+// PRESENCE, NOT VALUE — AND ASKED OF THE RAW RESPONSE.
+// This assertion used to read `rows.some(r => 'location' in r)` and it was
+// PINNING A BUG: `rows` are program rollups built by rollupToPrograms, which
+// has a fixed key set and never carried `location`, and normalizeRow never
+// mapped it either. So the gate was false on every feed and the control was
+// silently gated out at locOptions.length > 1 — the filter Dan asked for could
+// not render at all. Nothing caught it: this spec fed the reducer fixture rows
+// that already had `location` on them, and there was no render case for the
+// control. A column question has to be asked of the RESPONSE.
+ok(/location:\s*raw\.some\(r => 'location' in r \|\| 'Location' in r\)/.test(src),
+   "the presence gate reads the COLUMN off the raw feed, not a key on a rollup");
+ok(/const progHasLocation = colPresence\.location;/.test(src),
+   "progHasLocation is that gate, not a re-derivation over the rollups");
+ok(/location:\s*raw\['Location'\] \?\? raw\['location'\] \?\? null/.test(src),
+   "normalizeRow actually MAPS location — without this the funnel filters on undefined");
+
+// THE FILTERS ARE SECTION FACTS, and rows are program rollups.
+// Measured on prod: 659 of 5,699 programs with a located section (11.6%) run at
+// more than one location, max 24 — against 0.7% of SECTIONS. So filtering whole
+// programs by a primary location keeps one program in nine carrying money and
+// enrolments from a site the reader just excluded.
+ok(/const progSections = useMemo\(/.test(src),
+   "the option builders and the funnel read a flattened SECTION list");
+ok(/return sectionGrain \? rollupToPrograms\(out\) : out;/.test(src),
+   "the funnel filters sections and RE-ROLLS UP, so a program's totals are the sum of the sections still in view");
+ok(/progSections\.forEach\(r => \{/.test(src),
+   "locOptions counts sections, not programs");
 
 // the funnel
 // ONE FUNNEL FOR BOTH DIMENSIONS. `locRows` was renamed `scopedRows` when the

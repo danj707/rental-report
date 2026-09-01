@@ -133,6 +133,12 @@ jobs:
       - name: Programs season filter (multi-select; one funnel scopes both dimensions)
         run: node scripts/programs-season.spec.js
 
+      - name: Programs auto-pay share (dollars vs registrations; no plan money is null, never 0%)
+        run: node scripts/programs-autopay.spec.js
+
+      - name: Fast Track CSV export (one row per participant; the beacon records, not just 200s)
+        run: node scripts/fasttrack-export.spec.js
+
       - name: Facilities hub beacons (hub log route above the generic one; 200 AND a logged row)
         run: node scripts/facilities-beacons.spec.js
 
@@ -162,6 +168,9 @@ jobs:
 
       - name: Report settings (one cache-key builder; a setting seeds and never overrides; TTL floor)
         run: node scripts/report-settings.spec.js
+
+      - name: Report settings unlock (the prompt is not the gate; throttled; refusals marked deliberate)
+        run: node scripts/report-settings-unlock.spec.js
 
       - name: Tab chips (a chip never lands on a tab the page will not honour)
         run: node scripts/report-tabs.spec.js
