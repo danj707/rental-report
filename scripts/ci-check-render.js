@@ -499,7 +499,11 @@ function programRows() {
   // card ships, so the page has to be right on either — and the pre-v7 one must
   // HIDE the card rather than render 0%.
   const V7 = STUB_MODE !== "prev7";
-  const sec = (prog, name, sid, enrolled, capacity, season, loc, ap) => ({
+  // stubMode "prev8" drops the four v8 columns; "badsplit" keeps them but makes
+  // them NOT add up to Outstanding, which is the one thing the breakdown must
+  // refuse to hide.
+  const V8 = STUB_MODE !== "prev8";
+  const sec = (prog, name, sid, enrolled, capacity, season, loc, ap, out) => ({
     "Program": prog, "Program Id": "prog-" + prog.toLowerCase().replace(/\W+/g, "-"),
     "Section": name, "Section Id": sid, "Section Status": "Open",
     "Start Date": "2026-08-01", "End Date": "2026-09-30",
@@ -519,6 +523,19 @@ function programRows() {
       "autopay_plan_items": ap[0], "autopay_plan_value": ap[1],
       "manual_plan_items":  ap[2], "manual_plan_value":  ap[3],
     } : {}),
+    // v8. `out` is [outstanding, past due, scheduled on auto-pay, scheduled
+    // manual, no-plan balance] and the last four SUM to the first — that is the
+    // card's own invariant, so the fixture has to honour it or the page would be
+    // right to complain. The four org-wide totals are deliberately all
+    // DIFFERENT (175 / 550 / 500 / 100), so swapping any two labels fails a
+    // case rather than rendering four plausible numbers.
+    "Outstanding": out[0],
+    ...(V8 ? {
+      "past_due_value":          STUB_MODE === "badsplit" ? 1 : out[1],
+      "scheduled_autopay_value": out[2],
+      "scheduled_manual_value":  out[3],
+      "no_plan_balance_value":   out[4],
+    } : {}),
     // SEASON NAMES ARE SHREWSBURY'S REAL ONES, apostrophe included: "Fall '26"
     // is what an org actually types, and a value that has to survive a URL
     // round-trip and an attribute selector should not be a tidy invented one.
@@ -533,13 +550,13 @@ function programRows() {
     // of programs on prod do. Filtering to Urho must keep only sec-aq-1, so the
     // auto-pay share reads 100% — filtering whole PROGRAMS keeps sec-aq-2's
     // $800 of manual plans too and reads 75%. One number separates the two.
-    sec("Aquatic Exercise",  "Aquatic Stations with Pearlena", "sec-aq-1", 21, 24, "Fall '26",           URHO,   [1, 2400, 0,    0]),
-    sec("Aquatic Exercise",  "Water Waves with Yvette",        "sec-aq-2", 20, 24, "Fall '26",           GORDON, [0,    0, 8,  800]),
-    sec("Water Walking",     "Water Walking August 24",        "sec-ww-1", 12, 16, "Spring/Summer 26",   GORDON, [0,    0, 10, 1000]),
+    sec("Aquatic Exercise",  "Aquatic Stations with Pearlena", "sec-aq-1", 21, 24, "Fall '26",           URHO,   [1, 2400, 0,    0], [600, 100, 500,   0,   0]),
+    sec("Aquatic Exercise",  "Water Waves with Yvette",        "sec-aq-2", 20, 24, "Fall '26",           GORDON, [0,    0, 8,  800], [250,  50,   0, 200,   0]),
+    sec("Water Walking",     "Water Walking August 24",        "sec-ww-1", 12, 16, "Spring/Summer 26",   GORDON, [0,    0, 10, 1000], [400,   0,   0, 300, 100]),
     // One unseasoned section, so ticking "No Season" has something to find and
     // the option is not vacuous — and with no location, so "No location set" is
     // a real option.
-    sec("Lap Swim",          "Open Lap Swim",                  "sec-ls-1",  9, 20, "No Season",          null,   [0,    0, 1,  200]),
+    sec("Lap Swim",          "Open Lap Swim",                  "sec-ls-1",  9, 20, "No Season",          null,   [0,    0, 1,  200], [ 75,  25,   0,  50,   0]),
   ];
 }
 
@@ -1954,6 +1971,34 @@ const CASES = [
   // us" — and "renders a 0" and "renders nothing" are different claims.
   { name: "programs · no auto-pay card on a pre-v7 feed", path: "/{org}/programs",
     stubMode: "prev7", needs: ".sum-cards", absent: "[data-prog-autopay-pct]" },
+
+  // ── Outstanding, split by WHY ─────────────────────────────────────────────
+  // Dan: "we'd like to have past-due from scheduled and on autopay". One
+  // Outstanding figure hides the only actionable part — at apex it was 96%
+  // not-yet-due money with $24,728 genuinely late inside it. All four org-wide
+  // totals differ (175 / 550 / 500 / 100), so a swapped label fails a case
+  // rather than rendering a plausible number.
+  { name: "programs · Outstanding says how much is PAST DUE", path: "/{org}/programs?tab=revenue",
+    needs: '[data-out-pastdue="175"]' },
+  { name: "programs · ...and how much is merely scheduled", path: "/{org}/programs?tab=revenue",
+    needs: '[data-out-sched="550"]' },
+  { name: "programs · ...and how much collects itself", path: "/{org}/programs?tab=revenue",
+    needs: '[data-out-autopay="500"]' },
+  // A balance with no payment plan has no due date, so it can be neither late
+  // nor scheduled. Its row renders only where there is one.
+  { name: "programs · a no-plan balance gets its own row", path: "/{org}/programs?tab=revenue",
+    needs: '[data-out-noplan="100"]' },
+  // THE PARTS ADD BACK UP, and the page says so when they do not. This is the
+  // only case that can catch a breakdown quietly failing to sum, which is how a
+  // number stops being trusted.
+  { name: "programs · a breakdown that does not sum SAYS SO", path: "/{org}/programs?tab=revenue",
+    stubMode: "badsplit", needs: "[data-out-residual]" },
+  { name: "programs · ...and stays quiet when it does", path: "/{org}/programs?tab=revenue",
+    needs: "[data-out-split]", absent: "[data-out-residual]" },
+  // PRESENCE, NOT VALUE: a warm pre-v8 cache entry keeps the old single figure
+  // rather than four confident zeros.
+  { name: "programs · no Outstanding split on a pre-v8 feed", path: "/{org}/programs?tab=revenue",
+    stubMode: "prev8", needs: ".summary-cards", absent: "[data-out-split]" },
 
   { name: "programs · two ticks are a UNION", path: "/{org}/programs",
     // 2, not 0. An intersection — the obvious wrong reducer — empties the report,

@@ -1,7 +1,10 @@
 #!/usr/bin/env node
 /* ============================================================================
- * programs-autopay.spec.js — "% on Auto-Pay vs % on manual collection" on the
- * Programs summary (Dan, 2026-09-01), and card 17295 v7 underneath it.
+ * programs-autopay.spec.js — the two payment-plan metrics Dan asked for on
+ * 2026-09-01 and cards 17295 v7 / v8 underneath them:
+ *
+ *   · "% on Auto-Pay vs % on manual collection" on the Programs summary (v7)
+ *   · Outstanding split into past due / scheduled / on auto-pay (v8)
  *
  * Auto-pay charges a card on file at each payment-plan installment date;
  * without it somebody has to collect every installment. Three things about this
@@ -22,8 +25,23 @@
  *      no payment plans" are different facts. Same rule as a pre-v7 feed, where
  *      the card is hidden rather than zeroed (mbHasProductKind / ciHasStatus).
  *
- * It LIFTS AND RUNS progAutopayShare rather than regexing it — a regex passes on
- * a share computed from the wrong pair of columns. (The nightStateFrom lesson.)
+ * And for the Outstanding split (v8):
+ *
+ *   4. THE FOUR BUCKETS PARTITION Outstanding. They do by construction in the
+ *      card, so the page returns the RESIDUAL rather than trusting them, and
+ *      renders it when it is real — a breakdown whose parts quietly fail to sum
+ *      is how a number stops being trusted.
+ *   5. A DATELESS INSTALLMENT IS SCHEDULED, NEVER PAST DUE. 15,231 of 166,507
+ *      unpaid installments across 76 orgs have no due_at; apex has zero, so
+ *      apex alone cannot test it. `due_at < NOW()` is false for a NULL, and the
+ *      scheduled side spells the NULL out rather than relying on an ELSE.
+ *   6. PAST DUE IS NOT SPLIT BY COLLECTION METHOD. Dan: "declines are flagged
+ *      in product, they are the same as a non-auto payment past due CC payment
+ *      installment." A past-due auto-pay installment IS a declined card, and
+ *      filing it under "on auto-pay" reports it as collecting on schedule.
+ *
+ * It LIFTS AND RUNS both helpers rather than regexing them — a regex passes on a
+ * share computed from the wrong pair of columns. (The nightStateFrom lesson.)
  * ==========================================================================*/
 "use strict";
 
@@ -55,6 +73,9 @@ function liftFn(text, name) {
 const progAutopayShare = new Function(
   liftFn(src, "fmtNum") + "\n" + liftFn(src, "progAutopayShare") +
   "; return progAutopayShare;")();
+const progOutstandingSplit = new Function(
+  liftFn(src, "fmtNum") + "\n" + liftFn(src, "progOutstandingSplit") +
+  "; return progOutstandingSplit;")();
 
 // ── the apex shape, and the reason both readings are printed ────────────────
 // One expensive auto-pay plan against many small manual ones. These are the
@@ -247,6 +268,160 @@ ok(/COALESCE\(SUM\(ppi\.amount_cents\),0\)\s+AS plan_cents/.test(sql),
   const iV6 = out.indexOf("AS instructor_count");
   const iV7 = out.indexOf("AS autopay_plan_items");
   ok(iV6 > 0 && iV7 > iV6, "the v7 columns come AFTER every v6 one in the output list");
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// v8 — WHY the outstanding balance is outstanding
+// ══════════════════════════════════════════════════════════════════════════
+
+// The apex shape, all-time: 96% of Outstanding was not-yet-due money and the
+// $24,728 that was actually late was invisible inside it.
+const APEX_OUT = [
+  { outstanding: 577575.32, pastDueValue: 24727.58,
+    scheduledAutopayValue: 191999.90, scheduledManualValue: 360847.84,
+    noPlanBalanceValue: 0 },
+];
+{
+  const r = progOutstandingSplit(APEX_OUT);
+  eq(r.pastDue, 24727.58, "past due at apex");
+  eq(r.schedManual, 360847.84, "scheduled, manual, at apex");
+  eq(r.schedAutopay, 191999.90, "scheduled, on auto-pay, at apex");
+  eq(r.residual, 0, "the four add back to Outstanding exactly");
+  ok(r.reconciles, "...so it reconciles");
+  ok(r.pastDue / r.outstanding < 0.05,
+     "past due is under 5% of the total — which is why one Outstanding figure hid it");
+}
+
+// It sums across ROWS, so a program's split is its sections' and the report's is
+// every program's.
+{
+  const r = progOutstandingSplit([
+    { outstanding: 600, pastDueValue: 100, scheduledAutopayValue: 500, scheduledManualValue: 0,   noPlanBalanceValue: 0 },
+    { outstanding: 250, pastDueValue: 50,  scheduledAutopayValue: 0,   scheduledManualValue: 200, noPlanBalanceValue: 0 },
+    { outstanding: 400, pastDueValue: 0,   scheduledAutopayValue: 0,   scheduledManualValue: 300, noPlanBalanceValue: 100 },
+    { outstanding: 75,  pastDueValue: 25,  scheduledAutopayValue: 0,   scheduledManualValue: 50,  noPlanBalanceValue: 0 },
+  ]);
+  eq(r.outstanding, 1325, "Outstanding is the sum of the rows");
+  eq(r.pastDue, 175, "past due is the sum of the rows");
+  eq(r.schedManual, 550, "scheduled is the sum of the rows");
+  eq(r.schedAutopay, 500, "on auto-pay is the sum of the rows");
+  eq(r.noPlan, 100, "the no-plan balance is the sum of the rows");
+  ok(r.reconciles, "and the four still add back up");
+}
+
+// ── A BREAKDOWN THAT DOES NOT SUM MUST SAY SO ──────────────────────────────
+// The card partitions Outstanding exactly, so the only honest drift is per-row
+// rounding. Anything larger is a defect and belongs on screen, not hidden.
+{
+  const r = progOutstandingSplit([
+    { outstanding: 1000, pastDueValue: 100, scheduledAutopayValue: 100,
+      scheduledManualValue: 100, noPlanBalanceValue: 0 },
+  ]);
+  eq(r.residual, 700, "the unexplained remainder is reported, not absorbed");
+  ok(!r.reconciles, "...and flagged as not reconciling");
+}
+{
+  // Two cents of rounding across a few rows is not a defect and must not shout.
+  const r = progOutstandingSplit([
+    { outstanding: 100.02, pastDueValue: 50.00, scheduledAutopayValue: 25.00,
+      scheduledManualValue: 25.00, noPlanBalanceValue: 0 },
+  ]);
+  ok(r.reconciles, "cents of rounding still reconciles — the tolerance is not zero");
+  eq(r.residual, 0.02, "...and the residual is still reported honestly");
+}
+
+// ── nothing owed needs no breakdown, but an UNEXPLAINED balance still does ──
+eq(progOutstandingSplit([]), null, "no rows is null");
+eq(progOutstandingSplit([{ outstanding: 0, pastDueValue: 0, scheduledAutopayValue: 0,
+                           scheduledManualValue: 0, noPlanBalanceValue: 0 }]), null,
+   "an org that owes nothing gets no breakdown");
+{
+  // The gate tests the TOTAL, not the parts. A pre-v8 feed carrying a real
+  // Outstanding must not be silently dropped here — colPresence.outSplit is
+  // what hides the panel in that case, and it is asserted separately below.
+  const r = progOutstandingSplit([{ outstanding: 900 }]);
+  ok(r !== null, "an outstanding balance with no v8 columns still returns a result");
+  eq(r.residual, 900, "...whose whole balance is unexplained, rather than reading as scheduled");
+}
+
+// ── page invariants ────────────────────────────────────────────────────────
+for (const [field, col] of [
+  ["pastDueValue",          "past_due_value"],
+  ["scheduledAutopayValue", "scheduled_autopay_value"],
+  ["scheduledManualValue",  "scheduled_manual_value"],
+  ["noPlanBalanceValue",    "no_plan_balance_value"],
+]) {
+  ok(new RegExp(field + ":\\s*raw\\['" + col + "'\\]").test(src),
+     "normalizeRow maps " + col + " onto " + field);
+  ok(new RegExp("g\\." + field + "\\s*\\+=\\s*fmtNum\\(r\\." + field + "\\)").test(src),
+     "rollupToPrograms sums " + field + " across a program's sections");
+}
+
+ok(/outSplit:\s*raw\.some\(r => 'past_due_value' in r\)/.test(src),
+   "the presence gate tests for the COLUMN on the raw feed");
+ok(/\{colPresence\.outSplit && outSplit \? \(/.test(src),
+   "the breakdown renders only when the column is present — a pre-v8 feed keeps the single figure");
+ok(/progOutstandingSplit\(filteredRows\)/.test(src),
+   "the split is computed from filteredRows, the same funnel output as the total it decomposes");
+// Excludes the declaration, which is literally `function
+// progOutstandingSplit(rows)` — same trap as the share assertion above.
+ok(!/(?<!function )progOutstandingSplit\(rows\)/.test(src),
+   "nothing computes the split from the unscoped feed");
+ok(/!outSplit\.reconciles && \(/.test(src),
+   "the page renders the unexplained remainder when the parts do not sum");
+// Past due leads, because it is the only row anybody can act on.
+{
+  const i = src.indexOf("data-out-pastdue=");
+  const j = src.indexOf("data-out-sched=");
+  const k = src.indexOf("data-out-autopay=");
+  ok(i > 0 && j > i && k > j, "past due is the FIRST row of the breakdown");
+}
+// ...and it is NOT split by method. A `data-out-pastdue-autopay` would be that
+// split leaking back in, which Dan ruled out: a declined card is simply late.
+ok(!/data-out-pastdue-autopay/.test(src),
+   "past due is one number, not split by collection method");
+
+// ── card 17295 v8 (the repo mirror) ────────────────────────────────────────
+for (const col of ["past_due_value", "scheduled_autopay_value",
+                   "scheduled_manual_value", "no_plan_balance_value"]) {
+  ok(new RegExp("AS " + col + "\\b").test(sql), "card 17295 emits " + col);
+}
+
+// PAST DUE IS THE STRICT TEST. `due_at < NOW()` is false for a NULL, so a
+// dateless installment cannot be reported as late. 9% of unpaid installments
+// platform-wide have no due date, across 76 orgs.
+ok(/AND ppi\.due_at < NOW\(\)\),0\)\s+AS past_due_cents/.test(sql),
+   "past due tests due_at < NOW() and nothing else");
+// ...and SCHEDULED SPELLS THE NULL OUT. An implicit `>= NOW()` alone drops every
+// dateless installment from all three buckets, and the four stop summing to
+// Outstanding — silently, and only for the 76 orgs that have them.
+{
+  const n = (sql.match(/\(ppi\.due_at >= NOW\(\) OR ppi\.due_at IS NULL\)/g) || []).length;
+  eq(n, 2, "BOTH scheduled aggregates count a NULL due date as scheduled");
+}
+// The buckets share pending_cents' own unpaid/unwaived filter, or they would
+// partition a different set than the number they decompose.
+{
+  const n = (sql.match(/WHERE ppi\.paid_at IS NULL AND ppi\.waived_at IS NULL/g) || []).length;
+  ok(n >= 3, "every due-date bucket carries the unpaid/unwaived filter — got " + n);
+}
+// Every bucket mirrors pending_cents' `payment_plan IS NULL` test, or an item
+// with no plan but with installments is counted twice and the four overshoot.
+{
+  const n = (sql.match(/CASE WHEN ic\.payment_plan IS NULL THEN 0/g) || []).length;
+  eq(n, 3, "the three plan buckets are zero for an item with no payment plan");
+}
+ok(/SUM\(CASE WHEN ic\.payment_plan IS NULL\n\s*THEN GREATEST\(ic\.final_cents - ic\.collected_cents, 0\)\n\s*ELSE 0 END\)\s+AS no_plan_balance_cents/.test(sql),
+   "the no-plan bucket is the OTHER half of that same CASE, so the two cover it exactly");
+// Still one pass: v8 adds three aggregates to the lateral v7 already extended.
+{
+  const n = (sql.match(/FROM payment_plan_installment ppi/g) || []).length;
+  eq(n, 1, "v8 still reads payment_plan_installment exactly ONCE");
+}
+{
+  const iV7 = sql.lastIndexOf("AS manual_plan_value");
+  const iV8 = sql.lastIndexOf("AS past_due_value");
+  ok(iV7 > 0 && iV8 > iV7, "the v8 columns come AFTER every v7 one in the output list");
 }
 
 // ── report ──────────────────────────────────────────────────────────────────

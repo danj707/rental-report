@@ -2,6 +2,55 @@
 -- (replaced by program/program_activity, same UUIDs; section.program_id is
 -- populated 1:1 with section.class_id). This file is the live card SQL with
 -- ONLY that mechanical rename applied - no logic or output changes.
+-- Card 17295: ✅ Programs Report — v8 (WHY the balance is outstanding) — 2026-09-01
+--
+-- v8 APPENDS FOUR COLUMNS AND CHANGES NOTHING ELSE, off the same pp LATERAL as
+-- v7 — so still NO new scan. Dan: "we'd like to have past-due from scheduled
+-- and on autopay, that's a helpful distinction."
+--
+-- THE FOUR PARTITION `outstanding` EXACTLY. Every branch mirrors the
+-- pending_cents CASE it decomposes, so the four always add back up to it and
+-- the page can assert that rather than trusting it:
+--
+--   "past_due_value"            unpaid installments whose due date has PASSED.
+--                               Somebody has to chase these.
+--   "scheduled_manual_value"    unpaid, not yet due, no card on file to charge —
+--                               somebody has to collect each one.
+--   "scheduled_autopay_value"   unpaid, not yet due, and the card on file will be
+--                               charged automatically. Mostly not work.
+--   "no_plan_balance_value"     an item with NO payment plan that still owes.
+--                               It has no due date at all, so it can be neither
+--                               past due nor scheduled, and folding it into
+--                               either one would be a claim about a date that
+--                               does not exist.
+--
+-- A NULL due_at COUNTS AS SCHEDULED, NEVER AS PAST DUE, and this is not a
+-- rounding decision: measured platform-wide, 15,231 of 166,507 unpaid
+-- installments (9%) across 76 ORGS have no due_at. Apex has zero, so testing
+-- this against apex alone proves nothing — the "one org's clean data is not
+-- evidence about what a column MEANS" lesson, again. `due_at < NOW()` is false
+-- for a NULL, so past due is the strict test and scheduled is spelled
+-- `(due_at >= NOW() OR due_at IS NULL)` rather than left as an implicit ELSE.
+--
+-- PAST DUE IS DELIBERATELY NOT SPLIT BY COLLECTION METHOD. Dan: "declines are
+-- flagged in product, they are the same as a non-auto payment past due CC
+-- payment installment." A past-due auto-pay installment IS a declined card, and
+-- filing it under "on auto-pay" would report it as collecting on schedule when
+-- it is the opposite. Measured at apex it is $121.39 of $24,727.58 anyway.
+--
+-- NOW() is an instant, so this needs no timezone handling — and the feed caches
+-- 4 hours, so a bucket can be at most that stale, which is immaterial for a
+-- question asked in days.
+--
+-- Measured at apex, all-time, over 67,458 unpaid installments:
+--   past due               $24,727.58   (6,952)
+--   scheduled, manual     $360,847.84  (59,716)
+--   scheduled, auto-pay   $191,999.90     (790)
+--   ---------------------------------------------
+--   total unpaid          $577,575.32
+-- So the single Outstanding figure was 96% not-yet-due money, and the $24,728
+-- that is actually late was invisible inside it.
+--
 -- Card 17295: ✅ Programs Report — v7 (payment-plan collection method) — 2026-09-01
 --
 -- v7 APPENDS FOUR COLUMNS AND CHANGES NOTHING ELSE, and it adds NO NEW SCAN:
@@ -197,18 +246,50 @@ sec_fin AS (
          COUNT(*) FILTER (WHERE pp.on_autopay IS TRUE)                        AS autopay_plan_items,
          COUNT(*) FILTER (WHERE pp.on_autopay IS FALSE)                       AS manual_plan_items,
          COALESCE(SUM(pp.plan_cents) FILTER (WHERE pp.on_autopay IS TRUE),0)  AS autopay_plan_cents,
-         COALESCE(SUM(pp.plan_cents) FILTER (WHERE pp.on_autopay IS FALSE),0) AS manual_plan_cents
+         COALESCE(SUM(pp.plan_cents) FILTER (WHERE pp.on_autopay IS FALSE),0) AS manual_plan_cents,
+         -- ── v8: WHY that outstanding balance is outstanding ──
+         -- EVERY BRANCH MIRRORS THE pending_cents CASE ABOVE, including its
+         -- `ic.payment_plan IS NULL` test. An item with no payment_plan that
+         -- nevertheless carried installments would otherwise be counted twice —
+         -- its balance here AND its installments in the buckets — and the four
+         -- would stop adding up to Outstanding.
+         SUM(CASE WHEN ic.payment_plan IS NULL THEN 0
+                  ELSE COALESCE(pp.past_due_cents,0)      END) AS past_due_cents,
+         SUM(CASE WHEN ic.payment_plan IS NULL THEN 0
+                  ELSE COALESCE(pp.sched_autopay_cents,0) END) AS sched_autopay_cents,
+         SUM(CASE WHEN ic.payment_plan IS NULL THEN 0
+                  ELSE COALESCE(pp.sched_manual_cents,0)  END) AS sched_manual_cents,
+         SUM(CASE WHEN ic.payment_plan IS NULL
+                  THEN GREATEST(ic.final_cents - ic.collected_cents, 0)
+                  ELSE 0 END)                                  AS no_plan_balance_cents
   FROM cfg
   JOIN item_collected ic ON TRUE
-  -- ONE PASS over the item's installments for the outstanding balance AND the
-  -- collection method. pending_cents keeps its exact original expression and
-  -- filter; the two v7 aggregates read the same rows, so no existing figure can
-  -- move (proven at apex: 4,323 sections, zero pending_cents diffs against a
-  -- copy of the pre-v7 lateral).
+  -- ONE PASS over the item's installments for the outstanding balance, the
+  -- collection method AND the due-date split. pending_cents keeps its exact
+  -- original expression and filter; every v7/v8 aggregate reads the same rows,
+  -- so no existing figure can move (proven at apex: 4,323 sections, zero
+  -- pending_cents diffs against a copy of the pre-v7 lateral).
   LEFT JOIN LATERAL (
     SELECT COALESCE(SUM(ppi.amount_cents) FILTER (WHERE ppi.paid_at IS NULL AND ppi.waived_at IS NULL),0) AS pending_cents,
            COALESCE(SUM(ppi.amount_cents),0)                                                             AS plan_cents,
-           BOOL_OR(COALESCE(pl.autopay_enabled, FALSE))                                                  AS on_autopay
+           BOOL_OR(COALESCE(pl.autopay_enabled, FALSE))                                                  AS on_autopay,
+           -- v8. These three partition pending_cents: same unpaid/unwaived
+           -- filter, then the due date, then the method. PAST DUE IS THE STRICT
+           -- TEST — `due_at < NOW()` is false for a NULL, and 9% of unpaid
+           -- installments platform-wide have no due date. Scheduled therefore
+           -- spells the NULL out rather than relying on an implicit ELSE, so a
+           -- dateless installment can never be reported as late.
+           COALESCE(SUM(ppi.amount_cents) FILTER (
+             WHERE ppi.paid_at IS NULL AND ppi.waived_at IS NULL
+               AND ppi.due_at < NOW()),0)                                                                AS past_due_cents,
+           COALESCE(SUM(ppi.amount_cents) FILTER (
+             WHERE ppi.paid_at IS NULL AND ppi.waived_at IS NULL
+               AND (ppi.due_at >= NOW() OR ppi.due_at IS NULL)
+               AND COALESCE(pl.autopay_enabled, FALSE)),0)                                               AS sched_autopay_cents,
+           COALESCE(SUM(ppi.amount_cents) FILTER (
+             WHERE ppi.paid_at IS NULL AND ppi.waived_at IS NULL
+               AND (ppi.due_at >= NOW() OR ppi.due_at IS NULL)
+               AND NOT COALESCE(pl.autopay_enabled, FALSE)),0)                                           AS sched_manual_cents
     FROM payment_plan_installment ppi
     LEFT JOIN payment_plan pl ON pl.id = ppi.payment_plan_id
     WHERE ppi.order_item_id = ic.item_id AND ppi.organization_id = cfg.org_id
@@ -349,7 +430,13 @@ SELECT
   COALESCE(f.autopay_plan_items, 0)                  AS autopay_plan_items,
   COALESCE(f.manual_plan_items, 0)                   AS manual_plan_items,
   ROUND(COALESCE(f.autopay_plan_cents,0)/100.0,2)    AS autopay_plan_value,
-  ROUND(COALESCE(f.manual_plan_cents,0)/100.0,2)     AS manual_plan_value
+  ROUND(COALESCE(f.manual_plan_cents,0)/100.0,2)     AS manual_plan_value,
+  -- ── v8 additions, APPENDED so v7 cache entries stay readable ──
+  -- These four sum to `outstanding` above, by construction.
+  ROUND(COALESCE(f.past_due_cents,0)/100.0,2)         AS past_due_value,
+  ROUND(COALESCE(f.sched_autopay_cents,0)/100.0,2)    AS scheduled_autopay_value,
+  ROUND(COALESCE(f.sched_manual_cents,0)/100.0,2)     AS scheduled_manual_value,
+  ROUND(COALESCE(f.no_plan_balance_cents,0)/100.0,2)  AS no_plan_balance_value
 FROM cfg
 JOIN section s ON s.organization_id = cfg.org_id AND s.deleted_at IS NULL
 JOIN program p ON p.id = s.program_id AND p.organization_id = cfg.org_id AND p.deleted_at IS NULL

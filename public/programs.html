@@ -205,6 +205,17 @@
     .summary-card .card-value.red   { color: #b91c1c; }
     .summary-card .card-value.blue  { color: #2563eb; }
     .summary-card .card-sub { font-size: 10px; color: #999; margin-top: 2px; }
+    /* The Outstanding breakdown. Rows are label/value pairs on one line each,
+       numbers right-aligned and never wrapped — the Fast Track lesson: a value
+       clipped to "$3" is worse than a taller card. */
+    .out-split { margin-top: 5px; display: flex; flex-direction: column; gap: 2px; }
+    .out-split .os-row { display: flex; justify-content: space-between; gap: 10px; font-size: 10px; color: #777; line-height: 1.35; }
+    .out-split .os-row b { font-variant-numeric: tabular-nums; white-space: nowrap; color: #555; font-weight: 600; }
+    /* Past due is the only actionable row, so it is the only one that shouts. */
+    .out-split .os-row.late { color: #b91c1c; }
+    .out-split .os-row.late b { color: #b91c1c; font-weight: 700; }
+    .out-split .os-row.odd  { color: #92400e; }
+    .out-split .os-row.odd b { color: #92400e; }
 
     /* ── Table ── */
     .prog-table { width: 100%; border-collapse: collapse; font-size: 11.5px; font-variant-numeric: tabular-nums; }
@@ -707,6 +718,51 @@ function progAutopayShare(rows) {
   };
 }
 
+// ── WHY the outstanding balance is outstanding (card 17295 v8) ───────────
+// Dan: "we'd like to have past-due from scheduled and on autopay, that's a
+// helpful distinction." One Outstanding figure answers "how much is unpaid" and
+// hides the only part anybody can act on: at apex it was 96% not-yet-due money
+// with $24,728 genuinely late buried inside it.
+//
+//   past due      the due date has passed. Somebody has to chase it.
+//   scheduled     not yet due, no card on file — somebody has to collect it.
+//   on auto-pay   not yet due, and the card will be charged. Mostly not work.
+//   no plan       owed on an item with no payment plan at all, so it has no due
+//                 date and can be neither late nor scheduled.
+//
+// PAST DUE IS NOT SPLIT BY METHOD, per Dan: a past-due auto-pay installment IS
+// a declined card, and showing it under "on auto-pay" would report it as
+// collecting on schedule when it is the opposite.
+//
+// THE FOUR MUST ADD BACK TO THE TOTAL, and this returns the residual rather
+// than trusting them to. The card partitions `outstanding` exactly, so the only
+// honest source of drift is per-row rounding (each of the five figures is
+// rounded to the cent independently); anything larger is a real defect, and a
+// breakdown whose parts quietly fail to sum is how a number stops being
+// trusted. At module scope so the spec can RUN it.
+function progOutstandingSplit(rows) {
+  let pastDue = 0, schedAutopay = 0, schedManual = 0, noPlan = 0, outstanding = 0;
+  (rows || []).forEach(r => {
+    pastDue      += fmtNum(r.pastDueValue);
+    schedAutopay += fmtNum(r.scheduledAutopayValue);
+    schedManual  += fmtNum(r.scheduledManualValue);
+    noPlan       += fmtNum(r.noPlanBalanceValue);
+    outstanding  += fmtNum(r.outstanding);
+  });
+  const parts = pastDue + schedAutopay + schedManual + noPlan;
+  // Nothing owed needs no breakdown. Note this tests the TOTAL, not the parts:
+  // a feed carrying an outstanding balance it cannot explain must still say so.
+  if (outstanding <= 0 && parts <= 0) return null;
+  const residual = Math.round((outstanding - parts) * 100) / 100;
+  return {
+    pastDue, schedAutopay, schedManual, noPlan, outstanding,
+    residual,
+    // Half a dollar is far above per-row rounding and far below anything that
+    // matters as money, so it separates "cents of rounding" from "a bug".
+    reconciles: Math.abs(residual) <= 0.5,
+  };
+}
+
 function getParams() {
   const p = new URLSearchParams(window.location.search);
   // NOTE: this is an explicit whitelist. A parameter missing from here reads
@@ -905,6 +961,11 @@ function normalizeRow(raw) {
     manualPlanItems:  raw['manual_plan_items'] ?? 0,
     autopayPlanValue: raw['autopay_plan_value'] ?? 0,
     manualPlanValue:  raw['manual_plan_value'] ?? 0,
+    // ── card 17295 v8: why the outstanding balance is outstanding ──
+    pastDueValue:          raw['past_due_value'] ?? 0,
+    scheduledAutopayValue: raw['scheduled_autopay_value'] ?? 0,
+    scheduledManualValue:  raw['scheduled_manual_value'] ?? 0,
+    noPlanBalanceValue:    raw['no_plan_balance_value'] ?? 0,
   };
 }
 
@@ -923,6 +984,9 @@ function rollupToPrograms(secRows) {
       // v7, and additive per section by construction — so a program's share of
       // autopay is the sum of its sections' and cannot disagree with them.
       autopayPlanItems:0, manualPlanItems:0, autopayPlanValue:0, manualPlanValue:0,
+      // v8, additive per section like every other money column — so a program's
+      // four buckets sum to its sections' and still partition its Outstanding.
+      pastDueValue:0, scheduledAutopayValue:0, scheduledManualValue:0, noPlanBalanceValue:0,
     });
     const g = map.get(key);
     g._sections.push(r);
@@ -947,6 +1011,10 @@ function rollupToPrograms(secRows) {
     g.manualPlanItems  += fmtNum(r.manualPlanItems);
     g.autopayPlanValue += fmtNum(r.autopayPlanValue);
     g.manualPlanValue  += fmtNum(r.manualPlanValue);
+    g.pastDueValue          += fmtNum(r.pastDueValue);
+    g.scheduledAutopayValue += fmtNum(r.scheduledAutopayValue);
+    g.scheduledManualValue  += fmtNum(r.scheduledManualValue);
+    g.noPlanBalanceValue    += fmtNum(r.noPlanBalanceValue);
     if (r.startDate && (!g.startDate || r.startDate < g.startDate)) g.startDate = r.startDate;
     if (r.endDate   && (!g.endDate   || r.endDate   > g.endDate))   g.endDate   = r.endDate;
   }
@@ -1307,7 +1375,7 @@ function App() {
     return out.filter(r => (r['Activity'] || activityInfo.map[r['Program']||''] || '') === activityFilter);
   }, [demoRows, activityFilter, activityInfo, scopedProgramSet]);
 
-  const [colPresence, setColPresence] = useState({ regMode: false, cancellations: false, waitlist: false, location: false, autopay: false });
+  const [colPresence, setColPresence] = useState({ regMode: false, cancellations: false, waitlist: false, location: false, autopay: false, outSplit: false });
   const [insights,        setInsights]        = useState(null);
   const [insightsMeta,    setInsightsMeta]    = useState(null); // { programCount, names }
   const [insightsLoading, setInsightsLoading] = useState(false);
@@ -1746,6 +1814,7 @@ function App() {
           // question has to be asked of the response, not of a derived object.
           location:      raw.some(r => 'location' in r || 'Location' in r),
           autopay:       raw.some(r => 'autopay_plan_items' in r),
+          outSplit:      raw.some(r => 'past_due_value' in r),
         });
       })
       .catch(err => setError(err.message))
@@ -2121,6 +2190,12 @@ function App() {
       cancellations:      acc.cancellations      + fmtNum(r.cancellations),
     }), { charged:0, received:0, outstanding:0, refunds:0, netRevenue:0, periodReceived:0, periodRefunds:0, periodNet:0, enrollments:0, sections:0, waitlist:0, waitlistTotal:0, waitlistConverted:0, waitlistDemand:0, cancellations:0 });
   }, [filteredRows]);
+
+  // The Outstanding breakdown, off the same funnel output every other figure in
+  // that card row reads — so the split and the total it decomposes can never be
+  // scoped differently. At component scope because the Revenue tab's cards are
+  // JSX and cannot declare a local.
+  const outSplit = useMemo(() => progOutstandingSplit(filteredRows), [filteredRows]);
 
   const programCount = grouped ? Object.keys(grouped).length : 0;
 
@@ -3086,10 +3161,50 @@ function App() {
               <div className={`card-value ${fmtNum(totals.periodNet) < 0 ? 'red' : 'green'}`}>{fmtMoney(totals.periodNet)}</div>
               <div className="card-sub">collected minus refunds for period</div>
             </div>
-            <div className="summary-card">
+            {/* ── Outstanding, and WHY ──
+                The total keeps the headline: it is the number people already
+                know, and the split is the answer to "so what do I do about it".
+                Presence-gated on the v8 column, so a warm pre-v8 cache entry
+                shows the old single figure rather than four confident zeros. */}
+            <div className="summary-card" style={outSplit && colPresence.outSplit ? {minWidth:190} : undefined}>
               <div className="card-label">Outstanding</div>
               <div className={`card-value ${fmtNum(totals.outstanding) > 0 ? 'red' : ''}`}>{fmtMoney(totals.outstanding)}</div>
-              <div className="card-sub">unpaid balance across all programs</div>
+              {colPresence.outSplit && outSplit ? (
+                <div className="out-split" data-out-split>
+                  {/* Past due leads — it is the only row anybody can act on.
+                      It is NOT split by collection method: a past-due auto-pay
+                      installment is a declined card, and putting it under
+                      "on auto-pay" would read as collecting on schedule. */}
+                  <div className="os-row late" title="The due date has passed. Includes declined auto-pay charges, which are late in exactly the same way.">
+                    <span>Past due</span><b data-out-pastdue={String(Math.round(outSplit.pastDue))}>{fmtMoney(outSplit.pastDue)}</b>
+                  </div>
+                  <div className="os-row" title="Not due yet, and with no card on file — somebody has to collect each installment.">
+                    <span>Scheduled</span><b data-out-sched={String(Math.round(outSplit.schedManual))}>{fmtMoney(outSplit.schedManual)}</b>
+                  </div>
+                  <div className="os-row" title="Not due yet, and the card on file will be charged automatically.">
+                    <span>On auto-pay</span><b data-out-autopay={String(Math.round(outSplit.schedAutopay))}>{fmtMoney(outSplit.schedAutopay)}</b>
+                  </div>
+                  {/* Only where it exists. A balance with no payment plan has no
+                      due date, so it is neither late nor scheduled, and calling
+                      it either would be a claim about a date that is not there. */}
+                  {outSplit.noPlan > 0.005 && (
+                    <div className="os-row" title="Owed on a registration with no payment plan, so there is no due date to be late against.">
+                      <span>No plan</span><b data-out-noplan={String(Math.round(outSplit.noPlan))}>{fmtMoney(outSplit.noPlan)}</b>
+                    </div>
+                  )}
+                  {/* The parts must add back to the total. They do by
+                      construction, so this only ever renders when something is
+                      genuinely wrong — which is better said out loud than
+                      hidden in a breakdown that silently does not sum. */}
+                  {!outSplit.reconciles && (
+                    <div className="os-row odd" title="These parts do not add up to the total above. Treat the total as authoritative and report this.">
+                      <span>Unexplained</span><b data-out-residual={String(Math.round(outSplit.residual))}>{fmtMoney(outSplit.residual)}</b>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="card-sub">unpaid balance across all programs</div>
+              )}
             </div>
             <div className="summary-card">
               <div className="card-label">Enrollments</div>

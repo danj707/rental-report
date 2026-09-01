@@ -1026,6 +1026,65 @@ Shrewsbury has 87 manual plan registrations worth $32,494 and not one on autopay
 and that is an answer. Presence-gated on the column (`colPresence.autopay`) so a
 warm pre-v7 cache entry hides the card instead of rendering a confident 0.
 
+### Outstanding now says WHY it is outstanding (card v8, same afternoon)
+
+Dan: *"lets fix the outstanding revenue metric, we'd like to have past-due from
+scheduled and on autopay, that's a helpful distinction."*
+
+Four more columns off the **same** `pp` LATERAL, so still no new scan. They
+**partition `outstanding` exactly** — every branch mirrors the `pending_cents`
+CASE it decomposes, including its `ic.payment_plan IS NULL` test, or an item with
+no plan but with installments is counted twice and the parts overshoot.
+
+Measured at apex, all-time over 67,458 unpaid installments:
+
+| | |
+|---|---|
+| past due | **$24,727.58** (6,952) |
+| scheduled, manual | $360,847.84 (59,716) |
+| scheduled, on auto-pay | $191,999.90 (790) |
+| total | $577,575.32 |
+
+**The single Outstanding figure was 96% not-yet-due money**, and the $24,728 that
+is actually late was invisible inside it. That is the whole argument for the
+split.
+
+**A NULL `due_at` IS SCHEDULED, NEVER PAST DUE — and apex cannot test that.**
+Platform-wide, **15,231 of 166,507 unpaid installments (9%) across 76 orgs have
+no due date**, and apex has zero. So `due_at < NOW()` is the strict test (false
+for a NULL) and the scheduled side spells `(due_at >= NOW() OR due_at IS NULL)`
+out rather than leaning on an implicit ELSE — leaving it implicit drops every
+dateless installment from all three buckets and the four silently stop summing to
+Outstanding, for those 76 orgs only. Verified platform-wide over **all 76,423
+order items with installments: ZERO partition breaks**, and $2,692,752.48 of
+dateless money lands in scheduled with $0 in past due. Third instance of *"one
+org's clean data is not evidence about what a column MEANS."*
+
+**PAST DUE IS DELIBERATELY NOT SPLIT BY COLLECTION METHOD**, per Dan: *"declines
+are flagged in product, they are the same as a non-auto payment past due CC
+payment installment."* A past-due auto-pay installment IS a declined card, and
+filing it under "on auto-pay" would report it as collecting on schedule when it
+is the opposite. It is $121.39 of $24,727.58 at apex anyway. The spec fails if a
+`data-out-pastdue-autopay` attribute ever appears.
+
+**A fourth bucket exists because a balance with no plan has no due date.**
+`no_plan_balance_value` is the other half of the same CASE — it can be neither
+late nor scheduled, and calling it either is a claim about a date that is not
+there. Its row renders only where there is one.
+
+**AND THE PARTS ARE CHECKED AGAINST THE TOTAL ON SCREEN.** `progOutstandingSplit`
+returns the **residual** rather than trusting the four to add up, and the page
+renders an *"Unexplained"* row when it is over 50c — far above per-row rounding
+(five figures each rounded to the cent independently) and far below anything that
+matters as money. The card guarantees the partition, so that row should never
+appear; a breakdown whose parts quietly fail to sum is how a number stops being
+trusted, and a pre-v8 row reaching the helper reports its whole balance as
+unexplained rather than as scheduled.
+
+**Not done, on purpose:** the Excel export and the per-program Outstanding column
+are unchanged. Dan asked for the metric; four more columns on a 13-column table
+and on a file people parse is a separate decision.
+
 ### THE LOCATION FILTER SHIPPED UNABLE TO RENDER, and no guard could see it
 
 Found while wiring the KPI's presence gate. `progHasLocation` tested
