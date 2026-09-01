@@ -607,6 +607,27 @@ function programRows() {
   ];
 }
 
+// The GL report had NO render case at all before 2026-09-01, despite being the
+// report a treasurer reads. Four GL codes so a subset is a real subset, one of
+// them UNMAPPED (no code) so that option is exercised rather than special-cased,
+// and deliberately DIFFERENT amounts so a filtered total is distinguishable
+// from an unfiltered one.
+function glRows() {
+  const row = (code, name, cash) => ({
+    "GL Code": code, "Account Name": name, "Account Number": code,
+    "Desk Location": "Front Desk",
+    "Credit Card Payments": 0, "Cash Payments": cash, "Check Payments": 0,
+    "Free Payments": 0, "Organization Credit Payments": 0,
+    "Refunds": 0, "Number of Payments": 1, "Number of Refunds": 0,
+  });
+  return [
+    row("4100", "Program Revenue", 1000),
+    row("4200", "Facility Rentals", 200),
+    row("4300", "Memberships", 30),
+    row("", "Unmapped receipts", 7),
+  ];
+}
+
 // The Waitlist report had NO render case at all before 2026-09-01 — the report
 // whose central number was wrong for months.
 //
@@ -926,6 +947,7 @@ let STUB_MODE = "";
 const STUBS = [
   { match: /\/facilities\/api\/campsites/, body: () => campsitesGeo },
   { match: /\/waitlist\/api\/data/, body: () => ({ rows: waitlistRows(), meta: { org_id: "org-uuid-1" } }) },
+  { match: /\/gl\/api\/data/, body: () => ({ rows: glRows(), meta: { org_id: "org-uuid-1" } }) },
   /* Card 21055, the money half of the by-month panel. MUST PEAK IN A DIFFERENT
      MONTH FROM THE ACTIVITY SERIES — August here against September in
      programRows() — because that disagreement is the entire reason the panel
@@ -1232,6 +1254,12 @@ const pickInstructor = async (page, label) => {
   }, label);
   if (!clicked) throw new Error('no instructor option labelled "' + label + '"');
   await new Promise(r => setTimeout(r, 400));
+};
+
+const openGlCodes = async (page) => {
+  await page.waitForSelector("[data-glcode-btn]", { timeout: 20000 });
+  await page.click("[data-glcode-btn]");
+  await page.waitForSelector("[data-glcode-opt]", { timeout: 5000 });
 };
 
 const tickSeason = async (page, value) => {
@@ -2236,6 +2264,33 @@ const CASES = [
   // 957 and rendered it NOWHERE for a day — the same shape as the location
   // filter that shipped unable to render. A case keyed on the CELL is the only
   // thing that catches a mapped-but-never-displayed column.
+  // ── GL: the code checkboxes ──────────────────────────────────────────────
+  // Dan: "everything starts as selected/checked, there's an unselect all,
+  // select all, and individual checkboxes." This report had NO render case at
+  // all before today.
+  { name: "gl · the rollup renders", path: "/{org}/gl", needs: "[data-glcode-btn]" },
+  // EVERYTHING STARTS CHECKED, so there is no badge — the badge only appears
+  // once a real subset is picked. Keyed on the badge's ABSENCE, which is the
+  // only thing that distinguishes all-checked from a filter left over from
+  // somewhere else.
+  { name: "gl · every code starts checked", path: "/{org}/gl",
+    needs: "[data-glcode-btn]", absent: "[data-glcode-badge]" },
+  { name: "gl · the menu lists each code", path: "/{org}/gl",
+    act: openGlCodes, needs: '[data-glcode-opt="4100"]' },
+  // The unmapped bucket is a real option, not a special case — without it those
+  // rows vanish silently the moment anyone picks a code.
+  { name: "gl · unmapped receipts are their own option", path: "/{org}/gl",
+    act: openGlCodes, needs: '[data-glcode-opt="(Unmapped — no GL code)"]' },
+  // None must STICK. An empty selection used to be re-widened back to all,
+  // which is what made the None button look broken — see
+  // reconcileFilterSelection. The badge reading 0 is the proof it held.
+  { name: "gl · None sticks", path: "/{org}/gl",
+    act: async p => { await openGlCodes(p); await p.click("[data-glcode-none]"); },
+    needs: '[data-glcode-badge="0"]' },
+  { name: "gl · All puts them back", path: "/{org}/gl",
+    act: async p => { await openGlCodes(p); await p.click("[data-glcode-none]"); await p.click("[data-glcode-all]"); },
+    needs: "[data-glcode-btn]", absent: "[data-glcode-badge]" },
+
   // ── Waitlist: the auto tag, and a conversion rate that is not a lie ──────
   // This report had NO render case at all, and its central number — how many
   // claim links became registrations — was measuring the EXPIRY SWEEP until
