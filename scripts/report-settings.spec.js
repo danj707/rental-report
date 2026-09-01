@@ -289,12 +289,21 @@ ok(R.reportSettingsEnabled("roster") && !R.reportSettingsEnabled("gl"),
      "settingsFlagOff is gated on the KEY, so it can never appear for a staffer holding the org "
      + "token — otherwise it would advertise the surface the 404s exist to hide");
   src(/\{!rsIsAdmin\(\) && rsFlagOff\(\) && \(/.test(PAGE),
-     "the page renders a disabled gear in that state — absent-not-greyed is the right rule for "
-     + "someone who may never have the control, but for someone holding the key it is a dead end "
-     + "with no exit");
+     "the page renders a gear in that state — absent-not-greyed is the right rule for someone who "
+     + "may never have the control, but for someone holding the key it is a dead end with no exit");
   const offBtn = /\{!rsIsAdmin\(\) && rsFlagOff\(\) && \([\s\S]*?\)\}/.exec(PAGE)[0];
-  src(/disabled/.test(offBtn) && /Feature Flags/.test(offBtn),
-     "…and it says where the switch is, or it is one more control that does not explain itself");
+  // THIS ASSERTION USED TO REQUIRE `disabled`, AND THAT WAS PINNING THE BUG.
+  // Dan, 2026-09-01: "I can't even click it." The explanation lived in a title
+  // attribute, so clicking did nothing and the reason was behind a hover — which
+  // is the same dead end the comment above is complaining about, one step over.
+  // It must be CLICKABLE and say its piece on screen.
+  src(!/disabled/.test(offBtn),
+     "the flag-off gear is NOT disabled: a control that owes the reader an explanation has to be "
+     + "able to give it, and a title attribute is not on screen");
+  src(/setFlagNoteOpen\(true\)/.test(offBtn),
+     "…it opens a notice instead");
+  src(/data-rs-flagnote/.test(PAGE) && /Feature Flags/.test(PAGE),
+     "…and that notice names where the switch is");
 }
 
 // ── 4eg. A refusal is not a dead link, and opening the panel is a ping ───────
@@ -309,14 +318,25 @@ ok(R.reportSettingsEnabled("roster") && !R.reportSettingsEnabled("gl"),
   // adopts refuse404() — which is what happened when the report wizard was
   // disabled, and an assertion that fails on a non-regression is a false alarm
   // waiting to happen.
-  const settingsRoutes = SERVER.split(/app\.(?:get|put)\("\/:org\/:report\/api\/settings"/).slice(1)
+  // The split pattern needs the CLOSING quote, or it also matches
+  // /api/settings-unlock and the count picks up that route's own refusals.
+  const settingsRoutes = SERVER.split(/app\.(?:get|put)\("\/:org\/:report\/api\/settings",/).slice(1)
     .map(chunk => chunk.slice(0, 1200)).join("\n");
   is((settingsRoutes.match(/return refuse404\(res/g) || []).length, 4,
      "both settings routes refuse through it, on both the admin gate and the unregistered report");
 
-  src(/"epact", "settings-open", "settings-save"/.test(SERVER),
-     "opening the panel posts to Slack — the standing rule is that a new surface ships with its "
-     + "activity ping, and a LOOK is the earlier signal than a change");
+  // MEMBERSHIP, NOT ADJACENCY — the same brittleness this file already recorded
+  // once, one array over. This used to pin the literal
+  // `"epact", "settings-open", "settings-save"`, so inserting settings-unlock
+  // between two of them broke it with nothing about settings-open changing.
+  {
+    const i = SERVER.indexOf("const SLACK_NOTIFY = new Set([");
+    const notify = SERVER.slice(i, SERVER.indexOf("]);", i));
+    src(/"settings-open"/.test(notify),
+       "opening the panel posts to Slack — the standing rule is that a new surface ships with its "
+       + "activity ping, and a LOOK is the earlier signal than a change");
+    src(/"settings-save"/.test(notify), "…and so does a change");
+  }
   // Membership, not position: this pinned `"settings-open"]` — the END of the
   // ALLOWED array — so appending any later event broke it without anything
   // about settings-open changing. What it is protecting is that the event is on

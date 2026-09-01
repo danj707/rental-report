@@ -907,6 +907,15 @@ const STUBS = [
           columns: [{ field: "Facility", label: "Program" }, { field: "Total", label: "Revenue", format: "currency" }],
           sort: { field: "Total", dir: "desc" }, limit: 10 },
       ] }) },
+  // THE UNLOCK ALWAYS REFUSES HERE, and that is deliberate. Every /api/ request
+  // in this harness is answered from these stubs, so the browser never reaches
+  // the real route — which means a render case CANNOT prove the server refuses a
+  // wrong password (report-settings-unlock.spec.js drives that for real, against
+  // a booted server). What only a browser can show is that the page SURFACES the
+  // refusal instead of silently reloading as though it worked, so this stub
+  // answers 401 the way the real route does.
+  { match: /\/api\/settings-unlock/, status: 401,
+    body: () => ({ error: "That password is not right. 4 attempts left.", left: 4 }) },
   { match: /\/api\//,                       body: () => ({ ok: true, rows: [] }) },
 ];
 
@@ -1357,12 +1366,43 @@ const CASES = [
     } },
 
   // ── Class Roster: the settings panel ────────────────────────────────────
-  // THE DOOR FIRST. An org staffer holds a valid token — that is what the report
-  // link is — and must not even see the gear. Asserted as ABSENT from the DOM
-  // rather than disabled: "renders a greyed button" and "renders nothing" are
-  // different claims, and only one of them keeps the power away from an org user.
-  { name: "roster · no gear without the admin key", path: "/{org}/roster",
-    needs: ".toolbar", absent: "[data-rs-open]" },
+  // THE DOOR FIRST, and its rule CHANGED on 2026-09-01. The gear used to be
+  // absent from the DOM for a token holder so nobody learned the surface
+  // existed. Dan reversed that: "show the settings icon, but require the admin
+  // un/pw to be entered when the settings icon is clicked." So a staffer now
+  // sees a LOCKED gear — and what still must not appear is the working one,
+  // because that is the control that edits an org's defaults.
+  { name: "roster · no WORKING gear without the admin key", path: "/{org}/roster",
+    needs: "[data-rs-locked]", absent: "[data-rs-open]" },
+  // Clicking it asks for a password rather than opening the panel. The settings
+  // sheet must be ABSENT here: if it opened, the prompt would be decorative and
+  // the reveal client-side.
+  { name: "roster · the locked gear asks for a password", path: "/{org}/roster",
+    needs: "[data-rs-unlock] input[type=\"password\"]",
+    absent: "[aria-label=\"Class Roster settings\"]",
+    act: async page => {
+      await page.waitForSelector("[data-rs-locked]", { timeout: 15000 });
+      await page.click("[data-rs-locked]");
+      await page.waitForSelector("[data-rs-unlock]", { timeout: 5000 });
+    } },
+  // A REFUSAL REACHES THE READER. The stub answers 401 (see its note above — the
+  // browser cannot reach the real route in this harness), so what this pins is
+  // the page's half: the error is shown, and the panel does NOT open. Without
+  // it, a page that ignored the status would reload and look like it worked.
+  { name: "roster · a refused password is surfaced, not swallowed", path: "/{org}/roster",
+    needs: "[data-rs-unlock-err]",
+    absent: "[aria-label=\"Class Roster settings\"]",
+    act: async page => {
+      await page.waitForSelector("[data-rs-locked]", { timeout: 15000 });
+      await page.click("[data-rs-locked]");
+      await page.waitForSelector("[data-rs-unlock-pw]", { timeout: 5000 });
+      await page.type("[data-rs-unlock-pw]", "definitely-not-the-password");
+      await page.waitForFunction(
+        () => { const b = document.querySelector("[data-rs-unlock-go]"); return b && !b.disabled; },
+        { timeout: 5000 });
+      await page.click("[data-rs-unlock-go]");
+      await page.waitForSelector("[data-rs-unlock-err]", { timeout: 8000 });
+    } },
   // The gear sits at the far right of the toolbar (Dan: "a standard gear wheel
   // settings looking icon in the upper right corner").
   { name: "roster · settings gear is last in the toolbar", path: "/{org}/roster?admin=" + RENDER_ADMIN_KEY,
@@ -1452,8 +1492,8 @@ const CASES = [
   // exit — which is exactly how "not seeing it" got reported. Runs LAST of the
   // settings cases and restores the flag in a finally, because the flag is
   // server state every earlier case depends on.
-  { name: "roster · flag off says where the switch is", path: "/{org}/roster?admin=" + RENDER_ADMIN_KEY,
-    needs: "[data-rs-flagoff]", absent: "[data-rs-open]",
+  { name: "roster · flag off says where the switch is, ON SCREEN", path: "/{org}/roster?admin=" + RENDER_ADMIN_KEY,
+    needs: "[data-rs-flagnote]", absent: "[data-rs-open]",
     pre: async page => {
       await page.setCookie({ name: "rs_admin", value: RENDER_ADMIN_KEY,
                              domain: "127.0.0.1", path: "/" });
@@ -1474,6 +1514,13 @@ const CASES = [
       await page.reload({ waitUntil: "domcontentloaded" });
       try {
         await page.waitForSelector("[data-rs-flagoff]", { timeout: 45000 });
+        // IT HAS TO BE CLICKABLE. It shipped as a DISABLED button whose only
+        // explanation was a title attribute, and Dan clicked it, got nothing,
+        // and reported the feature as broken — the explanation was behind a
+        // hover. So the case now clicks it and requires the notice on screen; a
+        // disabled button makes this fail, which is the whole point.
+        await page.click("[data-rs-flagoff]");
+        await page.waitForSelector("[data-rs-flagnote]", { timeout: 8000 });
       } finally {
         await flip(true);
       }
@@ -2381,7 +2428,11 @@ function waitForServer(started) {
       const u = req.url();
       if (u.includes("/api/")) {
         const stub = STUBS.find(s => s.match.test(u));
-        return req.respond({ status: 200, contentType: "application/json",
+        // A stub may declare a STATUS. Needed because some page behaviour only
+        // exists on a failure — the settings unlock renders its error from a
+        // 401, and a stub that always says 200 makes the page look like it
+        // succeeded and reload, which is indistinguishable from working.
+        return req.respond({ status: (stub && stub.status) || 200, contentType: "application/json",
                              body: JSON.stringify(stub ? stub.body(u, org) : { ok: true }) });
       }
       if (!u.startsWith(`http://127.0.0.1:${PORT}`)) return serveVendored(req);

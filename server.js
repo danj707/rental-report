@@ -3802,7 +3802,7 @@ setTimeout(() => { checkCardParamTypes().catch(() => {}); }, 150 * 1000).unref?.
 // Inert if the env var is unset. Fire-and-forget — never blocks or breaks logging.
 // To change what pings Slack, edit SLACK_NOTIFY. High-frequency events (view/fetch)
 // are debounced per org+report so Slack isn't a firehose.
-const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "campmap-filter", "campmap-amenity", "pdf", "excel", "print", "summary", "game", "map", "outdoor", "fields", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email", "checkin-loc", "checkin-member", "checkin-failed", "form-open", "epact", "settings-open", "settings-save", "settings-reset", "deadlink", "generate", "wizard-save", "mb-autorenew", "mb-salesmix"]);
+const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "campmap-filter", "campmap-amenity", "pdf", "excel", "print", "summary", "game", "map", "outdoor", "fields", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email", "checkin-loc", "checkin-member", "checkin-failed", "form-open", "epact", "settings-open", "settings-unlock", "settings-locked", "settings-save", "settings-reset", "deadlink", "generate", "wizard-save", "mb-autorenew", "mb-salesmix"]);
 const SLACK_DEBOUNCE_MS = { view: 30 * 60 * 1000, fetch: 30 * 60 * 1000,
   // A broken report stays broken. The health check only reports NEW failures,
   // but a flapping card would otherwise post every hour.
@@ -3846,6 +3846,11 @@ const SLACK_EVENT_META = {
   // A settings change alters what EVERY reader of that report sees on their next
   // open, so it belongs in the feed the way an org-level change does.
   "settings-open":  { emoji: "\uD83D\uDD0D", verb: "opened the report settings for" },
+  // Someone entered the admin password on an org report and got in.
+  "settings-unlock": { emoji: "\uD83D\uDD13", verb: "unlocked the report settings for" },
+  // FIVE WRONG ATTEMPTS. Not a typo — this is the one worth reading as a
+  // security event, which is why only the lockout posts and single misses do not.
+  "settings-locked": { emoji: "\uD83D\uDEA8", verb: "was LOCKED OUT of the report settings for" },
   "settings-save":  { emoji: "\u2699\uFE0F", verb: "changed the report settings for" },
   "settings-reset": { emoji: "\u267B\uFE0F", verb: "reset the report settings for" },
   view:    { emoji: "👀", verb: "viewed" },
@@ -9056,6 +9061,68 @@ function isReportSettingsAdmin(req) {
 // you sign in, navigate to the report, and nothing tells you the switch exists.
 // Absent-not-greyed is the rule for someone who may never have the control; for
 // someone who holds the credential it is a dead end with no exit.
+// ── Unlocking the settings panel with the admin password ────────────
+// Dan, 2026-09-01: "lets tie those in with the admin un/pw. So show the settings
+// icon, but require the admin un/pw to be entered when the settings icon is
+// clicked."
+//
+// THIS DELIBERATELY REVERSES the absent-not-greyed rule for this one control.
+// The gear used to be missing from the DOM for anyone without the key, so an org
+// staffer never learned the surface existed. Showing it trades that concealment
+// for discoverability — Dan's call — and the AUTHORIZATION is unchanged: every
+// settings route still requires the derived key, so the prompt is a way to
+// OBTAIN the credential, never a way to skip it. A client that skips the modal
+// still gets a 404 from the API.
+//
+// NOTE the username is not checked, because dashboardAuth does not check one
+// either: it reads Basic auth and compares the PASSWORD alone. So the modal asks
+// for a password and says which one, rather than rendering a username box that
+// is decorative.
+//
+// WHAT SHOWING THE GEAR COSTS, and why the throttle below exists: a password
+// prompt reachable by anyone holding an org token is a brute-force surface
+// against ONE shared secret that did not exist while the control was hidden.
+const RS_UNLOCK_MAX_TRIES   = 5;
+const RS_UNLOCK_WINDOW_MS   = 15 * 60 * 1000;
+const rsUnlockTries = new Map();   // ip -> { n, first }
+
+function rsUnlockThrottle(ip) {
+  const now = Date.now();
+  const rec = rsUnlockTries.get(ip);
+  if (!rec || now - rec.first > RS_UNLOCK_WINDOW_MS) return { locked: false, left: RS_UNLOCK_MAX_TRIES };
+  return { locked: rec.n >= RS_UNLOCK_MAX_TRIES, left: Math.max(0, RS_UNLOCK_MAX_TRIES - rec.n),
+           retryInMs: RS_UNLOCK_WINDOW_MS - (now - rec.first) };
+}
+function rsUnlockNoteFailure(ip) {
+  const now = Date.now();
+  const rec = rsUnlockTries.get(ip);
+  if (!rec || now - rec.first > RS_UNLOCK_WINDOW_MS) rsUnlockTries.set(ip, { n: 1, first: now });
+  else rec.n++;
+  // Bounded so a spray from many addresses cannot grow this without limit.
+  if (rsUnlockTries.size > 5000) {
+    for (const [k, v] of rsUnlockTries) { if (now - v.first > RS_UNLOCK_WINDOW_MS) rsUnlockTries.delete(k); }
+  }
+  return rsUnlockThrottle(ip);
+}
+function rsUnlockClear(ip) { rsUnlockTries.delete(ip); }
+
+// Timing-safe, and length is compared first because timingSafeEqual throws on a
+// length mismatch. Same shape as reportSettingsKeyMatches.
+function dashboardPasswordMatches(got) {
+  const want = DASHBOARD_PASSWORD;
+  if (!want || typeof got !== "string" || got.length !== want.length) return false;
+  try {
+    return crypto.timingSafeEqual(Buffer.from(got), Buffer.from(want));
+  } catch (_) { return false; }
+}
+
+// The gear renders in LOCKED state for a non-admin only when the feature flag is
+// on. With the flag off there is nothing to unlock into, and a gear that can
+// never work for anybody is the dead end this repo keeps writing down.
+function reportSettingsLockable(req) {
+  return !!getFlags().reportSettings && !reportSettingsKeyOk(req) && !!reportSettingsAdminKey();
+}
+
 function reportSettingsFlagOff(req) {
   return !getFlags().reportSettings && reportSettingsKeyOk(req);
 }
@@ -9185,6 +9252,62 @@ app.get("/api/admin/report-settings-key", (req, res) => {
     usage: "sign in to this dashboard and the gear appears on the reports you navigate to; " +
            "&admin=<key> on a report URL is the fallback for a link you were handed",
   });
+});
+
+// Hand over the credential in exchange for the admin password. Registered
+// beside the settings routes it serves, and gated the same way.
+//
+// IT RETURNS NO KEY. On success it sets the same HttpOnly cookie dashboardAuth
+// sets, carrying the DERIVED key rather than the password, so nothing the page
+// can read ever holds either secret. The page then reloads, because
+// `settingsAdmin` is injected server-side and decides the first render.
+app.post("/:org/:report/api/settings-unlock", (req, res) => {
+  const { org, report } = req.params;
+  if (!ORGS[org]) return res.status(404).json({ error: "Unknown org" });
+  const supplied = req.query.token || req.headers["x-token"] || "";
+  if (ORGS[org].token && supplied !== ORGS[org].token) return res.status(403).json({ error: "Invalid token" });
+
+  // Fail closed and stay quiet: no password configured means no key means nobody
+  // can unlock, and with the flag off or the report unregistered there is
+  // nothing to unlock into. All three refuse as a DELIBERATE 404 so noteDeadLink
+  // does not report the refusal as a stale internal link.
+  if (!DASHBOARD_PASSWORD || !reportSettingsAdminKey()) return refuse404(res);
+  if (!getFlags().reportSettings) return refuse404(res);
+  if (!reportSettingsEnabled(report)) return refuse404(res);
+
+  // Already unlocked — idempotent, and it must not burn a throttle attempt.
+  if (reportSettingsKeyOk(req)) return res.json({ ok: true, already: true });
+
+  const ip = String(req.headers["x-forwarded-for"] || "").split(",")[0].trim()
+             || req.ip || req.socket?.remoteAddress || "unknown";
+  const gate = rsUnlockThrottle(ip);
+  if (gate.locked) {
+    return res.status(429).json({
+      error: "Too many attempts. Try again in " + Math.ceil((gate.retryInMs || 0) / 60000) + " minutes.",
+    });
+  }
+
+  const password = req.body && typeof req.body.password === "string" ? req.body.password : "";
+  if (!dashboardPasswordMatches(password)) {
+    const after = rsUnlockNoteFailure(ip);
+    // THE LOCKOUT IS THE SIGNAL WORTH SEEING, not a single typo: somebody
+    // guessing the admin password on an org report is a security event, and one
+    // wrong entry by the person who set it is not.
+    if (after.locked) {
+      logEvent(org, report, "settings-locked", req, { tries: RS_UNLOCK_MAX_TRIES });
+    }
+    return res.status(401).json({
+      error: after.left > 0
+        ? "That password is not right. " + after.left + " attempt" + (after.left === 1 ? "" : "s") + " left."
+        : "That password is not right. Too many attempts — try again later.",
+      left: after.left,
+    });
+  }
+
+  rsUnlockClear(ip);
+  setReportSettingsCookie(req, res);
+  logEvent(org, report, "settings-unlock", req, {});
+  res.json({ ok: true });
 });
 
 app.get("/:org/:report/api/settings", (req, res) => {
@@ -9992,10 +10115,15 @@ app.get("/:org/roster", (req, res) => {
   // first render. Only the gear that edits them is gated.
   const settingsAdmin = isReportSettingsAdmin(req);
   const settingsFlagOff = reportSettingsFlagOff(req);
+  // The gear renders LOCKED for a non-admin: visible, but it opens a password
+  // prompt rather than the panel. See reportSettingsLockable for what showing it
+  // costs and why the unlock route is throttled.
+  const settingsLockable = reportSettingsLockable(req);
   const orgConfig = {
     slug, token: org.token || "",
     settingsAdmin,
     settingsFlagOff,
+    settingsLockable,
     adminKey: settingsAdmin ? String(req.query.admin || "") : "",
     savedViewRanges: SAVED_VIEW_RELATIVE_OFFER.roster,
     settings,

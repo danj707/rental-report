@@ -163,6 +163,9 @@ jobs:
       - name: Report settings (one cache-key builder; a setting seeds and never overrides; TTL floor)
         run: node scripts/report-settings.spec.js
 
+      - name: Report settings unlock (the prompt is not the gate; throttled; refusals marked deliberate)
+        run: node scripts/report-settings-unlock.spec.js
+
       - name: Tab chips (a chip never lands on a tab the page will not honour)
         run: node scripts/report-tabs.spec.js
 

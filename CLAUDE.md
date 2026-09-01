@@ -821,6 +821,152 @@ is precisely the false-zero v3 stopped rendering.
 later event broke it with nothing about settings-open changing. It now tests
 membership in the array, and was re-verified to still catch settings-open being
 removed.
+## The settings gear asks for the admin password (2026-09-01)
+
+Dan: *"lets tie those in with the admin un/pw. So show the settings icon, but
+require the admin un/pw to be entered when the settings icon is clicked."*
+
+**THIS DELIBERATELY REVERSES the absent-not-greyed rule, for this one control.**
+The gear used to be missing from the DOM for anyone without the derived key, so
+an org staffer never learned the surface existed — that was the earlier call, and
+this trades that concealment for discoverability. Worth stating because the rule
+still holds everywhere else, and the render case that used to assert the gear was
+ABSENT now asserts a LOCKED one is present.
+
+**THE PROMPT IS NOT THE GATE.** Every settings route still requires the key, so
+the modal is a way to OBTAIN the credential and never a way to skip it: a client
+that skips it and PUTs anyway still gets a 404. `report-settings-unlock.spec.js`
+asserts both routes still refuse without the key — that is the assertion that
+fails the day someone "simplifies" this into a client-side reveal.
+
+### THERE IS NO USERNAME, because nothing checks one
+
+`dashboardAuth` reads Basic auth and compares the **password alone** — it never
+looks at the username. So the modal asks for a password and names which one
+("the admin dashboard password") rather than rendering a username box that is
+ignored. A field that looks like it is checked and is not is a lie in the UI.
+
+### What showing the gear COSTS, and the throttle that pays for it
+
+A password prompt reachable by anyone holding an org token is a brute-force
+surface against ONE shared secret, and it did not exist while the control was
+hidden. So the unlock route is throttled: **5 attempts per IP per 15 minutes**,
+then 429.
+
+- **The correct password is ALSO refused while locked out.** Otherwise the
+  throttle counts attempts without stopping the next one, and an attacker who
+  guesses on try six still gets in. The spec drives exactly that case.
+- **Already-unlocked short-circuits BEFORE the throttle**, or a reload storm
+  locks the real admin out of their own panel.
+- A success **clears** the address, so an admin who mistypes twice does not carry
+  those strikes for the rest of the window.
+- The map is bounded and swept, so a spray from many addresses cannot grow it.
+
+### The credential never reaches JavaScript
+
+Success sets the **same HttpOnly cookie `dashboardAuth` sets**, carrying the
+DERIVED key rather than the password, and returns `{ok:true}`. The body contains
+neither secret; the spec asserts the response and the event log contain neither
+the password nor the key.
+
+**The page then RELOADS rather than flipping state.** `settingsAdmin` is injected
+server-side and decides the first render, so revealing the panel client-side
+would be claiming an authorisation the server never granted. The reload reuses
+the URL verbatim, so no key is ever appended to it — the same reasoning that
+keeps the org token off the campmap card link.
+
+### THE REFUSALS ARE MARKED DELIBERATE, and this is the part that bites
+
+No password configured, the flag off, or an unregistered report all 404 — and
+`noteDeadLink()` alerts on *"a 404 that arrived with a valid-looking token"*,
+which is byte-identical to the shape of every one of those refusals. Without
+`refuse404()` each gear click posts a DEAD LINK alert naming the path the 404
+exists to keep quiet. Same trap as the settings routes themselves in August.
+
+**And the spec nearly missed it.** The zero-deadlink assertion was vacuous at
+first: with the password set and the flag on, none of the refusal branches ever
+ran, so the mutation that reverted `refuse404` to a plain 404 SURVIVED. The live
+half now drives a real refusal (`POST /:org/facility/api/settings-unlock` —
+`facility` is not in `REPORT_SETTINGS_SCHEMA`) with a perfectly valid token,
+which is what makes the assertion mean anything.
+
+### Only the LOCKOUT posts to Slack
+
+`settings-unlock` (🔓) on success and `settings-locked` (🚨) when the throttle
+trips. A single wrong entry posts nothing: somebody guessing the admin password
+on an org report is a security event, one typo by the person who set it is not.
+
+**The gear renders locked only when the FLAG is on** (`reportSettingsLockable`).
+With `reportSettings` off there is nothing to unlock into, and a gear that can
+never work for anybody is the dead end this repo keeps writing down. The existing
+flag-off notice for a proven key holder is unchanged.
+
+### Guards
+
+`scripts/report-settings-unlock.spec.js` (**69 assertions, in CI**), which LIFTS
+AND RUNS the throttle, the password comparison and the lockable gate, plus a live
+half that boots a server and drives the real route — wrong password, right
+password, the cookie it sets actually opening the settings API, the sixth attempt
+429ing, and the correct password refused while locked. `SKIP_SOURCE=1` drops the
+source assertions so the live half can be shown to catch a regression alone.
+
+Mutation-tested: the throttle check removed, the derived key returned in the
+body, the already-unlocked short-circuit deleted, `refuse404` reverted to a plain
+404, the key check removed from `GET /api/settings` (the prompt becoming the
+gate), both events dropped from `SLACK_NOTIFY`, and the lockable gate ignoring
+the feature flag. **Two of those survived the first draft** — one was a bad
+mutation of mine that hit an identical `res.json({ ok: true });` in an unrelated
+route (there are ten in server.js), and one was the vacuous deadlink assertion
+above, fixed in the spec rather than the mutation.
+
+Three `ci-check-render.js` cases, all of which had to change or be added because
+the door's rule changed: the locked gear is present while the WORKING gear is
+absent, clicking it opens a password prompt and NOT the settings sheet, and a
+refused password is surfaced rather than swallowed.
+
+**That last case cannot prove the server refuses**, and says so in its own
+comment: every `/api/` request in that harness is answered from `STUBS`, so the
+browser never reaches the real route. The stub answers 401 the way the route
+does, and what the case pins is the page's half — the error is shown and the
+panel stays shut. Without it, a page that ignored the status would reload and
+look exactly like success. `ci-check-render.js` gained an optional per-stub
+`status` for this, since a stub that always says 200 cannot express a refusal.
+
+**A spec-brittleness note, second instance in this same file:**
+`report-settings.spec.js` pinned the literal `"epact", "settings-open",
+"settings-save"` in `SLACK_NOTIFY`, so inserting an event BETWEEN two of them
+broke it with nothing about settings-open changing — exactly the failure already
+recorded here for `"settings-open"]` at the end of the log route's ALLOWED array.
+It tests membership now, and was re-verified to still catch `settings-open` being
+removed. Its `refuse404` count also had to scope its split pattern to
+`/api/settings",` with the closing quote, or it swallows `/api/settings-unlock`
+and counts that route's refusals too.
+
+### "I can't even click it" — the flag-off gear was a dead end
+
+Dan, on production, before any of this deployed: *"the goal here was to make the
+settings option clickable, then unlock after entering the password/un for the
+admin user. I can't even click it."*
+
+Diagnosed rather than guessed: **production had `reportSettings: false`**
+(`/api/admin/flags`), so what he was clicking was the pre-existing FLAG-OFF gear
+— `disabled`, with its explanation in a `title` attribute. It only renders for a
+proven key holder, so it also confirmed his cookie was working.
+
+Two separate things, and worth keeping apart: the flag being off is a switch, not
+a bug. **The gear being unclickable IS a bug**, and it is the dead-end pattern
+already written down twice in this file — the explanation was behind a hover, so
+clicking did nothing and the feature read as broken.
+
+It is a real button now, opening a notice that names the switch, says the admin
+sign-in is fine, and mentions that a PR preview starts with the flag off because
+each preview is a fresh volume.
+
+**`report-settings.spec.js` WAS PINNING THE BUG.** Its assertion required
+`disabled` on that button, so the fix failed the spec until the assertion's
+intent was corrected — the spec had encoded the dead end as the desired
+behaviour. The render case now CLICKS the gear and requires the notice on screen;
+reverting to `disabled` fails it by name.
 
 ## Programs: a multi-select SEASON filter (2026-08-31)
 
