@@ -494,13 +494,31 @@ function checkinRows() {
 // was never driven in a browser. Two feeds: the section-grain programs card, and
 // the per-section attendance card.
 function programRows() {
-  const sec = (prog, name, sid, enrolled, capacity, season) => ({
+  // stubMode "prev7" drops the four v7 payment-plan columns, i.e. a warm
+  // pre-v7 cache entry. Both shapes are live at once for four hours after the
+  // card ships, so the page has to be right on either — and the pre-v7 one must
+  // HIDE the card rather than render 0%.
+  const V7 = STUB_MODE !== "prev7";
+  const sec = (prog, name, sid, enrolled, capacity, season, loc, ap) => ({
     "Program": prog, "Program Id": "prog-" + prog.toLowerCase().replace(/\W+/g, "-"),
     "Section": name, "Section Id": sid, "Section Status": "Open",
     "Start Date": "2026-08-01", "End Date": "2026-09-30",
     "Enrolled": enrolled, "Capacity": capacity, "Utilized": enrolled,
     "Charged": enrolled * 40, "Received": enrolled * 40, "Refunds": 0,
     "Activity": "Aquatics", "Category": "Fitness",
+    // v6. The location filter shipped unable to render because NOTHING mapped
+    // this onto a row, and no fixture carried it — so no render case could have
+    // caught it either. `location` is deliberately null on one section so the
+    // "No location set" option is a real option rather than a special case.
+    "location": loc, "location_count": loc ? 1 : 0,
+    // v7. The two readings DISAGREE ON PURPOSE: one $2,400 auto-pay plan
+    // against nineteen small manual ones is 54.5% of plan DOLLARS and 5% of
+    // plan REGISTRATIONS. A card computing the wrong one renders a plausible
+    // number, so only a fixture where they differ can tell them apart.
+    ...(V7 ? {
+      "autopay_plan_items": ap[0], "autopay_plan_value": ap[1],
+      "manual_plan_items":  ap[2], "manual_plan_value":  ap[3],
+    } : {}),
     // SEASON NAMES ARE SHREWSBURY'S REAL ONES, apostrophe included: "Fall '26"
     // is what an org actually types, and a value that has to survive a URL
     // round-trip and an attribute selector should not be a tidy invented one.
@@ -509,13 +527,19 @@ function programRows() {
     // case bolted on in the page.
     "program_season": season,
   });
+  const URHO = "Urho Saari Swim Stadium", GORDON = "George E. Gordon Clubhouse";
   return [
-    sec("Aquatic Exercise",  "Aquatic Stations with Pearlena", "sec-aq-1", 21, 24, "Fall '26"),
-    sec("Aquatic Exercise",  "Water Waves with Yvette",        "sec-aq-2", 20, 24, "Fall '26"),
-    sec("Water Walking",     "Water Walking August 24",        "sec-ww-1", 12, 16, "Spring/Summer 26"),
+    // AQUATIC EXERCISE SPANS TWO LOCATIONS, and that is the whole point: 11.6%
+    // of programs on prod do. Filtering to Urho must keep only sec-aq-1, so the
+    // auto-pay share reads 100% — filtering whole PROGRAMS keeps sec-aq-2's
+    // $800 of manual plans too and reads 75%. One number separates the two.
+    sec("Aquatic Exercise",  "Aquatic Stations with Pearlena", "sec-aq-1", 21, 24, "Fall '26",           URHO,   [1, 2400, 0,    0]),
+    sec("Aquatic Exercise",  "Water Waves with Yvette",        "sec-aq-2", 20, 24, "Fall '26",           GORDON, [0,    0, 8,  800]),
+    sec("Water Walking",     "Water Walking August 24",        "sec-ww-1", 12, 16, "Spring/Summer 26",   GORDON, [0,    0, 10, 1000]),
     // One unseasoned section, so ticking "No Season" has something to find and
-    // the option is not vacuous.
-    sec("Lap Swim",          "Open Lap Swim",                  "sec-ls-1",  9, 20, "No Season"),
+    // the option is not vacuous — and with no location, so "No location set" is
+    // a real option.
+    sec("Lap Swim",          "Open Lap Swim",                  "sec-ls-1",  9, 20, "No Season",          null,   [0,    0, 1,  200]),
   ];
 }
 
@@ -1030,6 +1054,14 @@ const stampSeasonStyle = async page => {
       b.setAttribute('data-sm-dir', cs.flexDirection);
     }
   });
+};
+
+// Pick a location in the top-level filter. The control is a <select>, so the
+// value is set with select() rather than a click; React reads the change event.
+const pickLocation = async (page, value) => {
+  await page.waitForSelector('[data-prog-loc]', { timeout: 15000 });
+  await page.select('[data-prog-loc]', value);
+  await new Promise(r => setTimeout(r, 400));
 };
 
 const tickSeason = async (page, value) => {
@@ -1872,6 +1904,57 @@ const CASES = [
     // 3 programs -> 1. This is the case that fails if the funnel ignores the tick.
     needs: '[data-prog-count="1"]',
     act: async page => { await openSeasons(page); await tickSeason(page, "Fall '26"); } },
+  // ── The Location filter, which SHIPPED UNABLE TO RENDER ──────────────────
+  // normalizeRow never mapped `location` and rollupToPrograms never carried it,
+  // so progHasLocation was false on every feed and the select was gated out at
+  // locOptions.length > 1. programs-location.spec.js fed the reducer rows that
+  // already had `location` on them and there was no render case at all, so
+  // nothing in CI could see it. This is that case.
+  { name: "programs · the location filter EXISTS", path: "/{org}/programs",
+    needs: "[data-prog-loc]" },
+  { name: "programs · a picked location scopes the report", path: "/{org}/programs",
+    // 3 programs -> 1: only Aquatic Exercise has a section at Urho.
+    needs: '[data-prog-count="1"]',
+    act: page => pickLocation(page, "Urho Saari Swim Stadium") },
+  // AND IT FILTERS SECTIONS, NOT PROGRAMS. Aquatic Exercise runs at both sites;
+  // 100% is the share over sec-aq-1 alone, while keeping the whole program
+  // drags in sec-aq-2's $800 of manual plans and reads 75%. Measured on prod:
+  // 659 of 5,699 programs (11.6%) span locations, so this is a main case.
+  { name: "programs · location filters SECTIONS, not whole programs", path: "/{org}/programs",
+    needs: '[data-prog-autopay-pct="100"]',
+    act: page => pickLocation(page, "Urho Saari Swim Stadium") },
+  // ...and the auto-pay share adds its sections up: ticking Fall '26 keeps BOTH
+  // of Aquatic Exercise's sections, $2,400 auto-pay against $800 manual = 75%.
+  { name: "programs · a program's share sums its surviving sections", path: "/{org}/programs",
+    needs: '[data-prog-autopay-pct="75"]',
+    act: async page => { await openSeasons(page); await tickSeason(page, "Fall '26"); } },
+  // ...AND THE SURVIVORS ARE RE-ROLLED UP, which the share above CANNOT prove:
+  // progAutopayShare sums whatever rows it is handed, so section rows and their
+  // rollup give the same percentage. What breaks without the re-rollup is the
+  // Summary tab's own progMap, which is keyed by program and therefore
+  // OVERWRITTEN once per section — the program keeps only its LAST section, so
+  // Fall '26 reads 20 participants instead of 21 + 20. Verified to fail on that
+  // exact mutation; two earlier attempts at this case did not discriminate.
+  { name: "programs · a filtered program keeps ALL its surviving sections", path: "/{org}/programs",
+    needs: '[data-prog-participants="41"]',
+    act: async page => { await openSeasons(page); await tickSeason(page, "Fall '26"); } },
+
+  // ── On Auto-Pay ──────────────────────────────────────────────────────────
+  // Dan: "% on Auto-Pay vs % on manual collection". The fixture makes the two
+  // readings differ 11x, so a card computing the wrong one still renders a
+  // plausible number and only the VALUE can tell them apart.
+  { name: "programs · auto-pay share is by DOLLARS", path: "/{org}/programs",
+    // $2,400 of $4,400. By registrations it would read 5.
+    needs: '[data-prog-autopay-pct="54.5"]' },
+  { name: "programs · ...and the count reading is printed too", path: "/{org}/programs",
+    // 1 of 20. Both are on screen because either alone reads as the whole answer.
+    needs: '[data-prog-autopay-items="5"]' },
+  // PRESENCE, NOT VALUE: a warm pre-v7 cache entry must HIDE the card. A 0%
+  // there says "nobody uses auto-pay" when the truth is "this feed cannot tell
+  // us" — and "renders a 0" and "renders nothing" are different claims.
+  { name: "programs · no auto-pay card on a pre-v7 feed", path: "/{org}/programs",
+    stubMode: "prev7", needs: ".sum-cards", absent: "[data-prog-autopay-pct]" },
+
   { name: "programs · two ticks are a UNION", path: "/{org}/programs",
     // 2, not 0. An intersection — the obvious wrong reducer — empties the report,
     // and an ignored second tick leaves it at 1, so this number separates all three.

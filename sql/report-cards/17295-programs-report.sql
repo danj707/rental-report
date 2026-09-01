@@ -2,6 +2,43 @@
 -- (replaced by program/program_activity, same UUIDs; section.program_id is
 -- populated 1:1 with section.class_id). This file is the live card SQL with
 -- ONLY that mechanical rename applied - no logic or output changes.
+-- Card 17295: ✅ Programs Report — v7 (payment-plan collection method) — 2026-09-01
+--
+-- v7 APPENDS FOUR COLUMNS AND CHANGES NOTHING ELSE, and it adds NO NEW SCAN:
+-- the pp LATERAL inside sec_fin was already reading each order item's
+-- payment_plan_installment rows for `pending_cents`, so the collection method
+-- comes off a pass the card was already paying for. Same trick as v6.1's fold
+-- of the location into sd.
+--
+--   "autopay_plan_items"  registrations on a payment plan whose plan has
+--                         autopay_enabled. Autopay charges a card on file at
+--                         each installment date.
+--   "manual_plan_items"   registrations on a payment plan WITHOUT it — somebody
+--                         has to collect each installment.
+--   "autopay_plan_value"  total plan value (every installment, paid and not) on
+--   "manual_plan_value"   each side, in dollars.
+--
+-- THE DENOMINATOR IS PLAN REGISTRATIONS ONLY, and that is the whole point of
+-- the shape. `on_autopay` is BOOL_OR over the item's installments, so it is
+-- NULL when the item has none — i.e. paid in full, or nothing owed — and such an
+-- item is counted on NEITHER side. Somebody who paid up front is not "on manual
+-- collection", and folding them in makes the share meaningless.
+--
+-- Measured on prod before the push: payment_plan carries 58,304 rows with ZERO
+-- NULL autopay_enabled (228 true / 58,076 false), and of 76,370 order items
+-- with installments ZERO span more than one plan — so BOOL_OR cannot disagree
+-- with itself between runs. COALESCE(autopay_enabled, FALSE) makes an
+-- unresolvable plan row read as manual, which is the safe direction: it is
+-- certainly not proven autopay.
+--
+-- Verified additive at apex (4,323 sections in sec_fin): the extended LATERAL
+-- and a byte-for-byte copy of the original one give pending_cents with ZERO
+-- diffs across every section. Figures: 79 autopay items worth $211,200.50
+-- against 22,030 manual worth $1,793,561.68 — 10.5% by DOLLARS and 0.4% by
+-- COUNT, a 26x gap, because autopay is used for the expensive plans
+-- ($2,673 average against $81). Both readings are emitted so neither can be
+-- mistaken for the other.
+--
 -- Card 17295: ✅ Programs Report — v6.1 (location folded into sd) — 2026-09-01
 -- v6.1 changes NO OUTPUT. It deletes the sec_loc/sec_loc_agg CTEs and resolves
 -- the location inside the sd LATERAL that was already scanning each section's
@@ -152,12 +189,28 @@ sec_fin AS (
          SUM(ic.period_refund_cents)    AS period_refund_cents,
          SUM(CASE WHEN ic.payment_plan IS NULL
                   THEN GREATEST(ic.final_cents - ic.collected_cents, 0)
-                  ELSE COALESCE(pp.pending_cents,0) END) AS pending_cents
+                  ELSE COALESCE(pp.pending_cents,0) END) AS pending_cents,
+         -- ── v7: how the plan money gets collected ──
+         -- IS TRUE / IS FALSE, never a bare test: pp.on_autopay is NULL for an
+         -- item with no installments at all, and such an item belongs on
+         -- neither side. That NULL is the denominator decision.
+         COUNT(*) FILTER (WHERE pp.on_autopay IS TRUE)                        AS autopay_plan_items,
+         COUNT(*) FILTER (WHERE pp.on_autopay IS FALSE)                       AS manual_plan_items,
+         COALESCE(SUM(pp.plan_cents) FILTER (WHERE pp.on_autopay IS TRUE),0)  AS autopay_plan_cents,
+         COALESCE(SUM(pp.plan_cents) FILTER (WHERE pp.on_autopay IS FALSE),0) AS manual_plan_cents
   FROM cfg
   JOIN item_collected ic ON TRUE
+  -- ONE PASS over the item's installments for the outstanding balance AND the
+  -- collection method. pending_cents keeps its exact original expression and
+  -- filter; the two v7 aggregates read the same rows, so no existing figure can
+  -- move (proven at apex: 4,323 sections, zero pending_cents diffs against a
+  -- copy of the pre-v7 lateral).
   LEFT JOIN LATERAL (
-    SELECT COALESCE(SUM(ppi.amount_cents) FILTER (WHERE ppi.paid_at IS NULL AND ppi.waived_at IS NULL),0) AS pending_cents
+    SELECT COALESCE(SUM(ppi.amount_cents) FILTER (WHERE ppi.paid_at IS NULL AND ppi.waived_at IS NULL),0) AS pending_cents,
+           COALESCE(SUM(ppi.amount_cents),0)                                                             AS plan_cents,
+           BOOL_OR(COALESCE(pl.autopay_enabled, FALSE))                                                  AS on_autopay
     FROM payment_plan_installment ppi
+    LEFT JOIN payment_plan pl ON pl.id = ppi.payment_plan_id
     WHERE ppi.order_item_id = ic.item_id AND ppi.organization_id = cfg.org_id
   ) pp ON TRUE
   GROUP BY ic.section_id
@@ -291,7 +344,12 @@ SELECT
   sd.location_name                  AS location,
   COALESCE(sd.location_count, 0)    AS location_count,
   sfx.instructor_names              AS instructor,
-  COALESCE(sfx.instructor_count, 0) AS instructor_count
+  COALESCE(sfx.instructor_count, 0) AS instructor_count,
+  -- ── v7 additions, APPENDED so v6 cache entries stay readable ──
+  COALESCE(f.autopay_plan_items, 0)                  AS autopay_plan_items,
+  COALESCE(f.manual_plan_items, 0)                   AS manual_plan_items,
+  ROUND(COALESCE(f.autopay_plan_cents,0)/100.0,2)    AS autopay_plan_value,
+  ROUND(COALESCE(f.manual_plan_cents,0)/100.0,2)     AS manual_plan_value
 FROM cfg
 JOIN section s ON s.organization_id = cfg.org_id AND s.deleted_at IS NULL
 JOIN program p ON p.id = s.program_id AND p.organization_id = cfg.org_id AND p.deleted_at IS NULL

@@ -968,6 +968,165 @@ intent was corrected — the spec had encoded the dead end as the desired
 behaviour. The render case now CLICKS the gear and requires the notice on screen;
 reverting to `disabled` fails it by name.
 
+## Programs: % on Auto-Pay vs manual collection, and the location filter that could never render (2026-09-01)
+
+Dan: *"Lets add the single metric on the programs summary page. % on Auto-Pay vs
+% on manual collection"* — autopay being the new payment-plan type that keeps a
+card on file and charges it at each installment date.
+
+One `sum-card` in the summary row, on card 17295 **v7**. The four columns are
+additive per section and come off the `pp` LATERAL that `sec_fin` was **already**
+running for `pending_cents`, so this costs **no new scan** on a card that is
+already past the app's 60s+120s ceiling — the same fold as v6.1's location.
+
+### THE DENOMINATOR IS PAYMENT-PLAN REGISTRATIONS ONLY
+
+`on_autopay` is `BOOL_OR(COALESCE(pl.autopay_enabled, FALSE))` over the item's
+installments, so it is **NULL when the item has none** — paid in full — and such
+an item is counted on **neither** side. Somebody who paid up front is not "on
+manual collection"; folding them in turns the figure into a statement about how
+many people use plans rather than how the plan money arrives.
+
+`IS TRUE` / `IS FALSE`, never `IS NOT TRUE`: the near-miss **includes NULL** and
+would report every paid-in-full registration as collected manually. The spec
+COUNTS both aggregates on each side — a single `.test()` matched the `*_cents`
+line and let a mutation of the `*_items` line through on the first draft.
+
+`COALESCE(autopay_enabled, FALSE)` makes an unresolvable plan row read as
+**manual**, the safe direction: it is certainly not proven autopay. Measured
+before the push: `payment_plan` has 58,304 rows with **zero NULL**
+`autopay_enabled` (228 true / 58,076 false), and of 76,370 order items with
+installments **zero span more than one plan**, so `BOOL_OR` cannot disagree with
+itself between runs.
+
+`plan_cents` is **every** installment, paid and unpaid — the size of the book on
+each method. Reusing `pending_cents` here would make the metric *shrink as an org
+collects*, which is the opposite of adoption.
+
+### THE TWO READINGS DISAGREE BY 26x, so both are printed
+
+Measured at apex over 22,109 plan registrations:
+
+| | auto-pay | manual |
+|---|---|---|
+| registrations | **79** | 22,030 |
+| plan value | **$211,200.50** | $1,793,561.68 |
+| average | $2,673 | $81 |
+
+**10.5% by DOLLARS against 0.4% by COUNT.** Autopay is being used for the
+expensive plans. Either number alone reads as the whole answer and is wrong about
+the other half, so dollars lead (it sits in a revenue row) and the registration
+share is printed beneath *with its own percentage* — two raw counts would leave
+the reader to spot the gap. The render fixture makes them differ 11x on purpose,
+because a card computing the wrong one renders a perfectly plausible number.
+
+**No plan money at all is `null`, never 0%** — "nobody uses autopay" and "this
+org runs no payment plans" are different facts. A **real** 0% must still show:
+Shrewsbury has 87 manual plan registrations worth $32,494 and not one on autopay,
+and that is an answer. Presence-gated on the column (`colPresence.autopay`) so a
+warm pre-v7 cache entry hides the card instead of rendering a confident 0.
+
+### THE LOCATION FILTER SHIPPED UNABLE TO RENDER, and no guard could see it
+
+Found while wiring the KPI's presence gate. `progHasLocation` tested
+`rows.some(r => 'location' in r)` — and **nothing ever wrote that key**:
+`normalizeRow` did not map `location`, and `rollupToPrograms` builds program rows
+with a fixed key set. So the gate was false on every feed and the select was
+gated out at `locOptions.length > 1`. The filter Dan asked for **never appeared**,
+in PR #182, for two days.
+
+**Nothing in CI could catch it, and that is the lesson.**
+`programs-location.spec.js` LIFTS AND RUNS the reducer — but it feeds it fixture
+rows that already carry `location`, so it proved the reducer filters correctly on
+data the page never produces. And there was **no render case for the control at
+all**; the season cases were added later and the fixture carried no location
+either. Generalise it: *a unit test that supplies the field under test cannot
+tell you whether anything supplies it in production.* The presence gate now reads
+the RAW response (`raw.some(r => 'location' in r)`), like every other entry in
+`colPresence` — a column question has to be asked of the response, never of a
+derived object — and the spec asserts the MAPPER carries the field.
+
+### ...and the funnel had to become SECTION-grain, which is a real fix not a tidy-up
+
+`rows` are program rollups; a location and a season are facts about a **section**.
+Measured before choosing: **659 of 5,699 programs with a located section (11.6%)
+run at more than one location**, max 24 — against **0.7% of sections**. So
+filtering whole programs by a primary location keeps money and enrolments from a
+site the reader just excluded, for one program in nine. This is a program-grain
+problem specifically, and the same argument applies to season (the rollup carried
+its FIRST section's season).
+
+So `scopedRows` flattens to sections, filters both dimensions, and **re-rolls up**
+with the pure `rollupToPrograms` — giving a program row whose totals are the sum
+of exactly the sections still in view, which is the parent-reconciles-to-children
+invariant the rollup was built for. With nothing ticked it hands `rows` straight
+back rather than flattening and re-rolling for nothing.
+
+**IT TOOK THREE ATTEMPTS TO WRITE A CASE THAT PROVES THE RE-ROLLUP, and the two
+failures are the useful part.** Both passed on a build with the re-rollup deleted:
+
+1. `location filters SECTIONS` asserts 100% under a Urho filter (75% if whole
+   programs are kept) — but only ONE section survives that filter, so there is
+   nothing for a rollup to combine.
+2. Ticking `Fall '26` keeps both of Aquatic Exercise's sections and reads 75% —
+   and **still passed**, because `progAutopayShare` sums whatever rows it is
+   handed and a program row's totals ARE its sections' by construction. The KPI
+   is structurally invariant to the re-rollup, so no assertion on it can ever
+   discriminate. Neither can `data-prog-count` or `data-prog-sections`: one
+   program row with `sections: 2` and two section rows with `sections: 1` add up
+   the same.
+
+What actually breaks is the Summary tab's `progMap`, which is keyed by program
+and therefore **overwritten once per section** — handed section rows it keeps
+only the LAST one, so Fall '26 reads **20 participants instead of 21 + 20**.
+`data-prog-participants` is the number that moves, and that case was verified to
+fail on the mutation. A case that passes on the regression it names is not a
+guard, and *plausible* is not the same as *discriminating*.
+
+### Guards
+
+`scripts/programs-autopay.spec.js` (**48 assertions, in CI**), which LIFTS AND
+RUNS `progAutopayShare` against the real apex proportions and reads the SQL
+mirror. `programs-location.spec.js` 21 → 27, `programs-season.spec.js` 43 → 49 —
+the latter now lifts and runs `rollupToPrograms` too, because a stub would prove
+the funnel calls something rather than that the numbers it produces are the
+surviving sections'.
+
+Mutation-tested twelve ways, all failing by name: the headline computed by
+registration count, non-plan registrations folded into the denominator, no-plan
+money reading 0% instead of hiding, the presence gate dropped, the share read off
+the unscoped feed, the rollup overwriting instead of summing, `location` left
+unmapped (the bug as it shipped), the re-rollup dropped, the manual side using
+`IS NOT TRUE`, `plan_cents` reusing the pending filter, the plan-row COALESCE
+removed, and a second pass over `payment_plan_installment`.
+
+**Three of those survived the first draft**, all fixed in the spec rather than the
+mutation: the paid-in-full fixture row carried no `enrollments`, so a mutation
+adding the enrolment count to the manual side had nothing to add; the `IS FALSE`
+assertion matched the `*_cents` line and missed a mutated `*_items` line; and the
+season spec's `out[0]._sections.length` **THREW** on bare section rows instead of
+failing by name — the same "a guard that dies instead of failing has not told
+anyone what broke" lesson already recorded in that file, one assertion over.
+
+Plus six `ci-check-render.js` cases, keyed on the computed VALUE rather than on a
+card existing, over a fixture where Aquatic Exercise deliberately spans two
+locations and a `prev7` stub mode drops the four v7 columns.
+
+### The push
+
+Pushed via the API and **diffed back byte-identical** to the mirror (402 lines).
+As always the date tags came back as **Text**, and the served card now registers
+**SIX** parameters — `org_id/start_date/end_date` as `date/single` AND the same
+three slugs as `string/=`. The app binds by slug, so it sends two values per
+variable and Metabase answers `An error occurred.`: **card 17295 is the shared
+Programs card, so the report and all six Program Summary bands are down for every
+org until a human opens the card and re-saves until that list is three again.**
+Nothing in the SQL can fix it. Flip link:
+https://rec.metabaseapp.com/question/17295 — and the cache-independent sign-off
+(`verify-report-live.js`, programs/apex row) has to follow the flip, not precede
+it, because the verifier fails the same way during the window and its failure
+carries no extra information.
+
 ## Programs: a multi-select SEASON filter (2026-08-31)
 
 Dan, on Shrewsbury: *"lets add a program 'season' filter on the programs summary

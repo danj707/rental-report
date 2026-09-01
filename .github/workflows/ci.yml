@@ -133,6 +133,9 @@ jobs:
       - name: Programs season filter (multi-select; one funnel scopes both dimensions)
         run: node scripts/programs-season.spec.js
 
+      - name: Programs auto-pay share (dollars vs registrations; no plan money is null, never 0%)
+        run: node scripts/programs-autopay.spec.js
+
       - name: Facilities hub beacons (hub log route above the generic one; 200 AND a logged row)
         run: node scripts/facilities-beacons.spec.js
 
