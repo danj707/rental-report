@@ -16,7 +16,7 @@
 -- The clinching evidence, measured 2026-09-01 over 8,529 invites platform-wide:
 -- of the 5,371 grants that test called consumed, **5,371 were already expired
 -- and ZERO were still open**. A real claim signal would catch some invites
--- inside their window. Supporting: the average created→updated gap on those
+-- inside their window. Supporting: the average created-to-updated gap on those
 -- rows is 114h against an average invite window of 105.8h, while an actual
 -- registration lands at a median of 5.3h.
 --
@@ -38,7 +38,8 @@
 -- offers_outstanding used to key on `untouched` (updated_at = created_at), so
 -- claimed + expired + outstanding did NOT add up to offers_sent — a grant that
 -- was touched but not claimed fell into no bucket at all. They are now
--- claimed / not-claimed-and-expired / not-claimed-and-still-open.
+-- claimed / not-claimed-and-expired / not-claimed-and-still-open. Verified at
+-- apex: 2,113 + 2,352 + 10 = 4,475 = offers_sent, exactly.
 --
 -- DO NOT ADD AN OPEN RATE: temporary_grant.first_viewed_at is populated on 66
 -- of 8,529 invites (0.8%), dead like memberships.last_used_at.
