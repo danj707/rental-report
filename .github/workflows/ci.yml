@@ -10,7 +10,12 @@ on:
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # The render check used to live in this job and the two together outgrew a
+    # 10-minute budget: on 2026-09-01 CI was CANCELLED mid-render with every
+    # assertion green, which reads exactly like a failure and blocks the merge.
+    # They are separate jobs now, so each has its own budget and they run at the
+    # same time.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -219,6 +224,26 @@ jobs:
 
       - name: Admin dashboard JS (inline blocks parse; every on*= handler resolves)
         run: node scripts/ci-check-admin-js.js
+
+  # The browser half. Split out on 2026-09-01: 223 render cases at ~2.8s each is
+  # over ten minutes on its own, and it must never be the reason the spec suite
+  # gets squeezed. Raise this budget when the case count grows, never the case
+  # count to fit the budget — a render case is the only check in this repo that
+  # can see a blank page.
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+          PUPPETEER_SKIP_CHROMIUM_DOWNLOAD: 'true'
 
       # The runner image already ships Google Chrome, so this normally prints a
       # path and stops. The fallback is here so the check can never be skipped
