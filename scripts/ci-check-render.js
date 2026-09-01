@@ -420,7 +420,39 @@ function fasttrackRows() {
       "Early Access Opens": kind === "early" ? atLocalHour(2, hour) : null,
       "Reg Opens": kind === "early" ? atLocalHour(9, 12) : atLocalHour(2, hour),
     });
+  /* ── ft_booking rows: the people who fast-tracked ───────────────────────
+     ESSEX JUNCTION'S REAL SHAPE, measured 2026-09-01. A per-session vacation
+     camp over 9 days makes one hold per child per DAY, and one of the accounts
+     carries TWO children — which is exactly why the export is per PARTICIPANT
+     and the section badge (which counts ACCOUNTS) cannot answer "who".
+     Alyssa Callan holds 3 across two kids; the badge says 2 people and the CSV
+     has to say 3 rows.
+
+     Attached to sec-premier-early, a launched section on the Overview flow
+     board, so the CSV button is reachable without navigating a tab. */
+  const ftBooking = (account, email, participant, status, day, secId) => ({
+    "Row Type": "ft_booking", "Season": "Fall",
+    "Program": "Concert Series", "Section": "Premier Table Early", "Reg Mode": "per-session",
+    "Section ID": secId || "sec-premier-early", "Org ID": "org-1", "Program ID": "prog-concert",
+    "User ID": "acct-" + account.toLowerCase().replace(/\W+/g, "-"),
+    "User Name": account, "User Email": email,
+    "Participant Name": participant, "FT Status": status,
+    "Signup Date": "2026-08-" + String(day).padStart(2, "0"),
+  });
+  const ftBookings = [
+    ftBooking("Aislyn Allen", "allenaislynm@gmail.com", "Carter Allen", "Pending", 12),
+    ftBooking("Aislyn Allen", "allenaislynm@gmail.com", "Carter Allen", "Pending", 11),
+    ftBooking("Aislyn Allen", "allenaislynm@gmail.com", "Carter Allen", "Pending", 14),
+    // TWO CHILDREN ON ONE ACCOUNT — the row the badge hides.
+    ftBooking("Alyssa Callan", "acallan@ejrp.org", "Layla Callan", "Converted", 13),
+    ftBooking("Alyssa Callan", "acallan@ejrp.org", "Layla Callan", "Pending", 13),
+    ftBooking("Alyssa Callan", "acallan@ejrp.org", "Tiger Callan", "Pending", 13),
+    // A DIFFERENT section's hold, so a per-section export that forgot to filter
+    // exports a stranger — and the render case can see it.
+    ftBooking("Wrong Section", "wrong@example.com", "Nope Nobody", "Pending", 10, "sec-tiny"),
+  ];
   return [
+    ...ftBookings,
     launchedSmall,
     launchedEarly,
     launchedEarlyV18,
@@ -1081,6 +1113,16 @@ const pickLocation = async (page, value) => {
   await new Promise(r => setTimeout(r, 400));
 };
 
+// Expand a Fast Track program group. The section rows are rendered behind
+// `isOpen && p.sections.map(...)`, so nothing under a collapsed group exists in
+// the DOM — the first draft of the CSV cases waited 45s on a selector that could
+// never appear, and the render check is what said so.
+const openFtProgram = async (page, program) => {
+  await page.waitForSelector(`[data-ft-progrow="${program}"]`, { timeout: 45000 });
+  await page.click(`[data-ft-progrow="${program}"]`);
+  await page.waitForSelector("[data-ft-secrow]", { timeout: 10000 });
+};
+
 const tickSeason = async (page, value) => {
   await page.waitForSelector(`[data-prog-season-opt="${value}"] input`, { timeout: 5000 });
   await page.click(`[data-prog-season-opt="${value}"] input`);
@@ -1286,6 +1328,84 @@ const CASES = [
   // The CSV itself, built by the real click path in a real browser. Every
   // source assertion in roster-epact.spec.js passes on a button wired to the
   // wrong row set; this is what proves the bytes.
+  // ── Fast Track · per-section CSV export ───────────────────────────────────
+  // Dan: "add an 'export CSV' button/link to each Fast Track section in this
+  // bottom table." The button only renders where there are fast-trackers, so its
+  // presence is a real assertion; the bytes are what proves it exports the right
+  // people, and every source assertion in fasttrack-export.spec.js passes on a
+  // button wired to the wrong row set.
+  { name: "fasttrack · a section with fast-trackers offers a CSV", path: "/{org}/fasttrack",
+    needs: '[data-ft-export="sec-premier-early"]',
+    act: page => openFtProgram(page, "Concert Series") },
+  // ...and a section with NOBODY does not. sec-select-table is in the SAME
+  // program and carries FT totals on its section row but no ft_booking rows.
+  // `needs` is the ROW, not just any button: asserting only the absence would
+  // pass on a row that never rendered at all — the vacuous-assertion trap
+  // already recorded for the zero-deadlink check.
+  { name: "fasttrack · no CSV where there is nobody to export", path: "/{org}/fasttrack",
+    needs: '[data-ft-secrow="sec-select-table"]', absent: '[data-ft-export="sec-select-table"]',
+    act: page => openFtProgram(page, "Concert Series") },
+  { name: "fasttrack · the CSV is the people, not the accounts", path: "/{org}/fasttrack",
+    needs: 'body[data-ftx-hdr="1"][data-ftx-lines="3"][data-ftx-sibling="1"]'
+         + '[data-ftx-scoped="1"][data-ftx-bom="1"][data-ftx-tsv="1"]',
+    act: async page => {
+      await openFtProgram(page, "Concert Series");
+      await page.waitForSelector('[data-ft-export="sec-premier-early"]', { timeout: 45000 });
+      // Stub window.open, NOT saveTextViaPopup: a headless browser has nowhere to
+      // put a download, but stubbing the writer would skip the delivery path —
+      // which is where the BOM lives. This reads the bytes the popup is handed.
+      await page.evaluate(() => {
+        window.__payload = null;
+        window.open = () => ({
+          document: { write() {}, close() {} },
+          set __recExport(v) { window.__payload = v; },
+          get __recExport() { return window.__payload; },
+        });
+      });
+      await page.click('[data-ft-export="sec-premier-early"]');
+      await page.evaluate(() => {
+        const p = window.__payload;
+        if (!p) return;   // the button never reached the writer at all
+        const set = (k, v) => { if (v) document.body.setAttribute(k, v); };
+        // On the BYTES, not a decoded string: TextDecoder strips the BOM by
+        // default, so decoding first passes either way — and bytes are what
+        // Excel sniffs.
+        const b = p.bytes;
+        set("data-ftx-bom", b[0] === 0xEF && b[1] === 0xBB && b[2] === 0xBF ? "1" : "");
+        const body = new TextDecoder().decode(b);
+        const lines = body.replace(/\r\n$/, "").split("\r\n");
+        set("data-ftx-hdr", lines[0] === "Program,Section,Season,Reg Mode,Participant,Account Name,Account Email,Fast Tracks,Converted,Pending,First Signup" ? "1" : "");
+        // THREE data rows from TWO accounts. Per-account grouping gives 2, which
+        // is the bug this export exists to avoid — the badge already says 2.
+        document.body.setAttribute("data-ftx-lines", String(lines.length - 1));
+        // Each sibling carries its OWN hold count: Layla 2, Tiger 1. A shared
+        // per-account count would print 3 for both.
+        set("data-ftx-sibling",
+          lines.some(l => l.indexOf("Layla Callan") >= 0 && l.indexOf(",2,1,1,") >= 0) &&
+          lines.some(l => l.indexOf("Tiger Callan") >= 0 && l.indexOf(",1,0,1,") >= 0) ? "1" : "");
+        // Scoped to THIS section — another section's holder must not be in it.
+        set("data-ftx-scoped", body.indexOf("Nope Nobody") < 0 ? "1" : "");
+        // The clipboard copy is TAB-separated and carries NO BOM: pasted into a
+        // sheet a BOM is a stray character in the first cell, and a
+        // comma-separated paste drops the whole row into one column.
+        set("data-ftx-tsv", p.tsv && p.tsv.charCodeAt(0) !== 0xFEFF
+          && p.tsv.split("\n")[0].indexOf("\tParticipant\t") >= 0 ? "1" : "");
+      });
+    } },
+  // Clicking the export must NOT also open the expander — the row's own onClick
+  // toggles it, and two things happening on one click reads as a bug.
+  { name: "fasttrack · exporting does not open the panel", path: "/{org}/fasttrack",
+    needs: '[data-ft-export="sec-premier-early"]', absent: ".sec-users-row",
+    act: async page => {
+      await openFtProgram(page, "Concert Series");
+      await page.waitForSelector('[data-ft-export="sec-premier-early"]', { timeout: 45000 });
+      await page.evaluate(() => {
+        window.open = () => ({ document: { write() {}, close() {} }, set __recExport(v) {}, get __recExport() { return null; } });
+      });
+      await page.click('[data-ft-export="sec-premier-early"]');
+      await new Promise(r => setTimeout(r, 300));
+    } },
+
   { name: "roster · epact csv is her output", path: "/{org}/roster",
     needs: "body[data-ep-hdr=\"1\"][data-ep-lines=\"3\"][data-ep-email=\"1\"][data-ep-label=\"1\"]"
          + "[data-ep-nocancel=\"1\"][data-ep-bom=\"1\"][data-ep-tsv=\"1\"]",

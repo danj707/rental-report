@@ -1936,7 +1936,8 @@ is already off the platform defaults), `settings-save`/
 `settings-reset` (⚙️ a per-org report default changed, naming the fields and
 flagging an ePACT template that left the verified set) (📤 a participant list
 exported for the ePACT camp-forms vendor, with the count and whether it was one
-class or the whole view), and three platform alerts —
+class or the whole view), `ft-export` (📤 the people who fast-tracked one section were exported,
+with the section, the head count and the hold count), and three platform alerts —
 `report-down` (a report's card stopped answering, links straight to the report
 with its token), `schema-break` (a table or column the reports depend on is
 gone), `param-drift` (a date template tag is no longer typed Date). The three
@@ -3804,6 +3805,117 @@ children — not hypothetical, apex has two different kids both called *Bridger
 Wall* (see the ePACT backcheck). A truthful child count is
 `fr.participant_user_id::text AS "Participant ID"` on card 17300, one column with
 no logic change, plus a tag flip. Not done.
+
+### Export CSV per section, on the flow board (2026-09-01)
+
+Dan: *"add an 'export CSV' button/link to each Fast Track section in this bottom
+table. Giving orgs the ability to export a csv of the user information who has
+these fast tracked. email, name, section/session fast tracked, etc. Use the same
+pdf/csv export functionality that works in a closed iframe sandbox."*
+
+A `⬇ CSV` button beside the people badge on every section row that has
+fast-trackers, delivered through **`saveTextViaPopup`** — the ONE popup
+implementation in `open-pdf.js` — because a download started by a sandboxed
+iframe is silently dropped. **No card change.**
+
+### ONE ROW PER PARTICIPANT PER ACCOUNT, which is the whole reason it is not the badge
+
+The badge counts booking **accounts**; the export counts **children**. Measured
+at Essex Junction: 37 accounts hold 43 children, so a parent who fast-tracked two
+kids is one line on screen and must be two in the file. Grouping by
+`(account, participant)` also gives each child its **own** hold count, which the
+badge structurally cannot — and the render fixture carries a two-child account
+whose siblings must read 2 and 1, not 3 and 3.
+
+- **The participant key is scoped to the ACCOUNT**, because all the feed has is a
+  NAME. Apex really has two different children both called *Bridger Wall* (see
+  the ePACT backcheck), so an org-wide name key would merge two families. Two
+  same-named children on ONE account still merge, and that is the honest limit.
+- **A booking made for the account holder keeps their name** rather than being
+  dropped or exported with a blank participant — it is still a real hold.
+- **The earliest signup is compared as a STRING**, never through `new Date()`: a
+  bare `YYYY-MM-DD` is UTC midnight and lands on the previous day west of UTC.
+  The trap is one function over, in `parseCardDate`.
+- Converted rows lead, then busiest, then by name, so two runs of the same export
+  cannot disagree.
+
+### WHAT IT CANNOT SAY, and why that is not a bug
+
+**It cannot name WHICH sessions.** Card 17300's `ft_booking` rows carry the
+section, the customer and the participant NAME — **no session id and no session
+date**. So for a per-session camp this exports *"9 fast tracks"* and not the nine
+camp days. Splitting the count across the section's sessions, or printing a date,
+would be a claim the feed cannot support. One column on the card
+(`fr.session_id` / a session date) would fix it; not done, and named here so the
+next person does not go looking for it.
+
+### The mechanics that are copied rather than reinvented
+
+- **CRLF and RFC4180 quoting.** A section named `Camp, Red` shifts every column
+  after it otherwise, and some Windows importers refuse a bare LF.
+- **The BOM is on the FILE ONLY.** Excel sniffs bytes rather than trusting UTF-8,
+  so an accented participant name opens as mojibake without it — while a BOM in
+  the clipboard copy is a stray character in the first cell. The spec fails if it
+  moves into the builder.
+- **Absent, not disabled, where there is nobody to export** — a control that
+  yields an empty file is the dead end this repo keeps writing down.
+- **`stopPropagation`**, because the section row's own click toggles the
+  expander, and an export that also opens a panel reads as two accidents.
+
+### The beacon, and the trap it walks past
+
+`ft-export` (📤), and **fasttrack.html had no beacon at all before this** — so
+`logClientEvent` is new on that page and copied from `roster.html` deliberately:
+the convention is **`?event=<name>` in the QUERY STRING**. A JSON body is read by
+nothing on the server, comes back `400 Unknown event`, and a fire-and-forget
+beacon never complains — that has now bitten this repo **four** times (campmap,
+the Facilities hub, Memberships, Instructor Payout). `fasttrack` IS in
+`REPORT_TYPES`, so the generic log route serves it and no dedicated route is
+needed.
+
+- **Debounced by SECTION**, like `epact`: an admin pulling four camps' lists is
+  four camps.
+- **It carries BOTH counts.** *43 people holding 282 camp-days* is a per-session
+  camp; *43 holding 43* is a normal section, and the message would read the same
+  without the second number. Both are clamped server-side, never echoed from the
+  query string.
+
+### Two gaps in my own guard, both worth keeping
+
+- **A value assertion could not catch the date bug.** `new Date(a) < new Date(b)`
+  orders two ISO dates identically, so both implementations return the same
+  earliest signup and the value test passes either way. The discriminating
+  assertion is on the SOURCE — and it failed on correct code first time, because
+  the function's own comment quotes `new Date(` on purpose. Comments are stripped
+  before the test, exactly as `checkin-status.spec.js` already had to do for the
+  uncast date tags.
+- **The "no CSV here" case asserted an absence with nothing proving the row was
+  on screen.** A vacuous absent assertion passes on a row that never rendered —
+  the same trap as the zero-deadlink check in the settings-unlock spec. It keys on
+  `data-ft-secrow` now, so the row is required present while the button is
+  required absent.
+
+**AND THE RENDER CHECK CAUGHT A DEFECT IN THE CASES THEMSELVES.** All four failed
+on the first run with *"the page came up blank"*: the section rows are rendered
+behind `isOpen && p.sections.map(...)`, so **nothing under a collapsed program
+group exists in the DOM**, and every case sat waiting 45s on a selector that
+could never appear. `openFtProgram()` clicks the group first. The button was fine;
+the tests were not — which is the same class of mistake as the two `act` hooks
+already recorded for the Director's Report flames, and it is only ever found in a
+browser.
+
+Guards: `scripts/fasttrack-export.spec.js` (**28 assertions, in CI**), which
+LIFTS AND RUNS the three builders over Essex Junction's real shape and boots a
+server for the beacon half — a source assertion has never once caught the beacon
+bug. `SKIP_SOURCE=1` drops the source half. Mutation-tested eleven ways, all
+failing by name: grouped by account only (the bug the export exists to avoid),
+the signup compared through `new Date()`, the section filter dropped, no CSV
+quoting, the BOM not requested, `stopPropagation` removed, the beacon not fired,
+dropped from `SLACK_NOTIFY`, dropped from the log route's `ALLOWED` list, and the
+beacon no longer naming its event. Plus four `ci-check-render` cases, one of which
+stubs **`window.open`** rather than `saveTextViaPopup` and asserts on the bytes
+the popup is handed, so the BOM and the TSV fallback are covered rather than
+skipped.
 
 ## "Launching Soon" is a section question, not a program question (2026-08-24)
 
