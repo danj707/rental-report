@@ -1186,6 +1186,116 @@ https://rec.metabaseapp.com/question/17295 — and the cache-independent sign-of
 it, because the verifier fails the same way during the window and its failure
 carries no extra information.
 
+## THE WAITLIST REPORT'S "CLAIMED" WAS MEASURING EXPIRY (2026-09-01)
+
+Dan asked for an `auto` tag and a waitlist conversion column. Building the
+column found that **the number it would have been built on was wrong, and had
+been since the `offers` CTE was written.**
+
+Card 19273 inferred a claim from timestamps:
+
+```sql
+(tg.updated_at > tg.created_at
+ AND ABS(EXTRACT(EPOCH FROM tg.updated_at - tg.expires_at)) <= 2) AS consumed
+```
+
+— "the grant was written to at its expiry moment", which is what an **expiry
+sweep** does, not what a claim does.
+
+**THE CLINCHING EVIDENCE IS AN IMPOSSIBILITY, not a discrepancy.** Of the 5,371
+grants that test called consumed, **5,371 were already expired and ZERO were
+still open.** A real claim signal catches some invites *inside* their window; one
+that never does is not measuring claiming. Supporting: the average
+created→updated gap on those rows is **114h** against an average invite window of
+105.8h, while an actual registration lands at a median of **5.3h**.
+
+Measured over 8,529 invites platform-wide (37 orgs, since 2025-10-13):
+
+| | |
+|---|---|
+| heuristic said claimed | 5,371 — **63.0%** |
+| actually booked inside the window | 3,628 — **42.5%** |
+| both agree | 3,483 |
+| **heuristic only, no registration** | **1,888** |
+| booked but the heuristic missed it | 145 |
+
+So conversion read **~20 points high**, and `Avg`/`Median Claim Hours` plus all
+six `Claim` buckets were describing invite-window **LENGTHS**. Expect the numbers
+on that report to drop — that is the fix landing, not a regression.
+
+### v6: a claim is a REGISTRATION
+
+The first confirmed booking by that participant on that section between the
+grant's `created_at` and `expires_at`.
+
+- **STRICTLY inside the window.** Dropping the upper bound counts 641 people who
+  came back weeks later by other means — the difference between 42.5% and 50.1%.
+- **AND THE PARTS NOW ADD UP.** `offers_expired`/`offers_outstanding` keyed on
+  `untouched` (`updated_at = created_at`), so a grant that was touched but never
+  claimed fell into **no bucket at all** and claimed + expired + outstanding did
+  not equal `offers_sent`. They are now claimed / not-claimed-and-expired /
+  not-claimed-and-still-open. Verified at apex: **2,113 + 2,352 + 10 = 4,475**,
+  exactly.
+- Cost is not a concern: the per-section aggregate is 658ms at apex, and the
+  whole card 13.0s.
+
+**DO NOT BUILD AN OPEN RATE.** `temporary_grant.first_viewed_at` is populated on
+**66 of 8,529** invites (0.8%) — dead like `memberships.last_used_at`. An
+"opened" funnel step would be a confident number over nothing.
+
+### The page: an `auto` tag and a conversion column
+
+`waitlist_config->>'type'` is `automated` | `manual`, emitted as `Waitlist Type`
+and falling back to the session config exactly like `Waitlist Mode` so the two
+cannot disagree about which row they describe.
+
+- **Adoption is FIVE sections in ONE org** (City of Niagara Falls, which *is*
+  onboarded). Dan: *"it's brand new, that's it."* So the tag is an adoption
+  signal that fills in over time, not a broken filter — the
+  *a-type-filter-returning-almost-nothing-is-a-question-about-the-filter* rule
+  does not apply when the feature shipped last week.
+- **The tag renders only for `automated`.** A tag on all 28,161 manual sections
+  is noise, and its absence already says manual.
+- **Presence-gated, not defaulted.** A pre-v6 cache entry has no type at all, and
+  *"we cannot tell"* must not render as *"a person does this by hand"*.
+- Violet, deliberately **not** the green of a working mode pill: `auto` says WHO
+  sends the offer, not whether the waitlist is healthy, and two green pills side
+  by side read as one status.
+- **`WL_CONV_MIN_OFFERS = 5`.** A rate over a handful of invites is not a rate —
+  under the floor the cell prints *"2 of 2"* rather than *"100%"*. Same rule as
+  `RATE_MIN_VIEWS` on the campmap strip. **A real 0% still shows**: eight invites
+  and nobody registered is an answer.
+
+**Dan's call: the `auto` tag is on the WAITLIST report only.** It would need a
+column on card 17295 to reach Programs, and that card is already 104s at apex and
+parked on performance — another push means another tag flip and downtime on the
+most-used report on the platform, for a tag that belongs beside the mode pill
+anyway.
+
+### Guards
+
+`scripts/waitlist-conversion.spec.js` (**49 assertions, in CI**), which lifts and
+RUNS `wlConversion` and reads the card mirror — including that the timestamp
+heuristic and `untouched` are *gone* and cannot come back, that every one of the
+17 pre-existing output columns survived, and that the trailing `ORDER BY` did
+(the exact thing that silently vanished on card 17300).
+
+Plus **seven `ci-check-render.js` cases — this report had NO render coverage at
+all**, which is part of why its central number stayed wrong. The fixture's four
+rows are the four states with deliberately different conversion figures (75% /
+20% / under-floor / none), so a swapped cell fails rather than rendering
+something plausible, and a `prev6` stub mode proves the tag is absent on an old
+feed. The fixture honours the v6 partition invariant, because a fixture that
+breaks it would be testing something the feed can never produce.
+
+`scripts/report-cards.manifest.json` gained a **waitlist / apex** row — this
+shared card had none at all.
+
+**A process note:** the first render run died on `EADDRINUSE` from a leftover
+`node server.js`, which is the stray-server trap already recorded in this file.
+Kill strays before driving a page; a stale server is indistinguishable from a
+code failure in the output.
+
 ## Programs: instructor + location on screen, and "by month" (2026-09-01)
 
 Dan: *"lets build out the enhancements to the programs report, including

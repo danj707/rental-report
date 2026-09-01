@@ -134,6 +134,12 @@
       "card": "a9f6a60e-43bf-4368-ada9-c6a7245f639c",
       "org": "aeba47d0-c97f-49cb-a0e9-93c5af3a68fa",
       "timeout": 120
+    },
+    {
+      "label": "waitlist / apex (card 19273 v6, ADDED 2026-09-01 — this shared card had NO manifest row at all, and its central number was wrong for months: a claim was inferred from a timestamp that really marked the expiry sweep. SIGNED OFF 2026-09-01: 3,374 rows in 13.0s through the public endpoint with the app's own date/single parameters. An 'An error occurred.' here means the Start/End Date tags were reset to Text by an API push and need re-flipping in the Metabase UI)",
+      "card": "fff0027f-be52-4f99-adfa-b21dd5605634",
+      "org": "aeba47d0-c97f-49cb-a0e9-93c5af3a68fa",
+      "timeout": 120
     }
   ]
 }

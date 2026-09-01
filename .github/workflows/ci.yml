@@ -139,6 +139,13 @@ jobs:
       - name: Programs instructor filter + by-month panel (one picker, three dimensions, no date parsing)
         run: node scripts/programs-instructor.spec.js
 
+      # Card 19273 inferred a claim from a timestamp that really marked the
+      # EXPIRY SWEEP — of 5,371 grants it called claimed, 5,371 were already
+      # expired and ZERO were still open. Conversion read 63% where the truth
+      # was 42.5%. Pins the registration-based definition and the rate floor.
+      - name: Waitlist invite conversion (a claim is a registration, not a timestamp shape)
+        run: node scripts/waitlist-conversion.spec.js
+
       - name: Fast Track CSV export (one row per participant; the beacon records, not just 200s)
         run: node scripts/fasttrack-export.spec.js
 
