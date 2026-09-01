@@ -2,6 +2,13 @@
 -- (replaced by program/program_activity, same UUIDs; section.program_id is
 -- populated 1:1 with section.class_id). This file is the live card SQL with
 -- ONLY that mechanical rename applied - no logic or output changes.
+-- Card 17295: ✅ Programs Report — v6.1 (location folded into sd) — 2026-09-01
+-- v6.1 changes NO OUTPUT. It deletes the sec_loc/sec_loc_agg CTEs and resolves
+-- the location inside the sd LATERAL that was already scanning each section's
+-- sessions for the date envelope, so the org's sessions are read once instead
+-- of twice. Verified before the push: 5,858 apex sections, ZERO diffs on
+-- first_start, last_end, location_name and location_count.
+--
 -- Card 17295: ✅ Programs Report — v6 (location + instructor) — 2026-08-31
 --
 -- v6 ADDS FOUR COLUMNS AND CHANGES NOTHING ELSE. Every pre-existing column
@@ -38,9 +45,10 @@
 --   "instructor_count"  distinct facilitators, so the page can say "+2 more"
 --                       instead of silently truncating.
 --
--- All four come from LEFT JOINs on aggregates keyed by section_id, so none can
--- fan out a row. Verify before signing off: row count identical with and
--- without the two new CTEs.
+-- None of the four can fan out a row: location comes from the per-section sd
+-- LATERAL (one row by construction) and instructor from an aggregate keyed by
+-- section_id. Verify before signing off: row count identical with and without
+-- them.
 --
 -- Card 17295: ✅ Programs Report — v5 (section_price → pricing_policy) — 2026-08-05
 -- Changes from v4: replaced section_price lateral join (spr) with inline
@@ -221,32 +229,14 @@ wl AS (
   WHERE COALESCE(w.section_id, se.section_id) IS NOT NULL
   GROUP BY COALESCE(w.section_id, se.section_id)
 ),
--- ── v6: where a section actually meets ────────────────────────────
--- session.location_id is EITHER a court (site) id or a location id. Resolve
--- both, exactly as card 17298 does — reading only one side silently loses
--- every section scheduled the other way.
-sec_loc AS (
-  SELECT se.section_id,
-         COALESCE(lf.name, ld.name) AS loc_name,
-         COUNT(*)                   AS sess_n
-  FROM cfg
-  JOIN session se    ON se.organization_id = cfg.org_id
-                    AND se.deleted_at IS NULL AND se.canceled_at IS NULL
-  LEFT JOIN court    ct ON ct.id = se.location_id AND ct.deleted_at IS NULL
-  LEFT JOIN location lf ON lf.id = ct.location_id AND lf.deleted_at IS NULL
-  LEFT JOIN location ld ON ld.id = se.location_id AND ld.deleted_at IS NULL
-  WHERE COALESCE(lf.name, ld.name) IS NOT NULL
-  GROUP BY se.section_id, COALESCE(lf.name, ld.name)
-),
-sec_loc_agg AS (
-  SELECT section_id,
-         -- primary = most sessions; name breaks the tie so two runs of the
-         -- same query cannot pick different winners.
-         (ARRAY_AGG(loc_name ORDER BY sess_n DESC, loc_name))[1] AS location_name,
-         COUNT(*)::int                                           AS location_count
-  FROM sec_loc
-  GROUP BY section_id
-),
+-- ── v6.1: the location CTEs are GONE — folded into the sd LATERAL below.
+-- v6 resolved a section's location in its own full-org CTE, which scanned every
+-- one of the org's sessions a SECOND time: sd was already reading each section's
+-- sessions for the date envelope. Measured at apex (36,921 sessions): the CTE
+-- cost 4.7s on its own, on a card that already ran 45-140s and had started
+-- timing out past the app's own 60s+120s ceiling. One pass gives both.
+-- Proven identical before the push: 5,858 apex sections, ZERO diffs on
+-- first_start, last_end, location_name and location_count.
 sec_fac AS (
   SELECT sf.section_id,
          STRING_AGG(DISTINCT BTRIM(REGEXP_REPLACE(CONCAT_WS(' ', u.first_name, u.last_name), '\s+', ' ', 'g')), ', ') AS instructor_names,
@@ -298,19 +288,42 @@ SELECT
   COALESCE(wl.waitlist_converted,0)                                                           AS waitlist_converted,
   ROUND(COALESCE(wl.waitlist_active,0) * COALESCE((s.pricing_policy->'default'->>'cents')::int,0) / 100.0, 2) AS waitlist_demand,
   -- ── v6 additions, APPENDED so v5 cache entries stay readable ──
-  sla.location_name                 AS location,
-  COALESCE(sla.location_count, 0)   AS location_count,
+  sd.location_name                  AS location,
+  COALESCE(sd.location_count, 0)    AS location_count,
   sfx.instructor_names              AS instructor,
   COALESCE(sfx.instructor_count, 0) AS instructor_count
 FROM cfg
 JOIN section s ON s.organization_id = cfg.org_id AND s.deleted_at IS NULL
 JOIN program p ON p.id = s.program_id AND p.organization_id = cfg.org_id AND p.deleted_at IS NULL
 JOIN organization o ON o.id = cfg.org_id
+-- ONE PASS PER SECTION for the date envelope AND the location. The inner
+-- GROUP BY deliberately does NOT drop rows whose location is NULL — the
+-- min/max must see every session — so the NULLs are excluded at the OUTER
+-- aggregate with FILTER instead. location_count therefore counts distinct
+-- LOCATED locations, exactly as the old CTE's COUNT(*) over its groups did.
+-- Primary = most sessions, ties broken by name so two runs cannot disagree.
 LEFT JOIN LATERAL (
-  SELECT MIN(se.starts_at) AS first_start, MAX(se.ends_at) AS last_end
-  FROM session se
-  WHERE se.section_id = s.id AND se.organization_id = cfg.org_id
-    AND se.deleted_at IS NULL AND se.canceled_at IS NULL
+  SELECT MIN(g.mn) AS first_start,
+         MAX(g.mx) AS last_end,
+         (ARRAY_AGG(g.loc ORDER BY g.n DESC, g.loc)
+            FILTER (WHERE g.loc IS NOT NULL))[1] AS location_name,
+         COUNT(g.loc)::int                       AS location_count
+  FROM (
+    SELECT COALESCE(lf.name, ld.name) AS loc,
+           COUNT(*)                   AS n,
+           MIN(se.starts_at)          AS mn,
+           MAX(se.ends_at)            AS mx
+    FROM session se
+    -- session.location_id is EITHER a court (site) id or a location id.
+    -- Resolve both, exactly as card 17298 does — reading only one side
+    -- silently loses every section scheduled the other way.
+    LEFT JOIN court    ct ON ct.id = se.location_id AND ct.deleted_at IS NULL
+    LEFT JOIN location lf ON lf.id = ct.location_id AND lf.deleted_at IS NULL
+    LEFT JOIN location ld ON ld.id = se.location_id AND ld.deleted_at IS NULL
+    WHERE se.section_id = s.id AND se.organization_id = cfg.org_id
+      AND se.deleted_at IS NULL AND se.canceled_at IS NULL
+    GROUP BY COALESCE(lf.name, ld.name)
+  ) g
 ) sd ON TRUE
 LEFT JOIN LATERAL (
   SELECT season.name AS season_name
@@ -324,7 +337,6 @@ LEFT JOIN sec_fin f ON f.section_id = s.id
 LEFT JOIN slots    ON slots.section_id = s.id
 LEFT JOIN ppl      ON ppl.section_id = s.id
 LEFT JOIN wl       ON wl.section_id = s.id
-LEFT JOIN sec_loc_agg sla ON sla.section_id = s.id
 LEFT JOIN sec_fac     sfx ON sfx.section_id = s.id
 WHERE s.organization_id = cfg.org_id AND s.deleted_at IS NULL
   [[ AND (sd.first_start IS NULL OR (sd.first_start AT TIME ZONE cfg.tz)::date <= {{end_date}}::date) ]]
