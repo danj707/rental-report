@@ -607,6 +607,53 @@ function programRows() {
   ];
 }
 
+// The Waitlist report had NO render case at all before 2026-09-01 — the report
+// whose central number was wrong for months.
+//
+// stubMode "prev6" drops "Waitlist Type", i.e. a warm pre-v6 cache entry: the
+// `auto` tag must then be ABSENT rather than defaulting to manual, because
+// "we cannot tell" and "a person does this by hand" are different facts.
+//
+// THE FOUR ROWS ARE THE FOUR STATES, and their conversion figures are all
+// different so a swapped cell fails rather than looking plausible:
+//   auto-1   automated, 20 sent / 15 claimed  -> 75%
+//   man-1    manual,    20 sent /  4 claimed  -> 20%
+//   thin-1   manual,     2 sent /  2 claimed  -> under the floor, "2 of 2"
+//   none-1   manual,     0 sent               -> a dash
+function waitlistRows() {
+  const V6 = STUB_MODE !== "prev6";
+  const row = (id, name, type, sent, claimed, waitlisted) => ({
+    "Org Name": "Test Org", "Program": name, "Section": name, "Section Id": id,
+    "Season": "Fall '26", "Section Status": "Upcoming",
+    "Start Date": "2026-10-01", "End Date": "2026-12-15",
+    "Activity": "Aquatics",
+    "Waitlist Mode": "remain-active", "Mode Source": "section",
+    ...(V6 ? { "Waitlist Type": type } : {}),
+    "Link Expiration Min": 1440,
+    "Capacity": 20, "Enrolled": 20, "Price": 40,
+    "Waitlisted": waitlisted, "Waitlist All-Time": waitlisted + claimed,
+    "Waitlist Converted": claimed,
+    "Est Demand": waitlisted * 40,
+    "Pressure %": Math.round((waitlisted / 20) * 100),
+    "Oldest Active Join": "2026-08-01",
+    "Offers Sent": sent, "People Offered": sent,
+    "Offers Claimed": claimed, "Claimants": claimed,
+    // v6 partitions offers_sent exactly, so the fixture honours that invariant
+    // — the card guarantees it and a fixture that breaks it would be testing
+    // something the feed can never produce.
+    "Offers Expired": sent - claimed, "Offers Outstanding": 0,
+    "Avg Claim Hours": claimed ? 6.2 : null, "Median Claim Hours": claimed ? 5.3 : null,
+    "Claim 1h": 0, "Claim 4h": claimed, "Claim 8h": 0,
+    "Claim 24h": 0, "Claim 48h": 0, "Claim 48h Plus": 0,
+  });
+  return [
+    row("auto-1", "Automated Swim Lessons", "automated", 20, 15, 12),
+    row("man-1",  "Manual Yoga",            "manual",    20,  4,  9),
+    row("thin-1", "Tiny Tots",              "manual",     2,  2,  1),
+    row("none-1", "Nobody Invited Yet",     "manual",     0,  0,  5),
+  ];
+}
+
 // Per-section attendance. Card 18547 v2 also emits Absent/Absentees, resolved by
 // "latest mark or undo wins" — so a section whose only mark was UNDONE reads 0
 // here, not 1. sec-ww-1 is that case; sec-aq-2 carries no absences at all.
@@ -878,6 +925,7 @@ let STUB_MODE = "";
 
 const STUBS = [
   { match: /\/facilities\/api\/campsites/, body: () => campsitesGeo },
+  { match: /\/waitlist\/api\/data/, body: () => ({ rows: waitlistRows(), meta: { org_id: "org-uuid-1" } }) },
   /* Card 21055, the money half of the by-month panel. MUST PEAK IN A DIFFERENT
      MONTH FROM THE ACTIVITY SERIES — August here against September in
      programRows() — because that disagreement is the entire reason the panel
@@ -2188,6 +2236,34 @@ const CASES = [
   // 957 and rendered it NOWHERE for a day — the same shape as the location
   // filter that shipped unable to render. A case keyed on the CELL is the only
   // thing that catches a mapped-but-never-displayed column.
+  // ── Waitlist: the auto tag, and a conversion rate that is not a lie ──────
+  // This report had NO render case at all, and its central number — how many
+  // claim links became registrations — was measuring the EXPIRY SWEEP until
+  // card 19273 v6. 63% platform-wide where the truth was 42.5%.
+  { name: "waitlist · the table renders", path: "/{org}/waitlist", needs: "table tbody tr" },
+  // Keyed on the VALUE. 20 sent / 15 claimed is 75%; reading the wrong pair of
+  // columns gives a different number rather than an obviously broken one.
+  { name: "waitlist · invite conversion is a real rate", path: "/{org}/waitlist",
+    needs: '[data-wl-conv="75"]' },
+  { name: "waitlist · ...and a poor one reads poor", path: "/{org}/waitlist",
+    needs: '[data-wl-conv="20"]' },
+  // A RATE OVER TWO INVITES IS NOT A RATE. Under the floor the cell shows the
+  // counts, and the percentage must be ABSENT — "100%" over one invite is the
+  // thin-denominator lie this floor exists to prevent.
+  { name: "waitlist · a thin denominator shows counts, not a rate", path: "/{org}/waitlist",
+    needs: "[data-wl-convthin]", absent: '[data-wl-conv="100"]' },
+  // The auto tag, on the automated section only.
+  { name: "waitlist · an automated section is tagged", path: "/{org}/waitlist",
+    needs: '[data-wl-auto="auto-1"]' },
+  // ...and NOT on a manual one. A tag on every row is 28,161 rows of noise
+  // platform-wide and stops meaning anything.
+  { name: "waitlist · a manual section is not", path: "/{org}/waitlist",
+    needs: '[data-wl-auto="auto-1"]', absent: '[data-wl-auto="man-1"]' },
+  // PRESENCE, NOT VALUE: a warm pre-v6 cache entry has no type at all, so the
+  // tag is absent rather than defaulting to manual.
+  { name: "waitlist · no auto tag on a pre-v6 feed", path: "/{org}/waitlist",
+    stubMode: "prev6", needs: "table tbody tr", absent: "[data-wl-auto]" },
+
   { name: "programs · the section rows name their location", path: "/{org}/programs?tab=revenue",
     act: p => openProgram(p, "Aquatic Exercise"), needs: '[data-prog-seccell-location="Urho Saari Swim Stadium"]' },
   { name: "programs · ...and who teaches them", path: "/{org}/programs?tab=revenue",
