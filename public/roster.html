@@ -7,6 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <link rel="stylesheet" href="/report-settings.css">
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -73,108 +74,8 @@
     .toolbar .btn-settings:hover { background: rgba(255,255,255,.18); }
     .toolbar .btn-settings.is-off { opacity: .4; cursor: not-allowed; }
     .toolbar .btn-settings.is-off:hover { background: rgba(255,255,255,.08); }
-    .rs-back {
-      position: fixed; inset: 0; z-index: 9998; background: rgba(0,0,0,.55);
-      display: flex; align-items: flex-start; justify-content: center; padding: 4vh 16px;
-      overflow-y: auto;
-    }
-    .rs-sheet {
-      background: #fff; color: #222; border-radius: 12px; width: 760px; max-width: 96vw;
-      box-shadow: 0 24px 70px rgba(0,0,0,.35); overflow: hidden;
-    }
-    .rs-head {
-      display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
-      padding: 15px 22px; background: #2c2c2c; color: #eee;
-    }
-    .rs-head h3 { margin: 0; font-size: 15px; font-weight: 650; }
-    .rs-head .rs-who { font-size: 11.5px; color: #a8a8a8; }
-    .rs-head .rs-x {
-      margin-left: auto; background: none; border: none; color: #a8a8a8;
-      font-size: 15px; cursor: pointer; font-family: inherit;
-    }
-    .rs-head .rs-x:hover { color: #fff; }
-    .rs-body { max-height: 66vh; overflow-y: auto; }
-    .rs-grp { border-top: 1px solid #eee; }
-    .rs-grp:first-child { border-top: none; }
-    .rs-grp-head { display: flex; gap: 12px; padding: 16px 22px 10px; }
-    .rs-stripe { width: 3px; border-radius: 2px; flex: 0 0 3px; }
-    .rs-grp[data-sev="safe"]   .rs-stripe { background: #157f4a; }
-    .rs-grp[data-sev="warn"]   .rs-stripe { background: #a35a06; }
-    .rs-grp[data-sev="strict"] .rs-stripe { background: #a8231f; }
-    .rs-blast {
-      font-size: 10px; letter-spacing: .05em; text-transform: uppercase; font-weight: 600;
-    }
-    .rs-grp[data-sev="safe"]   .rs-blast { color: #157f4a; }
-    .rs-grp[data-sev="warn"]   .rs-blast { color: #a35a06; }
-    .rs-grp[data-sev="strict"] .rs-blast { color: #a8231f; }
-    .rs-grp-head h4 { margin: 2px 0 0; font-size: 14px; font-weight: 650; }
-    .rs-grp-head p { margin: 4px 0 0; font-size: 12.5px; color: #666; max-width: 64ch; }
-    .rs-grp-body { padding: 2px 22px 20px 37px; display: flex; flex-direction: column; gap: 16px; }
-    .rs-row { display: flex; flex-wrap: wrap; gap: 12px 24px; }
-    .rs-field { display: flex; flex-direction: column; gap: 5px; }
-    .rs-field > span {
-      font-size: 10.5px; letter-spacing: .05em; text-transform: uppercase; color: #888; font-weight: 500;
-    }
-    .rs-field select, .rs-field input[type="range"] { font: inherit; font-size: 13px; color: #111; }
-    .rs-field select {
-      background: #fff; border: 1px solid #ddd; border-radius: 5px; padding: 5px 8px;
-    }
-    .rs-hint { margin: 0; font-size: 12px; color: #666; max-width: 66ch; }
-    .rs-warn {
-      font-size: 11.5px; color: #a35a06; background: #fdf4e7; border: 1px solid #f0dcbd;
-      border-radius: 5px; padding: 6px 9px; max-width: 46ch; text-transform: none;
-      letter-spacing: 0; font-weight: 400; line-height: 1.45;
-    }
-    .rs-tgrid { display: flex; flex-wrap: wrap; gap: 6px; }
-    .rs-tg {
-      font: inherit; font-size: 11px; cursor: pointer; padding: 4px 10px; border-radius: 4px;
-      border: 1px solid #ddd; background: #f4f4f4; color: #666;
-    }
-    .rs-tg[aria-pressed="true"] { background: #e8f0fe; border-color: #93c5fd; color: #1e3a8a; font-weight: 600; }
-    .rs-meter input[type="range"] { width: 100%; max-width: 460px; accent-color: #3b82f6; }
-    .rs-cost { display: flex; gap: 20px; flex-wrap: wrap; font-size: 12px; color: #555; }
-    .rs-cost b { font-size: 15px; color: #111; font-variant-numeric: tabular-nums; }
-    .rs-cost .hot b { color: #a8231f; }
-    .rs-cols { display: flex; flex-direction: column; gap: 4px; max-width: 520px; }
-    .rs-col-item {
-      display: flex; align-items: center; gap: 10px; padding: 5px 10px;
-      border: 1px solid #eee; border-radius: 5px; background: #f8f8f8; font-size: 12.5px;
-    }
-    .rs-col-item .rs-src { color: #aaa; font-size: 11px; min-width: 14px; }
-    .rs-col-item .rs-col-acts { margin-left: auto; display: flex; gap: 4px; }
-    .rs-col-item .rs-col-acts button {
-      font: inherit; font-size: 11px; cursor: pointer; background: none;
-      border: 1px solid #ddd; border-radius: 4px; padding: 1px 6px; color: #666;
-    }
-    .rs-col-item .rs-col-acts button:disabled { opacity: .35; cursor: default; }
-    .rs-verified {
-      font-size: 12px; padding: 8px 11px; border-radius: 5px; max-width: 560px;
-      background: #eaf6ef; border: 1px solid #b6ddc6; color: #157f4a;
-    }
-    .rs-verified.drifted { background: #fbeceb; border-color: #f0c3c1; color: #a8231f; }
-    .rs-err {
-      margin: 0 22px 12px; padding: 8px 11px; border-radius: 5px; font-size: 12.5px;
-      background: #fbeceb; border: 1px solid #f0c3c1; color: #a8231f;
-    }
-    .rs-foot {
-      display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
-      padding: 14px 22px; border-top: 1px solid #eee; background: #f7f7f7;
-    }
-    .rs-save {
-      font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
-      background: #2563eb; color: #fff; border: none; border-radius: 5px; padding: 7px 15px;
-    }
-    .rs-save:disabled { background: #9db6e8; cursor: default; }
-    .rs-ghost {
-      font: inherit; font-size: 13px; cursor: pointer; color: #555;
-      background: #fff; border: 1px solid #ddd; border-radius: 5px; padding: 7px 12px;
-    }
-    .rs-footnote { margin-left: auto; font-size: 11.5px; color: #999; }
-    .rs-tg:focus-visible, .rs-save:focus-visible, .rs-ghost:focus-visible,
-    .rs-field select:focus-visible, .btn-settings:focus-visible {
-      outline: 2px solid #3b82f6; outline-offset: 1px;
-    }
-    @media print { .rs-back, .btn-settings { display: none !important; } }
+    /* The settings sheet's chrome lives in /report-settings.css — shared with
+       the Facilities hub, which grew its own settings panel. */
 
     /* ── Saved views ── (same markup and classes as the GL report) */
     .view-wrap { position: relative; display: flex; align-items: center; gap: 6px; }

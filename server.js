@@ -9073,6 +9073,20 @@ function sharedCardLoad(rt, overrideOrg, overrideTtlMin) {
   };
 }
 
+// Which site TYPES an org may fold into the Aquatics tab, beyond `pool`.
+//
+// DAN'S RULE, and the whole reason this is configuration rather than a guess:
+// "pools can be courts, but courts can never be pools." The hack is that a site
+// has to be typed `court` to be instant-bookable, so an org that wants a
+// self-bookable swim lane has no option but to lie about the type — El Segundo
+// types 67 of its lanes that way. That is a product capability gap, so reporting
+// must not encode it: the DEFAULT is pools only, and an org that has done it
+// says so explicitly here.
+//
+// These are real court.type values. `pool` is deliberately absent — it is always
+// included and is not a choice.
+const AQUATICS_EXTRA_TYPES = ["court", "rink", "gym", "field", "room", "other"];
+
 const REPORT_SETTINGS_SCHEMA = {
   roster: {
     // ── what it opens on ──
@@ -9096,6 +9110,23 @@ const REPORT_SETTINGS_SCHEMA = {
                      min: 1, max: 12, def: EPACT_VERIFIED_COLUMNS },
     epactLabel:    { kind: "enum", values: ["date-section", "section", "section-date"], def: "date-section" },
     epactBom:      { kind: "bool", def: true },
+  },
+
+  // The Facilities hub's Aquatics tab. Registered under `facility` because that
+  // is the report type in REPORT_TYPES — `facilities` is the hub's path, not a
+  // report, and the settings routes go through resolveOrg.
+  facility: {
+    // Empty by default: pools only. An org that types its lanes `court` adds
+    // "court" here, and nothing about the platform changes for anyone else.
+    aquaticsExtraTypes: { kind: "columns", catalogue: AQUATICS_EXTRA_TYPES,
+                          min: 0, max: AQUATICS_EXTRA_TYPES.length, def: [] },
+    // Locations or site names the tab is restricted to. EMPTY MEANS EVERY ONE —
+    // the same rule as every other multi-select in this repo, and the safe
+    // direction: an org that renames a location gets its whole tab back rather
+    // than an empty one. Free text, because the values are per-org and the
+    // server has no list to validate against; the PANEL builds its options from
+    // the feed, so an option can never be unpickable.
+    aquaticsScope:      { kind: "strings", max: 200, maxLen: 200, def: [] },
   },
 };
 
@@ -9220,7 +9251,7 @@ function reportSettingsDefaults(report) {
   const out = {};
   for (const [k, f] of Object.entries(schema)) {
     out[k] = f.kind === "flags" ? Object.assign({}, f.def)
-           : f.kind === "columns" ? f.def.slice()
+           : (f.kind === "columns" || f.kind === "strings") ? f.def.slice()
            : f.def;
   }
   return out;
@@ -9286,8 +9317,28 @@ function normalizeReportSettings(report, body) {
       const seen = new Set();
       const cols = val.filter(c => typeof c === "string" && f.catalogue.includes(c)
                                    && !seen.has(c) && seen.add(c));
+      // An entry that is not in the catalogue is REPORTED, not quietly binned.
+      // It used to be caught only by the `min` check, which meant a list with a
+      // floor of zero — the aquatics site types — silently discarded a bad value
+      // and answered ok. A settings PUT that discards a field looks like a
+      // working control and is not one.
+      const refused = val.filter(c => typeof c !== "string" || !f.catalogue.includes(c));
+      if (refused.length) dropped.push(key + " (not offered: " + refused.slice(0, 5).join(", ") + ")");
       if (cols.length < f.min) { dropped.push(key + " (needs at least " + f.min + " column)"); continue; }
       out[key] = cols.slice(0, f.max);
+    } else if (f.kind === "strings") {
+      // Free text, because the catalogue is per-org and lives in the feed. It is
+      // still bounded on every axis a stored list can grow along — count, item
+      // length, and duplicates — since this is written to disk and read back
+      // into a page. Blanks are dropped rather than stored: an empty entry can
+      // never match a location and would sit in the panel looking like a bug.
+      if (!Array.isArray(val)) { dropped.push(key + " (not a list)"); continue; }
+      const seen = new Set();
+      const items = val
+        .filter(v => typeof v === "string")
+        .map(v => v.trim())
+        .filter(v => v && v.length <= f.maxLen && !seen.has(v) && seen.add(v));
+      out[key] = items.slice(0, f.max);
     }
   }
   return { settings: out, dropped };
@@ -9705,6 +9756,21 @@ app.get("/:org/facilities", (req, res) => {
     // rendered a blank map.
     coords: org.coords || null,
     mapCity: org.mapCity || "",
+    // Aquatics scope. Injected rather than fetched for the same reason the
+    // roster's are: they decide the FIRST render (which site types the tab
+    // counts at all), and a page that fetched them would draw the pools-only
+    // version and then jump.
+    //
+    // The SETTINGS go to every reader; only the gear that edits them is gated.
+    settings: reportSettings(slug, "facility"),
+    settingsAdmin: isReportSettingsAdmin(req),
+    settingsFlagOff: reportSettingsFlagOff(req),
+    settingsLockable: reportSettingsLockable(req),
+    adminKey: isReportSettingsAdmin(req) ? String(req.query.admin || "") : "",
+    settingsMeta: {
+      defaults: reportSettingsDefaults("facility"),
+      aquaticsTypeCatalogue: AQUATICS_EXTRA_TYPES,
+    },
   };
   const html = require("fs").readFileSync(path.join(__dirname, "public", "facilities.html"), "utf8");
   res.send(html.replace("<head>", `<head><script>window.ORG_CONFIG=${JSON.stringify(orgConfig)};</script>`));

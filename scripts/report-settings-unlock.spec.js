@@ -305,16 +305,21 @@ src(!/type="text"[^>]*username/i.test(PAGE) && !/autoComplete="username"/.test(P
 
     // DRIVE A REFUSAL PATH, or the zero-deadlink assertion below is vacuous —
     // with the password set and the flag on, none of the refuse404 branches ran.
-    // `facility` is not in REPORT_SETTINGS_SCHEMA, so this is the unregistered
+    // `gl` is not in REPORT_SETTINGS_SCHEMA, so this is the unregistered
+    // report case. It used to be `facility`, which stopped being unregistered
+    // the day the Facilities hub grew its aquatics scope — and the assertion
+    // then failed with 429 rather than 404, because it was hammering a route
+    // that really exists and tripping the throttle. Pick a report nobody is
+    // about to register.
     // -report refusal, and it carries a perfectly valid org token: exactly
     // noteDeadLink's trigger shape.
     {
-      const r = await call("POST", `/${org}/facility/api/settings-unlock?token=${encodeURIComponent(token)}`,
+      const r = await call("POST", `/${org}/gl/api/settings-unlock?token=${encodeURIComponent(token)}`,
                            { password: "spec-password" });
       is(r.status, 404, "an unregistered report refuses the unlock");
     }
     {
-      const r = await call("GET", `/${org}/facility/api/settings?token=${encodeURIComponent(token)}`);
+      const r = await call("GET", `/${org}/gl/api/settings?token=${encodeURIComponent(token)}`);
       is(r.status, 404, "…and so does its settings route");
     }
 

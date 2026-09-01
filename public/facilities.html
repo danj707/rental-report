@@ -7,7 +7,17 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+  <link rel="stylesheet" href="/report-settings.css">
   <style>
+    .aqrs-gear { margin-left: 8px; }
+    .btn-settings {
+      background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.18);
+      color: #e5e7eb; border-radius: 6px; cursor: pointer;
+      font-size: 13px; line-height: 1; padding: 4px 8px;
+    }
+    .btn-settings:hover { background: rgba(255,255,255,.18); }
+    .btn-settings.is-off { opacity: .4; cursor: not-allowed; }
+
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: 'Inter', system-ui, -apple-system, sans-serif; font-size: 12px; color: #1a1a1a; background: #f5f4f1; line-height: 1.35; }
 
@@ -591,18 +601,23 @@
     // one. A slug allowlist would need remembering for the next org that types
     // its lanes `court` so they instant-book, and would silently do nothing
     // until someone did.
-    const LANE_RX      = /\blanes?\b/;
-    const LANE_NOT_RX  = /\b(court|tennis|pickleball|basketball|volleyball|bowl\w*)\b/;
-    const LANE_LOC_RX  = /\b(pool|aquatics?|swim|natatorium|plunge)\b/;
+    // THE LANE GUESS IS GONE (2026-09-01, Dan): "pools can be courts, but courts
+    // can never be pools." A court-typed swim lane used to be reclassified here
+    // by name + an aquatic location — a guess that had to be right about every
+    // org on the platform from one regex, and that quietly encoded a product
+    // capability gap (a site must be typed `court` to be instant-bookable, so an
+    // org wanting a self-bookable lane has to lie about the type).
+    //
+    // It is CONFIGURATION now: the Aquatics tab defaults to `pool` and an org
+    // that types its lanes `court` says so in its report settings. El Segundo is
+    // configured that way in the same change, so nobody loses a number. The
+    // name branches below stay — a site an org literally called "Pool 1" is not
+    // a guess about a location, it is the org's own word.
     function refineSiteType(rawType, facility, location) {
       if (rawType !== 'court') return rawType;
       const n = String(facility == null ? '' : facility).toLowerCase();
       if (/\b(ice|rink)\b/.test(n)) return 'rink';
       if (/\b(pool|aquatics?|natatorium|swim)\b/.test(n)) return 'pool';
-      // Bare lane + no competing court word + an aquatic location. Both guards
-      // are independently sufficient to reject Johnson Lane Park.
-      if (LANE_RX.test(n) && !LANE_NOT_RX.test(n)
-          && LANE_LOC_RX.test(String(location == null ? '' : location).toLowerCase())) return 'pool';
       // "Gymnasium" is a gym; but several orgs name basketball/volleyball courts
       // inside a gym "Gym Court 1" — those the org explicitly called courts, so
       // leave them as courts. Only reclassify a gym site that isn't named a court.
@@ -621,6 +636,17 @@
         return Object.assign({}, r, { 'Site Type': refined });
       });
     }
+    // ── Per-org aquatics scope (report settings) ────────────────────────────
+    // Injected by the /:org/facilities route, never fetched: these decide which
+    // site types the tab counts AT ALL, so a page that fetched them would draw
+    // the pools-only version and then jump.
+    const RS_SETTINGS = (window.ORG_CONFIG || {}).settings || {};
+    const AQ_EXTRA = Array.isArray(RS_SETTINGS.aquaticsExtraTypes) ? RS_SETTINGS.aquaticsExtraTypes : [];
+    // EMPTY MEANS EVERY LOCATION, the same rule as every other multi-select in
+    // this repo. It is the safe direction: an org that renames a location gets
+    // its whole tab back rather than an empty one.
+    const AQ_SCOPE = Array.isArray(RS_SETTINGS.aquaticsScope) ? RS_SETTINGS.aquaticsScope : [];
+
     // The Outdoor Events tab's scope. All three are real court.type values with a
     // CHECK constraint behind them, so no name-matching recovery is needed the
     // way courts need refineSiteType().
@@ -726,12 +752,53 @@
       // Spaces on purpose (Dan): leagues and tournaments, not parties.
       fields:   { label: 'Fields',           icon: '⚾',  types: ['field'] },
       golf:     { label: 'Golf',             icon: '⛳',  types: ['golf'] },
-      aquatics: { label: 'Pool / Aquatics',  icon: '🏊', types: ['pool'] },
+      // Pools ALWAYS, plus whatever this org has configured. Empty by default,
+      // so an org that has not been configured sees exactly what it saw before
+      // any of this existed. See AQ_EXTRA / AQ_SCOPE above.
+      aquatics: { label: 'Pool / Aquatics',  icon: '🏊',
+                  types: ['pool'].concat(AQ_EXTRA), scope: AQ_SCOPE },
       // Ice — mostly orgs type these 'rink', but some (Apex) type them 'court';
       // refineSiteType() recovers those from the site name, so this vertical
       // catches both the correctly-typed rinks and the reclassified outliers.
       ice:      { label: 'Ice',              icon: '⛸️', types: ['rink'] },
     };
+    // ONE PREDICATE, read by every surface that scopes to a vertical: the tab's
+    // view, its hours panel, the tab badge and the Excel export. Four copies is
+    // exactly how the facility Summary shipped chips that scoped some panels and
+    // not others and the page disagreed with itself for a week.
+    //
+    // The scope Set is built ONCE per vertical rather than per row — this runs
+    // over every row of the feed on every render.
+    Object.keys(VERT_CONFIG).forEach(k => {
+      const v = VERT_CONFIG[k];
+      v.key = k;                                // so a view handed `vert` can name itself
+      v._types = new Set(v.types);
+      v._scope = (v.scope && v.scope.length) ? new Set(v.scope) : null;
+    });
+    // A configured scope matches on the LOCATION or the site NAME, because Dan
+    // asked to be able to name either and the feed carries both. A site name is
+    // `Facility` — card 17294's column for court.court_number.
+    function vertRowMatch(r, key) {
+      const v = VERT_CONFIG[key];
+      if (!v || !v._types.has(r['Site Type'])) return false;
+      if (!v._scope) return true;               // empty means every one
+      return v._scope.has(r['Location']) || v._scope.has(r['Facility']);
+    }
+
+    // What the tab is scoped to, in words. A configured scope that is not stated
+    // on screen is how a number stops being trusted: an admin looking at a
+    // narrowed tab must be able to see that it is narrowed, and to what.
+    function vertScopeNote(key) {
+      const v = VERT_CONFIG[key];
+      if (!v) return '';
+      let note = 'scoped to ' + v.types.join(', ') + ' site types';
+      if (v._scope) note += ' at ' + v.scope.length + ' configured '
+                          + (v.scope.length === 1 ? 'location/site' : 'locations/sites')
+                          + ' (' + v.scope.slice(0, 3).join(', ')
+                          + (v.scope.length > 3 ? ', +' + (v.scope.length - 3) + ' more' : '') + ')';
+      return note + '.';
+    }
+
     const monthLabel = ym => {
       const p = String(ym).split('-');
       if (p.length < 2) return ym;
@@ -2310,9 +2377,8 @@
         e('div', { className: 'em-title', style: { color: '#9ca3af' } }, 'Loading ' + vert.label + ' data…'),
         e('div', { className: 'fac-spin' }));
 
-      const types = new Set(vert.types);
       const ss = new Set(statusSel);
-      const scoped = rows.filter(r => types.has(r['Site Type']) && ss.has(lc(r['Status'])));
+      const scoped = rows.filter(r => vertRowMatch(r, vert.key) && ss.has(lc(r['Status'])));
       if (!scoped.length) return e('div', { className: 'empty' },
         e('div', { className: 'em-icon' }, vert.icon || '🗓️'),
         e('div', { className: 'em-title' }, 'No ' + vert.label + ' bookings in this range'),
@@ -2426,7 +2492,7 @@
             }),
           ),
         ),
-        e('div', { className: 'section-note' }, vert.label + ' · ' + bookings.toLocaleString() + ' bookings in range · scoped to ' + vert.types.join(', ') + ' site types.'),
+        e('div', { className: 'section-note' }, vert.label + ' · ' + bookings.toLocaleString() + ' bookings in range · ' + vertScopeNote(vert.key)),
       );
     }
 
@@ -2528,7 +2594,11 @@
             if (dead) return;
             // refine FIRST, then scope — see the note above.
             const refined = refineRows(j.rows || []);
-            setData({ rows: refined.filter(r => r['Site Type'] === 'pool'), err: null });
+            // Through the SAME predicate as every other aquatics surface. This
+            // used to hardcode 'pool', which is how the lane-hours panel would
+            // have gone on reporting eleven hours at an org whose lanes are
+            // typed `court` while the tab beside it reported thousands.
+            setData({ rows: refined.filter(r => vertRowMatch(r, 'aquatics')), err: null });
           })
           .catch(err => { if (!dead) setData({ rows: null, err: err.message || String(err) }); });
         return () => { dead = true; };
@@ -2623,6 +2693,199 @@
           })) })));
     }
 
+    // ── Aquatics scope settings ──────────────────────────────────────────────
+    // The gear sits ON the Aquatics tab rather than in the global toolbar,
+    // because that is where its effect is. Three states, exactly as on the Class
+    // Roster: a working gear for a proven admin, a LOCKED one that opens the
+    // password prompt, and a disabled one naming the switch when the feature
+    // flag is off. THE PROMPT IS NOT THE GATE — every settings route still
+    // requires the key, so this is a way to obtain the credential and never a
+    // way to skip it.
+    const rsAdmin    = () => !!(window.ORG_CONFIG || {}).settingsAdmin;
+    const rsLockable = () => !!(window.ORG_CONFIG || {}).settingsLockable;
+    const rsFlagOff  = () => !!(window.ORG_CONFIG || {}).settingsFlagOff;
+    const rsKey      = () => String((window.ORG_CONFIG || {}).adminKey || '');
+    const rsMeta     = () => (window.ORG_CONFIG || {}).settingsMeta || {};
+
+    const SITE_TYPE_LABEL = {
+      court: 'Courts', rink: 'Ice rinks', gym: 'Gyms',
+      field: 'Fields', room: 'Rooms', other: 'Other',
+    };
+
+    function AquaticsSettings({ rows }) {
+      const [open, setOpen] = React.useState(false);
+      const [busy, setBusy] = React.useState(false);
+      const [err, setErr]   = React.useState(null);
+      const cur = (window.ORG_CONFIG || {}).settings || {};
+      const [types, setTypes] = React.useState(() => new Set(cur.aquaticsExtraTypes || []));
+      const [scope, setScope] = React.useState(() => new Set(cur.aquaticsScope || []));
+      const [unlock, setUnlock] = React.useState(false);
+      const [pw, setPw] = React.useState('');
+
+      // THE OPTIONS COME FROM THE FEED, so an option can never be unpickable —
+      // the same rule as every other picker in this repo. A location already in
+      // the saved scope is kept in the list even if this window has no bookings
+      // for it, or an admin could never untick what they ticked last month.
+      const places = React.useMemo(() => {
+        const set = new Set(cur.aquaticsScope || []);
+        (rows || []).forEach(r => { if (r['Location']) set.add(r['Location']); });
+        return Array.from(set).sort((a, b) => a.localeCompare(b));
+      }, [rows]);
+
+      // What each extra type would actually ADD, counted over the rows on
+      // screen. A checkbox labelled "Courts" is a guess; "Courts (+67 sites)" is
+      // a decision. Sites, not bookings — the question is which sites belong on
+      // this tab.
+      const wouldAdd = React.useMemo(() => {
+        const out = {};
+        (rsMeta().aquaticsTypeCatalogue || []).forEach(t => {
+          const seen = new Set();
+          (rows || []).forEach(r => {
+            if (r['Site Type'] !== t) return;
+            if (scope.size && !(scope.has(r['Location']) || scope.has(r['Facility']))) return;
+            if (r['Site ID'] || r['Facility']) seen.add(r['Site ID'] || r['Facility']);
+          });
+          out[t] = seen.size;
+        });
+        return out;
+      }, [rows, scope]);
+
+      async function save(patch) {
+        setBusy(true); setErr(null);
+        try {
+          const base = '/' + CFG.slug + '/facility/api/settings';
+          const q = [];
+          if (CFG.token) q.push('token=' + encodeURIComponent(CFG.token));
+          if (rsKey()) q.push('admin=' + encodeURIComponent(rsKey()));
+          const resp = await fetch(base + (q.length ? '?' + q.join('&') : ''), {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(patch),
+          });
+          const data = await resp.json().catch(() => ({}));
+          if (!resp.ok) { setErr(data.error || 'Could not save the settings.'); return; }
+          // The settings decide which site types the tab counts AT ALL, so the
+          // honest thing after a save is a reload rather than half-applying them
+          // to a page already in flight.
+          window.location.reload();
+        } catch (ex) {
+          setErr('Could not save the settings: ' + (ex.message || ex));
+        } finally { setBusy(false); }
+      }
+
+      const gear =
+        rsAdmin()   ? e('button', { className: 'btn-settings', onClick: () => setOpen(true),
+                                    'data-aqrs-open': true,
+                                    title: 'Which sites count as aquatics for this organization' }, '\u2699')
+      : rsLockable() ? e('button', { className: 'btn-settings', 'data-aqrs-locked': true,
+                                    onClick: () => { setUnlock(true); setErr(null); },
+                                    title: 'Aquatics scope \u2014 admin password required' }, '\u2699')
+      : rsFlagOff() ? e('button', { className: 'btn-settings is-off', 'data-aqrs-flagoff': true, disabled: true,
+                                    title: 'Report settings are switched off for this deployment.' }, '\u2699')
+      : null;
+      if (!gear) return null;
+
+      // Obtaining the credential, in place. The route is the generic one and it
+      // is throttled server-side (5 per IP per 15 minutes, and the correct
+      // password is refused while locked out); on success it sets the same
+      // HttpOnly cookie the admin dashboard sets and the page RELOADS, because
+      // `settingsAdmin` is injected server-side and decides the first render.
+      // Revealing the panel client-side would be claiming an authorisation the
+      // server never granted.
+      async function submitUnlock(ev) {
+        ev.preventDefault();
+        setBusy(true); setErr(null);
+        try {
+          const base = '/' + CFG.slug + '/facility/api/settings-unlock';
+          const resp = await fetch(base + (CFG.token ? '?token=' + encodeURIComponent(CFG.token) : ''), {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password: pw }),
+          });
+          const data = await resp.json().catch(() => ({}));
+          if (!resp.ok || !data.ok) { setErr(data.error || 'That password was not accepted.'); return; }
+          window.location.reload();
+        } catch (ex) {
+          setErr(String((ex && ex.message) || ex));
+        } finally { setBusy(false); }
+      }
+
+      if (unlock) return e('span', { className: 'aqrs-gear' }, gear,
+        e('div', { className: 'rs-back', onClick: ev => { if (ev.target === ev.currentTarget && !busy) setUnlock(false); } },
+          e('form', { className: 'rs-sheet', role: 'dialog', 'aria-label': 'Admin password required',
+                      'data-aqrs-unlock': true, onSubmit: submitUnlock },
+            e('div', { className: 'rs-head' },
+              e('h3', null, '\uD83D\uDD13 Admin password'),
+              e('span', { className: 'rs-who' }, 'The admin dashboard password'),
+              e('button', { type: 'button', className: 'rs-x', onClick: () => !busy && setUnlock(false), 'aria-label': 'Close' }, '\u2715')),
+            e('div', { className: 'rs-grp' },
+              e('p', { className: 'rs-hint' }, 'Aquatics scope changes what this tab counts for everyone with this report\u2019s link.'),
+              e('input', { type: 'password', value: pw, autoFocus: true, 'data-aqrs-pw': true,
+                           onChange: ev => setPw(ev.target.value),
+                           style: { width: '100%', padding: '8px 10px', fontSize: 13 } })),
+            err ? e('div', { className: 'rs-err', 'data-aqrs-err': true }, err) : null,
+            e('div', { className: 'rs-foot' },
+              e('button', { type: 'submit', className: 'rs-save', disabled: busy || !pw, 'data-aqrs-unlock-go': true },
+                busy ? 'Checking\u2026' : 'Unlock')))));
+
+      if (!open) return e('span', { className: 'aqrs-gear' }, gear);
+
+      const toggle = (set, v, fn) => {
+        const next = new Set(set);
+        if (next.has(v)) next.delete(v); else next.add(v);
+        fn(next);
+      };
+
+      return e('span', { className: 'aqrs-gear' }, gear,
+        e('div', { className: 'rs-back', onClick: ev => { if (ev.target === ev.currentTarget && !busy) setOpen(false); } },
+          e('div', { className: 'rs-sheet', role: 'dialog', 'aria-label': 'Aquatics scope', 'data-aqrs-sheet': true },
+            e('div', { className: 'rs-head' },
+              e('h3', null, '\uD83C\uDFCA Which sites count as aquatics'),
+              e('span', { className: 'rs-who' }, 'Applies to everyone with this report\u2019s link'),
+              e('button', { className: 'rs-x', onClick: () => !busy && setOpen(false), 'aria-label': 'Close' }, '\u2715')),
+
+            e('div', { className: 'rs-grp' },
+              e('div', { className: 'rs-grp-head' }, 'Site types'),
+              e('p', { className: 'rs-hint' },
+                'Pools always count. Add a type only if this organization has sites of that type that really are aquatic \u2014 ',
+                'a swim lane has to be typed a court to be instant-bookable, so some orgs have no choice.'),
+              (rsMeta().aquaticsTypeCatalogue || []).map(t =>
+                e('label', { className: 'rs-tg', key: t, 'data-aqrs-type': t },
+                  e('input', { type: 'checkbox', checked: types.has(t),
+                               onChange: () => toggle(types, t, setTypes) }),
+                  e('span', null, SITE_TYPE_LABEL[t] || t,
+                    e('b', { className: 'rs-footnote', 'data-aqrs-count': String(wouldAdd[t] || 0) },
+                      ' \u00b7 ' + (wouldAdd[t] || 0) + ' site' + ((wouldAdd[t] || 0) === 1 ? '' : 's') + ' in view'))))),
+
+            e('div', { className: 'rs-grp' },
+              e('div', { className: 'rs-grp-head' }, 'Locations'),
+              e('p', { className: 'rs-hint' },
+                'Leave every box unticked to count every location. Tick some to restrict the tab to those \u2014 ',
+                'which is how an organization keeps its real tennis courts off an aquatics tab that counts courts.'),
+              places.length === 0
+                ? e('div', { className: 'rs-hint' }, 'No locations in the current window yet.')
+                : places.map(p =>
+                    e('label', { className: 'rs-tg', key: p, 'data-aqrs-place': p },
+                      e('input', { type: 'checkbox', checked: scope.has(p),
+                                   onChange: () => toggle(scope, p, setScope) }),
+                      e('span', null, p)))),
+
+            err ? e('div', { className: 'rs-err', 'data-aqrs-err': true }, err) : null,
+
+            e('div', { className: 'rs-foot' },
+              e('button', { className: 'rs-save', disabled: busy, 'data-aqrs-save': true,
+                            onClick: () => save({ aquaticsExtraTypes: Array.from(types),
+                                                  aquaticsScope: Array.from(scope) }) },
+                busy ? 'Saving\u2026' : 'Save'),
+              e('button', { className: 'rs-ghost', disabled: busy, 'data-aqrs-reset': true,
+                            onClick: () => save({ aquaticsExtraTypes: [], aquaticsScope: [] }) },
+                'Reset to pools only'),
+              e('span', { className: 'rs-footnote' },
+                types.size === 0 && scope.size === 0
+                  ? 'Pools only \u2014 the platform default.'
+                  : 'Saving reloads the page.'))))); 
+    }
+
     function AquaticsView({ rows, err, statusSel, vert, start, end }) {
       if (err) return e('div', { className: 'empty' },
         e('div', { className: 'em-icon' }, '⚠️'),
@@ -2632,13 +2895,17 @@
         e('div', { className: 'em-title', style: { color: '#9ca3af' } }, 'Loading Pool / Aquatics data…'),
         e('div', { className: 'fac-spin' }));
 
-      const types = new Set(vert.types);
       const ss = new Set(statusSel);
-      const scoped = rows.filter(r => types.has(r['Site Type']) && ss.has(lc(r['Status'])));
+      const scoped = rows.filter(r => vertRowMatch(r, vert.key) && ss.has(lc(r['Status'])));
+      // THE GEAR HAS TO BE HERE TOO. An org whose lanes are all typed `court`
+      // has no pool bookings at all until it is configured, so mounting the
+      // control only on the populated branch would make the empty state a dead
+      // end: the one org that needs the setting could never reach it.
       if (!scoped.length) return e('div', { className: 'empty' },
         e('div', { className: 'em-icon' }, '🏊'),
         e('div', { className: 'em-title' }, 'No Pool / Aquatics bookings in this range'),
-        e('div', { className: 'em-sub' }, 'This org may not run pool sites, or none were booked with the current status filter. Try a wider date range.'));
+        e('div', { className: 'em-sub' }, 'This org may not run pool sites, or none were booked with the current status filter. Try a wider date range.',
+          e(AquaticsSettings, { rows: rows })));
 
       const isCanceled = r => lc(r['Status']) === 'canceled';
       const isInstant  = r => lc(r['Booking Type']) === 'instant';
@@ -2815,7 +3082,8 @@
             }))),
         // Hours come from card 17294, which the hub feed cannot supply.
         start && end ? e(AquaticsHours, { start: start, end: end }) : null,
-        e('div', { className: 'section-note' }, 'Pool / Aquatics · ' + bookings.toLocaleString() + ' bookings in range · scoped to ' + vert.types.join(', ') + ' site types.'),
+        e('div', { className: 'section-note', 'data-aq-scope': true }, 'Pool / Aquatics · ' + bookings.toLocaleString() + ' bookings in range · ' + vertScopeNote(vert.key),
+          e(AquaticsSettings, { rows: rows })),
       );
     }
 
@@ -5882,8 +6150,7 @@
       if (viewRows) {
         const ss = new Set(statusSel);
         Object.keys(VERT_CONFIG).forEach(k => {
-          const t = new Set(VERT_CONFIG[k].types);
-          vertCounts[k] = viewRows.filter(r => r['Source'] !== 'Invoice' && t.has(r['Site Type']) && ss.has(lc(r['Status']))).length;
+          vertCounts[k] = viewRows.filter(r => r['Source'] !== 'Invoice' && vertRowMatch(r, k) && ss.has(lc(r['Status']))).length;
         });
         // Racket has no site type — courts are matched by name, same rule the
         // Racket Sports view uses to scope the feed.
@@ -5916,8 +6183,7 @@
           scoped = scoped.filter(r => racketRowMatch(r));
           scopeLabel = 'Racket Sports';
         } else if (VERT_CONFIG[tab]) {
-          const vt = new Set(VERT_CONFIG[tab].types);
-          scoped = scoped.filter(r => vt.has(r['Site Type']));
+          scoped = scoped.filter(r => vertRowMatch(r, tab));
           scopeLabel = VERT_CONFIG[tab].label;
         }
         if (scoped.length === 0) return;

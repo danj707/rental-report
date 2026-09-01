@@ -137,8 +137,13 @@ jobs:
       - name: Outdoor events hour spec (hours covered, not hours started; multi-day excluded)
         run: node scripts/outdoor-hours.spec.js
 
-      - name: Aquatics lane spec (court-typed swim lanes recovered; Johnson Lane Park is not a pool)
-        run: node scripts/aquatics-lanes.spec.js
+      # "Pools can be courts, but courts can never be pools" (Dan). The page used
+      # to RECOVER court-typed swim lanes with a regex over the site name and the
+      # location — a guess that had to be right about every org from one pattern.
+      # It is per-org configuration now, and this pins that the guess cannot come
+      # back and that all five aquatics surfaces scope through one predicate.
+      - name: Aquatics scope (pools by default; extra site types are configured, never guessed)
+        run: node scripts/aquatics-scope.spec.js
 
       - name: Programs location filter (one funnel; a stale ?loc= cannot empty the report)
         run: node scripts/programs-location.spec.js

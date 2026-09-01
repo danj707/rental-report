@@ -17,8 +17,13 @@
 
 - **Lead with the answer or the action.** No preambles, no recaps of what you
   just did or what he just said.
-- **Be concise.** 4-5 lines per point, not ten paragraphs per step. Direct
-  answers, not surveys of options.
+- **Be concise. This is the instruction that gets broken most often (Dan,
+  2026-09-01: *"please be less verbose, I don't need 500 lines about what you're
+  doing"*).** A reply is a handful of lines: what changed, what it means, what is
+  next. Not a section per file touched, not a narration of the steps, not the
+  reasoning that led there unless it changes what Dan does. The long-form write-up
+  belongs in THIS file and in the PR body — that is what they are for — and a
+  point already made in the commit message does not need making again in chat.
 - **Ask before architectural changes**, and ask when a question would actually
   change the work — don't guess and don't over-interpret. Reasonable intent from
   context beats being literal.
