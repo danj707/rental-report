@@ -3768,6 +3768,43 @@ denom     = min(holds, available)             ...and had holds for
   fixture carrying the real shape. Mutation-tested — reverting the denominator
   to holds fails the spec at the first assertion and the render case by name.
 
+### What "FT Total" COUNTS — asked and settled (Dan, 2026-09-01)
+
+Dan, on Essex Junction's Fall Vacation Camps: *"why is it 400+ FT's but only 23
+people. Is that because 1 person can have multiple sessions/sections fast
+tracked?"* — then, on the answer: *"i'm fine with seeing that higher number, it
+makes sense."*
+
+**Yes, and the multiplier is per-SESSION.** `FT Total` is
+`COUNT(DISTINCT booking_id)`, and both sections are `registration_mode =
+per-session` over **9 camp days**. Every one of the 456 FT rows is
+`type = 'session'` carrying a session id — **zero** section-level holds — so one
+child claiming 9 days is 9 bookings. That is the `Pending ×9` in the expander.
+
+| section | FT holds | badge "people" | children | sessions | days per child |
+|---|---|---|---|---|---|
+| K-2nd Vacation Camp | 282 | 37 | **43** | 9 | 6.6 |
+| 3rd-6th Vacation Camp | 174 | 23 | **26** | 9 | 6.7 |
+
+**NOTHING WAS CHANGED — this is Dan's call, and the number stays as it reads.**
+Written down because the question will be asked again and the measurement is
+otherwise a re-derivation.
+
+**One inaccuracy is knowingly left in place: the "N people" badge counts booking
+ACCOUNTS, not children.** `ft_unique_users` is
+`COUNT(DISTINCT customer_user_id)` — the parent who booked — so siblings collapse
+into one. Essex Junction: 37 accounts hold 43 children (1.16 each), and the
+expander shows the mechanism (*"Aislyn Allen · for Carter Allen"* is one account
+with one child; a parent with two kids still appears once).
+
+**And fixing it needs a CARD change, which is why it was not a drive-by.** The
+ft_booking rows carry `"User ID"` (the customer) and `"Participant Name"` but
+**no participant id**, and counting distinct NAMES would merge two same-named
+children — not hypothetical, apex has two different kids both called *Bridger
+Wall* (see the ePACT backcheck). A truthful child count is
+`fr.participant_user_id::text AS "Participant ID"` on card 17300, one column with
+no logic change, plus a tag flip. Not done.
+
 ## "Launching Soon" is a section question, not a program question (2026-08-24)
 
 The bucket test was `p._allFutureReg && p.ftSignups > 0` — *every* section in the
