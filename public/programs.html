@@ -70,40 +70,55 @@
        so without the resets below they render UPPERCASE, grey and STACKED
        (checkbox over name over count), which is exactly how they first
        shipped. Inline styles did not cover it: none of those three
-       properties were being set inline, so the toolbar rule won. */
-    .season-wrap { position: relative; }
-    .season-btn {
+       properties were being set inline, so the toolbar rule won.
+
+       NAMED `mpick-`, not `season-`, because TWO controls render it now
+       (Seasons and Instructor) through the one MultiPicker component. A second
+       copy of this markup under its own class names would drift the first time
+       one of them changed, and the resets above are exactly the kind of thing
+       that gets fixed in one copy and not the other. */
+    .mpick-wrap { position: relative; }
+    .mpick-btn {
       padding: 4px 10px; border: 1px solid rgba(255,255,255,.2); border-radius: 4px;
       background: rgba(255,255,255,.1); color: #fff;
       font-size: 12px; font-family: inherit; cursor: pointer; white-space: nowrap;
     }
-    .season-btn:hover { background: rgba(255,255,255,.18); }
-    .season-btn.on    { background: rgba(255,255,255,.22); }
-    .season-btn .caret { margin-left: 6px; opacity: .7; }
-    .season-menu {
+    .mpick-btn:hover { background: rgba(255,255,255,.18); }
+    .mpick-btn.on    { background: rgba(255,255,255,.22); }
+    .mpick-btn .caret { margin-left: 6px; opacity: .7; }
+    .mpick-menu {
       position: absolute; top: calc(100% + 6px); left: 0; z-index: 200;
       min-width: 230px; max-width: 320px; max-height: 320px; overflow-y: auto;
       background: #2c2c2c; color: #eee;
       border: 1px solid rgba(255,255,255,.18); border-radius: 6px;
       box-shadow: 0 10px 28px rgba(0,0,0,.45); padding: 6px 0;
     }
-    .season-menu .sm-head {
+    .mpick-menu .sm-head {
       padding: 2px 12px 7px; border-bottom: 1px solid rgba(255,255,255,.12);
       margin-bottom: 4px;
     }
-    .season-menu .sm-clear {
+    .mpick-menu .sm-clear {
       border: none; background: none; padding: 0; font-size: 11px;
       font-family: inherit; color: #7fb2ff; cursor: pointer;
     }
-    .season-menu .sm-clear:disabled { color: #6b7280; cursor: default; }
-    .toolbar .season-menu label.sm-opt {
+    .mpick-menu .sm-clear:disabled { color: #6b7280; cursor: default; }
+    .toolbar .mpick-menu label.sm-opt {
       display: flex; flex-direction: row; align-items: center; gap: 8px;
       padding: 6px 12px; cursor: pointer;
       font-size: 12px; text-transform: none; letter-spacing: normal; color: #eee;
     }
-    .season-menu label.sm-opt:hover { background: rgba(255,255,255,.09); }
-    .season-menu .sm-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .season-menu .sm-n { color: #9ca3af; font-variant-numeric: tabular-nums; }
+    .mpick-menu label.sm-opt:hover { background: rgba(255,255,255,.09); }
+    .mpick-menu .sm-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .mpick-menu .sm-n { color: #9ca3af; font-variant-numeric: tabular-nums; }
+
+    /* A section can sit at more than one location or carry more than one
+       facilitator — 287 of 42,457 located sections platform-wide. The primary
+       is shown and this marks that it is a primary, not the whole truth. */
+    .more-n {
+      margin-left: 5px; padding: 0 4px; border-radius: 3px;
+      background: #fef3c7; color: #92400e;
+      font-size: 10px; font-weight: 600; vertical-align: 1px;
+    }
 
     /* ── Page ── */
     .page {
@@ -679,6 +694,150 @@ function progEffectiveSeasons(want, options, loaded) {
   return kept;
 }
 
+// ── Instructor (card 17295 v6) ──────────────────────────────────────────
+// UNLIKE `season`, which card 17295 COALESCEs to a literal, an instructor is
+// genuinely absent on most sections — measured at El Segundo Recreation
+// 2026-09-01, 155 of 286 live sections have nobody on file and they hold 1,170
+// of 1,418 enrolments. So "nobody assigned" is a real state and gets its own
+// option, exactly like LOC_NONE: without it those sections vanish the moment
+// anyone ticks an instructor and nothing on screen says they were dropped.
+//
+// WRITTEN AS A \u0000 ESCAPE, never a raw NUL byte — a raw NUL makes git
+// classify the whole file as BINARY, and a file that cannot be read in a diff
+// cannot be reviewed. Same note as LOC_NONE in programs-location.spec.js.
+const INSTR_NONE = '\u0000noinstructor';
+
+// The card emits facilitators as ONE COMMA-JOINED STRING plus a count, so this
+// is the whole string and not one person. That is deliberate for now: keying on
+// the string means "Penny Finders" and "Eric Stenberg, Penny Finders" are two
+// different options, which is honest for a FILTER (tick the pairing you mean)
+// and would be wrong for a per-instructor leaderboard — which is why there
+// isn't one yet. Splitting the string is the open question; see CLAUDE.md.
+function instructorKey(r) {
+  const v = r && r.instructor;
+  return (v == null || v === '') ? INSTR_NONE : String(v);
+}
+
+// Same contract as progEffectiveSeasons, for the same reasons — including the
+// `loaded` argument, because a feed that has not answered is not a feed without
+// that instructor, and resolving on mount is how ?ci_rows=failed shipped
+// broken. Unknown ticks are dropped and the known ones KEPT; only when nothing
+// survives does it fall back to "all".
+// At module scope so programs-instructor.spec.js can RUN it, not regex it.
+function progEffectiveInstructors(want, options, loaded) {
+  const list = Array.isArray(want) ? want.filter(Boolean) : [];
+  if (!list.length) return [];
+  if (!loaded) return list;
+  const have = new Set((options || []).map(o => o.value));
+  return list.filter(v => have.has(v));
+}
+
+// ── The "by month" panel ────────────────────────────────────────────────
+// Dan chose both readings stacked, and they genuinely disagree: measured at El
+// Segundo Recreation, programming peaks in SEPTEMBER (165 sections running)
+// while money peaks in AUGUST ($77,813 collected), because people pay at
+// registration and then attend for a term. One chart labelled "by month" gets
+// read as whichever the reader assumed.
+//
+// The activity half is derived from the feed's own section dates. The money half
+// cannot be — card 17295 returns one period figure for the whole window — so it
+// comes from card 21055 and is absent until that card has a public link.
+
+// EVERYTHING HERE IS STRING AND INTEGER ARITHMETIC, NEVER `new Date()`.
+// 'YYYY-MM' compares correctly lexicographically and a bare 'YYYY-MM-DD' parsed
+// through Date() is UTC midnight, which lands on the previous day across the US
+// — the bug already recorded for fasttrack dates, check-in day-of-week, and the
+// ePACT export. monthKey takes the first 7 characters and stops.
+function progMonthKey(iso) {
+  const v = iso == null ? '' : String(iso);
+  return v.length >= 7 ? v.slice(0, 7) : '';
+}
+
+// Inclusive list of 'YYYY-MM' between two ISO dates, built by counting months as
+// integers so no Date object is involved. Capped so a five-year window cannot
+// render 60 unreadable bars.
+const PROG_MAX_MONTHS = 24;
+function progMonthRange(startISO, endISO) {
+  const a = progMonthKey(startISO), b = progMonthKey(endISO);
+  if (!a || !b || b < a) return [];
+  const n = function(k) { return (+k.slice(0, 4)) * 12 + (+k.slice(5, 7) - 1); };
+  const out = [];
+  for (let i = n(a); i <= n(b) && out.length < PROG_MAX_MONTHS; i++) {
+    out.push(String(Math.floor(i / 12)) + '-' + String((i % 12) + 1).padStart(2, '0'));
+  }
+  return out;
+}
+
+// A section counts in a month if its own span covers that month.
+//
+// THIS IS AN APPROXIMATION AND IT WAS MEASURED BEFORE BEING SHIPPED. The exact
+// question is "does this section have a SESSION in this month", which needs
+// session-grain data the feed does not carry. Checked against the real session
+// data for El Segundo over 12 months: identical in 9 months and over by exactly
+// ONE section in the other three — a section whose run straddles a month it has
+// no sessions in (a holiday gap). It over-counts, never under-counts, and by at
+// most one section in sixty.
+function progMonthlyActivity(secRows, startISO, endISO) {
+  const months = progMonthRange(startISO, endISO);
+  const counts = new Map();
+  months.forEach(function(m) { counts.set(m, 0); });
+  (secRows || []).forEach(function(r) {
+    const a = progMonthKey(r.startDate);
+    const b = progMonthKey(r.endDate) || a;
+    if (!a) return;
+    months.forEach(function(m) {
+      if (a <= m && b >= m) counts.set(m, counts.get(m) + 1);
+    });
+  });
+  return months.map(function(m) { return { month: m, sections: counts.get(m) }; });
+}
+
+// Card 21055's rows, keyed by month. Returns null — NOT an empty map — when the
+// feed has not answered or has no Month column, so the caller can tell "this org
+// collected nothing" from "this card is not connected yet". A zero here would
+// say the first and mean the second, which is the hasAbsent / ciHasStatus rule.
+function progMonthlyMoney(rows) {
+  if (!Array.isArray(rows) || !rows.length) return null;
+  const first = rows[0] || {};
+  if (!('Month' in first) && !('month' in first)) return null;
+  const map = new Map();
+  rows.forEach(function(r) {
+    const m = progMonthKey(r['Month'] != null ? r['Month'] : r['month']);
+    if (!m) return;
+    map.set(m, {
+      collected: Number(r['Collected'] != null ? r['Collected'] : r['collected']) || 0,
+      refunds:   Number(r['Refunds']   != null ? r['Refunds']   : r['refunds'])   || 0,
+      net:       Number(r['Net']       != null ? r['Net']       : r['net'])       || 0,
+    });
+  });
+  return map.size ? map : null;
+}
+
+// For the EXCEL export only. A spreadsheet row cannot be expanded, so where the
+// screen prints a dash on a program row and makes you open it, the file has to
+// carry the actual set — "Recreation Park Courts; Urho Saari Swim Stadium". That
+// asymmetry is deliberate: on screen the sections are one click away, in a file
+// they are not, and a blank column in an export is the thing people file bugs
+// about. It is still never a claim about a single location.
+//
+// JOINED WITH "; " AND NOT ", ": the card already comma-joins multiple
+// facilitators into one value, so a comma-joined SET of those values could not
+// be taken apart again by anyone reading the file.
+// At module scope so programs-instructor.spec.js can RUN it.
+function progDistinctFromSections(r, key) {
+  if (!r) return '';
+  const secs = Array.isArray(r._sections) ? r._sections : null;
+  // A program-grain feed has no _sections to look at — fall back to the row's
+  // own value rather than reporting nothing.
+  if (!secs || !secs.length) return r[key] ? String(r[key]) : '';
+  const seen = [];
+  secs.forEach(function(sx) {
+    const v = sx && sx[key];
+    if (v && seen.indexOf(String(v)) < 0) seen.push(String(v));
+  });
+  return seen.join('; ');
+}
+
 // ── How the payment-plan money gets collected (card 17295 v7) ────────────
 // Dan: "% on Auto-Pay vs % on manual collection". Autopay charges a card on
 // file at each installment date; without it somebody has to collect every one.
@@ -772,7 +931,11 @@ function getParams() {
     // REPEATED, not comma-joined: a season is named by a human ("Spring/Summer
     // 26", "Fall '26") and nothing stops one containing a comma. getAll is
     // encoding-safe for any name; a split(',') would quietly cut one in half.
-    seasons: p.getAll('season') };
+    seasons: p.getAll('season'),
+    // Repeated too, and for a stronger reason than seasons: an instructor value
+    // here is the card's COMMA-JOINED string ("Eric Stenberg, Penny Finders"),
+    // so a split(',') would cut a legitimate value in half every time.
+    instructors: p.getAll('instructor') };
 }
 
 function getCurrentMonthRange() {
@@ -847,6 +1010,61 @@ function cancelPct(cancellations, enrollments) {
 // Reads BOTH the program-grain feed (legacy, Title-Case aggregate columns) and
 // the section-grain feed (one row per section, with a 'Section' column). When a
 // 'Section' is present the row is flagged isSection and rolled up below.
+// ── One multi-select, two controls ──────────────────────────────────────
+// Seasons and Instructor are the same control over different options, so they
+// are the same component. Two copies of this markup would drift the first time
+// one gained a behaviour — and the toolbar-inheritance resets in the CSS above
+// are exactly the kind of fix that lands in one copy and not the other.
+//
+// `slug` drives the data attributes (data-prog-<slug>-btn/-menu/-opt/-clear),
+// so every existing season selector in the specs and render cases keeps working
+// unchanged and the instructor control gets the same handles for free.
+//
+// An empty tick list means ALL, not none, so there is only a Clear button — two
+// buttons producing one state is a control that looks broken.
+function MultiPicker({ slug, allLabel, someLabel, options, sel, setSel, open, setOpen, title, onChange }) {
+  const fire = function(next) {
+    setSel(next);
+    if (onChange) onChange();
+  };
+  return (
+    <div {...{ ['data-prog-' + slug + '-wrap']: true }} className="mpick-wrap">
+      <button type="button" {...{ ['data-prog-' + slug + '-btn']: true }}
+        className={'mpick-btn' + (sel.length ? ' on' : '')}
+        onClick={function() { setOpen(!open); }}
+        title={title}>
+        {sel.length ? someLabel(sel.length, options.length) : allLabel(options.length)}
+        <span className="caret" aria-hidden="true">{open ? '\u25b4' : '\u25be'}</span>
+      </button>
+      {open && (
+        <div {...{ ['data-prog-' + slug + '-menu']: true }} className="mpick-menu">
+          <div className="sm-head">
+            <button type="button" {...{ ['data-prog-' + slug + '-clear']: true }} className="sm-clear"
+              onClick={function() { fire([]); }}
+              disabled={!sel.length}>
+              Clear (show all)
+            </button>
+          </div>
+          {options.map(function(o) {
+            const on = sel.indexOf(o.value) >= 0;
+            return (
+              <label key={o.value} {...{ ['data-prog-' + slug + '-opt']: o.value }} className="sm-opt">
+                <input type="checkbox" checked={on}
+                  onChange={function() {
+                    fire(on ? sel.filter(function(v) { return v !== o.value; })
+                            : sel.concat(o.value));
+                  }} />
+                <span className="sm-name">{o.label}</span>
+                <span className="sm-n">{o.n}</span>
+              </label>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function StaleCacheBanner({ meta }) {
   if (!meta?.stale_cache) return null;
   const when = meta.cached_at ? new Date(meta.cached_at).toLocaleString() : 'recently';
@@ -1328,7 +1546,10 @@ function App() {
   // link lands on the location the sender was looking at.
   const [locFilter, setLocFilter] = useState(params.loc || '');
   const [seasonSel, setSeasonSel] = useState(params.seasons || []);
+  const [instrSel, setInstrSel] = useState(params.instructors || []);
   const [seasonOpen, setSeasonOpen] = useState(false);
+  const [instrOpen, setInstrOpen] = useState(false);
+  const [monthlyRows, setMonthlyRows] = useState(null);
 
   const [demoRows, setDemoRows] = useState(null);
   const [demoLoading, setDemoLoading] = useState(false);
@@ -1375,7 +1596,7 @@ function App() {
     return out.filter(r => (r['Activity'] || activityInfo.map[r['Program']||''] || '') === activityFilter);
   }, [demoRows, activityFilter, activityInfo, scopedProgramSet]);
 
-  const [colPresence, setColPresence] = useState({ regMode: false, cancellations: false, waitlist: false, location: false, autopay: false, outSplit: false });
+  const [colPresence, setColPresence] = useState({ regMode: false, cancellations: false, waitlist: false, location: false, instructor: false, autopay: false, outSplit: false });
   const [insights,        setInsights]        = useState(null);
   const [insightsMeta,    setInsightsMeta]    = useState(null); // { programCount, names }
   const [insightsLoading, setInsightsLoading] = useState(false);
@@ -1813,6 +2034,9 @@ function App() {
           // every feed and the control was silently never rendered. A column
           // question has to be asked of the response, not of a derived object.
           location:      raw.some(r => 'location' in r || 'Location' in r),
+          // Same rule, same reason: a column question is asked of the RESPONSE,
+          // never of a rollup with a fixed key set.
+          instructor:    raw.some(r => 'instructor' in r || 'Instructor' in r),
           autopay:       raw.some(r => 'autopay_plan_items' in r),
           outSplit:      raw.some(r => 'past_due_value' in r),
         });
@@ -1858,6 +2082,28 @@ function App() {
       .catch(() => {});
     return () => { alive = false; };
   }, [loadedStart, loadedEnd, compareOn, basePath]);
+
+  // ── Money by month (card 21055) ────────────────────────────────────
+  // Its own feed because card 17295 returns ONE period figure for the whole
+  // window, not a series. Fetched separately and never awaited by the rest of
+  // the Summary tab: this card is a full scan of item_log_report (21s at apex,
+  // measured) and blocking the landing tab on it would be a bad trade for one
+  // panel. The activity chart draws immediately from the main feed and the
+  // money chart fills in when this lands.
+  //
+  // A FAILURE LEAVES IT null, WHICH IS NOT AN EMPTY MONTH. Until someone
+  // creates the public link in Metabase the route 404s, and the panel then
+  // renders the activity chart alone rather than a row of confident $0 bars.
+  useEffect(() => {
+    setMonthlyRows(null);
+    if (!loadedStart || !loadedEnd) return;
+    let alive = true;
+    fetch(withToken(`/${orgSlug}/programs-monthly/api/data?start_date=${encodeURIComponent(loadedStart)}&end_date=${encodeURIComponent(loadedEnd)}`))
+      .then(r => (r.ok ? r.json() : null))
+      .then(j => { if (alive && j && Array.isArray(j.rows)) setMonthlyRows(j.rows); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [loadedStart, loadedEnd, orgSlug]);
 
   // ── Self-service split: orders by channel for the current + prior window.
   // Hidden gracefully when the org has no selfservice card configured.
@@ -1924,19 +2170,27 @@ function App() {
 
   function toXlDate(s) { if (!s) return ''; const p = String(s).split('T')[0].split('-'); return p.length === 3 ? new Date(+p[0], +p[1]-1, +p[2]) : s; }
   function downloadExcel() {
-    if (!rows || rows.length === 0) return;
+    // `filteredRows`, NOT `rows`. This read the unscoped rollups, so an admin
+    // who narrowed to one location and hit Excel got the whole org — the
+    // export-ignores-the-filters bug, and it predates the instructor work.
+    // filteredRows is the same set the grand total and the summary cards use.
+    if (!filteredRows || filteredRows.length === 0) return;
     const headers = [
       'Program','Season',
+      ...(showLocationCol ? ['Location(s)'] : []),
+      ...(showInstructorCol ? ['Instructor(s)'] : []),
       ...(showRegModeCol ? ['Reg Mode'] : []),
       'Start Date','End Date','Sections','Enrollments','Utilization','Fill %',
       ...(showWaitlist ? ['Waitlist'] : []),
       ...(showCancelsCol ? ['Cancellations','Cancellation %'] : []),
       'Charged','Received','Outstanding','Refunds','Net Revenue','Period Received','Period Refunds','Period Net'
     ];
-    const data = rows.map(r => {
+    const data = filteredRows.map(r => {
       const cp  = cancelPct(r.cancellations, r.enrollments);
       return [
         r.programName, r.season,
+        ...(showLocationCol ? [progDistinctFromSections(r, 'location')] : []),
+        ...(showInstructorCol ? [progDistinctFromSections(r, 'instructor')] : []),
         ...(showRegModeCol ? [regModeLabel(r.regMode)] : []),
         toXlDate(r.startDate), toXlDate(r.endDate),
         fmtNum(r.sections), fmtNum(r.enrollments), r.utilization,
@@ -2031,6 +2285,28 @@ function App() {
     return () => document.removeEventListener('mousedown', onDoc);
   }, [seasonOpen]);
 
+  // ?instructor=, same delete-then-append rule as ?season= — and it matters
+  // more here, because an instructor value can be the card's comma-joined
+  // pairing and `append` alone stacks a second copy of every value per render.
+  useEffect(() => {
+    try {
+      const u = new URL(window.location.href);
+      u.searchParams.delete('instructor');
+      instrSel.forEach(v => u.searchParams.append('instructor', v));
+      window.history.replaceState(null, '', u.toString());
+    } catch {}
+  }, [instrSel]);
+
+  useEffect(() => {
+    if (!instrOpen) return;
+    const onDoc = ev => {
+      const wrap = ev.target && ev.target.closest && ev.target.closest('[data-prog-instructor-wrap]');
+      if (!wrap) setInstrOpen(false);
+    };
+    document.addEventListener('mousedown', onDoc);
+    return () => document.removeEventListener('mousedown', onDoc);
+  }, [instrOpen]);
+
   // Drop seasons this feed does not have, once it has actually answered.
   // Compared as a SET, not by reference: this effect depends on seasonOptions,
   // which is a new array on every render, so setting state unconditionally
@@ -2103,6 +2379,42 @@ function App() {
       .map(([name, n]) => ({ value: name, label: name, n }));
   }, [progSections]);
 
+  // ── Instructor filter ──────────────────────────────────────────────
+  // Presence-gated like `location` and not like `season`: an instructor column
+  // is genuinely absent from a pre-v6 feed, so the question is "does this
+  // response carry the column", asked of the raw rows in colPresence.
+  const progHasInstructor = colPresence.instructor;
+
+  const instrOptions = useMemo(() => {
+    if (!progSections || !progHasInstructor) return [];
+    const counts = new Map();
+    let none = 0;
+    progSections.forEach(r => {
+      const v = r.instructor;
+      if (v) counts.set(v, (counts.get(v) || 0) + 1);
+      else none++;
+    });
+    // Busiest first, so whoever teaches most leads.
+    const out = Array.from(counts.entries())
+      .sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0])))
+      .map(([name, n]) => ({ value: name, label: name, n }));
+    // Ticking anyone would otherwise silently drop every unassigned section —
+    // at El Segundo that is 155 of 286. Same argument as LOC_NONE.
+    if (none) out.push({ value: INSTR_NONE, label: 'No instructor on file', n: none });
+    return out;
+  }, [progSections, progHasInstructor]);
+
+  // Drop a stale ?instructor= once the feed has actually answered. DECLARED
+  // BELOW instrOptions on purpose: Babel compiles these `const`s to `var`, so an
+  // effect written above its own dependency gets `undefined` in the dep array
+  // and only ever re-runs on the other dep. The two older resolvers above are
+  // written that way and survive on `rows` alone; this one does not rely on it.
+  useEffect(() => {
+    if (!rows) return;
+    const eff = progEffectiveInstructors(instrSel, instrOptions, true);
+    if (eff.length !== instrSel.length || eff.some((v, i) => v !== instrSel[i])) setInstrSel(eff);
+  }, [rows, instrOptions]);   // eslint-disable-line react-hooks/exhaustive-deps
+
   // THE SINGLE FUNNEL, and it applies BOTH dimensions. There is deliberately no
   // `scopedRows` any more: two funnels is how the facility Summary ended up with
   // chips that scoped some panels and not others and a page that disagreed with
@@ -2117,7 +2429,7 @@ function App() {
   // excluded, for 11.6% of programs.
   const scopedRows = useMemo(() => {
     if (!rows) return rows;
-    if (!locFilter && !seasonSel.length) return rows;
+    if (!locFilter && !seasonSel.length && !instrSel.length) return rows;
     let out = progSections || [];
     if (locFilter) {
       out = locFilter === LOC_NONE ? out.filter(r => !r.location)
@@ -2128,8 +2440,14 @@ function App() {
       const want = new Set(seasonSel);
       out = out.filter(r => want.has(seasonKey(r)));
     }
+    // THIRD dimension, same funnel. A separate one for instructor is how the
+    // facility Summary ended up scoping some panels and not others.
+    if (instrSel.length) {
+      const want = new Set(instrSel);
+      out = out.filter(r => want.has(instructorKey(r)));
+    }
     return sectionGrain ? rollupToPrograms(out) : out;
-  }, [rows, progSections, sectionGrain, locFilter, seasonSel]);
+  }, [rows, progSections, sectionGrain, locFilter, seasonSel, instrSel]);
 
   // The demographics, retention and check-in tabs read their OWN feeds, which
   // carry neither a location nor a season column — only the programs card
@@ -2138,12 +2456,14 @@ function App() {
   // at two sites, or across two seasons, is in the set for both), and the
   // panels say so rather than implying a precision they do not have.
   const scopedProgramSet = useMemo(() => {
-    // EITHER dimension narrows it. Gating on locFilter alone is how the
-    // demographics and retention tabs would have stayed season-unscoped while
-    // every panel beside them moved — the scoped-some-panels-not-others bug.
-    if ((!locFilter && !seasonSel.length) || !scopedRows) return null;
+    // ANY of the three dimensions narrows it. Gating on locFilter alone is how
+    // the demographics and retention tabs would have stayed season-unscoped
+    // while every panel beside them moved — the scoped-some-panels-not-others
+    // bug. Instructor is the third and had to be added here as well as to the
+    // funnel; the funnel alone leaves those two tabs reading everything.
+    if ((!locFilter && !seasonSel.length && !instrSel.length) || !scopedRows) return null;
     return new Set(scopedRows.map(r => r.programName));
-  }, [locFilter, seasonSel, scopedRows]);
+  }, [locFilter, seasonSel, instrSel, scopedRows]);
 
   // ── Computed values ────────────────────────────────────────────────
   const grouped = useMemo(() => {
@@ -2409,7 +2729,13 @@ function App() {
   const hasCancellations = colPresence.cancellations;
   const showRegModeCol   = hasRegMode && showRegMode;
   const showCancelsCol   = hasCancellations && showCancels;
-  const leftCols         = 4 + (showRegModeCol ? 1 : 0);
+  // The Grand Total row spans the left group, so every column added there has
+   // to be counted here or the footer's money lands under the wrong headers.
+  const showLocationCol  = colPresence.location;
+  const showInstructorCol = colPresence.instructor;
+  const leftCols         = 4 + (showRegModeCol ? 1 : 0)
+                             + (showLocationCol ? 1 : 0)
+                             + (showInstructorCol ? 1 : 0);
   const isPrint = params._print === '1';
   const datesChanged = startDate !== loadedStart || endDate !== loadedEnd;
 
@@ -2492,46 +2818,31 @@ function App() {
         </React.Fragment>)}
         {seasonOptions.length > 1 && (<React.Fragment>
           <div className="divider" />
-          <div data-prog-season-wrap className="season-wrap">
-            <button type="button" data-prog-season-btn
-              className={'season-btn' + (seasonSel.length ? ' on' : '')}
-              onClick={function() { setSeasonOpen(!seasonOpen); }}
-              title="Scopes the whole report — every tab, every total">
-              {seasonSel.length
-                ? 'Seasons: ' + seasonSel.length + ' of ' + seasonOptions.length
-                : 'All Seasons (' + seasonOptions.length + ')'}
-              <span className="caret" aria-hidden="true">{seasonOpen ? '\u25b4' : '\u25be'}</span>
-            </button>
-            {seasonOpen && (
-              <div data-prog-season-menu className="season-menu">
-                <div className="sm-head">
-                  {/* An empty tick list IS "all", so Clear and Select all are the
-                      same state. Only Clear is offered — two buttons that produce
-                      one result is a control that looks broken. */}
-                  <button type="button" data-prog-season-clear className="sm-clear"
-                    onClick={function() { setSeasonSel([]); setInsights(null); setInsightsMeta(null); }}
-                    disabled={!seasonSel.length}>
-                    Clear (show all)
-                  </button>
-                </div>
-                {seasonOptions.map(function(o) {
-                  const on = seasonSel.indexOf(o.value) >= 0;
-                  return (
-                    <label key={o.value} data-prog-season-opt={o.value} className="sm-opt">
-                      <input type="checkbox" checked={on}
-                        onChange={function() {
-                          setSeasonSel(on ? seasonSel.filter(function(v) { return v !== o.value; })
-                                          : seasonSel.concat(o.value));
-                          setInsights(null); setInsightsMeta(null);
-                        }} />
-                      <span className="sm-name">{o.label}</span>
-                      <span className="sm-n">{o.n}</span>
-                    </label>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+          <MultiPicker
+            slug="season"
+            options={seasonOptions}
+            sel={seasonSel}
+            setSel={setSeasonSel}
+            open={seasonOpen}
+            setOpen={setSeasonOpen}
+            title="Scopes the whole report — every tab, every total"
+            allLabel={function(n) { return 'All Seasons (' + n + ')'; }}
+            someLabel={function(k, n) { return 'Seasons: ' + k + ' of ' + n; }}
+            onChange={function() { setInsights(null); setInsightsMeta(null); }} />
+        </React.Fragment>)}
+        {instrOptions.length > 1 && (<React.Fragment>
+          <div className="divider" />
+          <MultiPicker
+            slug="instructor"
+            options={instrOptions}
+            sel={instrSel}
+            setSel={setInstrSel}
+            open={instrOpen}
+            setOpen={setInstrOpen}
+            title="Scopes the whole report — every tab, every total"
+            allLabel={function(n) { return 'All Instructors (' + n + ')'; }}
+            someLabel={function(k, n) { return 'Instructors: ' + k + ' of ' + n; }}
+            onChange={function() { setInsights(null); setInsightsMeta(null); }} />
         </React.Fragment>)}
         <div className="divider" />
         <div style={{position:'relative',display:'flex',alignItems:'center'}}>
@@ -2860,6 +3171,108 @@ function App() {
                   </div>
                 )}
               </div>
+
+              {/* ── By month: programming vs money, stacked on one axis ──
+                  Both readings, because they disagree and either alone reads as
+                  the whole answer. Measured at El Segundo: programming peaks in
+                  September (165 sections running), money peaks in August
+                  ($77,813), eight weeks apart. */}
+              {(() => {
+                // THE SCOPED SECTIONS, never progSections. Every panel reads
+                // through the funnel — a chart that ignores the toolbar while
+                // the cards beside it obey is the facility Summary bug, where
+                // chips scoped some panels and not others for a week.
+                // filteredRows is what the summary cards already use, so the
+                // activity chart cannot disagree with the numbers above it.
+                const secs = sectionGrain
+                  ? (filteredRows || []).reduce((a, r) => a.concat(r._sections || []), [])
+                  : (filteredRows || []);
+                const act = progMonthlyActivity(secs, loadedStart, loadedEnd);
+                if (act.length < 2) return null;
+                // CARD 21055 IS ORG-WIDE AND CANNOT BE SCOPED — it is month-grain
+                // with no location, season or instructor to filter on. So the
+                // moment any filter narrows the page, the money chart is
+                // withdrawn rather than left sitting beside a filtered activity
+                // chart describing a different population. Same rule as every
+                // other panel: two numbers that disagree are worse than one.
+                const scoped = !!(locFilter || seasonSel.length || instrSel.length || search.trim() || activityFilter);
+                const money = scoped ? null : progMonthlyMoney(monthlyRows);
+                // From the browser's own clock, so a month that has not happened
+                // can be drawn differently from one that happened and earned
+                // nothing. A flat future month next to a real zero reads as a
+                // collapse in demand; it is unsold inventory.
+                const nowKey = (function() { const d = new Date();
+                  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); })();
+                const maxSec = Math.max.apply(null, act.map(a => a.sections).concat([1]));
+                const moneyVals = money ? act.map(a => (money.get(a.month) || {}).collected || 0) : [];
+                const maxMoney = moneyVals.length ? Math.max.apply(null, moneyVals.concat([1])) : 1;
+                const peakSec = act.reduce((b, a) => (a.sections > b.sections ? a : b), act[0]);
+                const peakMoney = money
+                  ? act.map(a => ({ month: a.month, v: (money.get(a.month) || {}).collected || 0 }))
+                       .reduce((b, a) => (a.v > b.v ? a : b), { month: '', v: -1 })
+                  : null;
+                const label = k => { const m = +k.slice(5, 7);
+                  return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][m - 1] || k; };
+                const bars = (vals, max, colour, fmt) => (
+                  <div style={{display:'flex',alignItems:'flex-end',gap:4,height:96,borderBottom:'1px solid #cbd5e1',paddingTop:4}}>
+                    {vals.map((v, i) => {
+                      const future = act[i].month > nowKey;
+                      const h = Math.max(2, Math.round((v / max) * 88));
+                      return (
+                        <div key={i} title={label(act[i].month) + ' — ' + fmt(v) + (future ? ' (not yet)' : '')}
+                             style={{flex:1,display:'flex',flexDirection:'column',justifyContent:'flex-end',alignItems:'center',gap:3,height:'100%'}}>
+                          <span style={{fontSize:9,color:'#94a3b8',whiteSpace:'nowrap'}}>{v ? fmt(v) : ''}</span>
+                          <div style={{width:'100%',minHeight:2,height:h,borderRadius:'2px 2px 0 0',
+                                       background: future ? 'repeating-linear-gradient(45deg,#e2e8f0,#e2e8f0 2px,transparent 2px,transparent 4px)' : colour}} />
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+                const axis = (
+                  <div style={{display:'flex',gap:4,paddingTop:4}}>
+                    {act.map((a, i) => <span key={i} style={{flex:1,textAlign:'center',fontSize:9,color:'#94a3b8'}}>{label(a.month)}</span>)}
+                  </div>
+                );
+                return (
+                  <div data-prog-bymonth style={{margin:'0 0 16px',padding:'14px 18px',border:'1px solid #e2e8f0',background:'#fff',borderRadius:12}}>
+                    <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10,flexWrap:'wrap'}}>
+                      <span style={{fontSize:12,fontWeight:700,color:'#334155',textTransform:'uppercase',letterSpacing:'0.05em'}}>📅 By month</span>
+                      <span style={{fontSize:11,color:'#94a3b8'}}>hatched months have not happened yet</span>
+                    </div>
+
+                    <div style={{marginBottom:14}}>
+                      <div style={{display:'flex',alignItems:'baseline',gap:8,flexWrap:'wrap'}}>
+                        <span style={{fontSize:12,fontWeight:600,color:'#1e293b'}}>Programming that runs</span>
+                        <span style={{fontSize:11,color:'#94a3b8'}}>sections with a session in the month</span>
+                        <span data-prog-peak-activity={peakSec.month} style={{marginLeft:'auto',fontSize:11,color:'#475569'}}>
+                          peak {label(peakSec.month)} · {fmtNum(peakSec.sections)}
+                        </span>
+                      </div>
+                      {bars(act.map(a => a.sections), maxSec, '#6366f1', v => fmtNum(v))}
+                      {axis}
+                    </div>
+
+                    {/* Absent, not zeroed, when card 21055 has no public link
+                        yet — a row of $0 bars would say this org collected
+                        nothing, when the truth is that nothing answered. */}
+                    {money && (
+                      <div>
+                        <div style={{display:'flex',alignItems:'baseline',gap:8,flexWrap:'wrap'}}>
+                          <span style={{fontSize:12,fontWeight:600,color:'#1e293b'}}>Money collected</span>
+                          <span style={{fontSize:11,color:'#94a3b8'}}>payments taken in the month, whenever the class runs</span>
+                          <span data-prog-peak-money={peakMoney.month} style={{marginLeft:'auto',fontSize:11,color:'#475569'}}>
+                            peak {label(peakMoney.month)} · {fmtMoney(peakMoney.v)}
+                          </span>
+                        </div>
+                        {bars(act.map(a => (money.get(a.month) || {}).collected || 0), maxMoney, '#16a34a',
+                              v => (v >= 1000 ? '$' + Math.round(v / 1000) + 'k' : '$' + Math.round(v)))}
+                        {axis}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* ── Self-Service & Staff Workload — orders by channel ── */}
               {ssData && (() => {
@@ -3387,6 +3800,8 @@ function App() {
               <tr>
                 <th className="left" style={{minWidth:200}}>Program</th>
                 <th className="left" style={{width:100}}>Season</th>
+                {showLocationCol && <th className="left" style={{width:150}}>Location</th>}
+                {showInstructorCol && <th className="left" style={{width:140}}>Instructor</th>}
                 {showRegModeCol && <th className="left" style={{width:100}}>Reg Mode</th>}
                 <th className="left" style={{width:88}}>Start</th>
                 <th className="left" style={{width:88}}>End</th>
@@ -3414,9 +3829,16 @@ function App() {
                 const isOpen  = hasSecs && open.has(r.programId);
                 return (
                   <React.Fragment key={i}>
-                  <tr className={"data-row" + (hasSecs ? " prog-clickable" : "")} onClick={hasSecs ? () => toggle(r.programId) : undefined}>
+                  <tr className={"data-row" + (hasSecs ? " prog-clickable" : "")} data-prog-progrow={r.programName} onClick={hasSecs ? () => toggle(r.programId) : undefined}>
                     <td className="left" style={{fontWeight:600}}>{hasSecs && <span className={"chev" + (isOpen ? " open" : "")}>{"\u25B6"}</span>}{r.programName}</td>
                     <td className="left mono">{r.season}</td>
+                    {/* A location and an instructor are facts about a SECTION,
+                        so a program rollup has none — the same dash it already
+                        prints for Sections on a section row. Summing them into
+                        a program row would invent a fact ("this program is at
+                        Urho Saari") for the 11.6% of programs that span sites. */}
+                    {showLocationCol && <td className="muted">&mdash;</td>}
+                    {showInstructorCol && <td className="muted">&mdash;</td>}
                     {showRegModeCol && <td className="left">{regModeLabel(r.regMode)}</td>}
                     <td className="left mono">{r.startDate}</td>
                     <td className="left mono">{r.endDate}</td>
@@ -3442,6 +3864,8 @@ function App() {
                       <tr key={i + '-' + j} className="section-row">
                         <td className="left"><span onClick={()=>openSectionDetail(sx.sectionId, sx.sectionName)} style={{cursor:'pointer',display:'inline-flex',alignItems:'center',gap:4}} title="View registrant detail"><span style={{color:'#6366f1',fontSize:10,opacity:0.6}}>&#x25B6;</span>{sx.sectionName}</span>{sx.status && <span className="sec-status">{sx.status}</span>}</td>
                         <td className="left mono">{sx.season}</td>
+                        {showLocationCol && <td className="left" data-prog-seccell-location={sx.location || ''}>{sx.location || <span className="muted">&mdash;</span>}{fmtNum(sx.locationCount) > 1 && <span className="more-n" data-prog-secmore-location={fmtNum(sx.locationCount)} title={fmtNum(sx.locationCount) + ' locations — this is the one holding the most sessions'}>+{fmtNum(sx.locationCount) - 1}</span>}</td>}
+                        {showInstructorCol && <td className="left" data-prog-seccell-instructor={sx.instructor || ''}>{sx.instructor || <span className="muted">&mdash;</span>}{fmtNum(sx.instructorCount) > 1 && <span className="more-n" data-prog-secmore-instructor={fmtNum(sx.instructorCount)} title={fmtNum(sx.instructorCount) + ' facilitators on this section'}>+{fmtNum(sx.instructorCount) - 1}</span>}</td>}
                         {showRegModeCol && <td className="left">{regModeLabel(sx.regMode)}</td>}
                         <td className="left mono">{sx.startDate}</td>
                         <td className="left mono">{sx.endDate}</td>

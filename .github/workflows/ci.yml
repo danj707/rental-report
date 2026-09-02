@@ -10,7 +10,12 @@ on:
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # The render check used to live in this job and the two together outgrew a
+    # 10-minute budget: on 2026-09-01 CI was CANCELLED mid-render with every
+    # assertion green, which reads exactly like a failure and blocks the merge.
+    # They are separate jobs now, so each has its own budget and they run at the
+    # same time.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -57,6 +62,14 @@ jobs:
 
       - name: Card-drift spec (probe the served card; catch a Date tag reset to Text)
         run: node scripts/card-drift.spec.js
+
+      # Saving a card in Metabase regenerates its parameter ids, and the app
+      # caches those for an hour — so for that hour every org's request carried
+      # the pre-save id and a REQUIRED tag failed the query outright. It took the
+      # Waitlist report down platform-wide on 2026-09-01 and self-healed on the
+      # TTL, which is the worst shape a bug can have.
+      - name: Metabase parameter ids (a stale id is re-resolved, a timeout is not re-queried)
+        run: node scripts/mb-param-ids.spec.js
 
       - name: Report-activity spec (only alert on reports someone actually uses)
         run: node scripts/report-activity.spec.js
@@ -124,8 +137,13 @@ jobs:
       - name: Outdoor events hour spec (hours covered, not hours started; multi-day excluded)
         run: node scripts/outdoor-hours.spec.js
 
-      - name: Aquatics lane spec (court-typed swim lanes recovered; Johnson Lane Park is not a pool)
-        run: node scripts/aquatics-lanes.spec.js
+      # "Pools can be courts, but courts can never be pools" (Dan). The page used
+      # to RECOVER court-typed swim lanes with a regex over the site name and the
+      # location — a guess that had to be right about every org from one pattern.
+      # It is per-org configuration now, and this pins that the guess cannot come
+      # back and that all five aquatics surfaces scope through one predicate.
+      - name: Aquatics scope (pools by default; extra site types are configured, never guessed)
+        run: node scripts/aquatics-scope.spec.js
 
       - name: Programs location filter (one funnel; a stale ?loc= cannot empty the report)
         run: node scripts/programs-location.spec.js
@@ -135,6 +153,16 @@ jobs:
 
       - name: Programs auto-pay share (dollars vs registrations; no plan money is null, never 0%)
         run: node scripts/programs-autopay.spec.js
+
+      - name: Programs instructor filter + by-month panel (one picker, three dimensions, no date parsing)
+        run: node scripts/programs-instructor.spec.js
+
+      # Card 19273 inferred a claim from a timestamp that really marked the
+      # EXPIRY SWEEP — of 5,371 grants it called claimed, 5,371 were already
+      # expired and ZERO were still open. Conversion read 63% where the truth
+      # was 42.5%. Pins the registration-based definition and the rate floor.
+      - name: Waitlist invite conversion (a claim is a registration, not a timestamp shape)
+        run: node scripts/waitlist-conversion.spec.js
 
       - name: Fast Track CSV export (one row per participant; the beacon records, not just 200s)
         run: node scripts/fasttrack-export.spec.js
@@ -165,6 +193,9 @@ jobs:
 
       - name: Report Wizard disabled (cannot see it, cannot click it, and it pages nobody)
         run: node scripts/wizard-disabled.spec.js
+
+      - name: GL code multi-select (unmapped money is an option; None sticks; one menu)
+        run: node scripts/gl-code-filter.spec.js
 
       - name: Report settings (one cache-key builder; a setting seeds and never overrides; TTL floor)
         run: node scripts/report-settings.spec.js
@@ -198,6 +229,26 @@ jobs:
 
       - name: Admin dashboard JS (inline blocks parse; every on*= handler resolves)
         run: node scripts/ci-check-admin-js.js
+
+  # The browser half. Split out on 2026-09-01: 223 render cases at ~2.8s each is
+  # over ten minutes on its own, and it must never be the reason the spec suite
+  # gets squeezed. Raise this budget when the case count grows, never the case
+  # count to fit the budget — a render case is the only check in this repo that
+  # can see a blank page.
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+        env:
+          PUPPETEER_SKIP_DOWNLOAD: 'true'
+          PUPPETEER_SKIP_CHROMIUM_DOWNLOAD: 'true'
 
       # The runner image already ships Google Chrome, so this normally prints a
       # path and stops. The fallback is here so the check can never be skipped

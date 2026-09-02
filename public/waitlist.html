@@ -228,6 +228,12 @@
   .modepill { font-size: 10px; font-weight: 700; border-radius: 999px; padding: 2px 8px; background: #dcfce7; color: #166534; white-space: nowrap; }
   .modepill.mute { background: #faf9f7; color: #a8a29e; border: 1px solid #e8e6e0; font-weight: 600; }
   .modepill.off { background: #fee2e2; color: #b91c1c; }
+  /* Deliberately NOT the green of a working mode pill: `auto` describes WHO
+     sends the offer, not whether the waitlist is healthy, and two green pills
+     side by side read as one status. */
+  .autotag { font-size: 9px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase;
+             border-radius: 4px; padding: 2px 5px; margin-left: 5px; white-space: nowrap;
+             background: #ede9fe; color: #6d28d9; border: 1px solid #ddd6fe; }
   .statuspill { font-size: 10px; font-weight: 700; border-radius: 999px; padding: 2px 8px; }
   .st-prog { background: #dcfce7; color: #166534; }
   .st-up   { background: #fef3c7; color: #92400e; }
@@ -284,6 +290,25 @@ const MODE_HELP = {
 };
 const MODE_NONE_HELP = 'No waitlist behavior configured — a full section just shows "Full" and interest goes uncounted.';
 
+// ── Waitlist invite conversion (card 19273 v6) ──────────────────────────
+// Of the claim links this section sent out, how many turned into a
+// registration. v6 defines "claimed" as an actual confirmed booking inside the
+// invite's own window; before that it inferred one from a timestamp that really
+// marked the EXPIRY SWEEP, which overstated conversion by ~20 points across
+// 8,529 invites platform-wide.
+//
+// A FLOOR, because a rate over a handful of invites is not a rate: 1 of 1 is
+// not "100% conversion", it is one person. Under the floor the caller shows the
+// raw counts instead. Same rule as RATE_MIN_VIEWS on the campmap activity strip
+// and the thin-cohort warning on the memberships retention curve.
+const WL_CONV_MIN_OFFERS = 5;
+function wlConversion(sent, claimed) {
+  const n = Number(sent) || 0, c = Number(claimed) || 0;
+  if (n <= 0) return { pct: null, thin: false, sent: 0, claimed: 0 };
+  return { pct: n >= WL_CONV_MIN_OFFERS ? Math.round((c / n) * 100) : null,
+           thin: n < WL_CONV_MIN_OFFERS, sent: n, claimed: c };
+}
+
 function normalizeRow(raw) {
   return {
     program:        raw['Program'] ?? '',
@@ -295,6 +320,10 @@ function normalizeRow(raw) {
     endDate:        raw['End Date'] ?? '',
     activity:       raw['Activity'] ?? 'Uncategorized',
     mode:           raw['Waitlist Mode'] ?? null,
+    // v6. 'automated' | 'manual' | null. NULL on a warm pre-v6 cache entry,
+    // which is why the tag is presence-gated rather than defaulted to 'manual':
+    // "we cannot tell" and "a person does this by hand" are different facts.
+    wlType:         raw['Waitlist Type'] ?? null,
     modeSource:     raw['Mode Source'] ?? 'none',
     linkMin:        raw['Link Expiration Min'] != null ? fmtN(raw['Link Expiration Min']) : null,
     capacity:       raw['Capacity'] != null ? fmtN(raw['Capacity']) : null,
@@ -886,6 +915,7 @@ function App() {
               <Th id="pressure" right>Pressure</Th>
               <Th id="demand" right>Est. demand</Th>
               <Th id="claimtime" right>Typical claim</Th>
+              <th className="r" title="Of the claim links this section sent, how many became a registration inside the link's own window. Hidden under five invites — a rate over a handful is not a rate.">Invite conversion</th>
               <th className="r">Oldest join</th>
             </tr></thead>
             <tbody>
@@ -901,7 +931,14 @@ function App() {
                               title={(MODE_HELP[r.mode] || r.mode) + (r.modeSource === 'session' ? ' Set on this section’s sessions.' : ' Set on the section.')}>
                           {MODE_LABELS[r.mode] || r.mode}
                         </span>
-                      : <span className="modepill mute" title={MODE_NONE_HELP}>no waitlist set up</span>}</td>
+                      : <span className="modepill mute" title={MODE_NONE_HELP}>no waitlist set up</span>}
+                      {/* v6. Shown ONLY for 'automated' — a tag on every manual
+                          section is 28,161 rows of noise platform-wide, and the
+                          absence already says manual. Presence-gated: a pre-v6
+                          cache entry has no type at all, and "we cannot tell"
+                          must not render as "a person does this by hand". */}
+                      {r.wlType === 'automated' && <span className="autotag" data-wl-auto={r.sectionId}
+                        title="Seats are offered automatically when one opens. (Rec setting: waitlist type = automated)">auto</span>}</td>
                     <td className="r">{fmtInt(r.enrolled)} <span style={{ color: '#a8a29e' }}>/ {r.capacity != null ? fmtInt(r.capacity) : '—'}</span></td>
                     <td className="r" style={{ fontWeight: 700 }}>{fmtInt(r.waitlisted)}</td>
                     <td className="r">{r.pressure != null
@@ -909,6 +946,23 @@ function App() {
                       : '—'}</td>
                     <td className="r">{r.demand > 0 ? fmt$(r.demand) : (r.waitlisted > 0 && r.price === 0 ? 'free' : '—')}</td>
                     <td className="r" title={r.medClaimH != null ? 'Median time from offer to claim (avg ' + fmtHrs(r.avgClaimH) + ', ' + fmtInt(r.offersClaimed) + ' claims)' : 'No claims yet'}>{r.medClaimH != null ? fmtHrs(r.medClaimH) : '—'}</td>
+                    <td className="r">{(() => {
+                      const cv = wlConversion(r.offersSent, r.offersClaimed);
+                      if (!cv.sent) return <span style={{ color: '#a8a29e' }}>—</span>;
+                      // UNDER THE FLOOR WE SHOW THE COUNTS, not a percentage.
+                      // "1 of 1" is honest; "100%" over one invite is not.
+                      if (cv.pct == null) return (
+                        <span data-wl-convthin={r.sectionId} style={{ fontSize: 11, color: '#78716c' }}
+                              title={'Only ' + cv.sent + ' invite' + (cv.sent === 1 ? '' : 's') + ' sent — too few to read as a rate.'}>
+                          {fmtInt(cv.claimed)} of {fmtInt(cv.sent)}
+                        </span>);
+                      return (
+                        <span data-wl-conv={cv.pct}
+                              title={fmtInt(cv.claimed) + ' of ' + fmtInt(cv.sent) + ' claim links became a registration inside the link window.'}>
+                          <span style={{ fontWeight: 700, color: cv.pct >= 50 ? '#15803d' : cv.pct >= 25 ? '#a16207' : '#b91c1c' }}>{cv.pct}%</span>
+                          <span style={{ fontSize: 10, color: '#a8a29e', marginLeft: 4 }}>{fmtInt(cv.claimed)}/{fmtInt(cv.sent)}</span>
+                        </span>);
+                    })()}</td>
                     <td className="r" style={{ fontSize: 11, color: '#78716c' }}>{fmtD(r.oldestJoin) || '—'}</td>
                   </tr>
                 );

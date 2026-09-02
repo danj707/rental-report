@@ -56,7 +56,12 @@ if (c1 < 0) c1 = pageSrc.indexOf("function OutdoorEventsView", c0);
 assert.ok(c0 > 0 && c1 > c0, "facilities.html should declare the outdoor hour helpers at module scope");
 const cli = { console };
 vm.createContext(cli);
-vm.runInContext(pageSrc.slice(c0, c1) +
+// The slice now runs past VERT_CONFIG, which reads the org's injected aquatics
+// settings. Those are declared ABOVE this slice, so they are supplied here — the
+// same shape as the `alertEnabled` reference that once made email-slack-notify
+// throw before asserting anything. This spec is about the HOUR helpers; the
+// aquatics scope has its own (aquatics-scope.spec.js).
+vm.runInContext("var AQ_EXTRA = []; var AQ_SCOPE = [];\n" + pageSrc.slice(c0, c1) +
   "\n;this.oeRowHours = oeRowHours; this.oeIsArrival = oeIsArrival; this.oeIsMulti = oeIsMulti;" +
   "this.oeClockMin = oeClockMin; this.OUTDOOR_TYPES = OUTDOOR_TYPES;", cli);
 

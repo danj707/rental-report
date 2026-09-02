@@ -17,8 +17,13 @@
 
 - **Lead with the answer or the action.** No preambles, no recaps of what you
   just did or what he just said.
-- **Be concise.** 4-5 lines per point, not ten paragraphs per step. Direct
-  answers, not surveys of options.
+- **Be concise. This is the instruction that gets broken most often (Dan,
+  2026-09-01: *"please be less verbose, I don't need 500 lines about what you're
+  doing"*).** A reply is a handful of lines: what changed, what it means, what is
+  next. Not a section per file touched, not a narration of the steps, not the
+  reasoning that led there unless it changes what Dan does. The long-form write-up
+  belongs in THIS file and in the PR body — that is what they are for — and a
+  point already made in the commit message does not need making again in chat.
 - **Ask before architectural changes**, and ask when a question would actually
   change the work — don't guess and don't over-interpret. Reasonable intent from
   context beats being literal.
@@ -1186,6 +1191,312 @@ https://rec.metabaseapp.com/question/17295 — and the cache-independent sign-of
 it, because the verifier fails the same way during the window and its failure
 carries no extra information.
 
+## THE WAITLIST REPORT'S "CLAIMED" WAS MEASURING EXPIRY (2026-09-01)
+
+Dan asked for an `auto` tag and a waitlist conversion column. Building the
+column found that **the number it would have been built on was wrong, and had
+been since the `offers` CTE was written.**
+
+Card 19273 inferred a claim from timestamps:
+
+```sql
+(tg.updated_at > tg.created_at
+ AND ABS(EXTRACT(EPOCH FROM tg.updated_at - tg.expires_at)) <= 2) AS consumed
+```
+
+— "the grant was written to at its expiry moment", which is what an **expiry
+sweep** does, not what a claim does.
+
+**THE CLINCHING EVIDENCE IS AN IMPOSSIBILITY, not a discrepancy.** Of the 5,371
+grants that test called consumed, **5,371 were already expired and ZERO were
+still open.** A real claim signal catches some invites *inside* their window; one
+that never does is not measuring claiming. Supporting: the average
+created→updated gap on those rows is **114h** against an average invite window of
+105.8h, while an actual registration lands at a median of **5.3h**.
+
+Measured over 8,529 invites platform-wide (37 orgs, since 2025-10-13):
+
+| | |
+|---|---|
+| heuristic said claimed | 5,371 — **63.0%** |
+| actually booked inside the window | 3,628 — **42.5%** |
+| both agree | 3,483 |
+| **heuristic only, no registration** | **1,888** |
+| booked but the heuristic missed it | 145 |
+
+So conversion read **~20 points high**, and `Avg`/`Median Claim Hours` plus all
+six `Claim` buckets were describing invite-window **LENGTHS**. Expect the numbers
+on that report to drop — that is the fix landing, not a regression.
+
+### v6: a claim is a REGISTRATION
+
+The first confirmed booking by that participant on that section between the
+grant's `created_at` and `expires_at`.
+
+- **STRICTLY inside the window.** Dropping the upper bound counts 641 people who
+  came back weeks later by other means — the difference between 42.5% and 50.1%.
+- **AND THE PARTS NOW ADD UP.** `offers_expired`/`offers_outstanding` keyed on
+  `untouched` (`updated_at = created_at`), so a grant that was touched but never
+  claimed fell into **no bucket at all** and claimed + expired + outstanding did
+  not equal `offers_sent`. They are now claimed / not-claimed-and-expired /
+  not-claimed-and-still-open. Verified at apex: **2,113 + 2,352 + 10 = 4,475**,
+  exactly.
+- Cost is not a concern: the per-section aggregate is 658ms at apex, and the
+  whole card 13.0s.
+
+**DO NOT BUILD AN OPEN RATE.** `temporary_grant.first_viewed_at` is populated on
+**66 of 8,529** invites (0.8%) — dead like `memberships.last_used_at`. An
+"opened" funnel step would be a confident number over nothing.
+
+### The page: an `auto` tag and a conversion column
+
+`waitlist_config->>'type'` is `automated` | `manual`, emitted as `Waitlist Type`
+and falling back to the session config exactly like `Waitlist Mode` so the two
+cannot disagree about which row they describe.
+
+- **Adoption is FIVE sections in ONE org** (City of Niagara Falls, which *is*
+  onboarded). Dan: *"it's brand new, that's it."* So the tag is an adoption
+  signal that fills in over time, not a broken filter — the
+  *a-type-filter-returning-almost-nothing-is-a-question-about-the-filter* rule
+  does not apply when the feature shipped last week.
+- **The tag renders only for `automated`.** A tag on all 28,161 manual sections
+  is noise, and its absence already says manual.
+- **Presence-gated, not defaulted.** A pre-v6 cache entry has no type at all, and
+  *"we cannot tell"* must not render as *"a person does this by hand"*.
+- Violet, deliberately **not** the green of a working mode pill: `auto` says WHO
+  sends the offer, not whether the waitlist is healthy, and two green pills side
+  by side read as one status.
+- **`WL_CONV_MIN_OFFERS = 5`.** A rate over a handful of invites is not a rate —
+  under the floor the cell prints *"2 of 2"* rather than *"100%"*. Same rule as
+  `RATE_MIN_VIEWS` on the campmap strip. **A real 0% still shows**: eight invites
+  and nobody registered is an answer.
+
+**Dan's call: the `auto` tag is on the WAITLIST report only.** It would need a
+column on card 17295 to reach Programs, and that card is already 104s at apex and
+parked on performance — another push means another tag flip and downtime on the
+most-used report on the platform, for a tag that belongs beside the mode pill
+anyway.
+
+### Guards
+
+`scripts/waitlist-conversion.spec.js` (**49 assertions, in CI**), which lifts and
+RUNS `wlConversion` and reads the card mirror — including that the timestamp
+heuristic and `untouched` are *gone* and cannot come back, that every one of the
+17 pre-existing output columns survived, and that the trailing `ORDER BY` did
+(the exact thing that silently vanished on card 17300).
+
+Plus **seven `ci-check-render.js` cases — this report had NO render coverage at
+all**, which is part of why its central number stayed wrong. The fixture's four
+rows are the four states with deliberately different conversion figures (75% /
+20% / under-floor / none), so a swapped cell fails rather than rendering
+something plausible, and a `prev6` stub mode proves the tag is absent on an old
+feed. The fixture honours the v6 partition invariant, because a fixture that
+breaks it would be testing something the feed can never produce.
+
+`scripts/report-cards.manifest.json` gained a **waitlist / apex** row — this
+shared card had none at all.
+
+**A process note:** the first render run died on `EADDRINUSE` from a leftover
+`node server.js`, which is the stray-server trap already recorded in this file.
+Kill strays before driving a page; a stale server is indistinguishable from a
+code failure in the output.
+
+## Programs: instructor + location on screen, and "by month" (2026-09-01)
+
+Dan: *"lets build out the enhancements to the programs report, including
+instructors and locations."* El Segundo ask #2 — *per class, by location, by
+month, by instructor* — minus the parts he ruled out.
+
+**Four decisions, all his, all made before any code:** no per-instructor
+leaderboard yet; the by-month panel shows BOTH readings stacked; the two columns
+go into the Excel export as well as on screen; and the report says **nothing**
+about instructor coverage — blank cells, no nudge.
+
+### THE COLUMNS WERE MAPPED AND RENDERED NOWHERE, for a day
+
+`normalizeRow` has carried `instructor` and `instructorCount` since card 17295
+v6 shipped on 2026-08-31, and no surface printed either. Exactly the shape of the
+location filter that shipped unable to render — and invisible to the same checks,
+for the same reason: **a source assertion cannot see a column that is mapped and
+never displayed.** The render cases key on the CELL
+(`data-prog-seccell-instructor`), not on the column existing.
+
+- A location and an instructor are facts about a **SECTION**, so they sit on
+  section rows and a program rollup prints a dash. Summing them into a program
+  row would invent *"this program is at Urho Saari"* for the 11.6% of programs
+  that span sites.
+- **`+N` marks a primary, not a whole truth.** 23 of El Segundo's 286 sections
+  carry more than one facilitator and one spans two locations.
+- `leftCols` had to grow with them or the Grand Total row's money lands under the
+  wrong headers.
+
+### ONE PICKER, TWO CONTROLS — the season menu is now shared
+
+Instructor is a multi-select, same as Seasons (*"I hate single item selections in
+pull down menus"*), so it is the **same component**: `MultiPicker` with a `slug`
+that drives `data-prog-<slug>-btn|menu|opt|clear`, which is why every existing
+season selector in the specs and render cases kept working untouched. The CSS
+classes went `season-*` → `mpick-*` for the same reason.
+
+Two copies would have drifted, and the thing that would drift is the part that
+already broke once: `.toolbar label` sets `text-transform: uppercase`, `color`
+and `flex-direction: column` for the date captions, so the menu rows need
+explicit **resets**, not decoration. A fix landing in one copy and not the other
+is precisely how that bug comes back.
+
+### "No instructor on file" is an OPTION, and the report says nothing else
+
+**155 of El Segundo's 286 live sections have nobody on file, and they hold 1,170
+of 1,418 enrolments (83%) and $39,941.** Three of their biggest programs are
+named after the person teaching — *Naomi's HIIT Water Aerobics* (244 enrolled),
+*Mary's Water Fitness* (99) — with the field empty; *Cue the Tap Shoes with Jenna
+Lockwood* is the one that filled it in.
+
+Dan's call was **say nothing**: no coverage note, no nudge, blank cells. The
+bucket stays in the FILTER only, on the `LOC_NONE` argument — without it, ticking
+any instructor silently drops 155 sections and nothing on screen says so.
+
+### THE INSTRUCTOR KEY IS THE WHOLE COMMA-JOINED STRING
+
+Card 17295 emits facilitators as one `STRING_AGG(..., ', ')` value, so
+**"Penny Finders" and "Eric Stenberg, Penny Finders" are two different options** —
+5 sections and 2 at El Segundo, and *neither is that vendor's real total*.
+
+That is honest for a filter (tick the pairing you mean) and would be wrong for a
+leaderboard, which is **why there is no leaderboard** — Dan's call, given the fix
+is a decision rather than a refactor. Splitting the string is safe today
+(**0 of 1,056 instructor names platform-wide contain a comma**) and silently
+wrong the first time a vendor is called `Acme, Inc.`. The alternative is a card
+change emitting a JSON array; both are open.
+
+### The by-month panel: two peaks, eight weeks apart
+
+Measured at El Segundo: **programming peaks in September (165 sections running),
+money peaks in August ($77,813 collected)**, because people pay at registration
+and then attend for a term. One chart labelled "by month" is read as whichever
+the reader assumed, so both are drawn on one axis with the question each answers
+printed on it.
+
+- **The activity series is derived from the feed's own section spans**, which is
+  an APPROXIMATION of "has a session this month" and was checked before shipping:
+  against real session data over twelve months it is identical in nine and over
+  by exactly **one section** in three (a run straddling a month with no sessions
+  in it). It over-counts, never under-counts, by at most one in sixty.
+- **Future months are hatched.** El Segundo drops from 59 sections in December to
+  4 in January — that is unpublished programming, not a collapse in demand, and a
+  flat future month drawn like a real zero says the opposite.
+- **The panel hides itself under two months.** A single bar labelled "by month"
+  is noise; a one-month window correctly gets nothing.
+- Nothing in this path touches `new Date()`. `'YYYY-MM'` compares correctly as a
+  string and the month range counts integers — `new Date("2026-08-01")` is UTC
+  midnight and renders as July 31 across the US, which is the bug already
+  recorded for fasttrack dates, check-in day-of-week and the ePACT export.
+
+### Card 21055, and why the money half needed its own card
+
+**Card 17295 returns ONE period figure for the whole window, not a series**, and
+is section-grain, so it has nowhere to put twelve numbers. A separate card, not
+columns on 17295: that card already runs 104s at apex and is parked on
+performance, and a new card cannot regress the report every org opens.
+
+**THE BASE TABLES ARE NOT USABLE HERE, which inverts the usual advice in this
+file.** Measured 2026-09-01:
+
+| path | scope | time |
+|---|---|---|
+| `payment → order_item_transaction → order_item → booking` | apex, **one month** | **TIMEOUT past 60s** |
+| `materialized.item_log_report` | apex, all time | **21.4s** |
+| `materialized.item_log_report` | el-segundo | 1.7s |
+
+The Tyler export prefers base tables because it needs one org-month and can ride
+`order_item_transaction (organization_id, confirmed_at)`. This card needs a year
+**aggregated**, and deciding whether a transaction is programme revenue means
+joining four tables before it can group. The item log has already done that join.
+The cost is a full scan of the 1230 MB single-index table — survivable behind the
+4-hour feed cache, and not survivable per request.
+
+- **The filter is `order_item_type = 'reservation-enrollment'.`** The other values
+  at apex are `product` (memberships/passes/merch), `site-reservation` (facility),
+  `event-ticket`, `deposit`.
+- **Verified against the other path rather than assumed.** El Segundo monthly,
+  this card against the base-table query: **2026-06 $149 / 2026-07 $5,967 /
+  2026-08 $77,813 — identical on all three CLOSED months.** September differed by
+  $214 and that is the open-window trap from the Clarksville backcheck, not a
+  discrepancy: the two reads were 40 minutes apart.
+- **`datetime_at_primary_timezone` is ALREADY localized**, so it is cast bare and
+  the card never writes `AT TIME ZONE`. That removes the whole Pacific-rendering
+  class of bug from a rollup where it would land boundary payments in the wrong
+  month.
+- **The basis is the transaction, not `payment.created_at`** (what 17295's Period
+  Received uses). Platform-wide over 12 months, **33 of 2,008,894 transactions
+  across 8 orgs** fall in a different MONTH under the two bases, max gap 98 days.
+  0.0016%, but real — so the panel is labelled collection activity and never
+  presented as reconciling to Period Received.
+- `generate_series` gives every month a row, so a month with no money is a real 0
+  and the page never does date arithmetic to build an axis.
+
+**SHIPPED AND SIGNED OFF 2026-09-01.** Public UUID
+`a9f6a60e-43bf-4368-ada9-c6a7245f639c`, tags flipped to Date by Dan, and verified
+through the public endpoint **with the app's own `date/single` parameters** —
+apex **12 rows in 1.9s** over Sep 2025–Aug 2026. The push→flip dance behaved
+exactly as this file predicts and is worth recording as a clean example: the card
+registered **three** parameters rather than six, so there were no duplicates, but
+both dates came back `string/=`. Probed both shapes before and after the flip:
+
+| parameter shape | before the flip | after |
+|---|---|---|
+| the card's own types (`string/=`) | 200, 6 rows, 4.8s | **400** |
+| what the app sends (`date/single`) | **400 "An error occurred."** | 200, 6 rows, 1.7s |
+
+`buildMetabaseParams` hardcodes `date/single`, so a Text tag is not a cosmetic
+problem — it is the whole feed. **The UUID was wired BEFORE the flip on purpose**,
+because the page treats an erroring feed exactly as it treats a missing card, so
+the panel completed itself the moment the tags changed with no redeploy.
+
+**It is ABSENT until someone creates the public link.** `SHARED_UUIDS` takes it
+from `MB_PROGRAMS_MONTHLY_UUID` and omits the key entirely when unset, so the
+route 404s and the page draws the activity chart alone. A row of confident $0
+bars would say this org collected nothing when the truth is that nothing
+answered — the `hasAbsent` / `ciHasStatus` rule.
+
+### THE EXCEL EXPORT WAS IGNORING EVERY FILTER, and that predates this
+
+Found while adding the two columns Dan asked for. `downloadExcel` read `rows` —
+the **unscoped** program rollups — so an admin who narrowed to one location, one
+season or a search term and hit Excel got the whole org. It reads `filteredRows`
+now, the same set the grand total and the summary cards already use.
+
+The two new columns carry the **distinct set** across the program's sections
+(`progDistinctFromSections`), not a dash: a spreadsheet row cannot be expanded,
+so where the screen makes you open a program the file has to carry the answer.
+Joined with **`"; "` and not `", "`**, because the values themselves can contain
+a comma and a comma-joined set could never be taken apart again.
+
+### Guards
+
+`scripts/programs-instructor.spec.js` (**67 assertions, in CI**), which LIFTS AND
+RUNS the seven helpers rather than regexing them, and reads the card mirror and
+`server.js`. Plus **12 new `ci-check-render.js` cases**, keyed on computed values
+— the instructor CELL, the program COUNT under a tick, and the two peak MONTHS —
+over a fixture where the activity peak (September) and the money peak (August)
+are deliberately different months, because a fixture where they coincide cannot
+tell a correct panel from one drawing the same series twice. New stub modes:
+`previnstr` (a pre-v6 feed, columns absent) and `nomonthly` (card 21055 answers
+404, money chart absent while the activity chart still draws).
+
+**Two of my own cases were wrong in ways only the browser shows**, both fixed
+before the run reported: `openFirstProgram` clicked whichever program sorted
+first, making the case depend on the sort rather than the column; and
+`pickInstructor` selected by attribute value, which cannot work for
+"No instructor on file" — its value is the `\u0000` sentinel. It ticks by visible
+label now.
+
+**A spec-harness note:** the source assertions run over a comment-stripped copy,
+because the comments quote the broken forms (`new Date(`, a comma split) on
+purpose — and one assertion still failed on correct code first time by matching
+`data-prog-season-btn` when it meant the CSS class `.season-btn`. Third instance
+of that in this file.
+
 ## Programs: a multi-select SEASON filter (2026-08-31)
 
 Dan, on Shrewsbury: *"lets add a program 'season' filter on the programs summary
@@ -1437,6 +1748,10 @@ name rule misses, 68 of them at an aquatic location**. The 6 exceptions are 3 El
 Segundo archived sites and the 3 Johnson Lane Park courts. **Blast radius: two
 orgs — El Segundo +66, Northern Door +2.**
 
+**THIS IS THE END OF THE LINE FOR IT, by Dan's 2026-09-01 call** — the branch
+stays and nothing else gets built on court-typed lanes. See *"CLOSED — nothing
+further gets built on courts-as-pool-lanes"* below before extending anything here.
+
 ### Card 17295 v6 — location and instructor
 
 **`session.location_id` is EITHER a court id OR a location id.** Card 17298
@@ -1498,7 +1813,136 @@ for all 29 orgs. The mirror was rebuilt from the live card first, then edited.
 since 2026-08-22 cannot be ruled out from here — Metabase keeps revision history
 on the card if it needs checking.
 
-### PARKED: per-org site scoping for a report tab
+## Aquatics scope is CONFIGURATION now, and the lane guess is gone (2026-09-02)
+
+Dan, reversing the "build nothing further" call below: *"lets make this
+configurable. pools can be courts, but courts can never be pools. the 'hack' in
+using pools for courts is that orgs need a site to be instant bookable on the
+'courts' section, and ONLY courts show up there. So the default setting for the
+aquatics report tab is 'pools', but there is a configurable setting on that
+report to add in an additional site 'type'."*
+
+**`refineSiteType`'s lane branch is DELETED.** It recovered a court-typed swim
+lane from the site name plus an aquatic-sounding location — a guess that had to
+be right about every org on the platform from one regex, and that encoded a
+product capability gap into reporting. What replaces it is an org saying so.
+
+Two settings on the `facility` report (`REPORT_SETTINGS_SCHEMA`, which registered
+only `roster` before this):
+
+| setting | default | what it does |
+|---|---|---|
+| `aquaticsExtraTypes` | `[]` | site types folded into the tab **besides `pool`**. `pool` is not offered — it is always included and is not a choice. |
+| `aquaticsScope` | `[]` | locations or site names the tab is restricted to. **EMPTY MEANS EVERY ONE**, the same rule as every other multi-select here. |
+
+Measured at El Segundo before designing: **Wiseburn Aquatic Center 51 court-typed
+sites (48 lane-named), Urho Saari 16 (all 16), Recreation Park Courts 17 (0
+lanes)**. So `court` + those two locations is exactly right and the tennis courts
+stay out — which is the whole reason the location half exists alongside the type
+half.
+
+**The name branches STAY.** A site an org literally called "Pool 1" or "Aquatic
+Center Lap Area" is the org's own word, not our inference about a location.
+
+### FIVE surfaces scoped to aquatics, and one of them was hardcoded
+
+The tab, its lane-hours panel, the tab badge, the Excel export and the scope
+note. Four built their own `new Set(vert.types)`; the **lane-hours panel
+hardcoded `r['Site Type'] === 'pool'`**, so it would have reported eleven hours
+beside a tab reporting thousands. They all read `vertRowMatch(r, key)` now, and
+the type/scope Sets are built once per vertical rather than per row.
+
+**The gear is mounted on the EMPTY branch too.** An org whose lanes are all typed
+`court` has no pool bookings at all until it is configured, so a control only on
+the populated branch is a dead end for the one org that needs it.
+
+**`vertScopeNote()` states the scope on screen** — excluded is never hidden, and
+an admin looking at a narrowed tab must be able to see that it is narrowed.
+
+The settings sheet's CSS moved to **`public/report-settings.css`**, shared with
+the roster. Copying a hundred lines of it into a second page is how two dialogs
+start looking like different features — the `.season-*` → `.mpick-*` lesson.
+
+### A `strings` kind, and a validator that stopped discarding silently
+
+`aquaticsScope` is free text, because the catalogue is per-org and lives in the
+feed. It is bounded on every axis a stored list can grow along — count (200),
+item length (200), duplicates — and **blanks are dropped**, since an empty entry
+can never match a location and would sit in the panel looking like a bug.
+
+The `columns` kind now **reports** an entry that is not in its catalogue. It used
+to be caught only by the `min` check, so a list with a floor of zero silently
+binned a bad value and answered ok — the exact thing that route's own comment
+says must not happen.
+
+### Guards
+
+`scripts/aquatics-scope.spec.js` (**47 assertions, in CI**), replacing
+`aquatics-lanes.spec.js`. It LIFTS AND RUNS `refineSiteType` and `vertRowMatch`,
+and the load-bearing assertion is that **the guess cannot come back**: a
+court-typed "North Lane 1 - A" at "El Segundo Wiseburn Aquatic Center" stays a
+court.
+
+**A render case that quietly stopped testing what it claimed.** The three lane
+cases kept passing after the branch was removed, and it took a bisect to find
+why: the fixture builds `Facility` as `"<location> - <site>"`, so those rows say
+"Aquatic" in their *name* and are recovered by the name branch. They are the
+hour-math guard and nothing more. `Lap Lane 7` at `Wiseburn Center` — no aquatic
+word anywhere — is the discriminating row, and `facilities · an unconfigured org
+counts no courts` is the case that fails if anyone reinstates the guess.
+Generalise it: *when you delete the thing a test was written for, check the test
+still fails without it.*
+
+**The configured path is spec-covered, not render-covered**, and deliberately:
+driving it in a browser needs the server's settings store changed mid-run, and
+`readReportSettingsStore()` memoises on first read, so a file written behind the
+server's back is never seen.
+
+**Two sandbox traps, both of which cost real time here:**
+
+- **`pkill -f "node .*server.js"` kills this session's own harness**, and the
+  symptom is every subsequent command exiting 144 with no output — which reads
+  exactly like the render check crashing. Sweep `/proc/*/cmdline` for
+  `rental-report/server.js` instead.
+- **`directors-facilities.spec.js` threw before asserting anything**, because its
+  slice of `facilities.html` now runs past `VERT_CONFIG`, which reads the
+  injected aquatics settings declared above the slice. Same shape as the
+  `alertEnabled` reference that left `email-slack-notify.spec.js` dead for
+  months. A slice that grows can reach past its own inputs.
+
+### CLOSED — nothing further gets built on courts-as-pool-lanes (Dan, 2026-09-01)
+
+Dan, after walking through the lane classification: *"lets skip 2 for now, since
+using courts as pool lanes as a total hack, I don't want to build any of this into
+our reporting. pools are pools, courts are not pools."* Asked whether to rip the
+lane branch back out or leave it, he chose **leave it, build nothing further on
+it.**
+
+So the split is exact, and worth keeping straight:
+
+- **What stays.** `refineSiteType()`'s lane branch and its two guards, the
+  Aquatics tab reading 70 lanes / 29,981 hours instead of 24 sites / 11 hours,
+  `aquatics-lanes.spec.js` and its render cases. El Segundo keeps the numbers they
+  asked for. Removing it would take them back to 11 hours all-time, which is a
+  worse answer than the hack.
+- **What is dead.** The per-org site/location picker described below — *the whole
+  reason this section was PARKED* — plus El Segundo ask #2's aquatics-facing
+  location/instructor page work and ask #3 (drop-in / public swim) insofar as
+  either would read court-typed lanes. Not deferred, not waiting on
+  `REPORT_SETTINGS_SCHEMA`: not being built.
+
+**THE HACK IS A PRODUCT CAPABILITY GAP, AND THAT IS WHY IT DOES NOT BELONG IN
+REPORTING.** Dan's own earlier explanation of how the lanes got typed that way:
+*"in this case pool lanes are marked as 'court' so users can instant book them,
+but this is atypical."* Instant booking is a `court` capability, so an org that
+wants a self-bookable lane has no option but to lie about the type. Every report
+feature built on top of that lie encodes it further and has to be unwound when
+the product grows bookable pools. The fix is on the product side; reporting's job
+is to not deepen the workaround.
+
+Reasoning kept below, because it is measured and would otherwise be re-derived.
+
+### PARKED → NOT BUILDING: per-org site scoping for a report tab
 
 Dan: *"since the spec for sites on the aquatic report is pretty org specific …
 why not make this a facility report setting"*, then refined it to *"which
@@ -1514,11 +1958,13 @@ picker includes 74, misses 0 lanes, and over-includes exactly 3** — the Stair
 Areas at El Segundo Wiseburn Aquatic Center. Two locations to tick: El Segundo
 Wiseburn Aquatic Center, Urho Saari Swim Stadium.
 
-Not started. Two things to settle first: `REPORT_SETTINGS_SCHEMA` registers only
-`roster` today, and the whole panel is **super-admin gated behind the
-`reportSettings` flag** by Dan's own earlier call (*"this power is too much for
-an org user to handle"*) — so "the org admin could set it" is a change to that
-decision, not just a new schema entry.
+Never started, and now closed by the decision above. Two things would have had to
+be settled anyway: `REPORT_SETTINGS_SCHEMA` registers only `roster` today, and the
+whole panel is **super-admin gated behind the `reportSettings` flag** by Dan's own
+earlier call (*"this power is too much for an org user to handle"*) — so "the org
+admin could set it" was a change to that decision, not just a new schema entry.
+Neither is the reason it is dead; the reason is that it would scope a report tab
+by which courts are pretending to be pools.
 
 ### Guards
 
@@ -2040,6 +2486,71 @@ collapse the parameter list back to three. Checked 2026-08-30 after a flip, card
 same three slugs as `string/=`. The report served fine, but the watchdog reads
 those Text entries and keeps alerting, so the card needs opening and re-saving
 until the list is three again.
+
+## SAVING A CARD BREAKS EVERY REPORT ON IT FOR AN HOUR (2026-09-01, fixed)
+
+Dan, on El Segundo's Waitlist report: *"hmm, missing a route somewhere?"* — a
+screenshot reading **"Server returned 400"**. Not a route, not El Segundo, and
+not that branch: **the Waitlist report was down for EVERY org on production**,
+and my card 19273 push is what did it.
+
+Metabase's public card endpoint binds a supplied parameter by the card's own
+registered **`id`** (the 2026-08-09 incident recorded above). server.js resolves
+those ids from each card's public definition and caches them **one hour** per
+card in `_cardParamMeta`. **Saving a card in Metabase REGENERATES the ids** —
+which is the routine end of every card change here, the date-tag flip a
+programmatic push always needs included.
+
+Measured that evening from the production logs: prewarm warmed **15 orgs** off
+card 19273 at **22:10**, the card was re-saved minutes later, and from 22:28
+onwards every live request came back
+
+```
+HTTP 400 {"error_type":"missing-required-parameter",
+          "error":"Cannot run the query: missing required parameters: #{\"org_id\"}"}
+```
+
+while a hand-built request carrying the **current** id answered in full. Bisected
+to the id, not the value: right id → 200 and rows; wrong id + right target →
+that exact error, byte for byte.
+
+**IT SELF-HEALS ON THE TTL, WHICH IS THE WORST SHAPE A BUG CAN HAVE** — long
+enough to be reported, gone before anyone looks. And it only bites on a
+**required** tag: a tag that is not required still substitutes by target, so the
+same staleness passes unnoticed on most cards and surfaces at random, months
+apart, on whichever card happens to have one.
+
+**Why every other report was fine at the same moment.** Their ids had not
+changed, so a stale entry was still a correct one. Roster, memberships and
+programs all served normally throughout — which is exactly why this reads as an
+org problem or a route problem when it is neither. *A report that is down for one
+org and healthy for another is not evidence about that org*: check a second org
+on the same report before believing it.
+
+**The fix is in the fetch wrapper, so it covers all ~17 call sites.** A 400 whose
+body names a missing required parameter is treated as evidence about the CACHE,
+not the card: drop the entry, re-resolve, retry once. Two guards keep it from
+becoming a load source — a re-resolution yielding the **same** url means the card
+genuinely is refusing (one query, not two), and an **unstamped** url means the
+definition read just failed, which is a query whose answer we already know. And
+it is gated on 400 alone: a 404 is a card that is gone, a 5xx is Metabase, and a
+statement timeout is a heavy card that must never be asked twice.
+
+**A diagnosis note worth keeping:** the `[proxy]` log line prints the URL
+**before** the wrapper stamps it, so an id-less URL in the logs is expected and
+proves nothing. Read `[mb-params]` lines instead.
+
+Guard: `scripts/mb-param-ids.spec.js` (**19 assertions, in CI**), which LIFTS AND
+RUNS the real wrapper against a fake Metabase rather than regexing it.
+Mutation-tested six ways, all failing by name: no retry at all (the bug as it
+shipped), a retry on any 400 (the heavy card queried twice), either guard
+dropped, the cache never invalidated, and the gate on the wrong status.
+
+**One mutation survived the first draft**, and the reason is the usual one: the
+timeout case ran with a FRESH cache, so a body-blind retry re-resolved to the
+same url and the same-ids guard rescued it. The fixture now seeds a stale id as
+well, which is the only shape where the body test is load-bearing. *Plausible is
+not the same as discriminating.*
 
 ## Card sign-off — a report MUST return live results before you call it done (IMPORTANT)
 
@@ -4975,6 +5486,60 @@ when the lifetime goes down.
 the **keyboard**, not by assigning `.value`. React tracks a controlled input's
 value internally, so a direct assignment plus a synthetic `input` event is
 ignored — the case would have failed on a perfectly good dial.
+
+## GL code multi-select (2026-09-01)
+
+Dan: *"lets do the gl code multicheckbox option on the gl code report. everything
+starts as selected/checked, there's an unselect all, select all, and individual
+checkboxes."*
+
+**THE OPTIONS COME FROM THE ROWS, NOT THE CHART OF ACCOUNTS**, and that was
+measured before choosing: at apex the chart holds **974 accounts (888
+unarchived)** while only **220 codes carry any activity in twelve months**.
+Sourcing from the chart opens a menu of 900+ rows most of which can never match a
+receipt in view. Offered to swap it if Dan wants the full chart.
+
+- **An unmapped receipt is its own option, never a dropped row.** `glOptionKey()`
+  folds null, `''` and the card's own literal `'none'` into one
+  *(Unmapped — no GL code)* entry — three spellings of the same fact would
+  otherwise be three checkboxes, and hiding the rows outright is how a total
+  stops reconciling against the ledger it came from.
+- **`DeskFilter` is GONE — it was generalised into `CheckFilter`**, used by both
+  the desk and GL pickers with a per-caller `slug` driving its `data-*` handles.
+  A third copy of that markup is how the facility Summary shipped chips that
+  scoped some panels and not others. (The payment-method picker keeps its own
+  copy: it toggles differently and predates this.)
+- **"None" has to STICK.** The reconcile effect runs only when the DATA changes,
+  guarded by a signature — on a checkbox click it would widen an empty selection
+  straight back to all and the button would look broken. Same shape as the desk
+  effect it mirrors.
+- **Numeric-aware sort**, so 9 precedes 100 and unmapped sinks last. A GL chart
+  in string order is unusable for finding a code.
+- **Print and PDF reconstruct the selection from the URL**, because they have no
+  React state — an export quietly carrying codes the reader excluded is worse
+  than one that fails. `gl_codes` is in `getParams()`'s explicit whitelist and in
+  the intent builder, and rides both the share link and the export params.
+
+Guard: `scripts/gl-code-filter.spec.js` (**30 assertions, in CI**), which LIFTS
+AND RUNS `glOptionKey`, the comparator and `reconcileFilterSelection`.
+Mutation-tested: unmapped folded away, the unmapped sink removed, `None` widened
+back to all, the funnel re-deriving its own key, and `gl_codes` dropped from
+`getParams()`.
+
+**Three spec bugs of mine worth recording, all found by mutation and all fixed in
+the SPEC rather than the mutation:**
+
+- The comparator lift matched **the DESK sort**, which orders fine either way, so
+  it proved nothing. It is scoped to the `allGlCodes` memo now.
+- `liftFn` counted braces from the first `{`, which for
+  `reconcileFilterSelection({ available, … })` is the **destructured parameter**
+   — it lifted half a function and threw. It skips the parameter list first.
+- A single `.test()` for `glCodes: csv('gl_codes')` passed with either reader
+  alone, so dropping it from `getParams()` survived. It counts both.
+
+And one mutation is only discriminating **as a pair**: a stable sort leaves an
+element in place on a 0, so removing either unmapped-sink branch alone can still
+come out ordered correctly. Removing both fails by name.
 
 ## Saved views on the Class Roster (2026-08-27)
 

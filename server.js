@@ -186,17 +186,66 @@ async function enrichMetabaseCardUrl(url) {
   }
 }
 
+// A STALE PARAMETER ID IS A PLATFORM-WIDE OUTAGE OF ONE REPORT, and it took a
+// live one to find that out (2026-09-01, the Waitlist report). The ids above are
+// cached for an hour per card, and SAVING A CARD IN METABASE REGENERATES THEM —
+// which is the routine end of every card change in this repo, including the flip
+// of the date tags that a programmatic push always requires. From that save until
+// the entry expires, every org's request carries the previous id, Metabase binds
+// nothing to the tag, and a REQUIRED tag then fails the query outright:
+//
+//   HTTP 400 {"error_type":"missing-required-parameter",
+//             "error":"Cannot run the query: missing required parameters: #{\"org_id\"}"}
+//
+// Measured that day: prewarm warmed 15 orgs off card 19273 at 22:10, the card was
+// re-saved minutes later, and every live request for the next hour failed for
+// EVERY org while the card itself answered a hand-built request perfectly. It
+// self-heals on the TTL, which is the worst shape a bug can have — long enough to
+// be reported, short enough to be gone before anyone looks.
+//
+// So a 400 is treated as evidence about the CACHE, not about the card: drop the
+// entry, re-resolve, and retry once. The retry only fires when re-resolution
+// actually yields a different URL, so a card that is genuinely broken costs one
+// definition read and not a second query.
+const _MB_STALE_ID_RE = /missing-required-parameter|missing required parameters/i;
+
+function invalidateCardParamMeta(mbUuid) { _cardParamMeta.delete(mbUuid); }
+
 // Guarded global fetch wrapper: transparently stamps parameter ids onto Metabase
 // public-card QUERY requests only. Every other fetch — including card-definition
 // reads (/api/public/card/:uuid with no /query/json) used above — passes through
 // untouched, so there is no recursion and no effect on non-Metabase traffic.
 globalThis.fetch = async function (resource, init) {
-  if (typeof resource === "string"
-      && resource.includes("/api/public/card/")
-      && resource.includes("/query/json?parameters=")) {
-    resource = await enrichMetabaseCardUrl(resource);
+  const isCardQuery = typeof resource === "string"
+    && resource.includes("/api/public/card/")
+    && resource.includes("/query/json?parameters=");
+  if (!isCardQuery) return _origFetch(resource, init);
+
+  const original = resource;
+  const sent = await enrichMetabaseCardUrl(original);
+  const resp = await _origFetch(sent, init);
+  if (resp.ok) return resp;
+
+  // Only a 400 can be a stale id; a 404 is a card that is gone and a 5xx is
+  // Metabase itself, and re-resolving would tell us nothing about either.
+  if (resp.status !== 400) return resp;
+  try {
+    const body = await resp.clone().text();
+    if (!_MB_STALE_ID_RE.test(body)) return resp;
+    const m = /\/api\/public\/card\/([^/?]+)\//.exec(original);
+    if (!m) return resp;
+    invalidateCardParamMeta(m[1]);
+    const retryUrl = await enrichMetabaseCardUrl(original);
+    // Same ids means the card really is refusing, and an UNSTAMPED url means the
+    // definition read just failed — retrying with no ids at all is a query we
+    // already know the answer to. Neither is worth a second heavy request.
+    if (retryUrl === sent || retryUrl === original) return resp;
+    console.warn(`[mb-params] card ${m[1].slice(0, 8)} rejected our parameter ids; re-resolved and retrying`);
+    return await _origFetch(retryUrl, init);
+  } catch (e) {
+    console.warn(`[mb-params] stale-id retry failed: ${e.message}`);
+    return resp;
   }
-  return _origFetch(resource, init);
 };
 
 
@@ -1368,7 +1417,7 @@ const ORGS = {
   },
 };
 
-const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "products", "memberships", "court-utilization", "calendar", "fasttrack", "waitlist", "users", "program-demographics", "instructor-payout", "retention", "annual-report", "section-detail", "ice-calendar", "qoq", "checkins", "program-checkins", "selfservice"];
+const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "products", "memberships", "court-utilization", "calendar", "fasttrack", "waitlist", "users", "program-demographics", "instructor-payout", "retention", "annual-report", "section-detail", "ice-calendar", "qoq", "checkins", "program-checkins", "selfservice", "programs-monthly"];
 
 // ── Friendly report directory — label + emoji per report type ──────────
 // Powers the smart Project-Update composer (auto-draft from the changelog):
@@ -1395,6 +1444,7 @@ const REPORT_DIRECTORY = {
   "ice-calendar":      { label: "Ice Participant Calendar", emoji: "❄️" },
   qoq:                 { label: "QoQ Revenue Comparison",   emoji: "📉" },
   selfservice:         { label: "Self-Service Mix",         emoji: "🖱️" },
+  "programs-monthly":  { label: "Programs by Month",        emoji: "📅" },
 };
 
 // ── Shared Metabase UUIDs (one query per report type, parameterized by org_id) ──
@@ -1425,6 +1475,17 @@ const SHARED_UUIDS = {
   // Metabase question #19174 ("✅ Self-Service Mix Report") — powers the
   // Self-Service & Staff Workload band on the Program Summary tab.
   selfservice: "358f6b85-8af3-429e-ba24-ad2cd3207ac9",
+  // Metabase question #21055 ("✅ Programs Revenue by Month") — the money half
+  // of the Programs Summary "by month" panel. Card 17295 returns one period
+  // figure for the whole window, not a series, so the series needs its own
+  // month-grain card.
+  //
+  //
+  // The page degrades correctly whatever this card does: a feed that errors or
+  // 404s leaves the money chart ABSENT and the activity chart still drawing,
+  // because a row of confident $0 bars would say the org collected nothing when
+  // the truth is that nothing answered.
+  "programs-monthly": process.env.MB_PROGRAMS_MONTHLY_UUID || "a9f6a60e-43bf-4368-ada9-c6a7245f639c",
 };
 
 // Which card does the app ACTUALLY query for a given org + report?
@@ -1988,12 +2049,12 @@ const AMENITY_TAGS = {
 
 // Report types that are valid system-wide but should NOT be offered in the
 // dashboard "+ Add report" flow (e.g. not yet ready for self-serve onboarding).
-const NON_ADDABLE_REPORTS = new Set(["program-demographics", "retention", "annual-report", "section-detail", "qoq", "checkins", "program-checkins", "selfservice"]);
+const NON_ADDABLE_REPORTS = new Set(["program-demographics", "retention", "annual-report", "section-detail", "qoq", "checkins", "program-checkins", "selfservice", "programs-monthly"]);
 // Reports that require extra params (e.g. section_id) and cannot be health-checked with org_id alone
 // How many consecutive failed probes before a report is called down. One is
 // load; two in a row is a report. See the flap note in checkOne().
 const HEALTH_ALERT_AFTER = Number(process.env.HEALTH_ALERT_AFTER || 2);
-const HEALTH_SKIP_REPORTS = new Set(["section-detail", "annual-report", "qoq", "qbr-stats", "checkins", "program-checkins", "selfservice"]);
+const HEALTH_SKIP_REPORTS = new Set(["section-detail", "annual-report", "qoq", "qbr-stats", "checkins", "program-checkins", "selfservice", "programs-monthly"]);
 const RENTAL_CALENDAR_ORGS = new Set(["watertown", "norman", "niagarafalls"]);
 // Director's Report (quarterly executive summary) — org-wide since 2026-08-04
 // (piloted on Watertown earlier the same day). With ALL_ORGS true every org
@@ -9012,6 +9073,20 @@ function sharedCardLoad(rt, overrideOrg, overrideTtlMin) {
   };
 }
 
+// Which site TYPES an org may fold into the Aquatics tab, beyond `pool`.
+//
+// DAN'S RULE, and the whole reason this is configuration rather than a guess:
+// "pools can be courts, but courts can never be pools." The hack is that a site
+// has to be typed `court` to be instant-bookable, so an org that wants a
+// self-bookable swim lane has no option but to lie about the type — El Segundo
+// types 67 of its lanes that way. That is a product capability gap, so reporting
+// must not encode it: the DEFAULT is pools only, and an org that has done it
+// says so explicitly here.
+//
+// These are real court.type values. `pool` is deliberately absent — it is always
+// included and is not a choice.
+const AQUATICS_EXTRA_TYPES = ["court", "rink", "gym", "field", "room", "other"];
+
 const REPORT_SETTINGS_SCHEMA = {
   roster: {
     // ── what it opens on ──
@@ -9035,6 +9110,23 @@ const REPORT_SETTINGS_SCHEMA = {
                      min: 1, max: 12, def: EPACT_VERIFIED_COLUMNS },
     epactLabel:    { kind: "enum", values: ["date-section", "section", "section-date"], def: "date-section" },
     epactBom:      { kind: "bool", def: true },
+  },
+
+  // The Facilities hub's Aquatics tab. Registered under `facility` because that
+  // is the report type in REPORT_TYPES — `facilities` is the hub's path, not a
+  // report, and the settings routes go through resolveOrg.
+  facility: {
+    // Empty by default: pools only. An org that types its lanes `court` adds
+    // "court" here, and nothing about the platform changes for anyone else.
+    aquaticsExtraTypes: { kind: "columns", catalogue: AQUATICS_EXTRA_TYPES,
+                          min: 0, max: AQUATICS_EXTRA_TYPES.length, def: [] },
+    // Locations or site names the tab is restricted to. EMPTY MEANS EVERY ONE —
+    // the same rule as every other multi-select in this repo, and the safe
+    // direction: an org that renames a location gets its whole tab back rather
+    // than an empty one. Free text, because the values are per-org and the
+    // server has no list to validate against; the PANEL builds its options from
+    // the feed, so an option can never be unpickable.
+    aquaticsScope:      { kind: "strings", max: 200, maxLen: 200, def: [] },
   },
 };
 
@@ -9159,7 +9251,7 @@ function reportSettingsDefaults(report) {
   const out = {};
   for (const [k, f] of Object.entries(schema)) {
     out[k] = f.kind === "flags" ? Object.assign({}, f.def)
-           : f.kind === "columns" ? f.def.slice()
+           : (f.kind === "columns" || f.kind === "strings") ? f.def.slice()
            : f.def;
   }
   return out;
@@ -9225,8 +9317,28 @@ function normalizeReportSettings(report, body) {
       const seen = new Set();
       const cols = val.filter(c => typeof c === "string" && f.catalogue.includes(c)
                                    && !seen.has(c) && seen.add(c));
+      // An entry that is not in the catalogue is REPORTED, not quietly binned.
+      // It used to be caught only by the `min` check, which meant a list with a
+      // floor of zero — the aquatics site types — silently discarded a bad value
+      // and answered ok. A settings PUT that discards a field looks like a
+      // working control and is not one.
+      const refused = val.filter(c => typeof c !== "string" || !f.catalogue.includes(c));
+      if (refused.length) dropped.push(key + " (not offered: " + refused.slice(0, 5).join(", ") + ")");
       if (cols.length < f.min) { dropped.push(key + " (needs at least " + f.min + " column)"); continue; }
       out[key] = cols.slice(0, f.max);
+    } else if (f.kind === "strings") {
+      // Free text, because the catalogue is per-org and lives in the feed. It is
+      // still bounded on every axis a stored list can grow along — count, item
+      // length, and duplicates — since this is written to disk and read back
+      // into a page. Blanks are dropped rather than stored: an empty entry can
+      // never match a location and would sit in the panel looking like a bug.
+      if (!Array.isArray(val)) { dropped.push(key + " (not a list)"); continue; }
+      const seen = new Set();
+      const items = val
+        .filter(v => typeof v === "string")
+        .map(v => v.trim())
+        .filter(v => v && v.length <= f.maxLen && !seen.has(v) && seen.add(v));
+      out[key] = items.slice(0, f.max);
     }
   }
   return { settings: out, dropped };
@@ -9644,6 +9756,21 @@ app.get("/:org/facilities", (req, res) => {
     // rendered a blank map.
     coords: org.coords || null,
     mapCity: org.mapCity || "",
+    // Aquatics scope. Injected rather than fetched for the same reason the
+    // roster's are: they decide the FIRST render (which site types the tab
+    // counts at all), and a page that fetched them would draw the pools-only
+    // version and then jump.
+    //
+    // The SETTINGS go to every reader; only the gear that edits them is gated.
+    settings: reportSettings(slug, "facility"),
+    settingsAdmin: isReportSettingsAdmin(req),
+    settingsFlagOff: reportSettingsFlagOff(req),
+    settingsLockable: reportSettingsLockable(req),
+    adminKey: isReportSettingsAdmin(req) ? String(req.query.admin || "") : "",
+    settingsMeta: {
+      defaults: reportSettingsDefaults("facility"),
+      aquaticsTypeCatalogue: AQUATICS_EXTRA_TYPES,
+    },
   };
   const html = require("fs").readFileSync(path.join(__dirname, "public", "facilities.html"), "utf8");
   res.send(html.replace("<head>", `<head><script>window.ORG_CONFIG=${JSON.stringify(orgConfig)};</script>`));

@@ -95,10 +95,16 @@ function loadRegistry() {
 }
 const R = loadRegistry();
 
-is(Object.keys(R.REPORT_SETTINGS_SCHEMA), ["roster"],
-   "one report for now — every other report 404s until someone asks for it, the SAVED_VIEW_PARAMS pattern");
-ok(R.reportSettingsEnabled("roster") && !R.reportSettingsEnabled("gl"),
-   "and the gate reads the registry rather than a second list");
+// The registry is a deliberate allowlist, not a list of every report — the
+// SAVED_VIEW_PARAMS pattern. It used to pin the exact contents (["roster"]),
+// which broke the day a second report was registered while saying nothing about
+// the property that matters. It tests MEMBERSHIP now, and still requires an
+// unregistered report to be refused.
+ok(R.REPORT_SETTINGS_SCHEMA.roster, "the roster is registered");
+ok(R.REPORT_SETTINGS_SCHEMA.facility, "so is the facility hub's aquatics scope");
+ok(R.reportSettingsEnabled("roster") && R.reportSettingsEnabled("facility")
+   && !R.reportSettingsEnabled("gl") && !R.reportSettingsEnabled("programs"),
+   "and the gate reads the registry rather than a second list — an unregistered report is still refused");
 
 // ── 3. Defaults are the values the page ships ────────────────────────────────
 {
