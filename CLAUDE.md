@@ -2421,7 +2421,15 @@ is to not deepen the workaround.
 
 Reasoning kept below, because it is measured and would otherwise be re-derived.
 
-### PARKED → NOT BUILDING: per-org site scoping for a report tab
+### PARKED → NOT BUILDING → BUILT: per-org site scoping for a report tab
+
+**SUPERSEDED 2026-09-02 by *"Aquatics scope is CONFIGURATION now"* above** — Dan
+reversed the call and the location/site picker described here exists, as the
+`aquaticsScope` tree. Kept because the MEASUREMENTS below are what chose a
+location picker over a site-type list, and they are still the argument. Read the
+newer section first; the words "never started" in this one are history.
+
+#### The original write-up
 
 Dan: *"since the spec for sites on the aquatic report is pretty org specific …
 why not make this a facility report setting"*, then refined it to *"which
