@@ -61,7 +61,7 @@ vm.createContext(cli);
 // same shape as the `alertEnabled` reference that once made email-slack-notify
 // throw before asserting anything. This spec is about the HOUR helpers; the
 // aquatics scope has its own (aquatics-scope.spec.js).
-vm.runInContext("var AQ_EXTRA = []; var AQ_SCOPE = [];\n" + pageSrc.slice(c0, c1) +
+vm.runInContext("var AQ_SCOPE = [];\n" + pageSrc.slice(c0, c1) +
   "\n;this.oeRowHours = oeRowHours; this.oeIsArrival = oeIsArrival; this.oeIsMulti = oeIsMulti;" +
   "this.oeClockMin = oeClockMin; this.OUTDOOR_TYPES = OUTDOOR_TYPES;", cli);
 

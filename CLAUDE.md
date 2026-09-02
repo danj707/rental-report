@@ -2090,19 +2090,69 @@ lane from the site name plus an aquatic-sounding location — a guess that had t
 be right about every org on the platform from one regex, and that encoded a
 product capability gap into reporting. What replaces it is an org saying so.
 
-Two settings on the `facility` report (`REPORT_SETTINGS_SCHEMA`, which registered
-only `roster` before this):
+ONE setting on the `facility` report (`REPORT_SETTINGS_SCHEMA`, which registered
+only `roster` before this): **`aquaticsScope`**, default `[]` — the locations or
+site names that count as aquatic **on top of pools**.
 
-| setting | default | what it does |
-|---|---|---|
-| `aquaticsExtraTypes` | `[]` | site types folded into the tab **besides `pool`**. `pool` is not offered — it is always included and is not a choice. |
-| `aquaticsScope` | `[]` | locations or site names the tab is restricted to. **EMPTY MEANS EVERY ONE**, the same rule as every other multi-select here. |
+**IT IS AN INCLUSION, SO EMPTY MEANS POOLS ONLY** — deliberately NOT the
+"empty means every one" rule every other multi-select here follows, because this
+control does not narrow anything. Pools were never gated on it, so a stale entry
+(a renamed location) adds nothing rather than emptying the tab.
 
 Measured at El Segundo before designing: **Wiseburn Aquatic Center 51 court-typed
 sites (48 lane-named), Urho Saari 16 (all 16), Recreation Park Courts 17 (0
-lanes)**. So `court` + those two locations is exactly right and the tennis courts
-stay out — which is the whole reason the location half exists alongside the type
-half.
+lanes)**. So those two locations are exactly right and the tennis courts stay
+out.
+
+### There WAS an `aquaticsExtraTypes` setting, and it is gone (2026-09-02)
+
+The first build of this paired a site-TYPE list with the scope, and the scope
+NARROWED what the types let in. Dan, on the panel: *"and didn't I ask for some
+option to select a location and sites in that location? … the goal here is to
+choose locations and sites that are NOT aquatics, to include in the aquatics
+tab."*
+
+**A TYPE CANNOT EXPRESS WHAT AN ORG MEANS, and El Segundo is the proof:** ticking
+`court` brings in 67 real swim lanes **and** 17 tennis and pickleball courts,
+and no per-type rule anywhere can separate them. Only the org naming its own
+locations can. So the type list was **removed from the schema rather than left
+unread** — a registered setting nothing reads is the dead-end pattern this file
+keeps writing down, and `aquatics-scope.spec.js` now asserts `aquaticsScope` is
+the ONLY facility setting and that a posted `aquaticsExtraTypes` is refused.
+
+Safe to do without a migration because **no org had aquatics settings stored** —
+checked before changing the semantics, all seven sampled at platform defaults.
+
+**The panel is a location → site TREE**, not a row of checkboxes (that shape is
+what Dan called *"terrible"*, and fairly: 84 site-type and location boxes
+overflowing an unpadded white box). Tri-state location boxes (all / some /
+none), a per-location *"Tick all N sites here"*, and a live tally of what the
+tab will count so the effect is legible **before** saving rather than after a
+reload.
+
+- **A whole location stores the LOCATION NAME, not its sites** — two entries for
+  El Segundo rather than eighty, and it keeps counting a site added next month.
+- **Unticking one site of a whole-location pick has to EXPAND that pick first**,
+  or the location entry silently keeps counting the site the admin just
+  excluded. The box goes unticked either way, so the tally is the only place
+  that shows it — which is what the render case keys on.
+- **Pool sites are shown LOCKED, never hidden.** Leaving them out is what makes
+  an admin wonder whether the pool is in the number.
+- **Locations WITH pools sort first.** Sorting by site count put a complex of
+  four soccer fields above the Aquatic Center on an aquatics panel.
+- **Anything already saved but absent from this window stays in the tree**, or an
+  admin could never untick what they ticked last month.
+- **The pool sub-line counts DISTINCT sites**, not feed rows — it read *"3 pool
+  sites"* beside a count of `2 / 2` on the same row.
+- **The sheet is PORTALLED to `<body>`.** `.toolbar label` (0,1,1) sets
+  `text-transform: uppercase`, a grey colour and `flex-direction: column` for the
+  date captions, and `.toolbar button` beat `.rs-save`, so Save rendered grey and
+  looked inert — which is exactly what Dan reported. An inline style only wins
+  for the properties it names; getting out of `.toolbar` fixes all of it at
+  once. The `.rs-grp` in the shared stylesheet is a bare divider with no padding
+  of its own (the roster pads `.rs-grp-head`/`-body`), hence `.aqt-body`.
+- **Save is gated on `dirty`** (Dan: *"don't love the 'auto save', cause it
+  actually didn't"*), and the footnote says why it is off.
 
 **The name branches STAY.** A site an org literally called "Pool 1" or "Aquatic
 Center Lap Area" is the org's own word, not our inference about a location.
@@ -2140,11 +2190,24 @@ says must not happen.
 
 ### Guards
 
-`scripts/aquatics-scope.spec.js` (**47 assertions, in CI**), replacing
+`scripts/aquatics-scope.spec.js` (**52 assertions, in CI**), replacing
 `aquatics-lanes.spec.js`. It LIFTS AND RUNS `refineSiteType` and `vertRowMatch`,
 and the load-bearing assertion is that **the guess cannot come back**: a
 court-typed "North Lane 1 - A" at "El Segundo Wiseburn Aquatic Center" stays a
 court.
+
+**One assertion had to be scoped, not deleted.** `!/\['Site Type'\] === 'pool'/`
+exists to stop the lane-hours panel hardcoding the type again — and the SETTINGS
+panel legitimately asks a row whether it is a pool, to decide what to lock. So
+it is asserted over the page **with `AquaticsSettings` cut out**, and there is a
+second assertion that the cut removed something, or the first would be vacuous.
+Slicing the component hit the `liftFn` trap a **third** time: counting braces
+from the first `{` in `function AquaticsSettings({ rows }) {` matches the
+DESTRUCTURED PARAMETER and cuts 33 characters. Skip the parameter list first.
+
+Mutation-tested: the scope reverted to narrowing (pools gated on it), the type
+list back in the schema, and the lane-hours panel hardcoding `'pool'` again —
+all three fail by name.
 
 **A render case that quietly stopped testing what it claimed.** The three lane
 cases kept passing after the branch was removed, and it took a bisect to find
@@ -2156,7 +2219,28 @@ counts no courts` is the case that fails if anyone reinstates the guess.
 Generalise it: *when you delete the thing a test was written for, check the test
 still fails without it.*
 
-**The configured path is spec-covered, not render-covered**, and deliberately:
+### Seven render cases for the tree, all mutation-tested
+
+`facilities ·` now carries the tree: the locations it lists (keyed on
+`Wiseburn Center`, the location with no aquatic word anywhere, and on the tally
+at rest equalling the POOL sites and nothing else), a location expanding to its
+sites, one site making its location **partial**, pool sites present and locked,
+the sheet out of `.toolbar`, Save off until something changes, and **unticking
+one site of a whole location dropping the count**.
+
+Seen to fail on the real regression, each by name: `locState` collapsing `some`
+into `on`; pool sites hidden instead of locked; the portal dropped (which fails
+the cascade case *and* the Save case, because `.toolbar button` steals the blue —
+the bug as Dan hit it); Save ungated; a location that no longer expands; and
+`toggleSite` not expanding a whole-location pick.
+
+**And the runner was lying about how much it had run.** `ci-check-render.js`
+printed `${CASES.length}` on success, so a filtered run that matched **nothing**
+reported *"238 page(s) render with no uncaught errors"* — which reads exactly
+like a full clean pass, and I took it as one. It reports what actually ran now.
+
+**The configured path is also spec-covered rather than render-covered**, and
+deliberately:
 driving it in a browser needs the server's settings store changed mid-run, and
 `readReportSettingsStore()` memoises on first read, so a file written behind the
 server's back is never seen.
@@ -2172,6 +2256,69 @@ server's back is never seen.
   injected aquatics settings declared above the slice. Same shape as the
   `alertEnabled` reference that left `email-slack-notify.spec.js` dead for
   months. A slice that grows can reach past its own inputs.
+
+### Backcheck of El Segundo's configured tab, and two defects it found (2026-09-02)
+
+Dan, after ticking the two aquatic locations: *"confirm these new numbers are
+correct."* **They are.** Recomputed independently from card 19570's own rows
+through the public endpoint (cache-independent, 5,641 rows in 20.9s), applying
+`refineSiteType` and the tab's own reducers, El Segundo Sep 2026:
+
+| | his screen | recomputed |
+|---|---|---|
+| charged | $32,339 | **$32,339** |
+| instant-book | 27% · $2,093 | **27% · $2,093** |
+| managed | 73% · $30,246 | **73% · $30,246** |
+| active sites | 67 | **67** |
+| bookings | 4,572 | 4,578 |
+| canceled | 277 | 278 |
+| guests | 1,254 | 1,257 |
+
+**Money and site count identical; the three counts differ by 3-6 because
+September is an OPEN window** — his page rendered from a cache entry read before
+mine, and the new rows are $0 instant lane slots, which is why the money did not
+move. Never diff an open window against itself across two reads; that is the
+Clarksville lesson, and it is the whole explanation here.
+
+Also settled: **every row that carries a head count carries exactly 1**, and
+`guests == the instant-book count` is not a coincidence — the 1,257 rows with a
+head count ARE the instant bookings, and the 3,321 managed ones record none.
+
+**Two real defects, both found by doing this rather than by review:**
+
+- **"Revenue by site" printed "A" and "B" twelve times.** Dan: *"this metric
+  missing the full court/site lane names."* Four tabs each carried their own
+  `f.split(' - ').slice(1)` — drop everything before the FIRST ' - ' — which
+  assumes every site is named `"<location> - <site>"`. El Segundo's lanes are
+  named `North Lane 7 - A` and `Inst Lane 4-2" Depth (25Y) - A`, so the rule
+  kept the SUBLANE LETTER and threw the lane away. **And it was not only a
+  label:** Camping, Outdoor and Fields build `location + '||' + site` from that
+  value as a site's IDENTITY, so two lanes at one location whose names end the
+  same way merged into one row with their bookings, hours and revenue added
+  together — a location with twenty lanes counted as two sites. One module-scope
+  `siteLabel(facility, location)` now, trimming a leading copy of the row's
+  **own** location and nothing else. Guessing a prefix from a separator cannot
+  work; the row carries its location, so test against that.
+- **"Avg Party 0.3 guests per booking."** Arithmetically right and reads as
+  broken: `guests / bookings` over a denominator where 73% of rows cannot
+  answer. The honest figure is **1.0, on the 1,257 of 4,578 that report one**.
+  Same rule as `hasAbsent` — a denominator must not include rows that cannot
+  answer — and **the Outdoor and Fields tabs had always done it correctly**, so
+  the Summary and Aquatics tabs were disagreeing with a right answer already in
+  the file. All three tiles now say *"where recorded (N of M)"*, because 1.0 is
+  as opaque as 0.3 without it.
+
+**And the rebuild moves his numbers slightly, in the correct direction:** under
+the inclusion rule a `pool`-typed site OUTSIDE the ticked locations counts,
+where the old narrowing design excluded it. Measured: **68 sites and $32,595**,
+the difference being Hilltop Park's *Hilltop Pool Semi-Private Party* — 1
+booking, $256. Pools always count, so that is the answer; worth knowing because
+the site total changes by one the day this ships.
+
+Guards: `aquatics-scope.spec.js` 52 → **68 assertions**, lifting and RUNNING
+`siteLabel` over the real El Segundo names. Mutation-tested: the split rule
+restored (which reproduces Dan's *"A"* exactly), and Avg Party back over all
+bookings — both fail by name.
 
 ### CLOSED — nothing further gets built on courts-as-pool-lanes (Dan, 2026-09-01)
 

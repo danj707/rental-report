@@ -10,6 +10,38 @@
   <link rel="stylesheet" href="/report-settings.css">
   <style>
     .aqrs-gear { display: inline-flex; }
+    /* The tree. Scoped names so nothing here can be reached by .toolbar or by
+       the shared sheet's own rules. */
+    .aqt-body { padding: 14px 22px 18px; display: flex; flex-direction: column; gap: 12px; }
+    .aqt-tally { display: flex; align-items: baseline; gap: 7px; padding: 11px 22px;
+      background: #e0f0f2; border-bottom: 1px solid #d3dfe4; font-size: 13px; color: #37505f; }
+    .aqt-tally b { font-size: 19px; font-weight: 600; color: #0e6d78; font-variant-numeric: tabular-nums; }
+    .aqt-delta { margin-left: auto; font-size: 11.5px; color: #0e6d78; }
+    .aqt-tree { border: 1px solid #e2e8ec; border-radius: 6px; overflow: hidden; }
+    .aqt-loc + .aqt-loc { border-top: 1px solid #eef2f5; }
+    .aqt-bar { display: flex; align-items: center; gap: 9px; padding: 9px 11px; cursor: pointer; }
+    .aqt-bar:hover { background: #f7f9fa; }
+    .aqt-loc.open .aqt-bar { background: #f7f9fa; }
+    .aqt-caret { font-size: 8px; color: #9aa4b0; width: 9px; flex: none; }
+    .aqt-box { width: 15px; height: 15px; flex: none; border-radius: 3px; border: 1.5px solid #94a3b8;
+      background: #fff; display: grid; place-items: center; font-size: 10px; line-height: 1; color: #fff; }
+    .aqt-box.on { background: #2563eb; border-color: #2563eb; }
+    .aqt-box.some { background: #dbe6fd; border-color: #2563eb; color: #2563eb; }
+    .aqt-box.lock { background: #0e6d78; border-color: #0e6d78; }
+    .aqt-name { flex: 1; min-width: 0; font-size: 13px; font-weight: 500; color: #1f2937; }
+    .aqt-sub { display: block; font-size: 11px; font-weight: 400; color: #0e6d78; }
+    .aqt-cnt { flex: none; font-size: 11.5px; color: #6b7280; font-variant-numeric: tabular-nums; }
+    .aqt-sites { padding: 2px 11px 11px 40px; background: #f7f9fa; }
+    .aqt-all { padding: 6px 0 8px; border-bottom: 1px dashed #e2e8ec; margin-bottom: 7px; }
+    .aqt-all button { font: inherit; font-size: 11.5px; color: #2563eb; background: none;
+      border: 0; padding: 0; cursor: pointer; text-decoration: underline; }
+    .aqt-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 2px 14px; }
+    .aqt-site { display: flex; align-items: center; gap: 8px; padding: 3px 0; cursor: pointer;
+      font-size: 11.5px; min-width: 0; color: #37505f; }
+    .aqt-site.locked { cursor: default; color: #0e6d78; }
+    .aqt-site > span:nth-of-type(1) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .aqt-type { flex: none; font-size: 9.5px; letter-spacing: .06em; text-transform: uppercase;
+      color: #94a3b8; }
     .aq-scopebar {
       display: flex; align-items: center; gap: 10px;
       margin: 0 0 14px; padding: 9px 13px;
@@ -648,7 +680,6 @@
     // site types the tab counts AT ALL, so a page that fetched them would draw
     // the pools-only version and then jump.
     const RS_SETTINGS = (window.ORG_CONFIG || {}).settings || {};
-    const AQ_EXTRA = Array.isArray(RS_SETTINGS.aquaticsExtraTypes) ? RS_SETTINGS.aquaticsExtraTypes : [];
     // EMPTY MEANS EVERY LOCATION, the same rule as every other multi-select in
     // this repo. It is the safe direction: an org that renames a location gets
     // its whole tab back rather than an empty one.
@@ -759,11 +790,16 @@
       // Spaces on purpose (Dan): leagues and tournaments, not parties.
       fields:   { label: 'Fields',           icon: '⚾',  types: ['field'] },
       golf:     { label: 'Golf',             icon: '⛳',  types: ['golf'] },
-      // Pools ALWAYS, plus whatever this org has configured. Empty by default,
-      // so an org that has not been configured sees exactly what it saw before
-      // any of this existed. See AQ_EXTRA / AQ_SCOPE above.
+      // Pools ALWAYS, and nothing else by TYPE — "pools can be pools, courts
+      // can never be pools" (Dan). Everything else an org counts as aquatic is
+      // NAMED, location by location or site by site, in AQ_SCOPE. A type list
+      // was the earlier shape and it was too coarse: at El Segundo `court`
+      // drags 17 tennis and pickleball courts onto the tab alongside 67 lanes.
+      // Empty scope therefore means POOLS ONLY, not "every location" — this is
+      // an inclusion, so an unconfigured org sees exactly what it saw before
+      // any of this existed.
       aquatics: { label: 'Pool / Aquatics',  icon: '🏊',
-                  types: ['pool'].concat(AQ_EXTRA), scope: AQ_SCOPE },
+                  types: ['pool'], scope: AQ_SCOPE },
       // Ice — mostly orgs type these 'rink', but some (Apex) type them 'court';
       // refineSiteType() recovers those from the site name, so this vertical
       // catches both the correctly-typed rinks and the reclassified outliers.
@@ -785,11 +821,44 @@
     // A configured scope matches on the LOCATION or the site NAME, because Dan
     // asked to be able to name either and the feed carries both. A site name is
     // `Facility` — card 17294's column for court.court_number.
+    // ONE PREDICATE, and for aquatics it is an INCLUSION rather than a filter.
+    //
+    // Dan: "the goal here is to choose locations and sites that are NOT
+    // aquatics, to include in the aquatics tab." Type-as-a-filter was the wrong
+    // shape — ticking `court` swept in Recreation Park's real tennis courts and
+    // then needed a second setting to take them back out. A named location or
+    // site counts whatever it is typed, and nothing else does.
+    //
+    // Verified before changing the semantics: NO org had aquatics settings
+    // stored, every one at the platform default, so nobody was migrated.
+    // A SITE'S NAME, with a leading copy of its OWN LOCATION trimmed and nothing
+    // else. Four tabs each carried their own copy of this as
+    // `f.split(' - ').slice(1)` — drop everything before the FIRST ' - ' — which
+    // assumes every site is named "<location> - <site>". El Segundo's lanes are
+    // named "North Lane 1 - A" and 'Inst Lane 4-2" Depth (25Y) - A', so that
+    // rule kept the SUBLANE LETTER and threw the lane away.
+    //
+    // It was not only a label: three tabs use this value inside
+    // `location + '||' + site` as a site's IDENTITY, so two lanes at one
+    // location whose names end the same way merged into one row and had their
+    // bookings, hours and revenue added together — a location with twenty lanes
+    // counted as two sites. One helper, and it tests against the row's own
+    // location rather than guessing from a separator.
+    function siteLabel(facility, location) {
+      const name = String(facility || '\u2014');
+      const loc  = String(location || '');
+      if (loc && name.length > loc.length + 3 && name.slice(0, loc.length + 3) === loc + ' - ')
+        return name.slice(loc.length + 3);
+      return name;
+    }
+
     function vertRowMatch(r, key) {
       const v = VERT_CONFIG[key];
-      if (!v || !v._types.has(r['Site Type'])) return false;
-      if (!v._scope) return true;               // empty means every one
-      return v._scope.has(r['Location']) || v._scope.has(r['Facility']);
+      if (!v) return false;
+      // A named location or site is IN, whatever its type. This is the whole
+      // point: an org's swim lanes are typed `court` and it says so by name.
+      if (v._scope && (v._scope.has(r['Location']) || v._scope.has(r['Facility']))) return true;
+      return v._types.has(r['Site Type']);
     }
 
     // What the tab is scoped to, in words. A configured scope that is not stated
@@ -2412,7 +2481,16 @@
       const instRev   = scoped.filter(isInstant).reduce((s, r) => s + rev(r), 0);
       const mgdRev    = revenue - instRev;
       const guests    = scoped.reduce((s, r) => s + (Number(r['Head Cnt']) || 0), 0);
-      const avgParty  = bookings ? guests / bookings : 0;
+      // AVERAGED OVER THE BOOKINGS THAT REPORT A HEAD COUNT, not over all of
+      // them. `guests / bookings` reads as a party size and is not one: at El
+      // Segundo (Sep 2026) 1,257 of 4,578 pool bookings carry a head count and
+      // every one of those is exactly 1 swimmer, so the tile said
+      // "0.3 guests per booking" — which reads as a broken number when the
+      // truth is "1.0, on the 27% that report one". Same rule as `hasAbsent`:
+      // a denominator must not include rows that cannot answer. The Outdoor
+      // tab has always done it this way; these two surfaces disagreed with it.
+      const parties   = scoped.map(r => Number(r['Head Cnt']) || 0).filter(n => n > 0);
+      const avgParty  = parties.length ? parties.reduce((a, b) => a + b, 0) / parties.length : null;
       const sites     = new Set(scoped.map(r => (r['Facility'] || '') + '|' + (r['Location'] || ''))).size;
 
       // Monthly trend (bookings + revenue by YYYY-MM)
@@ -2447,7 +2525,9 @@
         { label: 'Cancellation Rate', val: pct(canceled, bookings), cls: 'sc-red', sub: canceled.toLocaleString() + ' of ' + bookings.toLocaleString() + ' canceled' },
         { label: 'Active Sites', val: sites.toLocaleString(), cls: 'sc-muted', sub: 'with bookings in view' },
         { label: 'Total Guests', val: guests.toLocaleString(), cls: 'sc-muted', sub: 'sum of head counts' },
-        { label: 'Avg Party', val: avgParty ? avgParty.toFixed(1) : '—', cls: 'sc-muted', sub: 'guests per booking' },
+        { label: 'Avg Party', val: avgParty == null ? '—' : avgParty.toFixed(1), cls: 'sc-muted',
+          sub: avgParty == null ? 'no head counts recorded'
+             : 'where recorded (' + parties.length.toLocaleString() + ' of ' + bookings.toLocaleString() + ')' },
       ];
 
       return e('div', null,
@@ -2540,7 +2620,7 @@
         ['bookings', bookings.toLocaleString()],
         ['charged', money(revenue)],
         ['guests', guests.toLocaleString()],
-        ['avg party', avgParty ? avgParty.toFixed(1) : '—'],
+        ['avg party', avgParty == null ? '\u2014' : avgParty.toFixed(1)],
         ['active sites', sites.toLocaleString()],
       ];
       return e('div', { className: 'fac-banner aqua fbx-pool' },
@@ -2739,38 +2819,95 @@
       const [busy, setBusy] = React.useState(false);
       const [err, setErr]   = React.useState(null);
       const cur = (window.ORG_CONFIG || {}).settings || {};
-      const [types, setTypes] = React.useState(() => new Set(cur.aquaticsExtraTypes || []));
       const [scope, setScope] = React.useState(() => new Set(cur.aquaticsScope || []));
+      const [openLocs, setOpenLocs] = React.useState(() => new Set());
       const [unlock, setUnlock] = React.useState(false);
       const [pw, setPw] = React.useState('');
 
-      // THE OPTIONS COME FROM THE FEED, so an option can never be unpickable —
-      // the same rule as every other picker in this repo. A location already in
-      // the saved scope is kept in the list even if this window has no bookings
-      // for it, or an admin could never untick what they ticked last month.
-      const places = React.useMemo(() => {
-        const set = new Set(cur.aquaticsScope || []);
-        (rows || []).forEach(r => { if (r['Location']) set.add(r['Location']); });
-        return Array.from(set).sort((a, b) => a.localeCompare(b));
+      // THE TREE COMES FROM THE FEED, so an option can never be unpickable — the
+      // same rule as every other picker in this repo. A location or site already
+      // in the saved scope is kept in the list even if this window has no
+      // bookings for it, or an admin could never untick what they ticked last
+      // month.
+      //
+      // Pool-typed sites are shown LOCKED rather than hidden: they always count,
+      // and leaving them out is what makes an admin wonder whether the pool is
+      // in the number.
+      const tree = React.useMemo(() => {
+        const byLoc = new Map();
+        const touch = name => {
+          if (!byLoc.has(name)) byLoc.set(name, { loc: name, sites: new Map() });
+          return byLoc.get(name);
+        };
+        (rows || []).forEach(r => {
+          const L = r['Location'], F = r['Facility'];
+          if (!L || !F) return;
+          const g = touch(L);
+          const isPool = r['Site Type'] === 'pool';
+          if (!g.sites.has(F)) g.sites.set(F, { name: F, type: r['Site Type'], pool: isPool });
+        });
+        // Anything saved but absent from this window still has to be visible.
+        (cur.aquaticsScope || []).forEach(nm => {
+          if (byLoc.has(nm)) return;
+          let found = false;
+          byLoc.forEach(g => { if (g.sites.has(nm)) found = true; });
+          if (!found) touch(nm)._orphan = true;
+        });
+        return Array.from(byLoc.values())
+          .map(g => {
+            const list = Array.from(g.sites.values())
+              .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+            return Object.assign(g, { list, pools: list.filter(x => x.pool).length });
+          })
+          .sort((a, b) => (b.pools > 0) - (a.pools > 0)
+                       || b.list.length - a.list.length
+                       || a.loc.localeCompare(b.loc, undefined, { numeric: true }));
       }, [rows]);
 
-      // What each extra type would actually ADD, counted over the rows on
-      // screen. A checkbox labelled "Courts" is a guess; "Courts (+67 sites)" is
-      // a decision. Sites, not bookings — the question is which sites belong on
-      // this tab.
-      const wouldAdd = React.useMemo(() => {
-        const out = {};
-        (rsMeta().aquaticsTypeCatalogue || []).forEach(t => {
-          const seen = new Set();
-          (rows || []).forEach(r => {
-            if (r['Site Type'] !== t) return;
-            if (scope.size && !(scope.has(r['Location']) || scope.has(r['Facility']))) return;
-            if (r['Site ID'] || r['Facility']) seen.add(r['Site ID'] || r['Facility']);
-          });
-          out[t] = seen.size;
+      // Three states per location: every one of its non-pool sites picked, some,
+      // or none. A partly-picked location must never read as fully in or out.
+      // A whole location ticked stores the LOCATION NAME, not its sites — two
+      // entries for El Segundo rather than eighty, and it keeps counting a site
+      // added next month.
+      function locState(g) {
+        if (scope.has(g.loc)) return 'on';
+        const pickable = g.list.filter(x => !x.pool);
+        if (!pickable.length) return g.pools ? 'lock' : 'off';
+        const n = pickable.filter(x => scope.has(x.name)).length;
+        return n === 0 ? 'off' : n === pickable.length ? 'on' : 'some';
+      }
+      function toggleLoc(g) {
+        const next = new Set(scope);
+        if (locState(g) === 'on') {
+          next.delete(g.loc);
+          g.list.forEach(x => next.delete(x.name));
+        } else {
+          g.list.forEach(x => next.delete(x.name));
+          next.add(g.loc);
+        }
+        setScope(next);
+      }
+      function toggleSite(g, site) {
+        const next = new Set(scope);
+        // Ticking off one site of a whole-location pick has to expand that pick
+        // into its sites first, or the location entry silently keeps counting it.
+        if (next.has(g.loc)) {
+          next.delete(g.loc);
+          g.list.forEach(x => { if (!x.pool) next.add(x.name); });
+        }
+        if (next.has(site.name)) next.delete(site.name); else next.add(site.name);
+        setScope(next);
+      }
+      // What the tab will count, live, so the effect is legible before saving
+      // rather than after a reload.
+      const counted = React.useMemo(() => {
+        let n = 0;
+        tree.forEach(g => {
+          if (scope.has(g.loc)) { n += g.list.length; return; }
+          g.list.forEach(x => { if (x.pool || scope.has(x.name)) n += 1; });
         });
-        return out;
-      }, [rows, scope]);
+        return n;
+      }, [tree, scope]);
 
       async function save(patch) {
         setBusy(true); setErr(null);
@@ -2865,14 +3002,13 @@
       // holds, not against the panel's own opening state, so reopening the sheet
       // and closing it never offers a pointless save.
       const sameSet = (a, b) => a.size === b.size && [...a].every(v => b.has(v));
-      const dirty = !sameSet(types, new Set(cur.aquaticsExtraTypes || []))
-                 || !sameSet(scope, new Set(cur.aquaticsScope || []));
+      const dirty = !sameSet(scope, new Set(cur.aquaticsScope || []));
 
-      const toggle = (set, v, fn) => {
-        const next = new Set(set);
-        if (next.has(v)) next.delete(v); else next.add(v);
-        fn(next);
-      };
+      const dirtyNow = dirty;
+
+      const box = (st, extra) => e('span', { className: 'aqt-box' + (st ? ' ' + st : ''),
+                                             'data-aqrs-box': st || 'off' },
+        st === 'lock' || st === 'on' ? '\u2713' : st === 'some' ? '\u2013' : '');
 
       return e('span', { className: 'aqrs-gear' }, gear, portal(
         e('div', { className: 'rs-back', onClick: ev => { if (ev.target === ev.currentTarget && !busy) setOpen(false); } },
@@ -2882,46 +3018,71 @@
               e('span', { className: 'rs-who' }, 'Applies to everyone with this report\u2019s link'),
               e('button', { className: 'rs-x', onClick: () => !busy && setOpen(false), 'aria-label': 'Close' }, '\u2715')),
 
-            e('div', { className: 'rs-grp' },
-              e('div', { className: 'rs-grp-head' }, 'Site types'),
-              e('p', { className: 'rs-hint' },
-                'Pools always count. Add a type only if this organization has sites of that type that really are aquatic \u2014 ',
-                'a swim lane has to be typed a court to be instant-bookable, so some orgs have no choice.'),
-              (rsMeta().aquaticsTypeCatalogue || []).map(t =>
-                e('label', { className: 'rs-tg', key: t, 'data-aqrs-type': t },
-                  e('input', { type: 'checkbox', checked: types.has(t),
-                               onChange: () => toggle(types, t, setTypes) }),
-                  e('span', null, SITE_TYPE_LABEL[t] || t,
-                    e('b', { className: 'rs-footnote', 'data-aqrs-count': String(wouldAdd[t] || 0) },
-                      ' \u00b7 ' + (wouldAdd[t] || 0) + ' site' + ((wouldAdd[t] || 0) === 1 ? '' : 's') + ' in view'))))),
+            // The running answer, so the effect is legible before saving rather
+            // than after a reload.
+            e('div', { className: 'aqt-tally', 'data-aqrs-counted': String(counted) },
+              e('b', null, counted.toLocaleString()),
+              e('span', null, counted === 1 ? ' site counts as aquatics' : ' sites count as aquatics'),
+              scope.size ? e('span', { className: 'aqt-delta' },
+                scope.size + (scope.size === 1 ? ' pick' : ' picks')) : null),
 
-            e('div', { className: 'rs-grp' },
-              e('div', { className: 'rs-grp-head' }, 'Locations'),
+            e('div', { className: 'rs-grp aqt-body' },
               e('p', { className: 'rs-hint' },
-                'Leave every box unticked to count every location. Tick some to restrict the tab to those \u2014 ',
-                'which is how an organization keeps its real tennis courts off an aquatics tab that counts courts.'),
-              places.length === 0
+                'Pools always count. A swim lane has to be typed a court to be instant-bookable, ',
+                'so tick the locations \u2014 or the individual sites \u2014 that really are aquatic.'),
+
+              tree.length === 0
                 ? e('div', { className: 'rs-hint' }, 'No locations in the current window yet.')
-                : places.map(p =>
-                    e('label', { className: 'rs-tg', key: p, 'data-aqrs-place': p },
-                      e('input', { type: 'checkbox', checked: scope.has(p),
-                                   onChange: () => toggle(scope, p, setScope) }),
-                      e('span', null, p)))),
+                : e('div', { className: 'aqt-tree' }, tree.map(g => {
+                    const st = locState(g);
+                    const isOpen = openLocs.has(g.loc);
+                    const pickable = g.list.filter(x => !x.pool);
+                    const on = scope.has(g.loc) ? g.list.length
+                             : g.list.filter(x => x.pool || scope.has(x.name)).length;
+                    return e('div', { className: 'aqt-loc' + (isOpen ? ' open' : ''), key: g.loc },
+                      e('div', { className: 'aqt-bar', 'data-aqrs-loc': g.loc,
+                                 onClick: () => {
+                                   const nx = new Set(openLocs);
+                                   if (nx.has(g.loc)) nx.delete(g.loc); else nx.add(g.loc);
+                                   setOpenLocs(nx);
+                                 } },
+                        e('span', { className: 'aqt-caret' }, isOpen ? '\u25BC' : '\u25B6'),
+                        e('span', { onClick: ev => { ev.stopPropagation(); if (st !== 'lock') toggleLoc(g); },
+                                    'data-aqrs-locbox': g.loc }, box(st)),
+                        e('span', { className: 'aqt-name' }, g.loc,
+                          g.pools ? e('span', { className: 'aqt-sub' },
+                            g.pools + (g.pools === 1 ? ' pool site, always counted' : ' pool sites, always counted')) : null),
+                        e('span', { className: 'aqt-cnt', 'data-aqrs-loccount': String(on) },
+                          on + ' / ' + g.list.length)),
+                      isOpen ? e('div', { className: 'aqt-sites' },
+                        pickable.length > 1 ? e('div', { className: 'aqt-all' },
+                          e('button', { type: 'button', 'data-aqrs-all': g.loc,
+                                        onClick: () => toggleLoc(g) },
+                            st === 'on' ? 'Untick this whole location'
+                                        : 'Tick all ' + pickable.length + ' sites here')) : null,
+                        e('div', { className: 'aqt-list' }, g.list.map(x =>
+                          e('label', { className: 'aqt-site' + (x.pool ? ' locked' : ''),
+                                       key: x.name, 'data-aqrs-site': x.name,
+                                       onClick: ev => { ev.preventDefault();
+                                         if (!x.pool) toggleSite(g, x); } },
+                            box(x.pool ? 'lock' : (scope.has(g.loc) || scope.has(x.name)) ? 'on' : ''),
+                            e('span', null, x.name),
+                            e('span', { className: 'aqt-type' }, x.type))))) : null);
+                  }))),
 
             err ? e('div', { className: 'rs-err', 'data-aqrs-err': true }, err) : null,
 
             e('div', { className: 'rs-foot' },
-              e('button', { className: 'rs-save', disabled: busy || !dirty, 'data-aqrs-save': true,
-                            'data-aqrs-dirty': dirty ? '1' : '0',
-                            onClick: () => save({ aquaticsExtraTypes: Array.from(types),
-                                                  aquaticsScope: Array.from(scope) }) },
+              e('button', { className: 'rs-save', disabled: busy || !dirtyNow, 'data-aqrs-save': true,
+                            'data-aqrs-dirty': dirtyNow ? '1' : '0',
+                            onClick: () => save({ aquaticsScope: Array.from(scope) }) },
                 busy ? 'Saving\u2026' : 'Save'),
               e('button', { className: 'rs-ghost', disabled: busy, 'data-aqrs-reset': true,
-                            onClick: () => save({ aquaticsExtraTypes: [], aquaticsScope: [] }) },
+                            onClick: () => save({ aquaticsScope: [] }) },
                 'Reset to pools only'),
               e('span', { className: 'rs-footnote' },
                 busy ? 'Saving\u2026'
-                : !dirty ? 'Nothing to save \u2014 tick or untick something first.'
+                : !dirtyNow ? 'Nothing to save \u2014 tick or untick something first.'
                 : 'Save applies this to everyone, and reloads the page.')))))); 
     }
 
@@ -2960,7 +3121,16 @@
       const instRev   = scoped.filter(isInstant).reduce((s, r) => s + rev(r), 0);
       const mgdRev    = revenue - instRev;
       const guests    = scoped.reduce((s, r) => s + headCnt(r), 0);
-      const avgParty  = bookings ? guests / bookings : 0;
+      // AVERAGED OVER THE BOOKINGS THAT REPORT A HEAD COUNT, not over all of
+      // them. `guests / bookings` reads as a party size and is not one: at El
+      // Segundo (Sep 2026) 1,257 of 4,578 pool bookings carry a head count and
+      // every one of those is exactly 1 swimmer, so the tile said
+      // "0.3 guests per booking" — which reads as a broken number when the
+      // truth is "1.0, on the 27% that report one". Same rule as `hasAbsent`:
+      // a denominator must not include rows that cannot answer. The Outdoor
+      // tab has always done it this way; these two surfaces disagreed with it.
+      const parties   = scoped.map(r => Number(r['Head Cnt']) || 0).filter(n => n > 0);
+      const avgParty  = parties.length ? parties.reduce((a, b) => a + b, 0) / parties.length : null;
       const sites     = new Set(scoped.map(r => (r['Facility'] || '') + '|' + (r['Location'] || ''))).size;
 
       // Monthly + weekday×month heatmap
@@ -3022,7 +3192,9 @@
         { label: 'Cancellation Rate', val: pct(canceled, bookings), cls: 'sc-red', sub: canceled.toLocaleString() + ' of ' + bookings.toLocaleString() + ' canceled' },
         { label: 'Active Sites', val: sites.toLocaleString(), cls: 'sc-muted', sub: 'with bookings in view' },
         { label: 'Total Guests', val: guests.toLocaleString(), cls: 'sc-muted', sub: 'sum of head counts' },
-        { label: 'Avg Party', val: avgParty ? avgParty.toFixed(1) : '—', cls: 'sc-muted', sub: 'guests per booking' },
+        { label: 'Avg Party', val: avgParty == null ? '—' : avgParty.toFixed(1), cls: 'sc-muted',
+          sub: avgParty == null ? 'no head counts recorded'
+             : 'where recorded (' + parties.length.toLocaleString() + ' of ' + bookings.toLocaleString() + ')' },
       ];
 
       return e('div', null,
@@ -3069,7 +3241,17 @@
           e('div', { className: 'aqua-grid' },
             e('div', { className: 'aqua-panel' },
               e('h4', null, 'Revenue by site', e('span', { className: 'n' }, 'top ' + topSites.length)),
-              e(HBars, { data: topSites.map(s => ({ label: s.facility.indexOf(' - ') !== -1 ? s.facility.split(' - ').slice(1).join(' - ') : s.facility, title: s.facility, v: s.revenue, valText: money(s.revenue), sub: s.bookings + ' bkgs' })) })),
+              // THE LABEL IS THE SITE'S OWN NAME, and only a leading copy of its
+              // OWN LOCATION is trimmed. This used to be
+              // `facility.split(' - ').slice(1)` — everything before the FIRST
+              // ' - ' — which assumed a "<location> - <site>" shape. El Segundo's
+              // lane names CONTAIN that separator ("North Lane 1 - A",
+              // 'Inst Lane 4-2" Depth (25Y) - A'), so every one of the twelve bars
+              // read just "A" or "B": the sublane letter, with the lane thrown
+              // away. Guessing at a prefix from a separator cannot work; the row
+              // carries its location, so test against that.
+              e(HBars, { data: topSites.map(s => ({ label: siteLabel(s.facility, s.location), title: s.facility,
+                v: s.revenue, valText: money(s.revenue), sub: s.bookings + ' bkgs' })) })),
             e('div', { className: 'aqua-panel' },
               e('h4', null, 'Party size', e('span', { className: 'n' }, withParty.length.toLocaleString() + ' of ' + bookings.toLocaleString() + ' with a head count')),
               withParty.length
@@ -3509,7 +3691,6 @@
       const dayNum  = r => Number(r['Multi-Day Day#']) || 0;
       const totDays = r => Number(r['Multi-Day Days']) || 0;
       const isArrival = r => dayNum(r) <= 1;
-      const shortSite = f => { f = f || '—'; return f.indexOf(' - ') !== -1 ? f.split(' - ').slice(1).join(' - ') : f; };
 
       const arrivals = rows.filter(isArrival);
       const stays    = arrivals.length;
@@ -3537,7 +3718,7 @@
       // stay separate. Each entry carries its own occ day-map.
       const statByKey = {}, statIdx = {};
       rows.forEach(r => {
-        const site = shortSite(r['Facility']);
+        const site = siteLabel(r['Facility'], r['Location']);
         const locName = r['Location'] || '';
         const key = locName + '||' + site;
         const d = String(r['Date'] || '').slice(0, 10);
@@ -4117,7 +4298,6 @@
       const hour12    = oeHour12;
       const clockMin  = oeClockMin;
       const typeOf    = r => String(r['Site Type'] || '');
-      const shortSite = f => { f = f || '—'; return f.indexOf(' - ') !== -1 ? f.split(' - ').slice(1).join(' - ') : f; };
 
       const arrivals   = rows.filter(isArrival);
       const bookings   = arrivals.length;
@@ -4142,7 +4322,7 @@
       // parks stay separate — the same rule the Camping tab uses.
       const statByKey = {};
       rows.forEach(r => {
-        const site = shortSite(r['Facility']);
+        const site = siteLabel(r['Facility'], r['Location']);
         const locName = r['Location'] || '';
         const key = locName + '||' + site;
         const d = String(r['Date'] || '').slice(0, 10);
@@ -4199,7 +4379,7 @@
         const b = typeAgg[t] || (typeAgg[t] = { t, n: 0, hours: 0, rev: 0, sites: {} });
         b.n++; b.rev += Number(r['Total']) || 0;
         const h = rowHours(r); if (h != null) b.hours += h;
-        b.sites[(r['Location'] || '') + '||' + shortSite(r['Facility'])] = 1;
+        b.sites[(r['Location'] || '') + '||' + siteLabel(r['Facility'], r['Location'])] = 1;
       });
       const typeList = OUTDOOR_TYPES.filter(t => typeAgg[t]).map(t => typeAgg[t])
         .concat(Object.keys(typeAgg).filter(t => OUTDOOR_TYPES.indexOf(t) < 0).map(t => typeAgg[t]));
@@ -4211,7 +4391,7 @@
         const b = locAgg[l] || (locAgg[l] = { l, n: 0, hours: 0, rev: 0, sites: {} });
         b.n++; b.rev += Number(r['Total']) || 0;
         const h = rowHours(r); if (h != null) b.hours += h;
-        b.sites[shortSite(r['Facility'])] = 1;
+        b.sites[siteLabel(r['Facility'], r['Location'])] = 1;
       });
       const locList = Object.keys(locAgg).map(k => locAgg[k]).sort((a, b) => b.n - a.n);
 
@@ -4745,7 +4925,6 @@
       const allLocations = Array.from(new Set(allRows.map(r => r['Location'] || '—'))).sort();
       const rows = locSel.length ? allRows.filter(r => locSel.indexOf(r['Location'] || '—') >= 0) : allRows;
 
-      const shortSite = f => { f = f || '—'; return f.indexOf(' - ') !== -1 ? f.split(' - ').slice(1).join(' - ') : f; };
       const isInstant = r => String(r['Booking Type'] || '').toLowerCase().indexOf('instant') >= 0;
 
       const arrivals   = rows.filter(oeIsArrival);
@@ -4771,7 +4950,7 @@
       // ── Per-field stats ───────────────────────────────────────────────────
       const statByKey = {};
       rows.forEach(r => {
-        const site = shortSite(r['Facility']);
+        const site = siteLabel(r['Facility'], r['Location']);
         const locName = r['Location'] || '';
         const key = locName + '||' + site;
         const d = String(r['Date'] || '').slice(0, 10);
@@ -4832,7 +5011,7 @@
         const b = sportAgg[k] || (sportAgg[k] = { k, n: 0, hours: 0, rev: 0, sites: {} });
         b.n++; b.rev += Number(r['Total']) || 0;
         const h = oeRowHours(r); if (h != null) b.hours += h;
-        b.sites[(r['Location'] || '') + '||' + shortSite(r['Facility'])] = 1;
+        b.sites[(r['Location'] || '') + '||' + siteLabel(r['Facility'], r['Location'])] = 1;
       });
       const sportList = FIELD_SPORTS.filter(sp => sportAgg[sp.key]).map(sp => sportAgg[sp.key]);
       const unknownSport = sportAgg['(unknown)'] ? sportAgg['(unknown)'].n : 0;
@@ -4872,7 +5051,7 @@
         const b = locAgg[l] || (locAgg[l] = { l, n: 0, hours: 0, rev: 0, sites: {} });
         b.n++; b.rev += Number(r['Total']) || 0;
         const h = oeRowHours(r); if (h != null) b.hours += h;
-        b.sites[shortSite(r['Facility'])] = 1;
+        b.sites[siteLabel(r['Facility'], r['Location'])] = 1;
       });
       const locList = Object.keys(locAgg).map(k => locAgg[k]).sort((a, b) => b.n - a.n);
 
