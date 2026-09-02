@@ -5278,6 +5278,49 @@ Already shipped (PR #75, live on `main`): name-based site-type recovery so
 filter, Ice sub-tab, court-name wrap. Display/scoping only — did not change the
 revenue math, so the gap above predates and survives it.
 
+## PINNED: creating an org should create it in BOTH projects (Dan, 2026-09-02)
+
+Dan: *"when we create a new org in the org-dashboard or reporting project, it
+should automatically create the same org in the alternate project. no more having
+to create an org in both spots."*
+
+Not built. Written down with what this session already established, because the
+plumbing is half there and the traps are known.
+
+**What exists today.** One direction is already sketched: `POST
+/api/admin/add-org` carries the comment *"used by rec-dashboard to sync"*, and
+`GET /api/admin/org/:slug` plus `GET /api/admin/org-by-id/:orgId` exist so either
+side can ask the other what it serves an org as. What is missing is the CALL —
+nothing fires on creation, so both projects are still hand-fed.
+
+**RECONCILE ON `orgId`, NEVER THE SLUG.** The slug is each project's own name for
+an organisation and they drift: the dashboard was still calling Shrewsbury
+`town-of-shrewsbury` five weeks after the duplicate slug was removed here, and
+every report link it rendered 404'd. That is exactly why `org-by-id` was added.
+A by-slug check answers "no such org", which is indistinguishable from an org
+that was never added. El Segundo is the live example of the same shape — it is
+`el-segundo-recreation` here.
+
+**THE GAP THAT WOULD BITE A SYNC IMMEDIATELY:** `add-org`'s existing-org branch
+updates the token, the logo and the display name and **silently drops `orgId`**.
+So a re-sync — the obvious repair path — cannot fix the one field every shared
+card needs, and a wrong `orgId` makes every shared report for that org fail with
+`400 Missing org_id`, with no route able to correct it short of deleting and
+recreating the org (which burns its token and every link already sent out).
+`new-org` refuses a slug that is taken, so there is no other way in. Fix that
+field before wiring any automatic creation on top of it.
+
+**And `add-org` has NO auth today** — no `dashboardAuth`, unlike `new-org`. Fine
+while nothing calls it; not fine as the entry point for automatic
+cross-project org creation. A shared secret or the derived-key pattern
+(`reportSettingsAdminKey()`) is the shape to copy.
+
+**Two more things to settle when it is built:** which side owns the token (this
+project generates one in `new-org` so an org is never born tokenless — a second
+generator would produce two), and what happens when the remote call fails. The
+existing `new-org` already models the right answer for its own store: try
+GitHub, fall back to `orgs.json`, and never let the failure lose the org.
+
 ## Per-org report settings (2026-08-27) — and the cache-key bug found under them
 
 Dan: *"we could also add some type of report settings, where you could customize
