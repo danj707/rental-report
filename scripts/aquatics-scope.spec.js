@@ -175,11 +175,29 @@ ok(!/new Set\(vert\.types\)/.test(code) && !/new Set\(VERT_CONFIG\[[a-z]+\]\.typ
 ok(/data-aq-scope/.test(code) && /function vertScopeNote\(/.test(code),
    "EXCLUDED IS NEVER HIDDEN: the tab states what it is scoped to, on screen");
 
-// ── 6. the gear is reachable from the empty state ──────────────────────────
+// ── 6. the gear is reachable whatever the tab shows ────────────────────────
+// The property has not changed — an org whose lanes are all typed `court` has no
+// pool bookings until it is configured, so the control must not live inside a
+// branch that only renders when there is data. What changed is HOW: it was
+// mounted twice inside the view (populated branch and empty branch) and it is in
+// the TOOLBAR now, which renders whatever the tab shows.
+//
+// Dan asked for that placement — "the upper right corner of the top bar, same as
+// on every main page of every report" — after the first version put it in a
+// footnote at the bottom of the tab and he reported the whole feature missing
+// from the live page while it was rendering perfectly, below the fold.
 {
-  const i = code.indexOf("No Pool / Aquatics bookings in this range");
-  ok(i > 0 && code.slice(i, i + 600).includes("AquaticsSettings"),
-     "THE GEAR IS ON THE EMPTY BRANCH TOO — an org with no pool bookings is the one org that needs the setting");
+  const tb = code.indexOf("className: 'toolbar'");
+  const gear = code.indexOf("e(AquaticsSettings,");
+  ok(tb > 0 && gear > tb && gear - tb < 3000,
+     "THE GEAR IS IN THE TOOLBAR — so it is reachable for an org with no pool bookings, which is the one org that needs it");
+  eq((code.match(/e\(AquaticsSettings,/g) || []).length, 1,
+     "...mounted ONCE, not once per branch of the view");
+  const i = code.indexOf("className: 'btn-excel'");
+  ok(i > 0 && code.indexOf("e(AquaticsSettings,") > i,
+     "...and LAST in the toolbar, after the exports, like every other report's gear");
+  ok(/'\\u2699 Which sites count'/.test(code) || /Which sites count/.test(code),
+     "...and LABELLED: a bare glyph in a dark toolbar is what made it invisible");
 }
 ok(/data-aqrs-open/.test(code) && /data-aqrs-locked/.test(code) && /data-aqrs-flagoff/.test(code),
    "three gear states, as on the Class Roster: working, locked, and switched off");

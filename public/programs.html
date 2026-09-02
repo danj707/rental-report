@@ -826,7 +826,13 @@ function progMonthlyMoney(rows) {
 // At module scope so programs-instructor.spec.js can RUN it.
 function progDistinctFromSections(r, key) {
   if (!r) return '';
-  const secs = Array.isArray(r._sections) ? r._sections : null;
+  // TWO NAMES FOR ONE LIST, and that cost a shipped feature: the rollup keeps a
+  // program's sections in `_sections` while the Summary tab's own progMap builds
+  // `sections`, so reading only the first made every Instructor cell on the
+  // program table render a dash. Read both rather than teaching each caller
+  // which shape it happens to hold.
+  const secs = Array.isArray(r._sections) ? r._sections
+             : Array.isArray(r.sections) ? r.sections : null;
   // A program-grain feed has no _sections to look at — fall back to the row's
   // own value rather than reporting nothing.
   if (!secs || !secs.length) return r[key] ? String(r[key]) : '';
@@ -836,6 +842,30 @@ function progDistinctFromSections(r, key) {
     if (v && seen.indexOf(String(v)) < 0) seen.push(String(v));
   });
   return seen.join('; ');
+}
+
+// ── A set of section values, rendered into ONE narrow table cell ─────────
+// Dan, on the live Programs page: "not seeing instructor names and info on the
+// program pages. filter works, but doesn't show the data we need."
+//
+// He is right, and it was my call that hid it: instructor and location were put
+// on the SECTION rows only, on the argument that neither is a fact about a
+// program. That argument is still true and it is not a reason to make an admin
+// expand 23 programs one at a time to find out who teaches them.
+//
+// So the program table carries the DISTINCT SET across the program's sections —
+// the same thing the Excel export carries, through the same helper, so the file
+// and the screen cannot disagree. One name reads as the name; several read as a
+// count, with the full list on hover, because a program spanning four
+// instructors must not silently print one of them as though it were the answer.
+// At module scope so programs-instructor.spec.js can RUN it.
+function progSetCell(r, key) {
+  const joined = progDistinctFromSections(r, key);
+  if (!joined) return { text: '\u2014', title: '', n: 0 };
+  const parts = joined.split('; ').filter(Boolean);
+  if (parts.length === 1) return { text: parts[0], title: parts[0], n: 1 };
+  return { text: parts.length + (key === 'instructor' ? ' instructors' : ' locations'),
+           title: parts.join('\n'), n: parts.length };
 }
 
 // ── How the payment-plan money gets collected (card 17295 v7) ────────────
@@ -3497,7 +3527,7 @@ function App() {
               <div style={{background:'#fff',border:'1px solid #e8e6e0',borderRadius:8,overflow:'hidden',marginBottom:20}}>
                 <div style={{maxHeight:700,overflow:'auto'}}>
                   <table className="sum-prog-table">
-                    <thead><tr><th>Program</th><th style={{textAlign:'center'}}>Status</th><th style={{textAlign:'center'}}>Sections</th><th style={{textAlign:'right'}}>Utilization</th><th style={{textAlign:'right'}}>Fill %</th>{showCi && <th style={{textAlign:'right'}}>Check-In %</th>}{showCi && <th style={{textAlign:'right'}}>Check-Out %</th>}<th style={{textAlign:'right'}} title="Payments received within the selected date range">Collected</th><th style={{textAlign:'right'}} title="Lifetime net revenue for these programs (received minus refunds)">Net Rev</th><th>Dates</th></tr></thead>
+                    <thead><tr><th>Program</th><th style={{textAlign:'center'}}>Status</th><th style={{textAlign:'center'}}>Sections</th><th style={{textAlign:'right'}}>Utilization</th><th style={{textAlign:'right'}}>Fill %</th>{progHasInstructor && <th title="Facilitators across this program's sections">Instructor</th>}{progHasLocation && <th title="Locations across this program's sections">Location</th>}{showCi && <th style={{textAlign:'right'}}>Check-In %</th>}{showCi && <th style={{textAlign:'right'}}>Check-Out %</th>}<th style={{textAlign:'right'}} title="Payments received within the selected date range">Collected</th><th style={{textAlign:'right'}} title="Lifetime net revenue for these programs (received minus refunds)">Net Rev</th><th>Dates</th></tr></thead>
                     <tbody>
                       {progsSorted.map(function(p) {
                         var isCancelled = p.status === 'Canceled';
@@ -3509,6 +3539,8 @@ function App() {
                           {(() => { var cs = p.sections.filter(function(s){ return s.status === 'Canceled' || s.status === 'Cancelled'; }).length; var rs = p.sections.length - cs; return <td style={{textAlign:'center'}}>{cs > 0 ? <span>{rs} ran<span style={{color:'#dc2626',fontSize:10}}> / {cs} canc.</span></span> : p.sections.length}</td>; })()}
                           <td style={{textAlign:'right',whiteSpace:'nowrap'}}>{p.enrolled} <span style={{color:'#888'}}>/ {p.capacity || '\u2014'}</span>{p.cancellations > 0 && <span style={{color:'#dc2626'}}> / {p.cancellations}</span>}</td>
                           <td style={{textAlign:'right',color:p.fillPct!=null?(p.fillPct>=85?'#16a34a':p.fillPct<=25?'#dc2626':'#333'):'#ccc',fontWeight:p.fillPct!=null&&(p.fillPct>=85||p.fillPct<=25)?700:400}}>{p.fillPct != null ? p.fillPct + '%' : '\u2014'}</td>
+                          {progHasInstructor && (() => { const c = progSetCell(p, 'instructor'); return <td title={c.title} data-prog-instrcell={String(c.n)} style={{fontSize:11,color:c.n?'#475569':'#ccc',maxWidth:150,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{c.text}</td>; })()}
+                          {progHasLocation && (() => { const c = progSetCell(p, 'location'); return <td title={c.title} data-prog-loccell={String(c.n)} style={{fontSize:11,color:c.n?'#475569':'#ccc',maxWidth:150,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{c.text}</td>; })()}
                           {showCi && <td style={{textAlign:'right',fontWeight:p.checkInPct!=null?700:400,color:ciPctColor(p.checkInPct)}}>{p.checkInPct != null ? p.checkInPct + '%' : '\u2014'}</td>}
                           {showCi && <td style={{textAlign:'right',color:p.checkOutPct!=null?'#475569':'#ccc'}}>{p.checkOutPct != null ? p.checkOutPct + '%' : '\u2014'}</td>}
                           <td style={{textAlign:'right',fontWeight:500}}>{p.periodNet > 0 ? fmt$(p.periodNet) : '\u2014'}</td>
@@ -3516,7 +3548,7 @@ function App() {
                           <td style={{fontSize:10,color:'#888',whiteSpace:'nowrap'}}>{fmtD(p.startDate)}{fmtD(p.endDate) ? ' \u2013 ' + fmtD(p.endDate) : ''}</td>
                         </tr>;
                       })}
-                      <tr className="totals-row"><td>Total</td><td /><td style={{textAlign:'center'}}>{cancelledSections > 0 ? <span>{totalSections - cancelledSections} ran<span style={{color:'#dc2626',fontSize:10}}> / {cancelledSections} canc.</span></span> : totalSections}</td><td style={{textAlign:'right',whiteSpace:'nowrap'}}>{totalEnrolled.toLocaleString()} <span style={{color:'#888'}}>/ {totalCapacity > 0 ? totalCapacity.toLocaleString() : '\u2014'}</span>{totalCancellations > 0 && <span style={{color:'#dc2626'}}> / {totalCancellations.toLocaleString()}</span>}</td><td style={{textAlign:'right',color:'#888'}}>{avgFill > 0 ? avgFill + '%' : ''}</td>{showCi && <td style={{textAlign:'right',fontWeight:700}}>{checkinSummary.checkInPct != null ? checkinSummary.checkInPct + '%' : '\u2014'}</td>}{showCi && <td style={{textAlign:'right',fontWeight:700}}>{checkinSummary.checkOutPct != null ? checkinSummary.checkOutPct + '%' : '\u2014'}</td>}<td style={{textAlign:'right',fontWeight:700}}>{fmt$(periodTotalRev)}</td><td style={{textAlign:'right',fontWeight:700}}>{fmt$(totalRev)}</td><td /></tr>
+                      <tr className="totals-row"><td>Total</td><td /><td style={{textAlign:'center'}}>{cancelledSections > 0 ? <span>{totalSections - cancelledSections} ran<span style={{color:'#dc2626',fontSize:10}}> / {cancelledSections} canc.</span></span> : totalSections}</td><td style={{textAlign:'right',whiteSpace:'nowrap'}}>{totalEnrolled.toLocaleString()} <span style={{color:'#888'}}>/ {totalCapacity > 0 ? totalCapacity.toLocaleString() : '\u2014'}</span>{totalCancellations > 0 && <span style={{color:'#dc2626'}}> / {totalCancellations.toLocaleString()}</span>}</td><td style={{textAlign:'right',color:'#888'}}>{avgFill > 0 ? avgFill + '%' : ''}</td>{progHasInstructor && <td />}{progHasLocation && <td />}{showCi && <td style={{textAlign:'right',fontWeight:700}}>{checkinSummary.checkInPct != null ? checkinSummary.checkInPct + '%' : '\u2014'}</td>}{showCi && <td style={{textAlign:'right',fontWeight:700}}>{checkinSummary.checkOutPct != null ? checkinSummary.checkOutPct + '%' : '\u2014'}</td>}<td style={{textAlign:'right',fontWeight:700}}>{fmt$(periodTotalRev)}</td><td style={{textAlign:'right',fontWeight:700}}>{fmt$(totalRev)}</td><td /></tr>
                     </tbody>
                   </table>
                 </div>

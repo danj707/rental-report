@@ -1896,6 +1896,45 @@ const CASES = [
   // reinstates the name-and-location guess.
   { name: "facilities · an unconfigured org counts no courts", path: "/{org}/facilities?tab=aquatics",
     needs: "[data-aq-hours=\"8\"]" },
+  // THE GEAR GOES LAST IN THE TOOLBAR, upper right, "same as on every main page
+  // of every report" (Dan). It first shipped inside a footnote under the last
+  // panel and he reported it missing from the live tab while it was rendering
+  // perfectly, four panels below the fold — a control nobody can find is a
+  // control that does not exist. Keyed on POSITION, because "a gear rendered"
+  // passes just as happily on the version nobody could find.
+  //
+  // This case was itself wrong once: it asserted the gear sat in the scope bar,
+  // which is where it lived for one revision before the toolbar move, and CI
+  // caught the stale assertion. When you move a control, move the case that
+  // pins where it is.
+  { name: "facilities · the aquatics gear is last in the toolbar", path: "/{org}/facilities?tab=aquatics",
+    needs: "[data-aqrs-open],[data-aqrs-locked],[data-aqrs-flagoff]",
+    act: async page => {
+      const where = await page.evaluate(() => {
+        const gear = document.querySelector("[data-aqrs-open],[data-aqrs-locked],[data-aqrs-flagoff]");
+        const bar = gear && gear.closest(".toolbar");
+        if (!bar) return "not in the toolbar";
+        // Last interactive thing in the bar — its own wrapper is the final child.
+        const kids = Array.from(bar.children);
+        const holder = gear.closest(".aqrs-gear") || gear;
+        if (kids[kids.length - 1] !== holder) return "in the toolbar but not last";
+        return "ok";
+      });
+      if (where !== "ok") throw new Error("the aquatics gear is " + where);
+    } },
+
+  // The scope sentence still belongs before the figures it qualifies.
+  { name: "facilities · the aquatics scope is stated above the numbers", path: "/{org}/facilities?tab=aquatics",
+    needs: "[data-aq-scope]",
+    act: async page => {
+      const ok = await page.evaluate(() => {
+        const bar = document.querySelector("[data-aq-scope]");
+        const kpi = document.querySelector(".sum-cards");
+        return !!(bar && kpi && (bar.compareDocumentPosition(kpi) & Node.DOCUMENT_POSITION_FOLLOWING));
+      });
+      if (!ok) throw new Error("the scope note must precede the KPI cards");
+    } },
+
   // The CONFIGURED path is proven in aquatics-scope.spec.js, which lifts and
   // RUNS vertRowMatch over all four combinations of extra types and scope. It is
   // deliberately not a render case: driving it in the browser needs the server's
@@ -2344,6 +2383,30 @@ const CASES = [
   // tag is absent rather than defaulting to manual.
   { name: "waitlist · no auto tag on a pre-v6 feed", path: "/{org}/waitlist",
     stubMode: "prev6", needs: "table tbody tr", absent: "[data-wl-auto]" },
+
+  // Dan, on the live page: "not seeing instructor names and info on the program
+  // pages. filter works, but doesn't show the data we need." The names were on
+  // the SECTION rows only, so finding out who teaches a program meant expanding
+  // it. The All Programs table carries the distinct set now. Keyed on the CELL's
+  // count, not on a column existing: a column of dashes renders just as happily.
+  { name: "programs · the program table names the instructor", path: "/{org}/programs?tab=summary",
+    needs: "[data-prog-instrcell]",
+    act: async page => {
+      const seen = await page.evaluate(() => Array.from(
+        document.querySelectorAll("[data-prog-instrcell]"), t => t.textContent.trim()));
+      if (!seen.some(t => /[A-Za-z]{3}/.test(t) && !/instructors$/.test(t)))
+        throw new Error("no program row printed an instructor NAME: " + JSON.stringify(seen.slice(0, 8)));
+    } },
+  // A program whose sections span two instructors must not print one of them as
+  // though it were the answer.
+  { name: "programs · a multi-instructor program says so", path: "/{org}/programs?tab=summary",
+    needs: "[data-prog-instrcell=\"2\"]" },
+  // stubMode is a per-CASE field, not a URL parameter — the harness answers the
+  // browser's /api/ requests itself, so a query flag on the page URL never
+  // reaches the stub. Passing it in the URL is why this case first reported the
+  // column present on a pre-v6 feed.
+  { name: "programs · no instructor CELL on a pre-v6 feed", path: "/{org}/programs?tab=summary",
+    stubMode: "previnstr", needs: ".sum-prog-table", absent: "[data-prog-instrcell]" },
 
   { name: "programs · the section rows name their location", path: "/{org}/programs?tab=revenue",
     act: p => openProgram(p, "Aquatic Exercise"), needs: '[data-prog-seccell-location="Urho Saari Swim Stadium"]' },

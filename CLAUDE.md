@@ -1497,6 +1497,91 @@ purpose — and one assertion still failed on correct code first time by matchin
 `data-prog-season-btn` when it meant the CSS class `.season-btn`. Third instance
 of that in this file.
 
+## The instructor was on screen and nobody could find it (2026-09-02)
+
+Two placement bugs in one afternoon, both reported from the live pages, both
+mine, and both the same mistake: the control or the data was rendering correctly
+somewhere nobody looks.
+
+### The Aquatics gear was in a footnote
+
+Dan: *"not seeing the report settings options here anywhere"*, with a screenshot
+of the top of the Pool / Aquatics tab.
+
+It was rendering. `reportSettings` is ON in production and the injected
+`settingsLockable` was `true`, so a **locked gear was on the page** — mounted
+inside the scope note at the BOTTOM of the tab, four panels below the fold.
+
+Fixed twice, because the first fix was still wrong. It moved to a scope bar
+above the KPI cards, which is where a statement of *what this tab counts*
+belongs; then Dan: *"needs to be the upper right corner of the top bar, same as
+on every main page of every report."* It is the **last item in the toolbar** now,
+like every other report's gear, and it is **labelled** — a bare ⚙ in a dark
+toolbar is what made it invisible in the first place. The scope bar stays,
+without the gear, because the scope sentence is still worth reading before the
+numbers.
+
+**It no longer needs a second mount on the empty branch.** The toolbar renders
+whatever the tab shows, so an org with no pool bookings reaches the setting
+without the special case that branch existed for.
+
+Guards: `facilities · the aquatics gear is last in the toolbar` checks the gear's
+POSITION in the bar, and `facilities · the aquatics scope is stated above the
+numbers` keeps the scope sentence ahead of the figures. Both key on placement
+rather than presence, because "a gear rendered" passes just as happily on the
+version nobody could find; mutation-tested against the gear leaving the toolbar
+and against it not being last.
+
+**And the case was itself wrong for one revision.** It asserted the gear sat in
+the SCOPE BAR — true of the first fix, stale the moment the gear moved to the
+toolbar — and it was CI that caught it, after I had told Dan a full render run
+was clean. That run predated the move. *When you move a control, move the case
+that pins where it is, and re-run after the last change rather than before it.*
+
+### THE PROGRAM TABLE PRINTED A DASH FOR EVERY INSTRUCTOR
+
+Dan: *"not seeing instructor names and info on the program pages. filter works,
+but doesn't show the data we need."*
+
+Two separate faults, and the second is the one worth writing down.
+
+**The design choice hid it.** Instructor and location went on SECTION rows only,
+on the argument that neither is a fact about a program — true, and not a reason
+to make an admin expand 23 programs one at a time to find out who teaches them.
+The All Programs table carries the **distinct set** now, through
+`progDistinctFromSections`, the same helper the Excel export uses, so the file
+and the screen cannot disagree. `progSetCell()` renders it: one name reads as
+the name, several read as *"2 instructors"* with the full list on hover — a
+program spanning four instructors must never print one of them as though it were
+the answer.
+
+**And then it rendered a dash on every row, because THE SECTION LIST HAS TWO
+NAMES.** `rollupToPrograms` keeps a program's sections in **`_sections`**; the
+Summary tab's own `progMap` builds **`sections`**. `progDistinctFromSections`
+read only the first, so the new column was empty for exactly the surface it was
+added to. It reads both now, rather than each caller being taught which shape it
+happens to hold.
+
+**No source assertion could have caught either half.** The column existed, the
+helper was correct, and the cell was a dash — so the render cases key on the
+CELL's own count (`data-prog-instrcell="2"`), and one of them scans for a real
+NAME rather than for the column. Both were seen to fail on the shipped bug.
+
+**A harness note that cost a false failure:** `stubMode` is a per-CASE field,
+not a URL parameter. The render check answers the browser's own `/api/` requests,
+so a flag on the page URL never reaches the stub — my pre-v6 case passed it in
+the query string and reported the column present on a feed that does not have it.
+It also duplicated an existing case NAME, which makes a filtered run ambiguous.
+
+**And a full-run failure that was not real:** a `programs ·` run reported 39 of
+228 failing while the same cases passed alone. Two render runs were overlapping.
+Same self-inflicted contention already recorded for the manifest sweep — before
+reading a mass failure as a regression, check nothing else is driving a browser.
+
+Guards: `programs-instructor.spec.js` 70 → **79 assertions**, lifting and
+RUNNING `progSetCell`; mutation-tested against the `_sections`-only read, which
+is the bug exactly as it shipped. Plus three render cases.
+
 ## Programs: a multi-select SEASON filter (2026-08-31)
 
 Dan, on Shrewsbury: *"lets add a program 'season' filter on the programs summary
@@ -5192,6 +5277,49 @@ Already shipped (PR #75, live on `main`): name-based site-type recovery so
 "court" excludes rinks/pools/gyms, specific-type revenue breakdown, Location
 filter, Ice sub-tab, court-name wrap. Display/scoping only — did not change the
 revenue math, so the gap above predates and survives it.
+
+## PINNED: creating an org should create it in BOTH projects (Dan, 2026-09-02)
+
+Dan: *"when we create a new org in the org-dashboard or reporting project, it
+should automatically create the same org in the alternate project. no more having
+to create an org in both spots."*
+
+Not built. Written down with what this session already established, because the
+plumbing is half there and the traps are known.
+
+**What exists today.** One direction is already sketched: `POST
+/api/admin/add-org` carries the comment *"used by rec-dashboard to sync"*, and
+`GET /api/admin/org/:slug` plus `GET /api/admin/org-by-id/:orgId` exist so either
+side can ask the other what it serves an org as. What is missing is the CALL —
+nothing fires on creation, so both projects are still hand-fed.
+
+**RECONCILE ON `orgId`, NEVER THE SLUG.** The slug is each project's own name for
+an organisation and they drift: the dashboard was still calling Shrewsbury
+`town-of-shrewsbury` five weeks after the duplicate slug was removed here, and
+every report link it rendered 404'd. That is exactly why `org-by-id` was added.
+A by-slug check answers "no such org", which is indistinguishable from an org
+that was never added. El Segundo is the live example of the same shape — it is
+`el-segundo-recreation` here.
+
+**THE GAP THAT WOULD BITE A SYNC IMMEDIATELY:** `add-org`'s existing-org branch
+updates the token, the logo and the display name and **silently drops `orgId`**.
+So a re-sync — the obvious repair path — cannot fix the one field every shared
+card needs, and a wrong `orgId` makes every shared report for that org fail with
+`400 Missing org_id`, with no route able to correct it short of deleting and
+recreating the org (which burns its token and every link already sent out).
+`new-org` refuses a slug that is taken, so there is no other way in. Fix that
+field before wiring any automatic creation on top of it.
+
+**And `add-org` has NO auth today** — no `dashboardAuth`, unlike `new-org`. Fine
+while nothing calls it; not fine as the entry point for automatic
+cross-project org creation. A shared secret or the derived-key pattern
+(`reportSettingsAdminKey()`) is the shape to copy.
+
+**Two more things to settle when it is built:** which side owns the token (this
+project generates one in `new-org` so an org is never born tokenless — a second
+generator would produce two), and what happens when the remote call fails. The
+existing `new-org` already models the right answer for its own store: try
+GitHub, fall back to `orgs.json`, and never let the failure lose the org.
 
 ## Per-org report settings (2026-08-27) — and the cache-key bug found under them
 
