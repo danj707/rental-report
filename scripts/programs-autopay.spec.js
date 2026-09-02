@@ -70,9 +70,14 @@ function liftFn(text, name) {
   return text.slice(start, i + 1);
 }
 // progAutopayShare reads fmtNum, so both come along. Two lifts, one scope.
-const progAutopayShare = new Function(
-  liftFn(src, "fmtNum") + "\n" + liftFn(src, "progAutopayShare") +
-  "; return progAutopayShare;")();
+// progAutopayShare reads fmtNum; progAutopayCell also reads fmtMoney for its
+// tooltip. All four in one scope, and both entry points returned.
+const _AP = new Function(
+  liftFn(src, "fmtNum") + "\n" + liftFn(src, "fmtMoney") + "\n" +
+  liftFn(src, "progAutopayShare") + "\n" + liftFn(src, "progAutopayCell") +
+  "; return { progAutopayShare: progAutopayShare, progAutopayCell: progAutopayCell };")();
+const progAutopayShare = _AP.progAutopayShare;
+const progAutopayCell  = _AP.progAutopayCell;
 const progOutstandingSplit = new Function(
   liftFn(src, "fmtNum") + "\n" + liftFn(src, "progOutstandingSplit") +
   "; return progOutstandingSplit;")();
@@ -425,6 +430,50 @@ ok(/SUM\(CASE WHEN ic\.payment_plan IS NULL\n\s*THEN GREATEST\(ic\.final_cents -
 }
 
 // ── report ──────────────────────────────────────────────────────────────────
+// ── the revenue table's per-row cell ────────────────────────────────────────
+// Dan, on Essex Junction: "I think the autopay icon is supposed to be on here,
+// no?" It was not — v7's columns were mapped, rolled up per program, and read
+// only by the summary KPI.
+if (progAutopayCell) {
+  const cell = progAutopayCell;
+  const row = { autopayPlanItems: 4, manualPlanItems: 96,
+                autopayPlanValue: 21120, manualPlanValue: 179356 };
+  const c = cell(row);
+  ok(c != null, "a program with plan money reports a share");
+  eq(c.pct, 10.5, "BY DOLLARS, not registrations — the two readings differ 26x at apex");
+  eq(c.apValue, 21120, "...and the raw halves travel with it for the tooltip");
+  ok(/of/.test(c.title) && /collected/.test(c.title),
+     "the tooltip says what the percentage is of, and what the other half means");
+
+  // NO PLAN MONEY IS A DASH, NEVER 0%. "Nobody uses auto-pay" and "this program
+  // runs no payment plans" are different facts, and only one of them is a
+  // criticism of the org.
+  eq(cell({ autopayPlanValue: 0, manualPlanValue: 0, autopayPlanItems: 0, manualPlanItems: 0 }), null,
+     "a program with no payment plans reports nothing rather than 0%");
+  eq(cell({}), null, "...and so does a row with none of the columns at all");
+
+  // THE DISCRIMINATING CASE for the planValue guard, and my first fixture could
+  // not reach it: progAutopayShare already returns null when items AND value are
+  // both zero, so dropping the guard survived. A program with plan
+  // REGISTRATIONS but no plan DOLLARS — installments that price to nothing —
+  // gets a non-null share whose pctValue is null, and without the guard the
+  // page renders "null%". Found by mutation.
+  eq(cell({ autopayPlanItems: 3, manualPlanItems: 9,
+            autopayPlanValue: 0, manualPlanValue: 0 }), null,
+     "plan registrations with no plan dollars is a dash, not 'null%'");
+
+  // A REAL 0% STILL SHOWS: plan money that is entirely collected by hand is an
+  // answer, and the one most worth acting on.
+  const z = cell({ autopayPlanValue: 0, manualPlanValue: 32494,
+                   autopayPlanItems: 0, manualPlanItems: 87 });
+  ok(z != null && z.pct === 0, "a program with plan money and no auto-pay reads a real 0%");
+
+  // It goes through progAutopayShare rather than re-deriving the split, so the
+  // column and the KPI cannot disagree about the same program.
+  ok(/progAutopayShare\(\[r\]\)/.test(src),
+     "the cell reuses progAutopayShare over a one-row list");
+}
+
 if (failures.length) {
   console.error("\n✗ programs-autopay.spec.js — " + failures.length + " failure(s):\n");
   for (const f of failures) console.error("  • " + f);

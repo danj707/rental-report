@@ -2474,6 +2474,44 @@ const CASES = [
   { name: "programs · no instructor CELL on a pre-v6 feed", path: "/{org}/programs?tab=summary",
     stubMode: "previnstr", needs: ".sum-prog-table", absent: "[data-prog-instrcell]" },
 
+  // Dan, on Essex Junction: "I think the autopay icon is supposed to be on
+  // here, no?" It was not — card 17295 v7's columns were mapped, rolled up per
+  // program, and displayed nowhere but the summary KPI. Keyed on the CELL's
+  // computed VALUE, because a column of dashes renders just as happily.
+  { name: "programs · the revenue table shows the auto-pay share", path: "/{org}/programs?tab=revenue",
+    needs: "[data-prog-autopay]",
+    act: async page => {
+      const v = await page.evaluate(() => Array.from(
+        document.querySelectorAll("[data-prog-autopay]"), t => t.getAttribute("data-prog-autopay")));
+      if (!v.some(x => x && Number(x) > 0))
+        throw new Error("no program row reported an auto-pay share: " + JSON.stringify(v.slice(0, 8)));
+    } },
+  // The Grand Total row has to grow with the column or every figure after it
+  // shifts a column left — the exact fault the last two column additions caused.
+  { name: "programs · the grand total keeps its columns", path: "/{org}/programs?tab=revenue",
+    needs: "[data-prog-autopaytotal]",
+    act: async page => {
+      const ok = await page.evaluate(() => {
+        var head = document.querySelectorAll(".prog-table thead th").length;
+        var foot = document.querySelectorAll(".prog-table tfoot td");
+        var span = 0;
+        foot.forEach(function (td) { span += td.colSpan || 1; });
+        return span === head;
+      });
+      if (!ok) throw new Error("the Grand Total row does not span the same number of columns as the header");
+    } },
+  // A program with no payment plans reads a dash, never a confident 0%.
+  { name: "programs · no auto-pay column on a pre-v7 feed", path: "/{org}/programs?tab=revenue",
+    stubMode: "prev7", needs: ".prog-table", absent: "[data-prog-autopay]" },
+  // A section row is ONE section. A dash there put a parent reading "2" over
+  // two rows reading nothing, which is what read as the numbers not matching.
+  { name: "programs · a section row counts itself", path: "/{org}/programs?tab=revenue",
+    needs: '[data-prog-seccount="1"]',
+    act: async page => {
+      await page.click("[data-prog-progrow] td");
+      await page.waitForSelector('[data-prog-seccount="1"]', { timeout: 20000 });
+    } },
+
   { name: "programs · the section rows name their location", path: "/{org}/programs?tab=revenue",
     act: p => openProgram(p, "Aquatic Exercise"), needs: '[data-prog-seccell-location="Urho Saari Swim Stadium"]' },
   { name: "programs · ...and who teaches them", path: "/{org}/programs?tab=revenue",

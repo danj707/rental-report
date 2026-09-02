@@ -1497,6 +1497,67 @@ purpose — and one assertion still failed on correct code first time by matchin
 `data-prog-season-btn` when it meant the CSS class `.season-btn`. Third instance
 of that in this file.
 
+## The Programs Revenue tab: three fixes (2026-09-02) — WAS the pin below
+
+Dan: *"columns misaligned and some of the numbers aren't matching up, and I
+think the autopay icon is supposed to be on here, no?"* All three, fixed. The
+pin's diagnosis is kept below it, because what it ruled OUT is the useful part.
+
+### "Misaligned" was the table being SQUEEZED, not drifting
+
+The header and body are one table, so they cannot structurally misalign — which
+is why the pin sent the next person to the header/body relationship under
+scroll. The actual cause: `.prog-table` had `width: 100%` inside a
+`.table-scroll`, and that tells the browser to FIT THE CONTAINER — so it
+compresses every column to do it, the `nowrap` headers stop sitting over their
+own values, and the last one clips mid-word (`PERIOD…` in the screenshot).
+`min-width: max-content` lets the columns take their natural width and the
+container scroll, which is what a scroller is for.
+
+### A section row now counts itself
+
+The SECTIONS cell printed a dash on section rows, so a parent reading `2` sat
+over two rows reading nothing. That is what read as the numbers not matching:
+the column is headed Sections and a section row is one of them, so it reads
+**1** and 1 + 1 reconciles on screen.
+
+Not touched, deliberately: **Enroll 113 against Utilization 717** at Essex
+Junction is the per-session multiplier over 9 camp days — a ~6.3x that looks
+like a mismatch and is not. Recorded in the pin so nobody "fixes" it.
+
+### The auto-pay column, finally displayed
+
+Third instance of a column that arrives, is summed, and renders nowhere: card
+17295 v7's four per-section columns were mapped AND rolled up per program, and
+only the single summary KPI read them.
+
+- **`progAutopayCell(r)` goes through `progAutopayShare([r])`**, not its own
+  arithmetic, so the column and the KPI cannot disagree about one program — and
+  the spec that guards the KPI's maths guards the column too.
+- **DOLLARS, not registrations.** The two readings differ 26x at apex, and this
+  cell sits in a row of money.
+- **No plan money is a dash, never 0%.** "Nobody uses auto-pay" and "this
+  program runs no payment plans" are different facts. A REAL 0% still shows —
+  plan money collected entirely by hand is the answer most worth acting on.
+- Presence-gated on `colPresence.autopay`, asked of the raw response, so a warm
+  pre-v7 cache entry hides the column rather than rendering a confident 0%.
+- **The Grand Total row grew with it**, or every figure after it shifts a column
+  left — the exact fault the last two column additions caused. A render case
+  compares the footer's total colSpan against the header's column count.
+
+**A mutation that survived the first draft**, and the reason is worth keeping:
+dropping the `planValue <= 0` guard passed, because `progAutopayShare` already
+returns null when items and value are both zero. The discriminating fixture is a
+program with plan REGISTRATIONS and no plan DOLLARS — installments that price to
+nothing — where the share is non-null with a null percentage and the page would
+render `null%`.
+
+Guards: `programs-autopay.spec.js` 94 → **103 assertions**, lifting and RUNNING
+`progAutopayCell`. Four render cases keyed on the computed VALUE, the footer's
+column count, and the section row's own `1`; all four mutation-tested (the cell
+removed, the total row losing the column, the section count back to a dash, and
+the presence gate hardcoded true).
+
 ## PINNED TO FIX: the Programs REVENUE tab table (Dan, 2026-09-02)
 
 *(Recorded first as "the detail table", which was wrong and would have sent the

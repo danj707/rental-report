@@ -233,7 +233,15 @@
     .out-split .os-row.odd b { color: #92400e; }
 
     /* ── Table ── */
-    .prog-table { width: 100%; border-collapse: collapse; font-size: 11.5px; font-variant-numeric: tabular-nums; }
+    /* min-width: max-content is load-bearing, not tidying. The table sits in a
+       .table-scroll, and `width: 100%` alone tells the browser to fit the
+       container — so it COMPRESSES every column to do it, the nowrap headers
+       stop sitting over their own values, and the last header clips mid-word.
+       With this the columns take their natural width and the container scrolls,
+       which is what a scroller is for. This is the "columns misaligned" Dan
+       reported on Essex Junction; the header and body are one table and cannot
+       structurally drift, so squeezing was the only thing left. */
+    .prog-table { width: 100%; min-width: max-content; border-collapse: collapse; font-size: 11.5px; font-variant-numeric: tabular-nums; }
 
     /* Column headers */
     .prog-table thead tr {
@@ -904,6 +912,32 @@ function progAutopayShare(rows) {
     apItems, manItems, apValue, manValue, planItems, planValue,
     pctValue: pct(apValue, planValue),
     pctItems: pct(apItems, planItems),
+  };
+}
+
+// ── The autopay share of ONE row, for the revenue table ──────────────────
+// Dan, on Essex Junction: "I think the autopay icon is supposed to be on here,
+// no?" It was not — card 17295 v7's four per-section columns are mapped AND
+// rolled up per program, and until now only the single summary KPI read them.
+// Third instance of a column that arrives, is summed, and is displayed nowhere.
+//
+// It goes through progAutopayShare over a one-row list rather than re-deriving
+// the split, so the column and the KPI cannot disagree about the same program.
+// DOLLARS, not registrations: at apex the two readings differ 26x, and this
+// cell sits in a row of money.
+// At module scope so programs-autopay.spec.js can RUN it.
+function progAutopayCell(r) {
+  const s = progAutopayShare([r]);
+  // No plan money at all is not 0% on auto-pay — an org that runs no payment
+  // plans for this program has nothing to report either way.
+  if (!s || s.planValue <= 0) return null;
+  return {
+    pct: s.pctValue,
+    apValue: s.apValue,
+    manValue: s.manValue,
+    title: fmtMoney(s.apValue) + ' of ' + fmtMoney(s.planValue)
+         + ' in payment plans is charged to a card on file; '
+         + fmtMoney(s.manValue) + ' has to be collected.',
   };
 }
 
@@ -2414,6 +2448,11 @@ function App() {
   // is genuinely absent from a pre-v6 feed, so the question is "does this
   // response carry the column", asked of the raw rows in colPresence.
   const progHasInstructor = colPresence.instructor;
+  // PRESENCE, asked of the raw response like every other entry in colPresence:
+  // a warm pre-v7 cache entry has no autopay columns at all, and a confident 0%
+  // there would say "this org collects nothing automatically" when the truth is
+  // that the feed cannot tell us.
+  const progHasAutopay    = colPresence.autopay;
 
   const instrOptions = useMemo(() => {
     if (!progSections || !progHasInstructor) return [];
@@ -3849,6 +3888,7 @@ function App() {
                 <th style={{width:90}}>Charged</th>
                 <th style={{width:90}}>Received</th>
                 <th style={{width:90}}>Outstanding</th>
+                {progHasAutopay && <th style={{width:76}} title="Share of this program's payment-plan dollars charged to a card on file">Auto-Pay</th>}
                 <th style={{width:90}}>Refunds</th>
                 <th style={{width:90}}>Net Rev</th>
                 <th style={{width:100,background:'#eff6ff'}}>Period Net</th>
@@ -3886,6 +3926,10 @@ function App() {
                     <td className={`money ${fmtNum(r.charged) === 0 ? 'zero' : ''}`}>{fmtMoney(r.charged)}</td>
                     <td className={`money ${fmtNum(r.received) === 0 ? 'zero' : ''}`}>{fmtMoney(r.received)}</td>
                     <td className={`money ${fmtNum(r.outstanding) === 0 ? 'zero' : ''}`}>{fmtMoney(r.outstanding)}</td>
+                    {progHasAutopay && (() => { const a = progAutopayCell(r); return (
+                      <td className={a ? '' : 'muted'} title={a ? a.title : 'No payment plans on this program.'}
+                          data-prog-autopay={a ? String(a.pct) : ''}>
+                        {a ? <span>{'\u26A1'} {a.pct}%</span> : '\u2014'}</td>); })()}
                     <td className={`money ${fmtNum(r.refunds) === 0 ? 'zero' : ''}`}>{fmtMoney(r.refunds)}</td>
                     <td className="money" style={fmtNum(r.netRevenue) < 0 ? {color:'#b91c1c'} : {}}>{fmtMoney(r.netRevenue)}</td>
                     <td className="money" style={{background:'#f0f7ff',fontWeight:600,...(fmtNum(r.periodNet) < 0 ? {color:'#b91c1c'} : {color:'#1d4ed8'})}}>{fmtMoney(r.periodNet)}</td>
@@ -3901,7 +3945,11 @@ function App() {
                         {showRegModeCol && <td className="left">{regModeLabel(sx.regMode)}</td>}
                         <td className="left mono">{sx.startDate}</td>
                         <td className="left mono">{sx.endDate}</td>
-                        <td className="muted">—</td>
+                        {/* ONE. A dash here put a parent reading "2" over two
+                            rows reading nothing, which is what Dan read as the
+                            numbers not matching up — the column is headed
+                            Sections and a section row is one of them. */}
+                        <td data-prog-seccount="1">1</td>
                         <td>{fmtNum(sx.enrollments) || '—'}</td>
                         <td className="mono" style={{whiteSpace:'nowrap'}}>{sx.utilization || '—'}{fmtNum(sx.cancellations) > 0 && <span style={{color:'#dc2626'}}> / {fmtNum(sx.cancellations)}</span>}</td>
                         <td className={fillClass(sx.fillPct)}>{sx.fillPct != null ? `${fmtNum(sx.fillPct)}%` : '—'}</td>
@@ -3913,6 +3961,10 @@ function App() {
                         <td className={`money ${fmtNum(sx.charged) === 0 ? 'zero' : ''}`}>{fmtMoney(sx.charged)}</td>
                         <td className={`money ${fmtNum(sx.received) === 0 ? 'zero' : ''}`}>{fmtMoney(sx.received)}</td>
                         <td className={`money ${fmtNum(sx.outstanding) === 0 ? 'zero' : ''}`}>{fmtMoney(sx.outstanding)}</td>
+                        {progHasAutopay && (() => { const a = progAutopayCell(sx); return (
+                          <td className={a ? '' : 'muted'} title={a ? a.title : 'No payment plans on this section.'}
+                              data-prog-secautopay={a ? String(a.pct) : ''}>
+                            {a ? <span>{'\u26A1'} {a.pct}%</span> : '\u2014'}</td>); })()}
                         <td className={`money ${fmtNum(sx.refunds) === 0 ? 'zero' : ''}`}>{fmtMoney(sx.refunds)}</td>
                         <td className="money" style={fmtNum(sx.netRevenue) < 0 ? {color:'#b91c1c'} : {}}>{fmtMoney(sx.netRevenue)}</td>
                         <td className="money" style={{background:'#f0f7ff',fontWeight:500,...(fmtNum(sx.periodNet) < 0 ? {color:'#b91c1c'} : {color:'#1d4ed8'})}}>{fmtMoney(sx.periodNet)}</td>
@@ -3941,6 +3993,10 @@ function App() {
                   <td>{fmtMoney(totals.charged)}</td>
                   <td>{fmtMoney(totals.received)}</td>
                   <td>{fmtMoney(totals.outstanding)}</td>
+                  {progHasAutopay && (() => { const a = progAutopayShare(filteredRows); return (
+                    <td title={a && a.pctValue != null ? 'Across every program in view' : 'No payment plans in view'}
+                        data-prog-autopaytotal={a && a.pctValue != null ? String(a.pctValue) : ''}>
+                      {a && a.pctValue != null ? '\u26A1 ' + a.pctValue + '%' : '\u2014'}</td>); })()}
                   <td>{fmtMoney(totals.refunds)}</td>
                   <td>{fmtMoney(totals.netRevenue)}</td>
                   <td style={{background:'#f0f7ff',fontWeight:700,color:'#1d4ed8'}}>{fmtMoney(totals.periodNet)}</td>
