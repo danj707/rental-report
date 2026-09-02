@@ -1549,8 +1549,28 @@ things only a browser can see:
   there. The sheet is **portalled onto `<body>`** instead of fighting the
   cascade, which is also where a modal belongs (z-index, overflow).
 
+**And it took the SAVE BUTTON with it.** Dan: *"can we get a 'save' button on
+that settings page. don't love the 'auto save', cause it actually didn't."*
+There was one, and it was blue — but `.toolbar button` (0,1,1) outranks
+`.rs-save` (0,1,0), so inside the toolbar the sheet's Save rendered as the
+toolbar's own faint translucent text on a light footer, which reads as inert
+rather than as a button. Nothing about the panel ever auto-saved; it looked like
+it had no Save at all. The portal fixes that with everything else.
+
+Two things were still worth changing rather than answering *"it is already
+there"*:
+
+- **A greyed Save now says why.** It is enabled only when the panel differs from
+  what the SERVER holds, and the footnote reads *"Nothing to save — tick or
+  untick something first"* or *"Save applies this to everyone, and reloads the
+  page."* A disabled button with no explanation is what invites "it didn't
+  save".
+- **A refused field no longer looks like a save.** The route returns `dropped`
+  precisely so a silently discarded setting is impossible, and the panel ignored
+  it and reloaded anyway. It surfaces it now.
+
 Generalise it: *moving a component moves what the cascade can do to it, and what
-props reach it.* Both halves of this were introduced by a move that looked like
+props reach it.* All three of these were introduced by a move that looked like
 pure relocation.
 
 Guards: two render cases that OPEN the panel — one requires the Courts row to

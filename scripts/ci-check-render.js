@@ -1966,6 +1966,29 @@ const CASES = [
       if (bad) throw new Error(bad);
     } },
 
+  // Dan: "can we get a 'save' button on that settings page. don't love the
+  // 'auto save', cause it actually didn't." There WAS a Save button — the sheet
+  // was inside .toolbar, whose `.toolbar button` rule outranks `.rs-save`, so it
+  // rendered as unreadable faint text and read as inert. Now it is gated on
+  // there being something to save, and says which state it is in.
+  { name: "facilities · Save is off until something changes",
+    path: "/{org}/facilities?tab=aquatics&admin=" + RENDER_ADMIN_KEY,
+    needs: "[data-aqrs-open]",
+    act: async page => {
+      await page.click("[data-aqrs-open]");
+      await page.waitForSelector('[data-aqrs-save][data-aqrs-dirty="0"]', { timeout: 20000 });
+      const off = await page.evaluate(() => document.querySelector("[data-aqrs-save]").disabled);
+      if (!off) throw new Error("Save is offered with nothing to save");
+      await page.click('[data-aqrs-type="court"] input');
+      await page.waitForSelector('[data-aqrs-save][data-aqrs-dirty="1"]', { timeout: 20000 });
+      const on = await page.evaluate(() => {
+        const b = document.querySelector("[data-aqrs-save]");
+        return !b.disabled && getComputedStyle(b).backgroundColor === "rgb(37, 99, 235)"
+               && b.textContent.trim() === "Save";
+      });
+      if (!on) throw new Error("after a tick, Save must be enabled, blue and read 'Save'");
+    } },
+
   // The scope sentence still belongs before the figures it qualifies.
   { name: "facilities · the aquatics scope is stated above the numbers", path: "/{org}/facilities?tab=aquatics",
     needs: "[data-aq-scope]",
