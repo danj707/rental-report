@@ -9,13 +9,20 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
   <link rel="stylesheet" href="/report-settings.css">
   <style>
-    .aqrs-gear { margin-left: 8px; }
-    .btn-settings {
+    .aqrs-gear { display: inline-flex; }
+    .aq-scopebar {
+      display: flex; align-items: center; gap: 10px;
+      margin: 0 0 14px; padding: 9px 13px;
+      background: #f4f7f9; border: 1px solid #e2e8ec; border-radius: 6px;
+      font-size: 12.5px; color: #5b6b78; line-height: 1.45;
+    }
+    .aq-scopebar > span { min-width: 0; }
+    .toolbar .btn-settings {
       background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.18);
       color: #e5e7eb; border-radius: 6px; cursor: pointer;
-      font-size: 13px; line-height: 1; padding: 4px 8px;
+      font-size: 12px; line-height: 1.3; padding: 5px 9px; white-space: nowrap;
     }
-    .btn-settings:hover { background: rgba(255,255,255,.18); }
+    .toolbar .btn-settings:hover { background: rgba(255,255,255,.18); }
     .btn-settings.is-off { opacity: .4; cursor: not-allowed; }
 
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -2184,6 +2191,13 @@
         e('button', { className: 'btn-pdf', disabled: !props.count || props.pdfLoading, onClick: props.onPdf, title: 'Download this view as a PDF' }, props.pdfLoading ? 'Generating…' : '📄 PDF'),
         e('button', { className: 'btn-lite', disabled: !props.count, onClick: props.onLite, title: 'Open a plain one-page revenue summary to print or save as PDF' }, '🧾 Summary'),
         e('button', { className: 'btn-excel', disabled: !props.count, onClick: props.onExcel, title: 'Download the bookings in view as Excel' }, '📊 Excel'),
+        // LAST IN THE TOOLBAR, like every other report's gear (Dan). It shipped
+        // inside a footnote at the bottom of the Aquatics tab and he reported it
+        // missing from the live page while it was rendering perfectly, four
+        // panels below the fold — a control nobody can find is a control that
+        // does not exist. It configures the Aquatics tab, so `rows` comes from
+        // the hub feed the toolbar already has.
+        e(AquaticsSettings, { rows: props.rows }),
       );
     }
 
@@ -2776,12 +2790,15 @@
       const gear =
         rsAdmin()   ? e('button', { className: 'btn-settings', onClick: () => setOpen(true),
                                     'data-aqrs-open': true,
-                                    title: 'Which sites count as aquatics for this organization' }, '\u2699')
+                                    title: 'Which sites count as aquatics for this organization' },
+                                    '\u2699 Which sites count')
       : rsLockable() ? e('button', { className: 'btn-settings', 'data-aqrs-locked': true,
                                     onClick: () => { setUnlock(true); setErr(null); },
-                                    title: 'Aquatics scope \u2014 admin password required' }, '\u2699')
+                                    title: 'Aquatics scope \u2014 admin password required' },
+                                    '\u2699 Which sites count')
       : rsFlagOff() ? e('button', { className: 'btn-settings is-off', 'data-aqrs-flagoff': true, disabled: true,
-                                    title: 'Report settings are switched off for this deployment.' }, '\u2699')
+                                    title: 'Report settings are switched off for this deployment.' },
+                                    '\u2699 Which sites count')
       : null;
       if (!gear) return null;
 
@@ -2904,8 +2921,7 @@
       if (!scoped.length) return e('div', { className: 'empty' },
         e('div', { className: 'em-icon' }, '🏊'),
         e('div', { className: 'em-title' }, 'No Pool / Aquatics bookings in this range'),
-        e('div', { className: 'em-sub' }, 'This org may not run pool sites, or none were booked with the current status filter. Try a wider date range.',
-          e(AquaticsSettings, { rows: rows })));
+        e('div', { className: 'em-sub' }, 'This org may not run pool sites, or none were booked with the current status filter. Try a wider date range.'));
 
       const isCanceled = r => lc(r['Status']) === 'canceled';
       const isInstant  = r => lc(r['Booking Type']) === 'instant';
@@ -2989,6 +3005,14 @@
 
       return e('div', null,
         e(AquaBanner, { bookings, revenue, guests, avgParty, sites }),
+        // WHAT THIS TAB COUNTS, AND THE CONTROL THAT CHANGES IT, BOTH GO ABOVE
+        // THE NUMBERS. They were in a footnote under the last panel, which is
+        // the dead end this repo keeps writing down: Dan looked for the gear on
+        // the live tab and reported it missing while it was rendering correctly,
+        // four panels below the fold. A scope statement also belongs before the
+        // figures it qualifies, not after them.
+        e('div', { className: 'aq-scopebar', 'data-aq-scope': true },
+          e('span', null, vertScopeNote(vert.key))),
         e('div', { className: 'sum-cards' },
           kpis.map((c, i) => e('div', { className: 'sum-card', key: i },
             e('div', { className: 'sc-label' }, c.label),
@@ -3082,8 +3106,7 @@
             }))),
         // Hours come from card 17294, which the hub feed cannot supply.
         start && end ? e(AquaticsHours, { start: start, end: end }) : null,
-        e('div', { className: 'section-note', 'data-aq-scope': true }, 'Pool / Aquatics · ' + bookings.toLocaleString() + ' bookings in range · ' + vertScopeNote(vert.key),
-          e(AquaticsSettings, { rows: rows })),
+        e('div', { className: 'section-note' }, 'Pool / Aquatics · ' + bookings.toLocaleString() + ' bookings in range.'),
       );
     }
 

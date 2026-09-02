@@ -1896,6 +1896,24 @@ const CASES = [
   // reinstates the name-and-location guess.
   { name: "facilities · an unconfigured org counts no courts", path: "/{org}/facilities?tab=aquatics",
     needs: "[data-aq-hours=\"8\"]" },
+  // The gear must be ABOVE the numbers. It shipped inside a footnote under the
+  // last panel, and Dan reported it missing from the live tab while it was
+  // rendering perfectly, four panels below the fold — the dead end this repo
+  // keeps writing down. Keyed on document ORDER, because "a gear rendered"
+  // passes just as happily on the version nobody could find.
+  { name: "facilities · the aquatics gear is above the numbers", path: "/{org}/facilities?tab=aquatics",
+    needs: "[data-aq-scope]",
+    act: async page => {
+      const ok = await page.evaluate(() => {
+        const bar = document.querySelector("[data-aq-scope]");
+        const kpi = document.querySelector(".sum-cards");
+        if (!bar || !kpi) return false;
+        if (!bar.querySelector("[data-aqrs-open],[data-aqrs-locked],[data-aqrs-flagoff]")) return false;
+        return !!(bar.compareDocumentPosition(kpi) & Node.DOCUMENT_POSITION_FOLLOWING);
+      });
+      if (!ok) throw new Error("the scope bar must carry a gear and precede the KPI cards");
+    } },
+
   // The CONFIGURED path is proven in aquatics-scope.spec.js, which lifts and
   // RUNS vertRowMatch over all four combinations of extra types and scope. It is
   // deliberately not a render case: driving it in the browser needs the server's
@@ -2344,6 +2362,30 @@ const CASES = [
   // tag is absent rather than defaulting to manual.
   { name: "waitlist · no auto tag on a pre-v6 feed", path: "/{org}/waitlist",
     stubMode: "prev6", needs: "table tbody tr", absent: "[data-wl-auto]" },
+
+  // Dan, on the live page: "not seeing instructor names and info on the program
+  // pages. filter works, but doesn't show the data we need." The names were on
+  // the SECTION rows only, so finding out who teaches a program meant expanding
+  // it. The All Programs table carries the distinct set now. Keyed on the CELL's
+  // count, not on a column existing: a column of dashes renders just as happily.
+  { name: "programs · the program table names the instructor", path: "/{org}/programs?tab=summary",
+    needs: "[data-prog-instrcell]",
+    act: async page => {
+      const seen = await page.evaluate(() => Array.from(
+        document.querySelectorAll("[data-prog-instrcell]"), t => t.textContent.trim()));
+      if (!seen.some(t => /[A-Za-z]{3}/.test(t) && !/instructors$/.test(t)))
+        throw new Error("no program row printed an instructor NAME: " + JSON.stringify(seen.slice(0, 8)));
+    } },
+  // A program whose sections span two instructors must not print one of them as
+  // though it were the answer.
+  { name: "programs · a multi-instructor program says so", path: "/{org}/programs?tab=summary",
+    needs: "[data-prog-instrcell=\"2\"]" },
+  // stubMode is a per-CASE field, not a URL parameter — the harness answers the
+  // browser's /api/ requests itself, so a query flag on the page URL never
+  // reaches the stub. Passing it in the URL is why this case first reported the
+  // column present on a pre-v6 feed.
+  { name: "programs · no instructor CELL on a pre-v6 feed", path: "/{org}/programs?tab=summary",
+    stubMode: "previnstr", needs: ".sum-prog-table", absent: "[data-prog-instrcell]" },
 
   { name: "programs · the section rows name their location", path: "/{org}/programs?tab=revenue",
     act: p => openProgram(p, "Aquatic Exercise"), needs: '[data-prog-seccell-location="Urho Saari Swim Stadium"]' },

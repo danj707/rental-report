@@ -1497,6 +1497,83 @@ purpose — and one assertion still failed on correct code first time by matchin
 `data-prog-season-btn` when it meant the CSS class `.season-btn`. Third instance
 of that in this file.
 
+## The instructor was on screen and nobody could find it (2026-09-02)
+
+Two placement bugs in one afternoon, both reported from the live pages, both
+mine, and both the same mistake: the control or the data was rendering correctly
+somewhere nobody looks.
+
+### The Aquatics gear was in a footnote
+
+Dan: *"not seeing the report settings options here anywhere"*, with a screenshot
+of the top of the Pool / Aquatics tab.
+
+It was rendering. `reportSettings` is ON in production and the injected
+`settingsLockable` was `true`, so a **locked gear was on the page** — mounted
+inside the scope note at the BOTTOM of the tab, four panels below the fold.
+
+Fixed twice, because the first fix was still wrong. It moved to a scope bar
+above the KPI cards, which is where a statement of *what this tab counts*
+belongs; then Dan: *"needs to be the upper right corner of the top bar, same as
+on every main page of every report."* It is the **last item in the toolbar** now,
+like every other report's gear, and it is **labelled** — a bare ⚙ in a dark
+toolbar is what made it invisible in the first place. The scope bar stays,
+without the gear, because the scope sentence is still worth reading before the
+numbers.
+
+**It no longer needs a second mount on the empty branch.** The toolbar renders
+whatever the tab shows, so an org with no pool bookings reaches the setting
+without the special case that branch existed for.
+
+Guard: the `facilities · the aquatics gear is above the numbers` render case
+keys on **document order** via `compareDocumentPosition`, because "a gear
+rendered" passes just as happily on the version nobody could find. Verified to
+fail when the gear is taken out of the bar.
+
+### THE PROGRAM TABLE PRINTED A DASH FOR EVERY INSTRUCTOR
+
+Dan: *"not seeing instructor names and info on the program pages. filter works,
+but doesn't show the data we need."*
+
+Two separate faults, and the second is the one worth writing down.
+
+**The design choice hid it.** Instructor and location went on SECTION rows only,
+on the argument that neither is a fact about a program — true, and not a reason
+to make an admin expand 23 programs one at a time to find out who teaches them.
+The All Programs table carries the **distinct set** now, through
+`progDistinctFromSections`, the same helper the Excel export uses, so the file
+and the screen cannot disagree. `progSetCell()` renders it: one name reads as
+the name, several read as *"2 instructors"* with the full list on hover — a
+program spanning four instructors must never print one of them as though it were
+the answer.
+
+**And then it rendered a dash on every row, because THE SECTION LIST HAS TWO
+NAMES.** `rollupToPrograms` keeps a program's sections in **`_sections`**; the
+Summary tab's own `progMap` builds **`sections`**. `progDistinctFromSections`
+read only the first, so the new column was empty for exactly the surface it was
+added to. It reads both now, rather than each caller being taught which shape it
+happens to hold.
+
+**No source assertion could have caught either half.** The column existed, the
+helper was correct, and the cell was a dash — so the render cases key on the
+CELL's own count (`data-prog-instrcell="2"`), and one of them scans for a real
+NAME rather than for the column. Both were seen to fail on the shipped bug.
+
+**A harness note that cost a false failure:** `stubMode` is a per-CASE field,
+not a URL parameter. The render check answers the browser's own `/api/` requests,
+so a flag on the page URL never reaches the stub — my pre-v6 case passed it in
+the query string and reported the column present on a feed that does not have it.
+It also duplicated an existing case NAME, which makes a filtered run ambiguous.
+
+**And a full-run failure that was not real:** a `programs ·` run reported 39 of
+228 failing while the same cases passed alone. Two render runs were overlapping.
+Same self-inflicted contention already recorded for the manifest sweep — before
+reading a mass failure as a regression, check nothing else is driving a browser.
+
+Guards: `programs-instructor.spec.js` 70 → **79 assertions**, lifting and
+RUNNING `progSetCell`; mutation-tested against the `_sections`-only read, which
+is the bug exactly as it shipped. Plus three render cases.
+
 ## Programs: a multi-select SEASON filter (2026-08-31)
 
 Dan, on Shrewsbury: *"lets add a program 'season' filter on the programs summary

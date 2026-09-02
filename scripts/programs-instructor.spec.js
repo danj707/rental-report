@@ -113,11 +113,12 @@ try {
     liftFn(src, "instructorKey") + "\n" +
     liftFn(src, "progEffectiveInstructors") + "\n" +
     liftFn(src, "progDistinctFromSections") + "\n" +
+    liftFn(src, "progSetCell") + "\n" +
     liftFn(src, "progMonthKey") + "\n" +
     liftFn(src, "progMonthRange") + "\n" +
     liftFn(src, "progMonthlyActivity") + "\n" +
     liftFn(src, "progMonthlyMoney") + "\n" +
-    "return { INSTR_NONE, instructorKey, progEffectiveInstructors, progDistinctFromSections," +
+    "return { INSTR_NONE, instructorKey, progEffectiveInstructors, progDistinctFromSections, progSetCell," +
     " progMonthKey, progMonthRange, progMonthlyActivity, progMonthlyMoney };")();
   pass++;
 } catch (e) {
@@ -326,6 +327,38 @@ ok(/MB_PROGRAMS_MONTHLY_UUID/.test(server),
    "its UUID comes from the environment and is ABSENT until set — an entry pointing at nothing would fail the feed for every org");
 ok(/NON_ADDABLE_REPORTS[\s\S]{0,400}programs-monthly/.test(server),
    "it is not addable as a card of its own — it is a band on the Programs report");
+
+// ── the program table's set cell ────────────────────────────────────────────
+// Dan, on the live page: "not seeing instructor names and info on the program
+// pages. filter works, but doesn't show the data we need." The names were on the
+// SECTION rows only, so an admin had to expand 23 programs one at a time.
+if (H && H.progSetCell) {
+  const one  = { _sections: [{ instructor: 'Naomi Rivas' }, { instructor: 'Naomi Rivas' }] };
+  const many = { _sections: [{ instructor: 'Naomi Rivas' }, { instructor: 'Eric Stenberg' }] };
+  const none = { _sections: [{ instructor: null }, { instructor: '' }] };
+
+  eq(H.progSetCell(one, 'instructor').text, 'Naomi Rivas',
+     "ONE instructor across a program's sections reads as the name — that is the whole point of the column");
+  eq(H.progSetCell(one, 'instructor').n, 1, "...and reports one");
+  eq(H.progSetCell(many, 'instructor').text, '2 instructors',
+     "TWO must not print one of them as though it were the answer — a program spanning instructors says so");
+  eq(H.progSetCell(many, 'instructor').title, 'Naomi Rivas\nEric Stenberg',
+     "...with the full list on hover, so the count is not a dead end");
+  eq(H.progSetCell(none, 'instructor').n, 0, "no instructor on file reports zero");
+  eq(H.progSetCell(none, 'instructor').text, '\u2014', "...and renders a dash rather than an empty cell");
+  const twoLocs = { _sections: [{ location: 'Urho Saari' }, { location: 'Wiseburn' }] };
+  eq(H.progSetCell(twoLocs, 'location').text, '2 locations', "the label follows the column");
+
+  // THE BUG AS IT SHIPPED. The rollup keeps a program's sections in `_sections`
+  // and the Summary tab's own progMap builds `sections`, so reading only the
+  // first made every cell on the program table a dash — the feature Dan
+  // reported missing.
+  eq(H.progSetCell({ sections: [{ instructor: 'Mary Lee' }] }, 'instructor').text, 'Mary Lee',
+     "TWO NAMES FOR ONE LIST: `sections` is read as well as `_sections`");
+  // A section row handed to it directly still answers from its own value.
+  eq(H.progSetCell({ instructor: 'Jenna Lockwood' }, 'instructor').text, 'Jenna Lockwood',
+     "a program-grain row with no section list falls back to its own value");
+}
 
 // ── report ─────────────────────────────────────────────────────────────────
 if (failures.length) {
