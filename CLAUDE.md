@@ -1525,8 +1525,60 @@ numbers.
 whatever the tab shows, so an org with no pool bookings reaches the setting
 without the special case that branch existed for.
 
-Guards: `facilities · the aquatics gear is last in the toolbar` checks the gear's
-POSITION in the bar, and `facilities · the aquatics scope is stated above the
+### THE GEAR IS AN ICON, AND THE PANEL WAS BROKEN BY ITS OWN NEW HOME
+
+Dan: *"just a settings icon here, no text needed, ever on any report. and this
+settings page doesn't seem to be working correctly."*
+
+**The label is gone.** Labelling it was an overcorrection for having been
+unfindable, and the fix for that was its POSITION. Every report's gear is the
+bare glyph, and the spec now fails if a caption comes back.
+
+**Two faults in the panel, both caused by moving it into the toolbar**, and both
+things only a browser can see:
+
+- **Every site type read "0 SITES IN VIEW".** The panel counts what each extra
+  type would add over the rows on screen — and the `Toolbar` component is passed
+  no `rows` prop. The panel moved and its data did not. It gets `viewRows` now,
+  the same scoped set every other surface reads.
+- **The checkbox rows rendered UPPERCASE, GREY AND STACKED.** `.toolbar label`
+  sets `text-transform`, `color` and `flex-direction: column` for the date-field
+  captions, and the sheet's rows are `<label>`s inside `.toolbar`. **This is the
+  season-menu bug verbatim, reintroduced by me the moment the panel moved into
+  the toolbar** — and inline styles would not have saved it, exactly as recorded
+  there. The sheet is **portalled onto `<body>`** instead of fighting the
+  cascade, which is also where a modal belongs (z-index, overflow).
+
+**And it took the SAVE BUTTON with it.** Dan: *"can we get a 'save' button on
+that settings page. don't love the 'auto save', cause it actually didn't."*
+There was one, and it was blue — but `.toolbar button` (0,1,1) outranks
+`.rs-save` (0,1,0), so inside the toolbar the sheet's Save rendered as the
+toolbar's own faint translucent text on a light footer, which reads as inert
+rather than as a button. Nothing about the panel ever auto-saved; it looked like
+it had no Save at all. The portal fixes that with everything else.
+
+Two things were still worth changing rather than answering *"it is already
+there"*:
+
+- **A greyed Save now says why.** It is enabled only when the panel differs from
+  what the SERVER holds, and the footnote reads *"Nothing to save — tick or
+  untick something first"* or *"Save applies this to everyone, and reloads the
+  page."* A disabled button with no explanation is what invites "it didn't
+  save".
+- **A refused field no longer looks like a save.** The route returns `dropped`
+  precisely so a silently discarded setting is impossible, and the panel ignored
+  it and reloaded anyway. It surfaces it now.
+
+Generalise it: *moving a component moves what the cascade can do to it, and what
+props reach it.* All three of these were introduced by a move that looked like
+pure relocation.
+
+Guards: two render cases that OPEN the panel — one requires the Courts row to
+count a non-zero number of sites, one requires the sheet to be outside
+`.toolbar` and its rows to be neither uppercase nor stacked. Mutation-tested
+against the toolbar losing its rows and against the portal being removed; both
+fail by name. Plus `facilities · the aquatics gear is last in the toolbar`, which
+checks the gear's POSITION in the bar, and `facilities · the aquatics scope is stated above the
 numbers` keeps the scope sentence ahead of the figures. Both key on placement
 rather than presence, because "a gear rendered" passes just as happily on the
 version nobody could find; mutation-tested against the gear leaving the toolbar

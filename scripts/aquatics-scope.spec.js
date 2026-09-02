@@ -201,6 +201,22 @@ ok(/data-aq-scope/.test(code) && /function vertScopeNote\(/.test(code),
 }
 ok(/data-aqrs-open/.test(code) && /data-aqrs-locked/.test(code) && /data-aqrs-flagoff/.test(code),
    "three gear states, as on the Class Roster: working, locked, and switched off");
+// THE GEAR IS AN ICON, WITH NO TEXT — Dan, 2026-09-02: "just a settings icon
+// here, no text needed, ever on any report." It shipped labelled for one
+// revision, as an overcorrection for having been unfindable in a footnote; the
+// fix for that was its POSITION, not a caption.
+ok(!/Which sites count'/.test(code),
+   "the gear carries no text label — every report's gear is the bare glyph");
+
+// The sheet is PORTALLED out of the toolbar. `.toolbar label` sets
+// text-transform, color and flex-direction for the date captions, so a dialog
+// inside that subtree renders its checkbox rows uppercase, grey and stacked —
+// the season-menu bug, reintroduced the moment the panel moved into the toolbar.
+ok(/ReactDOM\.createPortal\(node, document\.body\)/.test(code),
+   "the settings sheet escapes the toolbar's DOM rather than fighting its label rule");
+ok(/rows: viewRows/.test(code),
+   "and the toolbar is handed the rows the panel counts — without them every type read '0 sites in view'");
+
 ok(/settings-unlock/.test(code),
    "the locked gear unlocks IN PLACE — sending an admin to another report to sign in is a dead end");
 

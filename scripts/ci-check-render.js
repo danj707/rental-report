@@ -1923,6 +1923,72 @@ const CASES = [
       if (where !== "ok") throw new Error("the aquatics gear is " + where);
     } },
 
+  // ── The panel itself, opened ─────────────────────────────────────────────
+  // Dan, on the live page: "this settings page doesn't seem to be working
+  // correctly." Two faults, both of which a browser is the only witness to.
+  //
+  // 1. EVERY TYPE READ "0 SITES IN VIEW", because the Toolbar was never handed
+  //    a `rows` prop — the panel moved into the toolbar and its data did not.
+  { name: "facilities · the scope panel counts the sites in view",
+    path: "/{org}/facilities?tab=aquatics&admin=" + RENDER_ADMIN_KEY,
+    needs: "[data-aqrs-open]",
+    act: async page => {
+      await page.click("[data-aqrs-open]");
+      await page.waitForSelector("[data-aqrs-sheet]", { timeout: 20000 });
+      const n = await page.evaluate(() => {
+        const row = document.querySelector('[data-aqrs-type="court"]');
+        const b = row && row.querySelector("[data-aqrs-count]");
+        return b ? Number(b.getAttribute("data-aqrs-count")) : -1;
+      });
+      if (!(n > 0)) throw new Error('the Courts row counted ' + n + ' sites in view; the fixture has several');
+    } },
+
+  // 2. THE ROWS RENDERED UPPERCASE, GREY AND STACKED, because the sheet was
+  //    inside `.toolbar`, whose own `label` rule sets text-transform, color and
+  //    flex-direction for the date captions. That is the season-menu bug
+  //    verbatim, reintroduced by moving the panel into the toolbar — so the
+  //    sheet is portalled onto <body> now, and this asserts it escaped.
+  { name: "facilities · the scope panel escapes the toolbar's label rule",
+    path: "/{org}/facilities?tab=aquatics&admin=" + RENDER_ADMIN_KEY,
+    needs: "[data-aqrs-open]",
+    act: async page => {
+      await page.click("[data-aqrs-open]");
+      await page.waitForSelector("[data-aqrs-sheet]", { timeout: 20000 });
+      const bad = await page.evaluate(() => {
+        const sheet = document.querySelector("[data-aqrs-sheet]");
+        if (sheet.closest(".toolbar")) return "the sheet is still inside .toolbar";
+        const row = sheet.querySelector('[data-aqrs-type="court"]');
+        const cs = getComputedStyle(row);
+        if (cs.textTransform === "uppercase") return "the rows are UPPERCASE";
+        if (cs.flexDirection === "column") return "the rows are STACKED";
+        return null;
+      });
+      if (bad) throw new Error(bad);
+    } },
+
+  // Dan: "can we get a 'save' button on that settings page. don't love the
+  // 'auto save', cause it actually didn't." There WAS a Save button — the sheet
+  // was inside .toolbar, whose `.toolbar button` rule outranks `.rs-save`, so it
+  // rendered as unreadable faint text and read as inert. Now it is gated on
+  // there being something to save, and says which state it is in.
+  { name: "facilities · Save is off until something changes",
+    path: "/{org}/facilities?tab=aquatics&admin=" + RENDER_ADMIN_KEY,
+    needs: "[data-aqrs-open]",
+    act: async page => {
+      await page.click("[data-aqrs-open]");
+      await page.waitForSelector('[data-aqrs-save][data-aqrs-dirty="0"]', { timeout: 20000 });
+      const off = await page.evaluate(() => document.querySelector("[data-aqrs-save]").disabled);
+      if (!off) throw new Error("Save is offered with nothing to save");
+      await page.click('[data-aqrs-type="court"] input');
+      await page.waitForSelector('[data-aqrs-save][data-aqrs-dirty="1"]', { timeout: 20000 });
+      const on = await page.evaluate(() => {
+        const b = document.querySelector("[data-aqrs-save]");
+        return !b.disabled && getComputedStyle(b).backgroundColor === "rgb(37, 99, 235)"
+               && b.textContent.trim() === "Save";
+      });
+      if (!on) throw new Error("after a tick, Save must be enabled, blue and read 'Save'");
+    } },
+
   // The scope sentence still belongs before the figures it qualifies.
   { name: "facilities · the aquatics scope is stated above the numbers", path: "/{org}/facilities?tab=aquatics",
     needs: "[data-aq-scope]",

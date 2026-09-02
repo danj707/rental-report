@@ -2726,6 +2726,14 @@
       field: 'Fields', room: 'Rooms', other: 'Other',
     };
 
+    // Out of the toolbar's subtree and onto <body>, so `.toolbar label` cannot
+    // reach the sheet's checkbox rows. Falls back to rendering in place if
+    // ReactDOM is somehow unavailable, rather than losing the dialog.
+    function portal(node) {
+      return (window.ReactDOM && ReactDOM.createPortal)
+        ? ReactDOM.createPortal(node, document.body) : node;
+    }
+
     function AquaticsSettings({ rows }) {
       const [open, setOpen] = React.useState(false);
       const [busy, setBusy] = React.useState(false);
@@ -2778,6 +2786,12 @@
           });
           const data = await resp.json().catch(() => ({}));
           if (!resp.ok) { setErr(data.error || 'Could not save the settings.'); return; }
+          // The route names what it refused for exactly this reason. Reloading
+          // over it is how a control looks like it worked and did not.
+          if (Array.isArray(data.dropped) && data.dropped.length) {
+            setErr('Not saved: ' + data.dropped.join(', '));
+            return;
+          }
           // The settings decide which site types the tab counts AT ALL, so the
           // honest thing after a save is a reload rather than half-applying them
           // to a page already in flight.
@@ -2791,14 +2805,14 @@
         rsAdmin()   ? e('button', { className: 'btn-settings', onClick: () => setOpen(true),
                                     'data-aqrs-open': true,
                                     title: 'Which sites count as aquatics for this organization' },
-                                    '\u2699 Which sites count')
+                                    '\u2699')
       : rsLockable() ? e('button', { className: 'btn-settings', 'data-aqrs-locked': true,
                                     onClick: () => { setUnlock(true); setErr(null); },
                                     title: 'Aquatics scope \u2014 admin password required' },
-                                    '\u2699 Which sites count')
+                                    '\u2699')
       : rsFlagOff() ? e('button', { className: 'btn-settings is-off', 'data-aqrs-flagoff': true, disabled: true,
                                     title: 'Report settings are switched off for this deployment.' },
-                                    '\u2699 Which sites count')
+                                    '\u2699')
       : null;
       if (!gear) return null;
 
@@ -2827,7 +2841,7 @@
         } finally { setBusy(false); }
       }
 
-      if (unlock) return e('span', { className: 'aqrs-gear' }, gear,
+      if (unlock) return e('span', { className: 'aqrs-gear' }, gear, portal(
         e('div', { className: 'rs-back', onClick: ev => { if (ev.target === ev.currentTarget && !busy) setUnlock(false); } },
           e('form', { className: 'rs-sheet', role: 'dialog', 'aria-label': 'Admin password required',
                       'data-aqrs-unlock': true, onSubmit: submitUnlock },
@@ -2843,9 +2857,16 @@
             err ? e('div', { className: 'rs-err', 'data-aqrs-err': true }, err) : null,
             e('div', { className: 'rs-foot' },
               e('button', { type: 'submit', className: 'rs-save', disabled: busy || !pw, 'data-aqrs-unlock-go': true },
-                busy ? 'Checking\u2026' : 'Unlock')))));
+                busy ? 'Checking\u2026' : 'Unlock'))))));
 
       if (!open) return e('span', { className: 'aqrs-gear' }, gear);
+
+      // Is there anything to save? Compared against what the SERVER currently
+      // holds, not against the panel's own opening state, so reopening the sheet
+      // and closing it never offers a pointless save.
+      const sameSet = (a, b) => a.size === b.size && [...a].every(v => b.has(v));
+      const dirty = !sameSet(types, new Set(cur.aquaticsExtraTypes || []))
+                 || !sameSet(scope, new Set(cur.aquaticsScope || []));
 
       const toggle = (set, v, fn) => {
         const next = new Set(set);
@@ -2853,7 +2874,7 @@
         fn(next);
       };
 
-      return e('span', { className: 'aqrs-gear' }, gear,
+      return e('span', { className: 'aqrs-gear' }, gear, portal(
         e('div', { className: 'rs-back', onClick: ev => { if (ev.target === ev.currentTarget && !busy) setOpen(false); } },
           e('div', { className: 'rs-sheet', role: 'dialog', 'aria-label': 'Aquatics scope', 'data-aqrs-sheet': true },
             e('div', { className: 'rs-head' },
@@ -2890,7 +2911,8 @@
             err ? e('div', { className: 'rs-err', 'data-aqrs-err': true }, err) : null,
 
             e('div', { className: 'rs-foot' },
-              e('button', { className: 'rs-save', disabled: busy, 'data-aqrs-save': true,
+              e('button', { className: 'rs-save', disabled: busy || !dirty, 'data-aqrs-save': true,
+                            'data-aqrs-dirty': dirty ? '1' : '0',
                             onClick: () => save({ aquaticsExtraTypes: Array.from(types),
                                                   aquaticsScope: Array.from(scope) }) },
                 busy ? 'Saving\u2026' : 'Save'),
@@ -2898,9 +2920,9 @@
                             onClick: () => save({ aquaticsExtraTypes: [], aquaticsScope: [] }) },
                 'Reset to pools only'),
               e('span', { className: 'rs-footnote' },
-                types.size === 0 && scope.size === 0
-                  ? 'Pools only \u2014 the platform default.'
-                  : 'Saving reloads the page.'))))); 
+                busy ? 'Saving\u2026'
+                : !dirty ? 'Nothing to save \u2014 tick or untick something first.'
+                : 'Save applies this to everyone, and reloads the page.')))))); 
     }
 
     function AquaticsView({ rows, err, statusSel, vert, start, end }) {
@@ -6345,7 +6367,7 @@
       }
 
       return e(React.Fragment, null,
-        isPrint ? null : e(Toolbar, { start, end, setStart, setEnd, thisMonth: setThisMonth, lastMonth: setLastMonth, thisYear: setThisYear, run: () => load(), loading: rows === null, count, sites: siteCount, onPdf: downloadPdf, onLite: exportLite, onExcel: exportExcel, pdfLoading }),
+        isPrint ? null : e(Toolbar, { start, end, setStart, setEnd, thisMonth: setThisMonth, lastMonth: setLastMonth, thisYear: setThisYear, run: () => load(), loading: rows === null, count, sites: siteCount, onPdf: downloadPdf, onLite: exportLite, onExcel: exportExcel, pdfLoading, rows: viewRows }),
         rows !== null ? e('div', { id: 'report-ready', 'data-ready': 'true', style: { display: 'none' } }) : null,
         e('div', { className: 'page' },
           e('div', { className: 'report-header' },
