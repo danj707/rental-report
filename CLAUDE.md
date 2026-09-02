@@ -1497,7 +1497,13 @@ purpose — and one assertion still failed on correct code first time by matchin
 `data-prog-season-btn` when it meant the CSS class `.season-btn`. Third instance
 of that in this file.
 
-## PINNED TO FIX: the Programs detail table (Dan, 2026-09-02)
+## PINNED TO FIX: the Programs REVENUE tab table (Dan, 2026-09-02)
+
+*(Recorded first as "the detail table", which was wrong and would have sent the
+next person to the wrong surface. Dan asked "are we fixing the programs revenue
+tab?" and he is right — the table below is inside `tab === 'revenue'`, the one
+with Charged / Received / Outstanding / Refunds / Net Rev and the Grand Total
+row. `leftCols` and that Grand Total row belong to the revenue table.)*
 
 Dan, on Essex Junction's Fall Vacation Camps: *"columns misaligned and some of
 the numbers aren't matching up, and I think the autopay icon is supposed to be on
