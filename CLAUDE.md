@@ -1497,6 +1497,71 @@ purpose — and one assertion still failed on correct code first time by matchin
 `data-prog-season-btn` when it meant the CSS class `.season-btn`. Third instance
 of that in this file.
 
+## PINNED TO FIX: the Programs REVENUE tab table (Dan, 2026-09-02)
+
+*(Recorded first as "the detail table", which was wrong and would have sent the
+next person to the wrong surface. Dan asked "are we fixing the programs revenue
+tab?" and he is right — the table below is inside `tab === 'revenue'`, the one
+with Charged / Received / Outstanding / Refunds / Net Rev and the Grand Total
+row. `leftCols` and that Grand Total row belong to the revenue table.)*
+
+Dan, on Essex Junction's Fall Vacation Camps: *"columns misaligned and some of
+the numbers aren't matching up, and I think the autopay icon is supposed to be on
+here, no?"* Pinned, not fixed. Recorded with what was CHECKED against his
+screenshot, so whoever picks it up does not re-derive it or chase phantoms.
+
+### The autopay columns are read by exactly one surface, and no table
+
+**Confirmed by grep: nothing on `programs.html` reads `autopayPlanItems` or
+`autopayPlanValue` except `progAutopayShare`**, which draws the single summary
+KPI. Card 17295 v7 emits four additive per-section columns
+(`autopay_plan_items` / `_value`, `manual_plan_items` / `_value`), they are
+mapped, and `rollupToPrograms` even sums them per program — and then no table
+column, badge or icon exists anywhere. Dan is right that it should be here: the
+data is per section, the rollup is per program, and both are already computed.
+
+Same shape as the location and instructor columns that were mapped and rendered
+nowhere for a day. **A source assertion cannot see a column that is mapped,
+rolled up and never displayed** — so whatever is built must be keyed on the CELL
+in a render case, like `data-prog-instrcell`.
+
+### THE ARITHMETIC IN THAT SCREENSHOT RECONCILES — do not start there
+
+Checked every parent against its two children before pinning:
+
+| | parent | children | |
+|---|---|---|---|
+| Enroll | 113 | 37 + 76 | ✓ |
+| Utilization | 717 / 1,584 | 240/612 + 477/972 | ✓ |
+| Charged | $28,273.00 | 9,163 + 19,110 | ✓ |
+| Received | $23,520.00 | 7,766.50 + 15,753.50 | ✓ |
+| Outstanding | $5,439.00 | 2,082.50 + 3,356.50 | ✓ |
+| Fill % | 45.3% | 717/1,584 = 45.27% | ✓ |
+
+So the rollup is not the bug. **Two candidates for what he is reading as "not
+matching up":**
+
+1. **The SECTIONS cell.** The parent reads `2` and each child reads `—`, so a
+   column headed SECTIONS shows a total with nothing under it. A section row
+   should read `1`, or the column should be blank on the parent too — one of the
+   two, not both.
+2. **Enroll 113 against Utilization 717.** Essex Junction runs
+   `registration_mode = per-session` over 9 camp days, so utilization counts
+   session seats and enrolment counts registrations — a ~6.3x multiplier that
+   looks like a mismatch and is not. Same per-session multiplier already recorded
+   for Fast Track's `FT Total`. If it stays, the column needs to say which unit
+   it is in.
+
+### The alignment
+
+`leftCols = 4 + regMode + location + instructor` — 6 in his view (Program,
+Season, Location, Instructor, Start, End), which is correct, and the Grand Total
+row's `2` does land under SECTIONS in the screenshot. So the Grand Total colSpan
+is NOT the fault, which is where the last two column additions went wrong and is
+the obvious place to look. Start with the header/body width relationship under
+horizontal scroll instead — the table scrolls (PERIOD… is cut off mid-word) and
+the header is a separate row inside the same scroller.
+
 ## The instructor was on screen and nobody could find it (2026-09-02)
 
 Two placement bugs in one afternoon, both reported from the live pages, both
