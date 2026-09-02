@@ -1497,6 +1497,136 @@ purpose — and one assertion still failed on correct code first time by matchin
 `data-prog-season-btn` when it meant the CSS class `.season-btn`. Third instance
 of that in this file.
 
+## The Programs Revenue tab: three fixes (2026-09-02) — WAS the pin below
+
+Dan: *"columns misaligned and some of the numbers aren't matching up, and I
+think the autopay icon is supposed to be on here, no?"* All three, fixed. The
+pin's diagnosis is kept below it, because what it ruled OUT is the useful part.
+
+### "Misaligned" was the table being SQUEEZED, not drifting
+
+The header and body are one table, so they cannot structurally misalign — which
+is why the pin sent the next person to the header/body relationship under
+scroll. The actual cause: `.prog-table` had `width: 100%` inside a
+`.table-scroll`, and that tells the browser to FIT THE CONTAINER — so it
+compresses every column to do it, the `nowrap` headers stop sitting over their
+own values, and the last one clips mid-word (`PERIOD…` in the screenshot).
+`min-width: max-content` lets the columns take their natural width and the
+container scroll, which is what a scroller is for.
+
+### A section row now counts itself
+
+The SECTIONS cell printed a dash on section rows, so a parent reading `2` sat
+over two rows reading nothing. That is what read as the numbers not matching:
+the column is headed Sections and a section row is one of them, so it reads
+**1** and 1 + 1 reconciles on screen.
+
+Not touched, deliberately: **Enroll 113 against Utilization 717** at Essex
+Junction is the per-session multiplier over 9 camp days — a ~6.3x that looks
+like a mismatch and is not. Recorded in the pin so nobody "fixes" it.
+
+### The auto-pay column, finally displayed
+
+Third instance of a column that arrives, is summed, and renders nowhere: card
+17295 v7's four per-section columns were mapped AND rolled up per program, and
+only the single summary KPI read them.
+
+- **`progAutopayCell(r)` goes through `progAutopayShare([r])`**, not its own
+  arithmetic, so the column and the KPI cannot disagree about one program — and
+  the spec that guards the KPI's maths guards the column too.
+- **DOLLARS, not registrations.** The two readings differ 26x at apex, and this
+  cell sits in a row of money.
+- **No plan money is a dash, never 0%.** "Nobody uses auto-pay" and "this
+  program runs no payment plans" are different facts. A REAL 0% still shows —
+  plan money collected entirely by hand is the answer most worth acting on.
+- Presence-gated on `colPresence.autopay`, asked of the raw response, so a warm
+  pre-v7 cache entry hides the column rather than rendering a confident 0%.
+- **The Grand Total row grew with it**, or every figure after it shifts a column
+  left — the exact fault the last two column additions caused. A render case
+  compares the footer's total colSpan against the header's column count.
+
+**A mutation that survived the first draft**, and the reason is worth keeping:
+dropping the `planValue <= 0` guard passed, because `progAutopayShare` already
+returns null when items and value are both zero. The discriminating fixture is a
+program with plan REGISTRATIONS and no plan DOLLARS — installments that price to
+nothing — where the share is non-null with a null percentage and the page would
+render `null%`.
+
+Guards: `programs-autopay.spec.js` 94 → **103 assertions**, lifting and RUNNING
+`progAutopayCell`. Four render cases keyed on the computed VALUE, the footer's
+column count, and the section row's own `1`; all four mutation-tested (the cell
+removed, the total row losing the column, the section count back to a dash, and
+the presence gate hardcoded true).
+
+## PINNED: "NET REVENUE" on the Programs summary is LIFETIME, not the window (2026-09-02)
+
+Dan, on Apex over 1-31 August 2026: *"and it seems these revenue amounts are a
+bit high, no? This is august program revenue for Aug"* — the tab read
+**NET REVENUE $2,768,423** ("total for these programs") beside
+**COLLECTED IN PERIOD $275,553** ("payments received in date range"), under a
+header saying *August 1, 2026 - August 31, 2026*.
+
+**He is right, and the numbers are not wrong — the LABELS are.** Read out of
+card 17295 rather than guessed:
+
+- **Sections are windowed by their SESSION DATES OVERLAPPING the range** (the
+  card's last two `[[ ]]` clauses), so August returns every section that *runs*
+  in August — 1,529 of them.
+- **`net_total` is `received_cents - refund_cents` ALL-TIME for those sections.**
+  That is the $2,768,423: the whole registration revenue of every section
+  running in August, collected over however many months it took.
+- **`period_received` is payments whose `payment.created_at` falls in the window,
+  FOR THOSE SECTIONS ONLY.** That is the $275,553.
+
+**Apex's actual August programme money, measured from the item log**
+(`order_item_type = 'reservation-enrollment'`, the card 21055 basis):
+
+| month | payments | refunds | net |
+|---|---|---|---|
+| 2026-06 | $667,137 | $99,763 | $567,374 |
+| 2026-07 | $568,461 | $93,695 | $474,766 |
+| **2026-08** | **$789,595** | **$67,846** | **$721,749** |
+
+So **neither KPI is August's $721,749** — one is ~3.8x it and the other ~38% of
+it, and both are correct for what they actually measure. The ~$514K gap on the
+period card is August money paid for sections that do NOT run in August (fall
+and winter registrations), which is a real distinction the sub-line *"payments
+received in date range"* does not make.
+
+**The detail table already says it and the KPI card does not.** `Net Rev`'s
+`title` reads *"Lifetime net revenue for these programs (received minus
+refunds)"*; the card says only *"total for these programs"*. Same defect shape
+as the guessed grain phrases on the wizard: a confident sub-line under a figure
+whose basis it misstates.
+
+**Not fixed — pinned.** What it needs is wording, not arithmetic: name the
+lifetime figure as lifetime, say that the period figure is scoped to sections
+running in the window, and consider leading with `period_net` (which the card
+already emits) since that is the number someone reading a date-ranged report
+means by "August revenue".
+
+### ...and TOTAL REFUNDS needs no card change (Dan, same afternoon)
+
+*"pin to add a 'total refunds' metric/card on this program summary page. seems
+like that's a big item we're missing."*
+
+**Card 17295 has emitted `refunds`, `period_refunds` and `period_net` since v3,
+and `public/programs.html` already MAPS all three, rolls them up per program and
+writes them into the Excel export** — no KPI card reads them. So this is a
+client-side change with no push, no date-tag flip and no downtime on the
+platform's most-used card, which is the opposite of what it looks like.
+
+Third instance of the mapped-and-rendered-nowhere pattern in this file (the
+location filter, then instructor, then the auto-pay columns). **A source
+assertion cannot see a column that is mapped, rolled up and never displayed** —
+so whatever is built must be keyed on the CELL in a render case.
+
+Two things to settle when it is built: which of the two refund figures leads
+(all-time `refunds` or windowed `period_refunds` — the same lifetime-vs-window
+question as above, so they should be labelled together rather than separately),
+and that a real $0 must still render while a pre-v3 feed must not render a
+confident zero.
+
 ## PINNED TO FIX: the Programs REVENUE tab table (Dan, 2026-09-02)
 
 *(Recorded first as "the detail table", which was wrong and would have sent the
@@ -2029,19 +2159,69 @@ lane from the site name plus an aquatic-sounding location — a guess that had t
 be right about every org on the platform from one regex, and that encoded a
 product capability gap into reporting. What replaces it is an org saying so.
 
-Two settings on the `facility` report (`REPORT_SETTINGS_SCHEMA`, which registered
-only `roster` before this):
+ONE setting on the `facility` report (`REPORT_SETTINGS_SCHEMA`, which registered
+only `roster` before this): **`aquaticsScope`**, default `[]` — the locations or
+site names that count as aquatic **on top of pools**.
 
-| setting | default | what it does |
-|---|---|---|
-| `aquaticsExtraTypes` | `[]` | site types folded into the tab **besides `pool`**. `pool` is not offered — it is always included and is not a choice. |
-| `aquaticsScope` | `[]` | locations or site names the tab is restricted to. **EMPTY MEANS EVERY ONE**, the same rule as every other multi-select here. |
+**IT IS AN INCLUSION, SO EMPTY MEANS POOLS ONLY** — deliberately NOT the
+"empty means every one" rule every other multi-select here follows, because this
+control does not narrow anything. Pools were never gated on it, so a stale entry
+(a renamed location) adds nothing rather than emptying the tab.
 
 Measured at El Segundo before designing: **Wiseburn Aquatic Center 51 court-typed
 sites (48 lane-named), Urho Saari 16 (all 16), Recreation Park Courts 17 (0
-lanes)**. So `court` + those two locations is exactly right and the tennis courts
-stay out — which is the whole reason the location half exists alongside the type
-half.
+lanes)**. So those two locations are exactly right and the tennis courts stay
+out.
+
+### There WAS an `aquaticsExtraTypes` setting, and it is gone (2026-09-02)
+
+The first build of this paired a site-TYPE list with the scope, and the scope
+NARROWED what the types let in. Dan, on the panel: *"and didn't I ask for some
+option to select a location and sites in that location? … the goal here is to
+choose locations and sites that are NOT aquatics, to include in the aquatics
+tab."*
+
+**A TYPE CANNOT EXPRESS WHAT AN ORG MEANS, and El Segundo is the proof:** ticking
+`court` brings in 67 real swim lanes **and** 17 tennis and pickleball courts,
+and no per-type rule anywhere can separate them. Only the org naming its own
+locations can. So the type list was **removed from the schema rather than left
+unread** — a registered setting nothing reads is the dead-end pattern this file
+keeps writing down, and `aquatics-scope.spec.js` now asserts `aquaticsScope` is
+the ONLY facility setting and that a posted `aquaticsExtraTypes` is refused.
+
+Safe to do without a migration because **no org had aquatics settings stored** —
+checked before changing the semantics, all seven sampled at platform defaults.
+
+**The panel is a location → site TREE**, not a row of checkboxes (that shape is
+what Dan called *"terrible"*, and fairly: 84 site-type and location boxes
+overflowing an unpadded white box). Tri-state location boxes (all / some /
+none), a per-location *"Tick all N sites here"*, and a live tally of what the
+tab will count so the effect is legible **before** saving rather than after a
+reload.
+
+- **A whole location stores the LOCATION NAME, not its sites** — two entries for
+  El Segundo rather than eighty, and it keeps counting a site added next month.
+- **Unticking one site of a whole-location pick has to EXPAND that pick first**,
+  or the location entry silently keeps counting the site the admin just
+  excluded. The box goes unticked either way, so the tally is the only place
+  that shows it — which is what the render case keys on.
+- **Pool sites are shown LOCKED, never hidden.** Leaving them out is what makes
+  an admin wonder whether the pool is in the number.
+- **Locations WITH pools sort first.** Sorting by site count put a complex of
+  four soccer fields above the Aquatic Center on an aquatics panel.
+- **Anything already saved but absent from this window stays in the tree**, or an
+  admin could never untick what they ticked last month.
+- **The pool sub-line counts DISTINCT sites**, not feed rows — it read *"3 pool
+  sites"* beside a count of `2 / 2` on the same row.
+- **The sheet is PORTALLED to `<body>`.** `.toolbar label` (0,1,1) sets
+  `text-transform: uppercase`, a grey colour and `flex-direction: column` for the
+  date captions, and `.toolbar button` beat `.rs-save`, so Save rendered grey and
+  looked inert — which is exactly what Dan reported. An inline style only wins
+  for the properties it names; getting out of `.toolbar` fixes all of it at
+  once. The `.rs-grp` in the shared stylesheet is a bare divider with no padding
+  of its own (the roster pads `.rs-grp-head`/`-body`), hence `.aqt-body`.
+- **Save is gated on `dirty`** (Dan: *"don't love the 'auto save', cause it
+  actually didn't"*), and the footnote says why it is off.
 
 **The name branches STAY.** A site an org literally called "Pool 1" or "Aquatic
 Center Lap Area" is the org's own word, not our inference about a location.
@@ -2079,11 +2259,24 @@ says must not happen.
 
 ### Guards
 
-`scripts/aquatics-scope.spec.js` (**47 assertions, in CI**), replacing
+`scripts/aquatics-scope.spec.js` (**52 assertions, in CI**), replacing
 `aquatics-lanes.spec.js`. It LIFTS AND RUNS `refineSiteType` and `vertRowMatch`,
 and the load-bearing assertion is that **the guess cannot come back**: a
 court-typed "North Lane 1 - A" at "El Segundo Wiseburn Aquatic Center" stays a
 court.
+
+**One assertion had to be scoped, not deleted.** `!/\['Site Type'\] === 'pool'/`
+exists to stop the lane-hours panel hardcoding the type again — and the SETTINGS
+panel legitimately asks a row whether it is a pool, to decide what to lock. So
+it is asserted over the page **with `AquaticsSettings` cut out**, and there is a
+second assertion that the cut removed something, or the first would be vacuous.
+Slicing the component hit the `liftFn` trap a **third** time: counting braces
+from the first `{` in `function AquaticsSettings({ rows }) {` matches the
+DESTRUCTURED PARAMETER and cuts 33 characters. Skip the parameter list first.
+
+Mutation-tested: the scope reverted to narrowing (pools gated on it), the type
+list back in the schema, and the lane-hours panel hardcoding `'pool'` again —
+all three fail by name.
 
 **A render case that quietly stopped testing what it claimed.** The three lane
 cases kept passing after the branch was removed, and it took a bisect to find
@@ -2095,7 +2288,28 @@ counts no courts` is the case that fails if anyone reinstates the guess.
 Generalise it: *when you delete the thing a test was written for, check the test
 still fails without it.*
 
-**The configured path is spec-covered, not render-covered**, and deliberately:
+### Seven render cases for the tree, all mutation-tested
+
+`facilities ·` now carries the tree: the locations it lists (keyed on
+`Wiseburn Center`, the location with no aquatic word anywhere, and on the tally
+at rest equalling the POOL sites and nothing else), a location expanding to its
+sites, one site making its location **partial**, pool sites present and locked,
+the sheet out of `.toolbar`, Save off until something changes, and **unticking
+one site of a whole location dropping the count**.
+
+Seen to fail on the real regression, each by name: `locState` collapsing `some`
+into `on`; pool sites hidden instead of locked; the portal dropped (which fails
+the cascade case *and* the Save case, because `.toolbar button` steals the blue —
+the bug as Dan hit it); Save ungated; a location that no longer expands; and
+`toggleSite` not expanding a whole-location pick.
+
+**And the runner was lying about how much it had run.** `ci-check-render.js`
+printed `${CASES.length}` on success, so a filtered run that matched **nothing**
+reported *"238 page(s) render with no uncaught errors"* — which reads exactly
+like a full clean pass, and I took it as one. It reports what actually ran now.
+
+**The configured path is also spec-covered rather than render-covered**, and
+deliberately:
 driving it in a browser needs the server's settings store changed mid-run, and
 `readReportSettingsStore()` memoises on first read, so a file written behind the
 server's back is never seen.
@@ -2111,6 +2325,69 @@ server's back is never seen.
   injected aquatics settings declared above the slice. Same shape as the
   `alertEnabled` reference that left `email-slack-notify.spec.js` dead for
   months. A slice that grows can reach past its own inputs.
+
+### Backcheck of El Segundo's configured tab, and two defects it found (2026-09-02)
+
+Dan, after ticking the two aquatic locations: *"confirm these new numbers are
+correct."* **They are.** Recomputed independently from card 19570's own rows
+through the public endpoint (cache-independent, 5,641 rows in 20.9s), applying
+`refineSiteType` and the tab's own reducers, El Segundo Sep 2026:
+
+| | his screen | recomputed |
+|---|---|---|
+| charged | $32,339 | **$32,339** |
+| instant-book | 27% · $2,093 | **27% · $2,093** |
+| managed | 73% · $30,246 | **73% · $30,246** |
+| active sites | 67 | **67** |
+| bookings | 4,572 | 4,578 |
+| canceled | 277 | 278 |
+| guests | 1,254 | 1,257 |
+
+**Money and site count identical; the three counts differ by 3-6 because
+September is an OPEN window** — his page rendered from a cache entry read before
+mine, and the new rows are $0 instant lane slots, which is why the money did not
+move. Never diff an open window against itself across two reads; that is the
+Clarksville lesson, and it is the whole explanation here.
+
+Also settled: **every row that carries a head count carries exactly 1**, and
+`guests == the instant-book count` is not a coincidence — the 1,257 rows with a
+head count ARE the instant bookings, and the 3,321 managed ones record none.
+
+**Two real defects, both found by doing this rather than by review:**
+
+- **"Revenue by site" printed "A" and "B" twelve times.** Dan: *"this metric
+  missing the full court/site lane names."* Four tabs each carried their own
+  `f.split(' - ').slice(1)` — drop everything before the FIRST ' - ' — which
+  assumes every site is named `"<location> - <site>"`. El Segundo's lanes are
+  named `North Lane 7 - A` and `Inst Lane 4-2" Depth (25Y) - A`, so the rule
+  kept the SUBLANE LETTER and threw the lane away. **And it was not only a
+  label:** Camping, Outdoor and Fields build `location + '||' + site` from that
+  value as a site's IDENTITY, so two lanes at one location whose names end the
+  same way merged into one row with their bookings, hours and revenue added
+  together — a location with twenty lanes counted as two sites. One module-scope
+  `siteLabel(facility, location)` now, trimming a leading copy of the row's
+  **own** location and nothing else. Guessing a prefix from a separator cannot
+  work; the row carries its location, so test against that.
+- **"Avg Party 0.3 guests per booking."** Arithmetically right and reads as
+  broken: `guests / bookings` over a denominator where 73% of rows cannot
+  answer. The honest figure is **1.0, on the 1,257 of 4,578 that report one**.
+  Same rule as `hasAbsent` — a denominator must not include rows that cannot
+  answer — and **the Outdoor and Fields tabs had always done it correctly**, so
+  the Summary and Aquatics tabs were disagreeing with a right answer already in
+  the file. All three tiles now say *"where recorded (N of M)"*, because 1.0 is
+  as opaque as 0.3 without it.
+
+**And the rebuild moves his numbers slightly, in the correct direction:** under
+the inclusion rule a `pool`-typed site OUTSIDE the ticked locations counts,
+where the old narrowing design excluded it. Measured: **68 sites and $32,595**,
+the difference being Hilltop Park's *Hilltop Pool Semi-Private Party* — 1
+booking, $256. Pools always count, so that is the answer; worth knowing because
+the site total changes by one the day this ships.
+
+Guards: `aquatics-scope.spec.js` 52 → **68 assertions**, lifting and RUNNING
+`siteLabel` over the real El Segundo names. Mutation-tested: the split rule
+restored (which reproduces Dan's *"A"* exactly), and Avg Party back over all
+bookings — both fail by name.
 
 ### CLOSED — nothing further gets built on courts-as-pool-lanes (Dan, 2026-09-01)
 
@@ -2144,7 +2421,15 @@ is to not deepen the workaround.
 
 Reasoning kept below, because it is measured and would otherwise be re-derived.
 
-### PARKED → NOT BUILDING: per-org site scoping for a report tab
+### PARKED → NOT BUILDING → BUILT: per-org site scoping for a report tab
+
+**SUPERSEDED 2026-09-02 by *"Aquatics scope is CONFIGURATION now"* above** — Dan
+reversed the call and the location/site picker described here exists, as the
+`aquaticsScope` tree. Kept because the MEASUREMENTS below are what chose a
+location picker over a site-type list, and they are still the argument. Read the
+newer section first; the words "never started" in this one are history.
+
+#### The original write-up
 
 Dan: *"since the spec for sites on the aquatic report is pretty org specific …
 why not make this a facility report setting"*, then refined it to *"which

@@ -112,8 +112,7 @@ try {
       aquatics: { label: 'Pool / Aquatics', types: ['pool'], scope: [] },
       fields:   { label: 'Fields',          types: ['field'], scope: [] },
     };
-    function setup(extra, scope) {
-      VERT_CONFIG.aquatics.types = ['pool'].concat(extra || []);
+    function setup(scope) {
       VERT_CONFIG.aquatics.scope = scope || [];
       Object.keys(VERT_CONFIG).forEach(k => {
         const v = VERT_CONFIG[k];
@@ -134,42 +133,129 @@ if (match) {
   const lane  = { "Site Type": "court", Location: "Urho Saari Swim Stadium", Facility: "Lane 3 - B" };
   const court = { "Site Type": "court", Location: "Recreation Park Courts",  Facility: "Tennis 1" };
 
-  VC([], []);
+  // THE SCOPE IS AN INCLUSION, NOT A NARROWING. Dan: "the goal here is to
+  // choose locations and sites that are NOT aquatics, to include in the
+  // aquatics tab." So pools are unconditional and everything else is opt-in by
+  // NAME — there is no type list any more, because a type cannot separate El
+  // Segundo's 67 swim lanes from the 17 tennis courts typed the same way.
+  VC([]);
   eq(match(pool, "aquatics"), true, "POOLS ALWAYS COUNT — that is the platform default and not a setting");
   eq(match(lane, "aquatics"), false,
      "an unconfigured org counts no courts, whatever they are called — this is the whole rule");
   eq(match(court, "aquatics"), false, "...including its real courts");
 
-  VC(["court"], []);
-  eq(match(lane, "aquatics"), true, "with `court` configured, the org's lanes count");
-  eq(match(pool, "aquatics"), true, "...and its pools still do");
-  eq(match(court, "aquatics"), true,
-     "...but so do its TENNIS courts, which is exactly why the location scope exists");
+  VC(["Urho Saari Swim Stadium"]);
+  eq(match(lane, "aquatics"), true, "naming the swim stadium brings its court-typed lanes in");
+  eq(match(court, "aquatics"), false,
+     "...and Recreation Park's tennis courts stay OUT, which no per-type rule could manage");
+  eq(match(pool, "aquatics"), true, "...while the pool at that location still counts");
 
-  VC(["court"], ["Urho Saari Swim Stadium"]);
-  eq(match(lane, "aquatics"), true, "scoped to the swim stadium, the lanes count");
-  eq(match(court, "aquatics"), false, "...and Recreation Park's tennis courts drop out");
-  eq(match(pool, "aquatics"), true, "...while the pool at that location stays");
-
-  VC(["court"], ["Lane 3 - B"]);
+  VC(["Lane 3 - B"]);
   eq(match(lane, "aquatics"), true,
      "the scope matches a SITE name too — Dan asked to be able to name either");
+  eq(match(court, "aquatics"), false, "...and naming one site brings in that site alone");
 
-  VC(["court"], ["A Location That Was Renamed"]);
-  eq(match(lane, "aquatics"), false, "a scope that matches nothing does narrow to nothing...");
-  VC(["court"], []);
-  eq(match(lane, "aquatics"), true, "...but EMPTY MEANS EVERY LOCATION, never none");
+  // A SCOPE THAT MATCHES NOTHING TAKES NOTHING AWAY. Under the earlier
+  // narrowing design a renamed location emptied the tab; an inclusion cannot,
+  // because the pools were never gated on it.
+  VC(["A Location That Was Renamed"]);
+  eq(match(pool, "aquatics"), true, "a stale scope entry cannot empty the tab...");
+  eq(match(lane, "aquatics"), false, "...it simply adds nothing");
+  VC([]);
+  eq(match(pool, "aquatics"), true, "EMPTY MEANS POOLS ONLY — never 'every location'");
+  eq(match(lane, "aquatics"), false, "...which is the same thing said the other way round");
 
   eq(match({ "Site Type": "field", Location: "x", Facility: "y" }, "fields"), true,
      "other verticals are unaffected");
   eq(match(pool, "nosuchtab"), false, "an unknown vertical matches nothing rather than throwing");
 }
 
+// ── 5. siteLabel — the site's name, not the tail of it ─────────────────────
+// Dan, on the Aquatics tab's "Revenue by site": *"this metric missing the full
+// court/site lane names"* — all twelve bars read "A" or "B".
+let label = null;
+try {
+  label = new Function(liftFn(src, "siteLabel") + "\nreturn siteLabel;")();
+  pass++;
+} catch (e) { failures.push("siteLabel THREW when lifted: " + e.message); }
+
+if (label) {
+  // Real El Segundo site names, from card 19570 over Sep 2026.
+  eq(label("North Lane 7 - A", "El Segundo Wiseburn Aquatic Center"), "North Lane 7 - A",
+     "A LANE KEEPS ITS WHOLE NAME — the old rule dropped everything before the first ' - ' and left just \"A\"");
+  eq(label("Lane 6 - A", "El Segundo Wiseburn Aquatic Center"), "Lane 6 - A", "...including the short form");
+  eq(label('Inst Lane 4-2" Depth (25Y) - A', "El Segundo Wiseburn Aquatic Center"),
+     'Inst Lane 4-2" Depth (25Y) - A', "...and one with a quote and a hyphen in it");
+  eq(label("Hilltop Pool Semi-Private Party", "Hilltop Park"), "Hilltop Pool Semi-Private Party",
+     "a name with no separator at all is untouched");
+
+  // The one trim it DOES make: the site's own location, and only as a prefix.
+  eq(label("Riverside Park - Oak Pavilion", "Riverside Park"), "Oak Pavilion",
+     "a leading copy of the site's OWN location is trimmed — that is what the old rule was reaching for");
+  eq(label("Lakeview Park - Oak Pavilion", "Riverside Park"), "Lakeview Park - Oak Pavilion",
+     "...but ANOTHER location's name is not, because it is part of this site's name");
+  eq(label("Riverside Park", "Riverside Park"), "Riverside Park",
+     "a site named exactly like its location keeps its name rather than going blank");
+  eq(label("", "Riverside Park"), "\u2014", "an empty name renders a dash, never the location");
+  eq(label(null, null), "\u2014", "...and so does a missing one");
+}
+
+// IT IS ALSO AN IDENTITY, which is why the old rule was more than a label bug:
+// three tabs build `location + '||' + site` from it, so two lanes at one
+// location whose names ended the same way merged into ONE row and had their
+// bookings, hours and revenue added together.
+ok(!/split\('  ?- '\)/.test(code) && !/\.split\(' - '\)/.test(code),
+   "no tab derives a site name by splitting on ' - ' any more");
+ok(!/shortSite/.test(code),
+   "the four local copies of that rule are gone — one helper, or they drift");
+eq((code.match(/siteLabel\(/g) || []).length - 1, 8,
+   "EIGHT callers read the one helper: the aquatics revenue bars plus the per-site and per-type/location rollups on Camping, Outdoor and Fields");
+
+// ── 6. Avg Party is averaged over the bookings that CAN answer ──────────────
+// Measured at El Segundo (Sep 2026, card 19570): 1,257 of 4,578 pool bookings
+// carry a head count and every one of them is exactly 1, so `guests / bookings`
+// printed "0.3 guests per booking" — arithmetically right and read as broken.
+ok(!/const avgParty\s*=\s*bookings \? guests \/ bookings/.test(code),
+   "no surface divides guests by ALL bookings — a denominator may not include rows that cannot answer");
+eq((code.match(/const parties\s+=\s+/g) || []).length, 4,
+   "all four tabs build the head-count subset — the Summary and Aquatics ones were added to match Outdoor and Fields, which always did");
+eq((code.match(/where recorded \(/g) || []).length, 3,
+   "...and every Avg Party tile says what it averaged over, or 1.0 is as opaque as 0.3 was");
+
 // ── the readers ────────────────────────────────────────────────────────────
 eq((code.match(/vertRowMatch\(/g) || []).length - 1, 5,
    "FIVE surfaces scope through the one predicate: the tab, the hours panel, the badge, the export, the note");
-ok(!/\['Site Type'\] === 'pool'/.test(code),
+// The SETTINGS panel legitimately asks a row whether it is a pool — that is how
+// it knows which sites to show locked — so the assertion is made over the page
+// WITHOUT that component. Testing the whole file would have to be deleted, and
+// deleting it is how the lane-hours panel got to hardcode 'pool' in the first
+// place.
+const codeNoPanel = (() => {
+  const at = code.indexOf("function AquaticsSettings(");
+  if (at < 0) throw new Error("AquaticsSettings not found — this assertion would be vacuous");
+  // SKIP THE PARAMETER LIST FIRST. `function AquaticsSettings({ rows }) {` —
+  // counting braces from the first `{` matches the DESTRUCTURED PARAMETER and
+  // cuts 33 characters instead of the component. Third instance of that in this
+  // repo; see the `reconcileFilterSelection` note in CLAUDE.md.
+  let pd = 0, j = code.indexOf("(", at);
+  for (; j < code.length; j++) {
+    if (code[j] === "(") pd++;
+    else if (code[j] === ")") { pd--; if (pd === 0) break; }
+  }
+  let depth = 0, i = code.indexOf("{", j);
+  for (; i < code.length; i++) {
+    if (code[i] === "{") depth++;
+    else if (code[i] === "}") { depth--; if (depth === 0) break; }
+  }
+  const cut = code.slice(0, at) + code.slice(i + 1);
+  if (cut.length > code.length - 2000)
+    throw new Error("the AquaticsSettings slice removed almost nothing — the assertion below would be vacuous");
+  return cut;
+})();
+ok(!/\['Site Type'\] === 'pool'/.test(codeNoPanel),
    "the lane-hours panel no longer hardcodes 'pool' — it used to, and it is the panel that carries the whole feature");
+ok(/\['Site Type'\] === 'pool'/.test(code),
+   "...and the settings panel DOES read it, to show pool sites locked rather than hiding them");
 ok(!/new Set\(vert\.types\)/.test(code) && !/new Set\(VERT_CONFIG\[[a-z]+\]\.types\)/.test(code),
    "no surface builds its own type set — that is how the facility Summary disagreed with itself for a week");
 ok(/data-aq-scope/.test(code) && /function vertScopeNote\(/.test(code),
@@ -223,7 +309,7 @@ ok(/settings-unlock/.test(code),
 // ── 5. the server schema ───────────────────────────────────────────────────
 let R = null;
 try {
-  const from = server.indexOf("const AQUATICS_EXTRA_TYPES");
+  const from = server.indexOf("const REPORT_SETTINGS_SCHEMA");
   const to   = server.indexOf("function epactIsVerified");
   // The roster half of the schema references constants declared further up
   // server.js; this spec is about the facility half, so they are stubbed rather
@@ -232,25 +318,21 @@ try {
     "const ROSTER_COL_DEFAULTS = {}, ROSTER_HIDEABLE = [], EPACT_FIELD_CATALOGUE = [['a']],"
     + " EPACT_VERIFIED_COLUMNS = ['a'], REPORT_TTL_FLOOR_MIN = 30, REPORT_TTL_CEILING_MIN = 1440;\n"
     + server.slice(from, to)
-    + "\nreturn { AQUATICS_EXTRA_TYPES, REPORT_SETTINGS_SCHEMA, reportSettingsDefaults, normalizeReportSettings };")(
+    + "\nreturn { REPORT_SETTINGS_SCHEMA, reportSettingsDefaults, normalizeReportSettings };")(
       { join: (...a) => a.join("/") }, "/tmp", () => ({}), () => {});
   pass++;
 } catch (e) { failures.push("the settings registry THREW when lifted: " + e.message); }
 
 if (R) {
   const d = R.reportSettingsDefaults("facility");
-  eq(JSON.stringify(d.aquaticsExtraTypes), "[]",
+  eq(JSON.stringify(d.aquaticsScope), "[]",
      "THE DEFAULT IS POOLS ONLY — an unconfigured org sees exactly what it saw before any of this existed");
-  eq(JSON.stringify(d.aquaticsScope), "[]", "...and every location");
-  ok(!R.AQUATICS_EXTRA_TYPES.includes("pool"),
-     "`pool` is not offered as an extra type: it is always included and is not a choice");
+  eq(Object.keys(R.REPORT_SETTINGS_SCHEMA.facility).join(","), "aquaticsScope",
+     "the scope is the ONLY facility setting: `aquaticsExtraTypes` is gone, and a registered setting nothing reads is the dead end this repo keeps writing down");
 
   const n = (body) => R.normalizeReportSettings("facility", body);
-  eq(JSON.stringify(n({ aquaticsExtraTypes: ["court"] }).settings.aquaticsExtraTypes), '["court"]',
-     "a real site type is accepted");
-  ok(n({ aquaticsExtraTypes: ["pool"] }).dropped.length === 1,
-     "...and `pool` is refused, because it is not an extra");
-  ok(n({ aquaticsExtraTypes: ["nonsense"] }).dropped.length === 1, "...as is a type that does not exist");
+  ok(n({ aquaticsExtraTypes: ["court"] }).dropped.length === 1,
+     "...so the retired type list is REFUSED rather than quietly stored");
 
   const s1 = n({ aquaticsScope: ["  Urho Saari  ", "Urho Saari", "", "   "] }).settings.aquaticsScope;
   eq(JSON.stringify(s1), '["Urho Saari"]',
@@ -262,8 +344,10 @@ if (R) {
      "...and the list is bounded in count as well as in item length");
   ok(n({ aquaticsScope: "not-a-list" }).dropped.length === 1, "a non-list is refused rather than coerced");
 }
-ok(/AQUATICS_EXTRA_TYPES/.test(srv) && /aquaticsScope:\s*\{ kind: "strings"/.test(srv),
-   "the schema registers both controls");
+ok(/aquaticsScope:\s*\{ kind: "strings"/.test(srv),
+   "the scope is free text, because the catalogue is per-org and lives in the feed");
+ok(!/AQUATICS_EXTRA_TYPES/.test(srv.replace(/^\s*\/\/.*$/gm, "")),
+   "the type catalogue is gone from the server, not merely unread");
 ok(/settings: reportSettings\(slug, "facility"\)/.test(srv),
    "the hub INJECTS the settings rather than fetching them — they decide which site types the tab counts at all");
 

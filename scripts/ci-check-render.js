@@ -1275,6 +1275,34 @@ const tickSeason = async (page, value) => {
   await new Promise(r => setTimeout(r, 400));
 };
 
+// Opening the aquatics scope sheet — six cases below drive it, and the sheet is
+// portalled to <body>, so waiting on the sheet rather than the gear is what
+// proves it left the toolbar.
+const openPanel = async page => {
+  await page.click("[data-aqrs-open]");
+  await page.waitForSelector("[data-aqrs-sheet]", { timeout: 20000 });
+};
+
+// Expand a location that actually HAS a pickable (non-pool) site, and return its
+// name. Keying on "the first row" is what broke two of these cases the moment
+// pool locations were sorted to the top — an all-pool location has nothing to
+// tick, so a case that clicks it is asserting against the wrong row.
+const openPickableLoc = async page => {
+  const names = await page.evaluate(() => Array.from(
+    document.querySelectorAll("[data-aqrs-loc]"), b => b.getAttribute("data-aqrs-loc")));
+  for (const n of names) {
+    const sel = `[data-aqrs-loc="${n.replace(/"/g, '\\"')}"]`;
+    await page.click(sel);
+    await page.waitForSelector("[data-aqrs-site]", { timeout: 20000 });
+    const open = await page.evaluate(
+      l => document.querySelectorAll("[data-aqrs-site]:not(.locked)").length > 0
+           && !!document.querySelector(`[data-aqrs-locbox="${l.replace(/"/g, '\\"')}"]`), n);
+    if (open) return n;
+    await page.click(sel);   // collapse and try the next one
+  }
+  throw new Error("no location in the tree has a pickable site — the case would prove nothing");
+};
+
 const CASES = [
   { name: "facilities · camping",  path: "/{org}/facilities?tab=camping", needs: ".camp-cal .cc-hd" },
 
@@ -1923,63 +1951,136 @@ const CASES = [
       if (where !== "ok") throw new Error("the aquatics gear is " + where);
     } },
 
-  // ── The panel itself, opened ─────────────────────────────────────────────
-  // Dan, on the live page: "this settings page doesn't seem to be working
-  // correctly." Two faults, both of which a browser is the only witness to.
+  // ── The panel: a location/site tree ──────────────────────────────────────
+  // Dan: "the goal here is to choose locations and sites that are NOT aquatics,
+  // to include in the aquatics tab." Type-as-a-filter was the wrong shape; this
+  // is an inclusion tree, and these cases replace the three that keyed on the
+  // old type list.
+  // The tree is built from the FEED, so a location can never be unpickable —
+  // and the counts must be real. This is where "0 sites in view" showed up.
   //
-  // 1. EVERY TYPE READ "0 SITES IN VIEW", because the Toolbar was never handed
-  //    a `rows` prop — the panel moved into the toolbar and its data did not.
-  { name: "facilities · the scope panel counts the sites in view",
+  // `Wiseburn Center` is the load-bearing name: nothing about it or its sites is
+  // aquatic, so it is exactly the location an admin has to be able to find and
+  // tick. And at rest — nothing ticked — the tally must equal the POOL sites and
+  // nothing else, which is the claim the panel makes on screen.
+  { name: "facilities · the scope tree lists the org's locations",
     path: "/{org}/facilities?tab=aquatics&admin=" + RENDER_ADMIN_KEY,
     needs: "[data-aqrs-open]",
     act: async page => {
-      await page.click("[data-aqrs-open]");
-      await page.waitForSelector("[data-aqrs-sheet]", { timeout: 20000 });
-      const n = await page.evaluate(() => {
-        const row = document.querySelector('[data-aqrs-type="court"]');
-        const b = row && row.querySelector("[data-aqrs-count]");
-        return b ? Number(b.getAttribute("data-aqrs-count")) : -1;
-      });
-      if (!(n > 0)) throw new Error('the Courts row counted ' + n + ' sites in view; the fixture has several');
+      await openPanel(page);
+      const seen = await page.evaluate(() => Array.from(
+        document.querySelectorAll("[data-aqrs-loc]"), t => t.getAttribute("data-aqrs-loc")));
+      if (!seen.length) throw new Error("the tree listed no locations");
+      if (!seen.some(n => /Wiseburn Center/.test(n)))
+        throw new Error("the non-aquatic location is missing from the tree: " + seen.join(" | "));
+      // Expand everything so the locked sites are countable.
+      for (const l of await page.$$("[data-aqrs-loc]")) await l.click();
+      const { total, locked } = await page.evaluate(() => ({
+        total: Number(document.querySelector("[data-aqrs-counted]").getAttribute("data-aqrs-counted")),
+        locked: document.querySelectorAll("[data-aqrs-site].locked").length,
+      }));
+      if (!locked) throw new Error("the fixture has no pool site, so this case proves nothing");
+      if (total !== locked)
+        throw new Error(`at rest the tally must be the ${locked} pool site(s), and it read ${total}`);
     } },
 
-  // 2. THE ROWS RENDERED UPPERCASE, GREY AND STACKED, because the sheet was
-  //    inside `.toolbar`, whose own `label` rule sets text-transform, color and
-  //    flex-direction for the date captions. That is the season-menu bug
-  //    verbatim, reintroduced by moving the panel into the toolbar — so the
-  //    sheet is portalled onto <body> now, and this asserts it escaped.
+  // Expanding a location shows its individual sites — the whole ask.
+  { name: "facilities · a location expands to its sites",
+    path: "/{org}/facilities?tab=aquatics&admin=" + RENDER_ADMIN_KEY,
+    needs: "[data-aqrs-open]",
+    act: async page => {
+      await openPanel(page);
+      const before = await page.evaluate(() => document.querySelectorAll("[data-aqrs-site]").length);
+      await page.click("[data-aqrs-loc]");
+      await page.waitForSelector("[data-aqrs-site]", { timeout: 20000 });
+      const after = await page.evaluate(() => document.querySelectorAll("[data-aqrs-site]").length);
+      if (!(after > before)) throw new Error("expanding a location showed no sites");
+    } },
+
+  // TICKING ONE SITE MAKES ITS LOCATION PARTIAL. A partly-picked location that
+  // read as fully in or fully out is the thing three states exist to prevent.
+  { name: "facilities · one site makes its location partial",
+    path: "/{org}/facilities?tab=aquatics&admin=" + RENDER_ADMIN_KEY,
+    needs: "[data-aqrs-open]",
+    act: async page => {
+      await openPanel(page);
+      const loc = await openPickableLoc(page);
+      // A location with only ONE pickable site goes straight to 'on', so the
+      // partial state needs at least two.
+      const n = await page.evaluate(() => document.querySelectorAll("[data-aqrs-site]:not(.locked)").length);
+      if (n < 2) throw new Error(`"${loc}" has ${n} pickable site(s) — 'some' is unreachable, so this case would prove nothing`);
+      await page.click("[data-aqrs-site]:not(.locked)");
+      await page.waitForSelector('[data-aqrs-locbox] [data-aqrs-box="some"]', { timeout: 20000 });
+    } },
+
+  // Pool sites are shown LOCKED, not hidden — leaving them out is what makes an
+  // admin wonder whether the pool is in the number.
+  { name: "facilities · pool sites are shown but locked",
+    path: "/{org}/facilities?tab=aquatics&admin=" + RENDER_ADMIN_KEY,
+    needs: "[data-aqrs-open]",
+    act: async page => {
+      await openPanel(page);
+      const locs = await page.$$("[data-aqrs-loc]");
+      for (const l of locs) await l.click();
+      const locked = await page.evaluate(() =>
+        document.querySelectorAll('[data-aqrs-site].locked [data-aqrs-box="lock"]').length);
+      if (!locked) throw new Error("no pool site rendered as locked");
+    } },
+
+  // UNTICKING ONE SITE OF A WHOLE-LOCATION PICK HAS TO DROP THE COUNT. A whole
+  // location is stored as the LOCATION NAME, so unticking a site under it does
+  // nothing unless the pick is first expanded into its sites — and the tally is
+  // the only place that shows it: the box goes unticked either way.
+  { name: "facilities · unticking one site of a whole location drops the count",
+    path: "/{org}/facilities?tab=aquatics&admin=" + RENDER_ADMIN_KEY,
+    needs: "[data-aqrs-open]",
+    act: async page => {
+      await openPanel(page);
+      const loc = await openPickableLoc(page);
+      await page.click(`[data-aqrs-locbox="${loc.replace(/"/g, '\\"')}"]`);
+      await page.waitForSelector('[data-aqrs-save][data-aqrs-dirty="1"]', { timeout: 20000 });
+      const read = () => page.evaluate(() =>
+        Number(document.querySelector("[data-aqrs-counted]").getAttribute("data-aqrs-counted")));
+      const whole = await read();
+      const pickable = await page.$$("[data-aqrs-site]:not(.locked)");
+      if (!pickable.length) throw new Error("this location has no unlockable site, so the case proves nothing");
+      await pickable[0].click();
+      const after = await read();
+      if (!(after === whole - 1))
+        throw new Error(`unticking one site of ${whole} must leave ${whole - 1} counted, and it read ${after}`);
+    } },
+
+  // The sheet escapes .toolbar, whose own `label` rule would render these rows
+  // uppercase, grey and stacked. The season-menu bug, one component over.
   { name: "facilities · the scope panel escapes the toolbar's label rule",
     path: "/{org}/facilities?tab=aquatics&admin=" + RENDER_ADMIN_KEY,
     needs: "[data-aqrs-open]",
     act: async page => {
-      await page.click("[data-aqrs-open]");
-      await page.waitForSelector("[data-aqrs-sheet]", { timeout: 20000 });
+      await openPanel(page);
+      await openPickableLoc(page);
       const bad = await page.evaluate(() => {
         const sheet = document.querySelector("[data-aqrs-sheet]");
         if (sheet.closest(".toolbar")) return "the sheet is still inside .toolbar";
-        const row = sheet.querySelector('[data-aqrs-type="court"]');
+        const row = sheet.querySelector("[data-aqrs-site]");
         const cs = getComputedStyle(row);
-        if (cs.textTransform === "uppercase") return "the rows are UPPERCASE";
-        if (cs.flexDirection === "column") return "the rows are STACKED";
+        if (cs.textTransform === "uppercase") return "the site rows are UPPERCASE";
+        if (cs.flexDirection === "column") return "the site rows are STACKED";
         return null;
       });
       if (bad) throw new Error(bad);
     } },
 
-  // Dan: "can we get a 'save' button on that settings page. don't love the
-  // 'auto save', cause it actually didn't." There WAS a Save button — the sheet
-  // was inside .toolbar, whose `.toolbar button` rule outranks `.rs-save`, so it
-  // rendered as unreadable faint text and read as inert. Now it is gated on
-  // there being something to save, and says which state it is in.
+  // Save is off with nothing to save, and on after a tick.
   { name: "facilities · Save is off until something changes",
     path: "/{org}/facilities?tab=aquatics&admin=" + RENDER_ADMIN_KEY,
     needs: "[data-aqrs-open]",
     act: async page => {
-      await page.click("[data-aqrs-open]");
+      await openPanel(page);
       await page.waitForSelector('[data-aqrs-save][data-aqrs-dirty="0"]', { timeout: 20000 });
-      const off = await page.evaluate(() => document.querySelector("[data-aqrs-save]").disabled);
-      if (!off) throw new Error("Save is offered with nothing to save");
-      await page.click('[data-aqrs-type="court"] input');
+      if (!(await page.evaluate(() => document.querySelector("[data-aqrs-save]").disabled)))
+        throw new Error("Save is offered with nothing to save");
+      const loc = await openPickableLoc(page);
+      await page.click(`[data-aqrs-locbox="${loc.replace(/"/g, '\\"')}"]`);
       await page.waitForSelector('[data-aqrs-save][data-aqrs-dirty="1"]', { timeout: 20000 });
       const on = await page.evaluate(() => {
         const b = document.querySelector("[data-aqrs-save]");
@@ -1987,18 +2088,6 @@ const CASES = [
                && b.textContent.trim() === "Save";
       });
       if (!on) throw new Error("after a tick, Save must be enabled, blue and read 'Save'");
-    } },
-
-  // The scope sentence still belongs before the figures it qualifies.
-  { name: "facilities · the aquatics scope is stated above the numbers", path: "/{org}/facilities?tab=aquatics",
-    needs: "[data-aq-scope]",
-    act: async page => {
-      const ok = await page.evaluate(() => {
-        const bar = document.querySelector("[data-aq-scope]");
-        const kpi = document.querySelector(".sum-cards");
-        return !!(bar && kpi && (bar.compareDocumentPosition(kpi) & Node.DOCUMENT_POSITION_FOLLOWING));
-      });
-      if (!ok) throw new Error("the scope note must precede the KPI cards");
     } },
 
   // The CONFIGURED path is proven in aquatics-scope.spec.js, which lifts and
@@ -2473,6 +2562,44 @@ const CASES = [
   // column present on a pre-v6 feed.
   { name: "programs · no instructor CELL on a pre-v6 feed", path: "/{org}/programs?tab=summary",
     stubMode: "previnstr", needs: ".sum-prog-table", absent: "[data-prog-instrcell]" },
+
+  // Dan, on Essex Junction: "I think the autopay icon is supposed to be on
+  // here, no?" It was not — card 17295 v7's columns were mapped, rolled up per
+  // program, and displayed nowhere but the summary KPI. Keyed on the CELL's
+  // computed VALUE, because a column of dashes renders just as happily.
+  { name: "programs · the revenue table shows the auto-pay share", path: "/{org}/programs?tab=revenue",
+    needs: "[data-prog-autopay]",
+    act: async page => {
+      const v = await page.evaluate(() => Array.from(
+        document.querySelectorAll("[data-prog-autopay]"), t => t.getAttribute("data-prog-autopay")));
+      if (!v.some(x => x && Number(x) > 0))
+        throw new Error("no program row reported an auto-pay share: " + JSON.stringify(v.slice(0, 8)));
+    } },
+  // The Grand Total row has to grow with the column or every figure after it
+  // shifts a column left — the exact fault the last two column additions caused.
+  { name: "programs · the grand total keeps its columns", path: "/{org}/programs?tab=revenue",
+    needs: "[data-prog-autopaytotal]",
+    act: async page => {
+      const ok = await page.evaluate(() => {
+        var head = document.querySelectorAll(".prog-table thead th").length;
+        var foot = document.querySelectorAll(".prog-table tfoot td");
+        var span = 0;
+        foot.forEach(function (td) { span += td.colSpan || 1; });
+        return span === head;
+      });
+      if (!ok) throw new Error("the Grand Total row does not span the same number of columns as the header");
+    } },
+  // A program with no payment plans reads a dash, never a confident 0%.
+  { name: "programs · no auto-pay column on a pre-v7 feed", path: "/{org}/programs?tab=revenue",
+    stubMode: "prev7", needs: ".prog-table", absent: "[data-prog-autopay]" },
+  // A section row is ONE section. A dash there put a parent reading "2" over
+  // two rows reading nothing, which is what read as the numbers not matching.
+  { name: "programs · a section row counts itself", path: "/{org}/programs?tab=revenue",
+    needs: '[data-prog-seccount="1"]',
+    act: async page => {
+      await page.click("[data-prog-progrow] td");
+      await page.waitForSelector('[data-prog-seccount="1"]', { timeout: 20000 });
+    } },
 
   { name: "programs · the section rows name their location", path: "/{org}/programs?tab=revenue",
     act: p => openProgram(p, "Aquatic Exercise"), needs: '[data-prog-seccell-location="Urho Saari Swim Stadium"]' },
@@ -3067,7 +3194,8 @@ function waitForServer(started) {
   // Optional filter so one page's cases can be iterated without paying for all
   // of them: `node scripts/ci-check-render.js "facility ·"`
   const only = process.argv.slice(2).join(" ").trim();
-  for (const c of (only ? CASES.filter(c => c.name.includes(only)) : CASES)) {
+  const running = only ? CASES.filter(c => c.name.includes(only)) : CASES;
+  for (const c of running) {
     const page = await browser.newPage();
     // Per-case viewport: a layout bug that only appears in a narrow column
     // cannot be reproduced at the default width.
@@ -3184,5 +3312,7 @@ function waitForServer(started) {
     return stop(false, `${failures.length} of ${CASES.length} page(s) did not render`,
       failures.map((f, i) => `  ${i + 1}. ${f}`).join("\n"));
   }
-  stop(true, `${CASES.length} page(s) render with no uncaught errors`);
+  // Report what RAN, not CASES.length — a filtered run that matched nothing
+  // printed "238 page(s) render" and read as a full clean pass.
+  stop(true, `${running.length} page(s) render with no uncaught errors`);
 })();

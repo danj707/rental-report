@@ -9073,9 +9073,8 @@ function sharedCardLoad(rt, overrideOrg, overrideTtlMin) {
   };
 }
 
-// Which site TYPES an org may fold into the Aquatics tab, beyond `pool`.
-//
-// DAN'S RULE, and the whole reason this is configuration rather than a guess:
+// DAN'S RULE, and the whole reason the Aquatics tab is configuration rather
+// than a guess:
 // "pools can be courts, but courts can never be pools." The hack is that a site
 // has to be typed `court` to be instant-bookable, so an org that wants a
 // self-bookable swim lane has no option but to lie about the type — El Segundo
@@ -9083,9 +9082,7 @@ function sharedCardLoad(rt, overrideOrg, overrideTtlMin) {
 // must not encode it: the DEFAULT is pools only, and an org that has done it
 // says so explicitly here.
 //
-// These are real court.type values. `pool` is deliberately absent — it is always
-// included and is not a choice.
-const AQUATICS_EXTRA_TYPES = ["court", "rink", "gym", "field", "room", "other"];
+// What an org says is NOT a site type, though — see `aquaticsScope` below.
 
 const REPORT_SETTINGS_SCHEMA = {
   roster: {
@@ -9116,17 +9113,18 @@ const REPORT_SETTINGS_SCHEMA = {
   // is the report type in REPORT_TYPES — `facilities` is the hub's path, not a
   // report, and the settings routes go through resolveOrg.
   facility: {
-    // Empty by default: pools only. An org that types its lanes `court` adds
-    // "court" here, and nothing about the platform changes for anyone else.
-    aquaticsExtraTypes: { kind: "columns", catalogue: AQUATICS_EXTRA_TYPES,
-                          min: 0, max: AQUATICS_EXTRA_TYPES.length, def: [] },
-    // Locations or site names the tab is restricted to. EMPTY MEANS EVERY ONE —
-    // the same rule as every other multi-select in this repo, and the safe
-    // direction: an org that renames a location gets its whole tab back rather
-    // than an empty one. Free text, because the values are per-org and the
-    // server has no list to validate against; the PANEL builds its options from
-    // the feed, so an option can never be unpickable.
-    aquaticsScope:      { kind: "strings", max: 200, maxLen: 200, def: [] },
+    // Locations or site names that count as aquatic ON TOP OF pools. Pools are
+    // always in and are not a setting; this is an INCLUSION, so EMPTY MEANS
+    // POOLS ONLY and an unconfigured org's tab is exactly what it always was.
+    //
+    // There WAS an `aquaticsExtraTypes` setting here (fold in whole site types)
+    // and it is deliberately gone: a type is too coarse to express what an org
+    // means. At El Segundo `court` brings 67 real swim lanes and 17 tennis and
+    // pickleball courts, and no per-type rule can separate them — only the org
+    // naming its own locations can. Free text, because the catalogue is per-org
+    // and lives in the feed; the PANEL builds its tree from the feed, so an
+    // option can never be unpickable.
+    aquaticsScope: { kind: "strings", max: 200, maxLen: 200, def: [] },
   },
 };
 
@@ -9769,7 +9767,6 @@ app.get("/:org/facilities", (req, res) => {
     adminKey: isReportSettingsAdmin(req) ? String(req.query.admin || "") : "",
     settingsMeta: {
       defaults: reportSettingsDefaults("facility"),
-      aquaticsTypeCatalogue: AQUATICS_EXTRA_TYPES,
     },
   };
   const html = require("fs").readFileSync(path.join(__dirname, "public", "facilities.html"), "utf8");
