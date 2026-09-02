@@ -1813,6 +1813,103 @@ for all 29 orgs. The mirror was rebuilt from the live card first, then edited.
 since 2026-08-22 cannot be ruled out from here — Metabase keeps revision history
 on the card if it needs checking.
 
+## Aquatics scope is CONFIGURATION now, and the lane guess is gone (2026-09-02)
+
+Dan, reversing the "build nothing further" call below: *"lets make this
+configurable. pools can be courts, but courts can never be pools. the 'hack' in
+using pools for courts is that orgs need a site to be instant bookable on the
+'courts' section, and ONLY courts show up there. So the default setting for the
+aquatics report tab is 'pools', but there is a configurable setting on that
+report to add in an additional site 'type'."*
+
+**`refineSiteType`'s lane branch is DELETED.** It recovered a court-typed swim
+lane from the site name plus an aquatic-sounding location — a guess that had to
+be right about every org on the platform from one regex, and that encoded a
+product capability gap into reporting. What replaces it is an org saying so.
+
+Two settings on the `facility` report (`REPORT_SETTINGS_SCHEMA`, which registered
+only `roster` before this):
+
+| setting | default | what it does |
+|---|---|---|
+| `aquaticsExtraTypes` | `[]` | site types folded into the tab **besides `pool`**. `pool` is not offered — it is always included and is not a choice. |
+| `aquaticsScope` | `[]` | locations or site names the tab is restricted to. **EMPTY MEANS EVERY ONE**, the same rule as every other multi-select here. |
+
+Measured at El Segundo before designing: **Wiseburn Aquatic Center 51 court-typed
+sites (48 lane-named), Urho Saari 16 (all 16), Recreation Park Courts 17 (0
+lanes)**. So `court` + those two locations is exactly right and the tennis courts
+stay out — which is the whole reason the location half exists alongside the type
+half.
+
+**The name branches STAY.** A site an org literally called "Pool 1" or "Aquatic
+Center Lap Area" is the org's own word, not our inference about a location.
+
+### FIVE surfaces scoped to aquatics, and one of them was hardcoded
+
+The tab, its lane-hours panel, the tab badge, the Excel export and the scope
+note. Four built their own `new Set(vert.types)`; the **lane-hours panel
+hardcoded `r['Site Type'] === 'pool'`**, so it would have reported eleven hours
+beside a tab reporting thousands. They all read `vertRowMatch(r, key)` now, and
+the type/scope Sets are built once per vertical rather than per row.
+
+**The gear is mounted on the EMPTY branch too.** An org whose lanes are all typed
+`court` has no pool bookings at all until it is configured, so a control only on
+the populated branch is a dead end for the one org that needs it.
+
+**`vertScopeNote()` states the scope on screen** — excluded is never hidden, and
+an admin looking at a narrowed tab must be able to see that it is narrowed.
+
+The settings sheet's CSS moved to **`public/report-settings.css`**, shared with
+the roster. Copying a hundred lines of it into a second page is how two dialogs
+start looking like different features — the `.season-*` → `.mpick-*` lesson.
+
+### A `strings` kind, and a validator that stopped discarding silently
+
+`aquaticsScope` is free text, because the catalogue is per-org and lives in the
+feed. It is bounded on every axis a stored list can grow along — count (200),
+item length (200), duplicates — and **blanks are dropped**, since an empty entry
+can never match a location and would sit in the panel looking like a bug.
+
+The `columns` kind now **reports** an entry that is not in its catalogue. It used
+to be caught only by the `min` check, so a list with a floor of zero silently
+binned a bad value and answered ok — the exact thing that route's own comment
+says must not happen.
+
+### Guards
+
+`scripts/aquatics-scope.spec.js` (**47 assertions, in CI**), replacing
+`aquatics-lanes.spec.js`. It LIFTS AND RUNS `refineSiteType` and `vertRowMatch`,
+and the load-bearing assertion is that **the guess cannot come back**: a
+court-typed "North Lane 1 - A" at "El Segundo Wiseburn Aquatic Center" stays a
+court.
+
+**A render case that quietly stopped testing what it claimed.** The three lane
+cases kept passing after the branch was removed, and it took a bisect to find
+why: the fixture builds `Facility` as `"<location> - <site>"`, so those rows say
+"Aquatic" in their *name* and are recovered by the name branch. They are the
+hour-math guard and nothing more. `Lap Lane 7` at `Wiseburn Center` — no aquatic
+word anywhere — is the discriminating row, and `facilities · an unconfigured org
+counts no courts` is the case that fails if anyone reinstates the guess.
+Generalise it: *when you delete the thing a test was written for, check the test
+still fails without it.*
+
+**The configured path is spec-covered, not render-covered**, and deliberately:
+driving it in a browser needs the server's settings store changed mid-run, and
+`readReportSettingsStore()` memoises on first read, so a file written behind the
+server's back is never seen.
+
+**Two sandbox traps, both of which cost real time here:**
+
+- **`pkill -f "node .*server.js"` kills this session's own harness**, and the
+  symptom is every subsequent command exiting 144 with no output — which reads
+  exactly like the render check crashing. Sweep `/proc/*/cmdline` for
+  `rental-report/server.js` instead.
+- **`directors-facilities.spec.js` threw before asserting anything**, because its
+  slice of `facilities.html` now runs past `VERT_CONFIG`, which reads the
+  injected aquatics settings declared above the slice. Same shape as the
+  `alertEnabled` reference that left `email-slack-notify.spec.js` dead for
+  months. A slice that grows can reach past its own inputs.
+
 ### CLOSED — nothing further gets built on courts-as-pool-lanes (Dan, 2026-09-01)
 
 Dan, after walking through the lane classification: *"lets skip 2 for now, since

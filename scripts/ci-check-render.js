@@ -116,9 +116,16 @@ function outdoorRows() {
   push("North Lane 1 - A", "court", "Wiseburn Aquatic Center", d(9), "06:00am", "09:00am", 1, 1, "", 90, 8);
   push("North Lane 1 - A", "court", "Wiseburn Aquatic Center", d(8), "06:00am", "09:00am", 1, 1, "", 90, 8);
   push("North Lane 2 - B", "court", "Wiseburn Aquatic Center", d(8), "06:00am", "08:00am", 1, 1, "", 60, 6);
-  // A road-named court at a NON-aquatic location — must stay a court, or the
-  // lane branch has lost its guards and this row lands in the pool totals.
+  // A road-named court at a NON-aquatic location — must stay a court.
   push("Johnson Lane Tennis Court", "court", "Johnson Lane Park", d(8), "06:00am", "09:00am", 1, 1, "", 90, 4);
+  // ── A court-typed lane with NO aquatic word anywhere ────────────────────
+  // The three rows above are recovered by refineSiteType's NAME branch, because
+  // the fixture builds Facility as "<location> - <site>" and their location says
+  // "Aquatic". That makes them useless for testing the per-org scope: they reach
+  // the tab either way. THIS one is the discriminating row — nothing in its name
+  // or its location is aquatic, so it counts only when the org has configured
+  // `court` as an aquatics type. 2h.
+  push("Lap Lane 7", "court", "Wiseburn Center", d(8), "06:00am", "08:00am", 1, 1, "", 40, 4);
   return rows;
 }
 
@@ -1864,6 +1871,13 @@ const CASES = [
   // 3h + 3h + 2h = 8 lane hours over 3 bookings on 2 lanes. The Johnson Lane
   // TENNIS court is 3 more hours at a non-aquatic location: if it were counted
   // this reads 11 and 3 lanes, so the number itself is the guard.
+  //
+  // WHAT THESE THREE ACTUALLY PROVE, since the lane branch was removed: their
+  // rows reach the tab through refineSiteType's NAME branch, because the fixture
+  // builds Facility as "<location> - <site>" and the location says "Aquatic".
+  // That is the org's own word and is still recovered. They are the hour-math
+  // guard — coverage not start times, multi-day excluded — and NOT a guard on
+  // the per-org scope. `Lap Lane 7` is that, in the two cases below.
   { name: "facilities · lane hours", path: "/{org}/facilities?tab=aquatics",
     needs: "[data-aq-hours=\"8\"]" },
   { name: "facilities · lanes in use", path: "/{org}/facilities?tab=aquatics",
@@ -1874,6 +1888,18 @@ const CASES = [
   // here but changes the moment a multi-day row leaks in.
   { name: "facilities · lane heat is coverage", path: "/{org}/facilities?tab=aquatics",
     needs: "[data-aq-timed=\"3\"]" },
+
+  // ── The per-org aquatics scope ───────────────────────────────────────────
+  // "Pools can be courts, but courts can never be pools" (Dan). `Lap Lane 7` is
+  // typed `court` and carries no aquatic word anywhere, so an UNCONFIGURED org
+  // must not count it: 8 hours, not 10. This is the case that fails if anyone
+  // reinstates the name-and-location guess.
+  { name: "facilities · an unconfigured org counts no courts", path: "/{org}/facilities?tab=aquatics",
+    needs: "[data-aq-hours=\"8\"]" },
+  // The CONFIGURED path is proven in aquatics-scope.spec.js, which lifts and
+  // RUNS vertRowMatch over all four combinations of extra types and scope. It is
+  // deliberately not a render case: driving it in the browser needs the server's
+  // settings store changed mid-run, and that store is memoised on first read.
   { name: "memberships · residency split", path: "/{org}/memberships",
     needs: "[data-mb-res-count=\"6\"]" },
   { name: "memberships · residency non-resident count", path: "/{org}/memberships",
@@ -2950,7 +2976,10 @@ function waitForServer(started) {
     STUB_MODE = c.stubMode || "";
     // Optional: set up the BROWSER before the first navigation. A cookie set in
     // `act` is set too late — the page it decides has already been served.
-    if (c.pre) await c.pre(page);
+    // Hooks get the resolved org: a case that writes SERVER state (a settings
+    // record, a flag) has to key it by slug, and the slug is not known at
+    // case-definition time.
+    if (c.pre) await c.pre(page, { org, dataDir, token });
     const url = `http://127.0.0.1:${PORT}` + c.path.replace("{org}", org)
       + (c.path.includes("?") ? "&" : "?") + "token=" + encodeURIComponent(token);
     let found = false, bodyLen = 0;
@@ -3007,6 +3036,10 @@ function waitForServer(started) {
       } catch (_) {}
     }
     await page.close();
+    // Server state a case changed is restored here, whether it passed or not —
+    // a case that leaves a settings record behind silently reconfigures every
+    // case after it.
+    if (c.after) { try { await c.after({ org, dataDir, token }); } catch (_) {} }
 
     if (errs.length) failures.push(`${c.name}: ${errs.length} uncaught error(s)\n      ` + errs.slice(0, 3).join("\n      "));
     else if (!found) failures.push(`${c.name}: rendered no "${c.needs}" (body text ${bodyLen} chars) — the page came up blank`);
