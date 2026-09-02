@@ -1525,10 +1525,18 @@ numbers.
 whatever the tab shows, so an org with no pool bookings reaches the setting
 without the special case that branch existed for.
 
-Guard: the `facilities · the aquatics gear is above the numbers` render case
-keys on **document order** via `compareDocumentPosition`, because "a gear
-rendered" passes just as happily on the version nobody could find. Verified to
-fail when the gear is taken out of the bar.
+Guards: `facilities · the aquatics gear is last in the toolbar` checks the gear's
+POSITION in the bar, and `facilities · the aquatics scope is stated above the
+numbers` keeps the scope sentence ahead of the figures. Both key on placement
+rather than presence, because "a gear rendered" passes just as happily on the
+version nobody could find; mutation-tested against the gear leaving the toolbar
+and against it not being last.
+
+**And the case was itself wrong for one revision.** It asserted the gear sat in
+the SCOPE BAR — true of the first fix, stale the moment the gear moved to the
+toolbar — and it was CI that caught it, after I had told Dan a full render run
+was clean. That run predated the move. *When you move a control, move the case
+that pins where it is, and re-run after the last change rather than before it.*
 
 ### THE PROGRAM TABLE PRINTED A DASH FOR EVERY INSTRUCTOR
 

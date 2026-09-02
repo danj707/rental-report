@@ -1896,22 +1896,43 @@ const CASES = [
   // reinstates the name-and-location guess.
   { name: "facilities · an unconfigured org counts no courts", path: "/{org}/facilities?tab=aquatics",
     needs: "[data-aq-hours=\"8\"]" },
-  // The gear must be ABOVE the numbers. It shipped inside a footnote under the
-  // last panel, and Dan reported it missing from the live tab while it was
-  // rendering perfectly, four panels below the fold — the dead end this repo
-  // keeps writing down. Keyed on document ORDER, because "a gear rendered"
+  // THE GEAR GOES LAST IN THE TOOLBAR, upper right, "same as on every main page
+  // of every report" (Dan). It first shipped inside a footnote under the last
+  // panel and he reported it missing from the live tab while it was rendering
+  // perfectly, four panels below the fold — a control nobody can find is a
+  // control that does not exist. Keyed on POSITION, because "a gear rendered"
   // passes just as happily on the version nobody could find.
-  { name: "facilities · the aquatics gear is above the numbers", path: "/{org}/facilities?tab=aquatics",
+  //
+  // This case was itself wrong once: it asserted the gear sat in the scope bar,
+  // which is where it lived for one revision before the toolbar move, and CI
+  // caught the stale assertion. When you move a control, move the case that
+  // pins where it is.
+  { name: "facilities · the aquatics gear is last in the toolbar", path: "/{org}/facilities?tab=aquatics",
+    needs: "[data-aqrs-open],[data-aqrs-locked],[data-aqrs-flagoff]",
+    act: async page => {
+      const where = await page.evaluate(() => {
+        const gear = document.querySelector("[data-aqrs-open],[data-aqrs-locked],[data-aqrs-flagoff]");
+        const bar = gear && gear.closest(".toolbar");
+        if (!bar) return "not in the toolbar";
+        // Last interactive thing in the bar — its own wrapper is the final child.
+        const kids = Array.from(bar.children);
+        const holder = gear.closest(".aqrs-gear") || gear;
+        if (kids[kids.length - 1] !== holder) return "in the toolbar but not last";
+        return "ok";
+      });
+      if (where !== "ok") throw new Error("the aquatics gear is " + where);
+    } },
+
+  // The scope sentence still belongs before the figures it qualifies.
+  { name: "facilities · the aquatics scope is stated above the numbers", path: "/{org}/facilities?tab=aquatics",
     needs: "[data-aq-scope]",
     act: async page => {
       const ok = await page.evaluate(() => {
         const bar = document.querySelector("[data-aq-scope]");
         const kpi = document.querySelector(".sum-cards");
-        if (!bar || !kpi) return false;
-        if (!bar.querySelector("[data-aqrs-open],[data-aqrs-locked],[data-aqrs-flagoff]")) return false;
-        return !!(bar.compareDocumentPosition(kpi) & Node.DOCUMENT_POSITION_FOLLOWING);
+        return !!(bar && kpi && (bar.compareDocumentPosition(kpi) & Node.DOCUMENT_POSITION_FOLLOWING));
       });
-      if (!ok) throw new Error("the scope bar must carry a gear and precede the KPI cards");
+      if (!ok) throw new Error("the scope note must precede the KPI cards");
     } },
 
   // The CONFIGURED path is proven in aquatics-scope.spec.js, which lifts and
