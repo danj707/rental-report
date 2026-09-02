@@ -1923,6 +1923,49 @@ const CASES = [
       if (where !== "ok") throw new Error("the aquatics gear is " + where);
     } },
 
+  // ── The panel itself, opened ─────────────────────────────────────────────
+  // Dan, on the live page: "this settings page doesn't seem to be working
+  // correctly." Two faults, both of which a browser is the only witness to.
+  //
+  // 1. EVERY TYPE READ "0 SITES IN VIEW", because the Toolbar was never handed
+  //    a `rows` prop — the panel moved into the toolbar and its data did not.
+  { name: "facilities · the scope panel counts the sites in view",
+    path: "/{org}/facilities?tab=aquatics&admin=" + RENDER_ADMIN_KEY,
+    needs: "[data-aqrs-open]",
+    act: async page => {
+      await page.click("[data-aqrs-open]");
+      await page.waitForSelector("[data-aqrs-sheet]", { timeout: 20000 });
+      const n = await page.evaluate(() => {
+        const row = document.querySelector('[data-aqrs-type="court"]');
+        const b = row && row.querySelector("[data-aqrs-count]");
+        return b ? Number(b.getAttribute("data-aqrs-count")) : -1;
+      });
+      if (!(n > 0)) throw new Error('the Courts row counted ' + n + ' sites in view; the fixture has several');
+    } },
+
+  // 2. THE ROWS RENDERED UPPERCASE, GREY AND STACKED, because the sheet was
+  //    inside `.toolbar`, whose own `label` rule sets text-transform, color and
+  //    flex-direction for the date captions. That is the season-menu bug
+  //    verbatim, reintroduced by moving the panel into the toolbar — so the
+  //    sheet is portalled onto <body> now, and this asserts it escaped.
+  { name: "facilities · the scope panel escapes the toolbar's label rule",
+    path: "/{org}/facilities?tab=aquatics&admin=" + RENDER_ADMIN_KEY,
+    needs: "[data-aqrs-open]",
+    act: async page => {
+      await page.click("[data-aqrs-open]");
+      await page.waitForSelector("[data-aqrs-sheet]", { timeout: 20000 });
+      const bad = await page.evaluate(() => {
+        const sheet = document.querySelector("[data-aqrs-sheet]");
+        if (sheet.closest(".toolbar")) return "the sheet is still inside .toolbar";
+        const row = sheet.querySelector('[data-aqrs-type="court"]');
+        const cs = getComputedStyle(row);
+        if (cs.textTransform === "uppercase") return "the rows are UPPERCASE";
+        if (cs.flexDirection === "column") return "the rows are STACKED";
+        return null;
+      });
+      if (bad) throw new Error(bad);
+    } },
+
   // The scope sentence still belongs before the figures it qualifies.
   { name: "facilities · the aquatics scope is stated above the numbers", path: "/{org}/facilities?tab=aquatics",
     needs: "[data-aq-scope]",

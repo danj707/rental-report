@@ -1525,8 +1525,40 @@ numbers.
 whatever the tab shows, so an org with no pool bookings reaches the setting
 without the special case that branch existed for.
 
-Guards: `facilities · the aquatics gear is last in the toolbar` checks the gear's
-POSITION in the bar, and `facilities · the aquatics scope is stated above the
+### THE GEAR IS AN ICON, AND THE PANEL WAS BROKEN BY ITS OWN NEW HOME
+
+Dan: *"just a settings icon here, no text needed, ever on any report. and this
+settings page doesn't seem to be working correctly."*
+
+**The label is gone.** Labelling it was an overcorrection for having been
+unfindable, and the fix for that was its POSITION. Every report's gear is the
+bare glyph, and the spec now fails if a caption comes back.
+
+**Two faults in the panel, both caused by moving it into the toolbar**, and both
+things only a browser can see:
+
+- **Every site type read "0 SITES IN VIEW".** The panel counts what each extra
+  type would add over the rows on screen — and the `Toolbar` component is passed
+  no `rows` prop. The panel moved and its data did not. It gets `viewRows` now,
+  the same scoped set every other surface reads.
+- **The checkbox rows rendered UPPERCASE, GREY AND STACKED.** `.toolbar label`
+  sets `text-transform`, `color` and `flex-direction: column` for the date-field
+  captions, and the sheet's rows are `<label>`s inside `.toolbar`. **This is the
+  season-menu bug verbatim, reintroduced by me the moment the panel moved into
+  the toolbar** — and inline styles would not have saved it, exactly as recorded
+  there. The sheet is **portalled onto `<body>`** instead of fighting the
+  cascade, which is also where a modal belongs (z-index, overflow).
+
+Generalise it: *moving a component moves what the cascade can do to it, and what
+props reach it.* Both halves of this were introduced by a move that looked like
+pure relocation.
+
+Guards: two render cases that OPEN the panel — one requires the Courts row to
+count a non-zero number of sites, one requires the sheet to be outside
+`.toolbar` and its rows to be neither uppercase nor stacked. Mutation-tested
+against the toolbar losing its rows and against the portal being removed; both
+fail by name. Plus `facilities · the aquatics gear is last in the toolbar`, which
+checks the gear's POSITION in the bar, and `facilities · the aquatics scope is stated above the
 numbers` keeps the scope sentence ahead of the figures. Both key on placement
 rather than presence, because "a gear rendered" passes just as happily on the
 version nobody could find; mutation-tested against the gear leaving the toolbar
