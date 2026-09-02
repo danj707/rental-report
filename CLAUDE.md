@@ -1558,6 +1558,75 @@ column count, and the section row's own `1`; all four mutation-tested (the cell
 removed, the total row losing the column, the section count back to a dash, and
 the presence gate hardcoded true).
 
+## PINNED: "NET REVENUE" on the Programs summary is LIFETIME, not the window (2026-09-02)
+
+Dan, on Apex over 1-31 August 2026: *"and it seems these revenue amounts are a
+bit high, no? This is august program revenue for Aug"* — the tab read
+**NET REVENUE $2,768,423** ("total for these programs") beside
+**COLLECTED IN PERIOD $275,553** ("payments received in date range"), under a
+header saying *August 1, 2026 - August 31, 2026*.
+
+**He is right, and the numbers are not wrong — the LABELS are.** Read out of
+card 17295 rather than guessed:
+
+- **Sections are windowed by their SESSION DATES OVERLAPPING the range** (the
+  card's last two `[[ ]]` clauses), so August returns every section that *runs*
+  in August — 1,529 of them.
+- **`net_total` is `received_cents - refund_cents` ALL-TIME for those sections.**
+  That is the $2,768,423: the whole registration revenue of every section
+  running in August, collected over however many months it took.
+- **`period_received` is payments whose `payment.created_at` falls in the window,
+  FOR THOSE SECTIONS ONLY.** That is the $275,553.
+
+**Apex's actual August programme money, measured from the item log**
+(`order_item_type = 'reservation-enrollment'`, the card 21055 basis):
+
+| month | payments | refunds | net |
+|---|---|---|---|
+| 2026-06 | $667,137 | $99,763 | $567,374 |
+| 2026-07 | $568,461 | $93,695 | $474,766 |
+| **2026-08** | **$789,595** | **$67,846** | **$721,749** |
+
+So **neither KPI is August's $721,749** — one is ~3.8x it and the other ~38% of
+it, and both are correct for what they actually measure. The ~$514K gap on the
+period card is August money paid for sections that do NOT run in August (fall
+and winter registrations), which is a real distinction the sub-line *"payments
+received in date range"* does not make.
+
+**The detail table already says it and the KPI card does not.** `Net Rev`'s
+`title` reads *"Lifetime net revenue for these programs (received minus
+refunds)"*; the card says only *"total for these programs"*. Same defect shape
+as the guessed grain phrases on the wizard: a confident sub-line under a figure
+whose basis it misstates.
+
+**Not fixed — pinned.** What it needs is wording, not arithmetic: name the
+lifetime figure as lifetime, say that the period figure is scoped to sections
+running in the window, and consider leading with `period_net` (which the card
+already emits) since that is the number someone reading a date-ranged report
+means by "August revenue".
+
+### ...and TOTAL REFUNDS needs no card change (Dan, same afternoon)
+
+*"pin to add a 'total refunds' metric/card on this program summary page. seems
+like that's a big item we're missing."*
+
+**Card 17295 has emitted `refunds`, `period_refunds` and `period_net` since v3,
+and `public/programs.html` already MAPS all three, rolls them up per program and
+writes them into the Excel export** — no KPI card reads them. So this is a
+client-side change with no push, no date-tag flip and no downtime on the
+platform's most-used card, which is the opposite of what it looks like.
+
+Third instance of the mapped-and-rendered-nowhere pattern in this file (the
+location filter, then instructor, then the auto-pay columns). **A source
+assertion cannot see a column that is mapped, rolled up and never displayed** —
+so whatever is built must be keyed on the CELL in a render case.
+
+Two things to settle when it is built: which of the two refund figures leads
+(all-time `refunds` or windowed `period_refunds` — the same lifetime-vs-window
+question as above, so they should be labelled together rather than separately),
+and that a real $0 must still render while a pre-v3 feed must not render a
+confident zero.
+
 ## PINNED TO FIX: the Programs REVENUE tab table (Dan, 2026-09-02)
 
 *(Recorded first as "the detail table", which was wrong and would have sent the
