@@ -546,7 +546,12 @@ function programRows() {
   // which the columns must be ABSENT rather than a row of dashes claiming
   // nobody teaches anything.
   const VINSTR = STUB_MODE !== "previnstr";
-  const sec = (prog, name, sid, enrolled, capacity, season, loc, ap, out, instr, dates) => ({
+  // stubMode "prev3" drops the refund columns — a warm PRE-v3 cache entry, on
+  // which the Refunds in Period card must be ABSENT rather than a confident $0
+  // saying this org refunded nothing. (The mapper defaults both to 0, so only a
+  // browser can tell the two apart.)
+  const V3 = STUB_MODE !== "prev3";
+  const sec = (prog, name, sid, enrolled, capacity, season, loc, ap, out, instr, dates, money) => ({
     "Program": prog, "Program Id": "prog-" + prog.toLowerCase().replace(/\W+/g, "-"),
     "Section": name, "Section Id": sid, "Section Status": "Open",
     // PER-SECTION SPANS, so the by-month activity chart has a shape to find.
@@ -557,7 +562,20 @@ function programRows() {
     "Start Date": (dates && dates[0]) || "2026-08-01",
     "End Date":   (dates && dates[1]) || "2026-09-30",
     "Enrolled": enrolled, "Capacity": capacity, "Utilized": enrolled,
-    "Charged": enrolled * 40, "Received": enrolled * 40, "Refunds": 0,
+    "Charged": enrolled * 40, "Received": enrolled * 40,
+    /* ── The money, and the LIFETIME-vs-WINDOW gap that is the whole point ──
+       `money` is [lifetime net, lifetime refunds, period received, period
+       refunds]. Lifetime is deliberately an ORDER OF MAGNITUDE above the
+       window, because that gap is exactly what Dan hit on Apex: $2,768,423
+       lifetime beside $275,553 in-window under an August header. A fixture
+       where the two are close cannot tell a card reading the right column
+       from one reading the other.
+       Period net is derived here rather than given, so the fixture cannot
+       break the card's own received - refunds identity. */
+    "Net Revenue": money[0], "Refunds": V3 ? money[1] : undefined,
+    "Period Received": money[2],
+    ...(V3 ? { "Period Refunds": money[3] } : {}),
+    "Period Net": money[2] - (V3 ? money[3] : 0),
     "Activity": "Aquatics", "Category": "Fitness",
     // v6. The location filter shipped unable to render because NOTHING mapped
     // this onto a row, and no fixture carried it — so no render case could have
@@ -604,13 +622,13 @@ function programRows() {
     // of programs on prod do. Filtering to Urho must keep only sec-aq-1, so the
     // auto-pay share reads 100% — filtering whole PROGRAMS keeps sec-aq-2's
     // $800 of manual plans too and reads 75%. One number separates the two.
-    sec("Aquatic Exercise",  "Aquatic Stations with Pearlena", "sec-aq-1", 21, 24, "Fall '26",           URHO,   [1, 2400, 0,    0], [600, 100, 500,   0,   0], ["Pearlena Sok", 1],                 ["2026-08-01", "2026-10-31"]),
-    sec("Aquatic Exercise",  "Water Waves with Yvette",        "sec-aq-2", 20, 24, "Fall '26",           GORDON, [0,    0, 8,  800], [250,  50,   0, 200,   0], ["Eric Stenberg, Penny Finders", 2], ["2026-09-01", "2026-12-31"]),
-    sec("Water Walking",     "Water Walking August 24",        "sec-ww-1", 12, 16, "Spring/Summer 26",   GORDON, [0,    0, 10, 1000], [400,   0,   0, 300, 100], ["Pearlena Sok", 1],                 ["2026-07-01", "2026-09-30"]),
+    sec("Aquatic Exercise",  "Aquatic Stations with Pearlena", "sec-aq-1", 21, 24, "Fall '26",           URHO,   [1, 2400, 0,    0], [600, 100, 500,   0,   0], ["Pearlena Sok", 1],                 ["2026-08-01", "2026-10-31"], [40000, 5000, 4000, 400]),
+    sec("Aquatic Exercise",  "Water Waves with Yvette",        "sec-aq-2", 20, 24, "Fall '26",           GORDON, [0,    0, 8,  800], [250,  50,   0, 200,   0], ["Eric Stenberg, Penny Finders", 2], ["2026-09-01", "2026-12-31"], [30000, 4000, 3000, 300]),
+    sec("Water Walking",     "Water Walking August 24",        "sec-ww-1", 12, 16, "Spring/Summer 26",   GORDON, [0,    0, 10, 1000], [400,   0,   0, 300, 100], ["Pearlena Sok", 1],                 ["2026-07-01", "2026-09-30"], [20000, 2000, 2000, 200]),
     // One unseasoned section, so ticking "No Season" has something to find and
     // the option is not vacuous — and with no location, so "No location set" is
     // a real option.
-    sec("Lap Swim",          "Open Lap Swim",                  "sec-ls-1",  9, 20, "No Season",          null,   [0,    0, 1,  200], [ 75,  25,   0,  50,   0], null,                                ["2026-09-01", "2026-09-30"]),
+    sec("Lap Swim",          "Open Lap Swim",                  "sec-ls-1",  9, 20, "No Season",          null,   [0,    0, 1,  200], [ 75,  25,   0,  50,   0], null,                                ["2026-09-01", "2026-09-30"], [10000, 1000, 1000, 100]),
   ];
 }
 
@@ -2717,6 +2735,54 @@ const CASES = [
   // us" — and "renders a 0" and "renders nothing" are different claims.
   { name: "programs · no auto-pay card on a pre-v7 feed", path: "/{org}/programs",
     stubMode: "prev7", needs: ".sum-cards", absent: "[data-prog-autopay-pct]" },
+
+  /* ── The two revenue figures, and Total Refunds ─────────────────────────
+     Dan pinned both on 2026-09-02: "it seems these revenue amounts are a bit
+     high, no? This is august program revenue for Aug", and "pin to add a
+     'total refunds' metric/card on this program summary page".
+
+     NEITHER NEEDED A CARD CHANGE, and that is why these cases key on the
+     CELL. Card 17295 has emitted refunds / period_refunds / period_net since
+     v3 and the page has mapped and rolled up all three the whole time — no
+     surface read them. A source assertion cannot see a column that is mapped,
+     rolled up and never displayed; this is the fourth instance of that in
+     this repo.
+
+     The fixture's lifetime total ($100,000) is eleven times its in-window one
+     ($9,000), on purpose: that gap IS the complaint, and a fixture where the
+     two are close cannot tell a card reading the right column from one
+     reading the other. All five figures are distinct — 100000 / 12000 /
+     10000 / 1000 / 9000 — so a swapped label fails rather than rendering a
+     plausible number. */
+  { name: "programs · the window figure is period net", path: "/{org}/programs",
+    // 10,000 received less 1,000 refunded.
+    needs: '[data-prog-period-net="9000"]' },
+  { name: "programs · ...beside the LIFETIME figure, named as lifetime", path: "/{org}/programs",
+    needs: '[data-prog-lifetime-net="100000"]' },
+  { name: "programs · refunds in period", path: "/{org}/programs",
+    // The value is the WINDOW's refunds, not the $12,000 all-time figure the
+    // sub-line carries — both readings are on screen exactly as the two
+    // revenue cards now are.
+    needs: '[data-prog-period-refunds="1000"]' },
+  { name: "programs · ...as a share of what came in", path: "/{org}/programs",
+    // 1,000 of 10,000 RECEIVED. A card reading the wrong denominator (period
+    // net, 9,000, or all-time refunds) renders a plausible number instead.
+    needs: '[data-prog-refund-pct="10"]' },
+  // PRESENCE, NOT VALUE: the mapper defaults both refund columns to 0, so a
+  // warm pre-v3 cache entry renders a confident $0 — "this org refunded
+  // nothing" when the truth is "this feed cannot tell us". Only a browser can
+  // tell that apart from a real zero, which is why this is a render case.
+  { name: "programs · no refunds card on a pre-v3 feed", path: "/{org}/programs",
+    stubMode: "prev3", needs: ".sum-cards", absent: "[data-prog-period-refunds]" },
+  // ...and the revenue cards still render on that feed. Without this, the case
+  // above passes on a page that failed to draw the row at all.
+  { name: "programs · a pre-v3 feed still shows the lifetime figure", path: "/{org}/programs",
+    stubMode: "prev3", needs: '[data-prog-lifetime-net="100000"]' },
+  // With no refunds column, period net IS period received — 10,000, not the
+  // 9,000 the v3 feed reports. So this also proves the card is reading the
+  // feed rather than a hardcoded figure.
+  { name: "programs · a pre-v3 period figure is receipts alone", path: "/{org}/programs",
+    stubMode: "prev3", needs: '[data-prog-period-net="10000"]' },
 
   // ── Outstanding, split by WHY ─────────────────────────────────────────────
   // Dan: "we'd like to have past-due from scheduled and on autopay". One

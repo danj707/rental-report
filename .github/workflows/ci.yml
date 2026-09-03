@@ -159,6 +159,8 @@ jobs:
 
       - name: Programs instructor filter + by-month panel (one picker, three dimensions, no date parsing)
         run: node scripts/programs-instructor.spec.js
+      - name: Programs summary — the revenue labels and Total Refunds
+        run: node scripts/programs-revenue-labels.spec.js
 
       # Card 19273 inferred a claim from a timestamp that really marked the
       # EXPIRY SWEEP — of 5,371 grants it called claimed, 5,371 were already

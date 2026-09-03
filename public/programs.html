@@ -1040,6 +1040,46 @@ function progOutstandingSplit(rows) {
   };
 }
 
+/* ── The revenue figures on the Summary tab, and their LABELS ───────────────
+   Dan, on Apex over 1-31 August 2026: "it seems these revenue amounts are a bit
+   high, no? This is august program revenue for Aug". The row read
+   NET REVENUE $2,768,423 beside COLLECTED IN PERIOD $275,553, and Apex's real
+   August programme money is $721,749 net. Neither figure was wrong; both
+   labels were.
+
+   Card 17295 windows SECTIONS by their session dates overlapping the range, so
+   August returns every section that RUNS in August. `net_total` is then
+   ALL-TIME for those sections, and `period_net` is cash that moved inside the
+   window for those sections only. One figure is ~3.8x August and the other
+   ~38% of it, each correct for what it measures.
+
+   ONE REDUCER, N READERS — the cards and the two Grand Total rows all read
+   this. Six inline reduces over the same rows is how two surfaces start
+   reporting different totals for one window; `progAutopayCell` going through
+   `progAutopayShare` is the same rule, one card over.
+
+   The refund SHARE is refunds against payments RECEIVED in the same window: a
+   cash-flow ratio, not a per-registration refund rate. An August refund of a
+   June payment is ordinary, so the two need not describe the same
+   registrations — and it is null rather than 0 when nothing was received,
+   because "nothing came in" is not a 0% refund rate. */
+function progRevTotals(progs) {
+  let lifetimeNet = 0, periodNet = 0, lifetimeRefunds = 0, periodRefunds = 0, periodReceived = 0;
+  (progs || []).forEach(p => {
+    lifetimeNet     += fmtNum(p.netRevenue);
+    periodNet       += fmtNum(p.periodNet);
+    lifetimeRefunds += fmtNum(p.refunds);
+    periodRefunds   += fmtNum(p.periodRefunds);
+    periodReceived  += fmtNum(p.periodReceived);
+  });
+  return {
+    lifetimeNet, periodNet, lifetimeRefunds, periodRefunds, periodReceived,
+    refundPct: periodReceived > 0
+      ? Math.round(periodRefunds / periodReceived * 1000) / 10
+      : null,
+  };
+}
+
 function getParams() {
   const p = new URLSearchParams(window.location.search);
   // NOTE: this is an explicit whitelist. A parameter missing from here reads
@@ -1065,8 +1105,6 @@ function getParams() {
 // this repo of a slice reaching past its own inputs.
 //
 // ABSENT rather than disabled where there is nothing to download: a control
-// that yields an empty file is the dead end this repo keeps writing down.
-// ABSENT rather than disabled where there is nothing to download — a control
 // that yields an empty file is the dead end this repo keeps writing down.
 function ProgPanelCsv({ rows, name }) {
   if (!rows || rows.length < 2) return null;
@@ -1755,7 +1793,7 @@ function App() {
     return out.filter(r => (r['Activity'] || activityInfo.map[r['Program']||''] || '') === activityFilter);
   }, [demoRows, activityFilter, activityInfo, scopedProgramSet]);
 
-  const [colPresence, setColPresence] = useState({ regMode: false, cancellations: false, waitlist: false, location: false, instructor: false, autopay: false, outSplit: false });
+  const [colPresence, setColPresence] = useState({ regMode: false, cancellations: false, waitlist: false, location: false, instructor: false, autopay: false, outSplit: false, refunds: false });
   const [insights,        setInsights]        = useState(null);
   const [insightsMeta,    setInsightsMeta]    = useState(null); // { programCount, names }
   const [insightsLoading, setInsightsLoading] = useState(false);
@@ -2198,6 +2236,15 @@ function App() {
           instructor:    raw.some(r => 'instructor' in r || 'Instructor' in r),
           autopay:       raw.some(r => 'autopay_plan_items' in r),
           outSplit:      raw.some(r => 'past_due_value' in r),
+          // Card 17295 has emitted refunds / period_refunds / period_net since
+          // v3, and the page has mapped all three the whole time — no surface
+          // read them. PRESENCE, asked of the RAW response, because the mapper
+          // defaults both refund columns to 0: a value test on a warm pre-v3
+          // cache entry renders a confident $0, which says "this org refunded
+          // nothing" when the truth is "this feed cannot tell us". A REAL $0
+          // still shows — an org that refunded nothing in the window is an
+          // answer worth reading.
+          refunds:       raw.some(r => 'period_refunds' in r || 'Period Refunds' in r),
         });
       })
       .catch(err => setError(err.message))
@@ -2228,15 +2275,17 @@ function App() {
         const normalized = json.rows.map(normalizeRow);
         const isSec = normalized.some(r => r.isSection);
         const progRows = isSec ? rollupToPrograms(normalized) : normalized;
-        let enrolled = 0, net = 0, cancelled = 0, periodNet = 0;
+        let enrolled = 0, net = 0, cancelled = 0, periodNet = 0, periodRefunds = 0;
         progRows.forEach(r => {
           enrolled += fmtNum(r.enrollments);
           net      += fmtNum(r.netRevenue);
           periodNet += fmtNum(r.periodNet);
+          periodRefunds += fmtNum(r.periodRefunds);
           const secs = r._sections || [r];
           cancelled += secs.filter(s => s.status === 'Canceled' || s.status === 'Cancelled').length;
         });
-        setPriorStats({ enrolled, net, cancelled, periodNet, start: w.start, end: w.end });
+        setPriorStats({ enrolled, net, cancelled, periodNet, periodRefunds,
+                        start: w.start, end: w.end });
       })
       .catch(() => {});
     return () => { alive = false; };
@@ -3286,8 +3335,10 @@ function App() {
           var cancelledSections = progs.reduce(function(s,p) { return s + p.sections.filter(function(sec) { return sec.status === 'Canceled' || sec.status === 'Cancelled'; }).length; }, 0);
           var totalCancellations = progs.reduce(function(s,p) { return s + (p.cancellations || 0); }, 0);
           var totalCapacity = progs.reduce(function(s,p) { return s + (p.capacity || 0); }, 0);
-          var totalRev = progs.reduce(function(s,p){ return s + p.netRevenue; }, 0);
-          var periodTotalRev = progs.reduce(function(s,p){ return s + p.periodNet; }, 0);
+          // ONE reducer for every money figure in this tab — see progRevTotals.
+          var rev = progRevTotals(progs);
+          var totalRev = rev.lifetimeNet;
+          var periodTotalRev = rev.periodNet;
           var totalEnrolled = progs.reduce(function(s,p){ return s + p.enrolled; }, 0);
           var totalSections = progs.reduce(function(s,p){ return s + p.sections.length; }, 0);
           var ranPct = (ranProgs.length + cancelledProgs.length) > 0 ? Math.round(ranProgs.length / (ranProgs.length + cancelledProgs.length) * 100) : 100;
@@ -3295,6 +3346,10 @@ function App() {
           var avgFill = withCap.length > 0 ? Math.round(withCap.reduce(function(s,p){ return s + p.fillPct; }, 0) / withCap.length) : 0;
           var hasCapacity = progs.some(function(p){ return p.capacity > 0; });
           var fmt$ = function(n) { return '$' + Math.round(n).toLocaleString(); };
+          // Named once, and NEVER fmtRangeShort(null, null) — that renders the
+          // literal "Invalid Date NaN" rather than throwing, so a card would
+          // print it on screen.
+          var winLabel = (loadedStart && loadedEnd) ? fmtRangeShort(loadedStart, loadedEnd) : 'this period';
           // Read off filteredRows — the funnel's own output, exactly what every
           // other card in this row is built from — so location, season, the
           // date range and the program search all scope it together.
@@ -3334,8 +3389,71 @@ function App() {
               <div className="sum-cards">
                 <div className="sum-card"><div className="sc-label">Programs</div><div className="sc-val sc-blue">{progs.length}</div><div className="sc-sub">{totalSections} sections{cancelledSections > 0 ? ' (' + (totalSections - cancelledSections) + ' ran, ' + cancelledSections + ' cancelled)' : ''}</div></div>
                 <div className="sum-card"><div className="sc-label">Participants</div><div className="sc-val sc-green" data-prog-participants={String(totalEnrolled)}>{totalEnrolled.toLocaleString()}</div><div className="sc-sub">{avgFill > 0 ? avgFill + '% avg fill rate' : ''}</div>{compareOn && priorStats && <div><DeltaPill cur={totalEnrolled} prev={priorStats.enrolled} label={'vs ' + fmtRangeShort(priorStats.start, priorStats.end)} /></div>}</div>
-                <div className="sum-card"><div className="sc-label">Net Revenue</div><div className="sc-val sc-amber">{fmt$(totalRev)}</div><div className="sc-sub">total for these programs</div>{compareOn && priorStats && <div><DeltaPill cur={totalRev} prev={priorStats.net} label={'vs ' + fmtRangeShort(priorStats.start, priorStats.end)} /></div>}</div>
-                <div className="sum-card"><div className="sc-label">Collected in Period</div><div className="sc-val sc-green">{fmt$(periodTotalRev)}</div><div className="sc-sub">payments received in date range</div>{compareOn && priorStats && priorStats.periodNet != null && <div><DeltaPill cur={periodTotalRev} prev={priorStats.periodNet} label={'vs ' + fmtRangeShort(priorStats.start, priorStats.end)} /></div>}</div>
+                {/* ── The two revenue figures, LABELLED TOGETHER ──
+                    Dan, on Apex over 1-31 August: "it seems these revenue
+                    amounts are a bit high, no? This is august program revenue
+                    for Aug". He was right and the numbers were not wrong — the
+                    labels were. This row read NET REVENUE $2,768,423 ("total
+                    for these programs") beside COLLECTED IN PERIOD $275,553
+                    ("payments received in date range") under an August header,
+                    and Apex's actual August programme money is $721,749 net.
+                    One figure was ~3.8x it and the other ~38% of it, each
+                    correct for what it measures:
+
+                      - card 17295 windows SECTIONS by their session dates
+                        overlapping the range, so August returns every section
+                        that RUNS in August;
+                      - net_total is ALL-TIME for those sections, however many
+                        months they took to sell;
+                      - period_net is cash that moved in the window, for those
+                        sections only.
+
+                    So the window figure LEADS — a reader of a date-ranged
+                    report means that one by "August revenue" — and each card
+                    now names its own basis instead of leaving the reader to
+                    infer it. The Revenue tab's own cards have said "lifetime
+                    value of these programs" all along; this row is what
+                    disagreed with them. */}
+                <div className="sum-card" title={'Cash that moved between ' + winLabel + ': payments received minus refunds processed.\n\nScoped to programs whose sessions RUN in that window \u2014 so money taken this month for a fall program is not in here, and money taken months ago for a program running now is.'}>
+                  <div className="sc-label">Net Revenue in Period</div>
+                  <div className="sc-val sc-green" data-prog-period-net={String(Math.round(periodTotalRev))}>{fmt$(periodTotalRev)}</div>
+                  <div className="sc-sub">received minus refunds, {winLabel}</div>
+                  {compareOn && priorStats && priorStats.periodNet != null && <div><DeltaPill cur={periodTotalRev} prev={priorStats.periodNet} label={'vs ' + fmtRangeShort(priorStats.start, priorStats.end)} /></div>}
+                </div>
+                {/* ── Total Refunds ──
+                    Dan: "pin to add a 'total refunds' metric/card on this
+                    program summary page. seems like that's a big item we're
+                    missing." No card change: 17295 has emitted refunds,
+                    period_refunds and period_net since v3 and this page has
+                    mapped and rolled up all three the whole time.
+
+                    Windowed leads and lifetime follows, matching the two cards
+                    it sits between rather than opening the same
+                    lifetime-vs-window question again one card over. The share
+                    is refunds against PAYMENTS RECEIVED in the same window,
+                    which is a cash-flow ratio and not a per-registration
+                    refund rate \u2014 an August refund of a June payment is
+                    ordinary, so the two need not describe the same
+                    registrations. */}
+                {colPresence.refunds && (
+                  <div className="sum-card" title={'Refunds processed between ' + winLabel + ', for programs running in that window.\n\nThe percentage is against payments received in the SAME window \u2014 a cash-flow ratio, not a per-registration refund rate: a refund this month can belong to a payment taken months ago.\n\nNet Revenue in Period is already after these refunds; this card says how much of it was given back.'}>
+                    <div className="sc-label">Refunds in Period</div>
+                    <div className="sc-val sc-red" data-prog-period-refunds={String(Math.round(rev.periodRefunds))}>{fmt$(rev.periodRefunds)}</div>
+                    {/* A null share, never 0%: "nothing came in this window"
+                        is not a 0% refund rate. */}
+                    <div className="sc-sub" data-prog-refund-pct={rev.refundPct == null ? '' : String(rev.refundPct)}>
+                      {rev.refundPct == null ? 'no payments received in this window'
+                                             : rev.refundPct + '% of ' + fmt$(rev.periodReceived) + ' received'} · {fmt$(rev.lifetimeRefunds)} all-time
+                    </div>
+                    {compareOn && priorStats && priorStats.periodRefunds != null && <div><DeltaPill cur={rev.periodRefunds} prev={priorStats.periodRefunds} goodWhenDown={true} label={'vs ' + fmtRangeShort(priorStats.start, priorStats.end)} /></div>}
+                  </div>
+                )}
+                <div className="sum-card" title={'LIFETIME net revenue \u2014 every payment minus every refund, since each program went on sale, for the programs running between ' + winLabel + '.\n\nIt is NOT this period\u2019s revenue, and on a long-running program it can be several times larger. Read "Net Revenue in Period" for the window on the header.'}>
+                  <div className="sc-label">Lifetime Net Revenue</div>
+                  <div className="sc-val sc-amber" data-prog-lifetime-net={String(Math.round(totalRev))}>{fmt$(totalRev)}</div>
+                  <div className="sc-sub">all-time for these programs, not just this period</div>
+                  {compareOn && priorStats && <div><DeltaPill cur={totalRev} prev={priorStats.net} label={'vs ' + fmtRangeShort(priorStats.start, priorStats.end)} /></div>}
+                </div>
                 <div className="sum-card"><div className="sc-label">Ran / Active</div><div className="sc-val sc-green">{ranProgs.length}</div><div className="sc-sub">{ranPct}% of programs</div></div>
                 <div className="sum-card"><div className="sc-label">Cancelled</div><div className="sc-val sc-red">{cancelledSections}</div><div className="sc-sub">{cancelledSections === 1 ? '1 section' : cancelledSections + ' sections'}{cancelledProgs.length > 0 ? ' (' + cancelledProgs.length + ' full programs)' : ''}</div>{compareOn && priorStats && <div><DeltaPill cur={cancelledSections} prev={priorStats.cancelled} goodWhenDown={true} label={'vs ' + fmtRangeShort(priorStats.start, priorStats.end)} /></div>}</div>
                 <div className="sum-card"><div className="sc-label">Upcoming</div><div className="sc-val sc-purple">{upcomingProgs.length}</div><div className="sc-sub">Not yet started</div></div>
@@ -3750,10 +3868,15 @@ function App() {
         {/* Summary cards */}
         {totals && (
           <div className="summary-cards">
+            {/* Same words as the Summary tab's card, for the same figure. The
+                two tabs used to disagree in a way that mattered: the Summary
+                tab's "Collected in Period" showed period_NET while this tab's
+                card of the same name shows period_RECEIVED — one label, two
+                different numbers, on one report. */}
             <div className="summary-card" style={{borderLeft:'3px solid #16a34a'}}>
-              <div className="card-label">Total Net Revenue</div>
+              <div className="card-label">Lifetime Net Revenue</div>
               <div className="card-value green">{fmtMoney(totals.netRevenue)}</div>
-              <div className="card-sub">lifetime value of these programs</div>
+              <div className="card-sub">all-time for these programs, not just this period</div>
             </div>
             <div className="summary-card" style={{borderLeft:'3px solid #2563eb'}}>
               <div className="card-label">Collected in Period</div>

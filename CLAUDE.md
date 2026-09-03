@@ -1724,7 +1724,102 @@ it is sent with `keepalive`, and those requests do not reliably appear in
 `performance.getEntriesByType("resource")`. The first draft of that assertion
 passed nothing and read as a page failure.
 
-## PINNED: "NET REVENUE" on the Programs summary is LIFETIME, not the window (2026-09-02)
+## The Programs summary revenue labels, and Total Refunds (2026-09-03) — WAS the pin below
+
+Both pins below are FIXED, and the diagnosis under them is kept because what it
+ruled out is the useful part: **the arithmetic never changed.**
+
+### The labels were the bug, so the WINDOW figure leads now
+
+Dan, on Apex over 1-31 August: *"it seems these revenue amounts are a bit high,
+no? This is august program revenue for Aug"*. The row now reads
+
+| card | figure | sub-line |
+|---|---|---|
+| **Net Revenue in Period** | `period_net` | *received minus refunds, Aug 1–31* |
+| **Refunds in Period** | `period_refunds` | *N% of $X received · $Y all-time* |
+| **Lifetime Net Revenue** | `net_total` | *all-time for these programs, not just this period* |
+
+The period figure leads because **a reader of a date-ranged report means that
+one by "August revenue"**, and each card now names its own basis instead of
+leaving the reader to infer it from a header. Nothing about how either number is
+computed moved.
+
+**AND THE TWO TABS DISAGREED UNDER ONE LABEL, which is worse than either card
+being vague.** The Summary tab's *"Collected in Period"* showed `period_NET`
+while the Revenue tab's card of the **same name** shows `period_RECEIVED` — one
+label, two different numbers, on one report. There is exactly one
+*"Collected in Period"* now (the Revenue tab's receipts), and both tabs call the
+all-time figure **Lifetime Net Revenue**. The spec counts both.
+
+### Total Refunds needed NO card change, and that is the fourth instance
+
+Dan: *"pin to add a 'total refunds' metric/card on this program summary page.
+seems like that's a big item we're missing."*
+
+Card 17295 has emitted `refunds`, `period_refunds` and `period_net` **since v3**,
+and `public/programs.html` has mapped, rolled up and Excel-exported all three the
+whole time — **no surface read them.** So this was client-side: no push, no
+date-tag flip, no downtime on the platform's most-used card. Fourth instance of
+the mapped-and-rendered-nowhere pattern (the location filter, then instructor,
+then the auto-pay columns), and it is why the render cases key on the **CELL**.
+
+- **Windowed leads and lifetime follows, inside one card.** Splitting them into
+  two cards would re-open the same lifetime-vs-window question one card over,
+  which is the thing the relabel exists to close.
+- **The share is refunds against payments RECEIVED in the same window** — a
+  cash-flow ratio, not a per-registration refund rate. An August refund of a
+  June payment is ordinary, so the two need not describe the same
+  registrations, and the tooltip says so.
+- **The share is `null`, never 0%, when nothing came in.** "No payments arrived"
+  is not a 0% refund rate. A **real** 0% still shows: money in and none back out
+  is an answer.
+- **Presence-gated on the RAW response** (`colPresence.refunds`), because the
+  mapper defaults BOTH refund columns to `0` — a value test renders a confident
+  `$0` on every warm pre-v3 cache entry, saying *"this org refunded nothing"*
+  when the truth is *"this feed cannot tell us"*. Same rule as `hasAbsent` /
+  `ciHasStatus` / `mbHasProductKind`.
+
+### ONE REDUCER, N READERS — `progRevTotals`
+
+Six inline `reduce`s over the same rows is how the summary row and the two Grand
+Total rows start reporting different totals for one window. `progRevTotals` is
+the single source and the spec fails if any of those reduces comes back inline —
+the same rule that sends `progAutopayCell` through `progAutopayShare`.
+
+**`winLabel` is named once and guards both dates.** `fmtRangeShort(null, null)`
+does not throw: it renders the literal **"Invalid Date NaN"**, so a card would
+print that on screen during the window between mount and the feed answering.
+
+### Guards
+
+`scripts/programs-revenue-labels.spec.js` (**37 assertions, in CI**), which LIFTS
+AND RUNS `progRevTotals` over Apex's real proportions ($2,768,423 lifetime
+against $275,553 in-window) rather than regexing it. Mutation-tested seven ways,
+all failing by name: the labels reverted (the bug exactly as Dan hit it), the
+null share defaulting to 0%, the presence gate hardcoded true, the lifetime card
+put back first, period refunds summed from the all-time column, a reduce
+re-inlined beside the helper, and `winLabel` built without its null guard.
+
+**One assertion could not discriminate at first, and mutation is what showed
+it.** The order check used `indexOf("Net Revenue in Period")` — and the LIFETIME
+card's own tooltip says *"Read "Net Revenue in Period" for the window"*, so
+swapping the two cards left the assertion passing. It keys on the label markup
+(`>…</div>`) now.
+
+Plus **seven `ci-check-render.js` cases**, keyed on the computed VALUE, over a
+fixture whose lifetime total ($100,000) is **eleven times** its in-window one
+($9,000) — that gap IS the complaint, and a fixture where the two are close
+cannot tell a card reading the right column from one reading the other. All five
+figures are deliberately distinct (100000 / 12000 / 10000 / 1000 / 9000). A new
+`prev3` stub mode drops the refund columns, so the pre-v3 degradation is proven
+in a browser: the refunds card is **absent from the DOM**, the two revenue cards
+still render, and period net reads receipts alone (10,000, not 9,000) — which
+also proves the card reads the feed rather than a constant. Both browser-only
+mutations were verified to fail: the presence gate hardcoded true, and the
+refunds cell reading the all-time column.
+
+### The diagnosis, kept — "NET REVENUE" is LIFETIME, not the window (2026-09-02)
 
 Dan, on Apex over 1-31 August 2026: *"and it seems these revenue amounts are a
 bit high, no? This is august program revenue for Aug"* — the tab read
@@ -1765,13 +1860,13 @@ refunds)"*; the card says only *"total for these programs"*. Same defect shape
 as the guessed grain phrases on the wizard: a confident sub-line under a figure
 whose basis it misstates.
 
-**Not fixed — pinned.** What it needs is wording, not arithmetic: name the
-lifetime figure as lifetime, say that the period figure is scoped to sections
-running in the window, and consider leading with `period_net` (which the card
-already emits) since that is the number someone reading a date-ranged report
-means by "August revenue".
+**FIXED 2026-09-03 — see the section above.** It was wording, not arithmetic,
+exactly as this said: the lifetime figure is named as lifetime, the period
+figure says what it is net of, and `period_net` leads. The diagnosis stays
+because what it RULED OUT is the useful part — neither number was wrong, so
+nobody should go looking for a bug in the card.
 
-### ...and TOTAL REFUNDS needs no card change (Dan, same afternoon)
+#### ...and TOTAL REFUNDS needs no card change (Dan, same afternoon)
 
 *"pin to add a 'total refunds' metric/card on this program summary page. seems
 like that's a big item we're missing."*
@@ -1787,11 +1882,11 @@ location filter, then instructor, then the auto-pay columns). **A source
 assertion cannot see a column that is mapped, rolled up and never displayed** —
 so whatever is built must be keyed on the CELL in a render case.
 
-Two things to settle when it is built: which of the two refund figures leads
-(all-time `refunds` or windowed `period_refunds` — the same lifetime-vs-window
-question as above, so they should be labelled together rather than separately),
-and that a real $0 must still render while a pre-v3 feed must not render a
-confident zero.
+**BUILT 2026-09-03 — see the section above.** Both things this said to settle
+were settled the way it suggested: windowed leads with all-time on the same
+card's sub-line (labelled together, not separately), and the card is
+presence-gated on the raw response so a real $0 renders while a pre-v3 feed
+shows nothing.
 
 ## PINNED TO FIX: the Programs REVENUE tab table (Dan, 2026-09-02)
 
