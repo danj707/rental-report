@@ -316,6 +316,34 @@
     /* ── Tabs ── */
 
     /* ── Summary Tab ── */
+    /* ── Laurel's Coffee Chart ──
+       Deliberately plain. The whole point of the panel is that it is readable
+       before anything is configured, and a decorated table reads slower than
+       an undecorated one. `.panel` does not exist on this page (the tables here
+       are bare), so it carries its own box. */
+    .coffee { background: #fff; border: 1px solid #e8e6e0; border-radius: 8px; margin: 16px 0; overflow: hidden; }
+    .coffee-head { display: flex; align-items: flex-start; justify-content: space-between;
+      gap: 12px; padding: 12px 14px; border-bottom: 1px solid #f0efec; }
+    .coffee-title { font-size: 14px; font-weight: 700; color: #1e1b4b; }
+    .coffee-sub { display: block; font-size: 11.5px; color: #6b7280; margin-top: 2px; }
+    .coffee-pause { display: flex; align-items: center; gap: 5px; font-size: 11px; color: #6b7280;
+      white-space: nowrap; cursor: pointer; }
+    /* A BOUNDED SCROLLER, not the whole list on the page: 60 rows of names
+       below the KPI cards would bury the report this panel sits on top of.
+       max-content so the columns take their natural width and the container
+       scrolls — the mistake already recorded for .prog-table, which had
+       width:100% inside a scroller and compressed every column to fit. */
+    .coffee-scroll { max-height: 320px; overflow: auto; }
+    .coffee-table { width: 100%; min-width: max-content; border-collapse: collapse; font-size: 12px; }
+    .coffee-table th { position: sticky; top: 0; background: #fbfaf8; text-align: left;
+      font-size: 10px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
+      color: #9ca3af; padding: 7px 12px; border-bottom: 1px solid #eceae5; }
+    .coffee-table td { padding: 7px 12px; border-bottom: 1px solid #f5f4f1; vertical-align: top; }
+    .coffee-table tr:last-child td { border-bottom: none; }
+    .coffee-table .r { text-align: right; font-variant-numeric: tabular-nums; }
+    .coffee-table .nw { white-space: nowrap; }
+    .coffee-em { font-size: 10.5px; color: #9ca3af; }
+    .coffee-foot { padding: 7px 14px; font-size: 10.5px; color: #9ca3af; border-top: 1px solid #f0efec; }
     .sum-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 16px 0; }
     .sum-card { background: #fff; border: 1px solid #e8e6e0; border-radius: 8px; padding: 14px 16px; }
     .sum-card .sc-label { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: #888; font-weight: 700; margin-bottom: 4px; }
@@ -950,6 +978,18 @@ function progSetCell(r, key) {
 // null when there is no plan money at all: 0% would say "nobody uses autopay"
 // when the truth is "this org runs no payment plans", which is a different fact
 // and not one this metric is for. At module scope so the spec can RUN it.
+/* Is this row a cancelled SECTION? Module scope so a spec can run it, and one
+   definition because the funnel and the on-screen note both have to agree
+   about what was taken out.
+
+   The card emits 'Canceled'; some feeds and some of this page's own rollups
+   carry 'Cancelled'. Both spellings, always — testing one silently keeps half
+   of them. */
+function progIsCanceledSection(r) {
+  const st = r && (r.status || r.sectionStatus);
+  return st === 'Canceled' || st === 'Cancelled';
+}
+
 function progAutopayShare(rows) {
   let apItems = 0, manItems = 0, apValue = 0, manValue = 0;
   (rows || []).forEach(r => {
@@ -1106,6 +1146,128 @@ function getParams() {
 //
 // ABSENT rather than disabled where there is nothing to download: a control
 // that yields an empty file is the dead end this repo keeps writing down.
+/* ── "Laurel's Coffee Chart" ─────────────────────────────────────────────────
+   Named for Laurel Rossiter at Shrewsbury, whose feedback on 2026-09-03
+   produced it: "I'm here in the morning, I have my coffee, I'm going to log in
+   and see what everything looks like. I don't have that umbrella viewpoint
+   that I'm used to having, and I miss it."
+
+   THE DESIGN IS THE RESTRAINT. What she already had was a Metabase card with
+   four columns, sorted newest first, with no filters and no date range — and
+   it beat this seven-tab report for the one question she asks daily. So this
+   panel commits to one opinionated default and offers almost nothing to
+   configure: newest signup first, everything, no window. Measured contrast at
+   the time: her card 4 columns / 0 filters / instant, this report 7 tabs / 10
+   controls / 14 KPI cards / 31.4s.
+
+   Every instinct to add a filter here should be resisted. The deep report
+   exists for analysis; this is the front door, and its whole value is that it
+   answers before you touch it.
+
+   ABSENT, NEVER EMPTY, when the feed cannot answer. `coffeeChart` is injected
+   server-side and false until somebody creates the public link for card 21286,
+   and a failed fetch leaves the panel out too. A "no registrations" table on a
+   registration-day morning would say nobody signed up when the truth is that
+   nothing answered — the hasAbsent rule, and here it is the most damaging
+   possible version of it. */
+function ProgCoffeeChart({ basePath, withToken }) {
+  const [rows, setRows]   = React.useState(null);
+  const [err, setErr]     = React.useState(false);
+  const [at, setAt]       = React.useState(null);
+  const [paused, setPaused] = React.useState(false);
+  const load = React.useCallback(() => {
+    fetch(withToken(basePath + '/api/data'))
+      .then(r => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then(j => {
+        if (!j || !Array.isArray(j.rows)) throw new Error('shape');
+        setRows(j.rows); setErr(false); setAt(new Date());
+      })
+      .catch(() => setErr(true));
+  }, [basePath, withToken]);
+  React.useEffect(() => { load(); }, [load]);
+  /* It REFRESHES, because a list of names that has not moved since breakfast
+     looks live and is not — and "watch people register" was the literal ask.
+     60s against a 5-minute feed cache, so most ticks are free; the visible
+     clock is what tells the reader whether they are looking at now. Pausing
+     stops it, because a list that reorders under the cursor while you are
+     reading a name is the haunted-text-box problem one surface over. */
+  React.useEffect(() => {
+    if (paused) return;
+    const t = setInterval(load, 60000);
+    return () => clearInterval(t);
+  }, [load, paused]);
+
+  if (err || !rows) return null;
+  if (!rows.length) return null;
+
+  const money = v => {
+    const n = Number(v);
+    return Number.isFinite(n) && n > 0 ? '$' + n.toLocaleString(undefined, { maximumFractionDigits: 0 }) : '\u2014';
+  };
+  /* NEVER `new Date(ymd)`. The card emits a bare local wall-clock string
+     ("2026-09-03T14:41:48") already converted to the org's timezone, so
+     parsing it as a Date and reformatting would re-apply the VIEWER's zone and
+     shift a 9pm signup onto the wrong day. Read the parts. */
+  const when = ts => {
+    const m = String(ts || '').match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+    if (!m) return String(ts || '');
+    const h = Number(m[4]), ap = h >= 12 ? 'pm' : 'am', h12 = h % 12 === 0 ? 12 : h % 12;
+    return Number(m[2]) + '/' + Number(m[3]) + ' ' + h12 + ':' + m[5] + ap;
+  };
+  const today = rows.length ? String(rows[0]['Signed Up At'] || '').slice(0, 10) : '';
+  const todayN = rows.filter(r => String(r['Signed Up At'] || '').slice(0, 10) === today).length;
+
+  return (
+    <div className="panel coffee" data-prog-coffee={String(rows.length)}>
+      <div className="coffee-head">
+        <div>
+          <span className="coffee-title">{'\u2615'} Laurel&rsquo;s Coffee Chart</span>
+          {/* The count that matters on a registration morning is TODAY'S, and
+              it is stated rather than left to be counted down the list. */}
+          <span className="coffee-sub" data-prog-coffee-today={String(todayN)}>
+            {todayN} {todayN === 1 ? 'signup' : 'signups'} on the newest day {'\u00b7'} {rows.length} shown, newest first
+          </span>
+        </div>
+        <label className="coffee-pause" title="Stops the 60-second refresh, so a row cannot move while you are reading it.">
+          <input type="checkbox" checked={paused} onChange={e => setPaused(e.target.checked)} /> Pause
+        </label>
+      </div>
+      <div className="coffee-scroll">
+        <table className="coffee-table">
+          <thead><tr>
+            <th>Signed up</th><th>Who</th><th>Participant</th><th>Section</th><th className="r">Price</th>
+          </tr></thead>
+          <tbody>
+            {rows.slice(0, 60).map((r, i) => (
+              <tr key={i}>
+                <td className="nw">{when(r['Signed Up At'])}</td>
+                <td>
+                  <div>{r['Customer Name']}</div>
+                  {r['Email'] ? <div className="coffee-em">{r['Email']}</div> : null}
+                </td>
+                {/* A dash, not the buyer's name repeated: a booking for the
+                    account holder themselves has no separate participant, and
+                    echoing the buyer would imply a child who is not there. */}
+                <td>{r['Participant'] || '\u2014'}</td>
+                <td>
+                  <div>{r['Section']}</div>
+                  {r['Program'] && r['Program'] !== r['Section']
+                    ? <div className="coffee-em">{r['Program']}</div> : null}
+                </td>
+                <td className="r nw">{money(r['Price'])}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="coffee-foot">
+        {at ? 'Live \u00b7 refreshed ' + at.toLocaleTimeString() : ''}
+        {paused ? ' \u00b7 paused' : ''}
+      </div>
+    </div>
+  );
+}
+
 function ProgPanelCsv({ rows, name }) {
   if (!rows || rows.length < 2) return null;
   function go(ev) {
@@ -1222,7 +1384,13 @@ function cancelPct(cancellations, enrollments) {
 function MultiPicker({ slug, allLabel, someLabel, options, sel, setSel, open, setOpen, title, onChange }) {
   const fire = function(next) {
     setSel(next);
-    if (onChange) onChange();
+    // THE NEW SELECTION IS PASSED THROUGH. It used to call onChange() bare, so
+    // a caller that needs to react to WHAT was ticked could not — reading
+    // `sel` inside the handler gives the value before this click. The season
+    // picker needs it to decide whether to clear the date range, and reading
+    // stale state there would clear the dates on an UNtick as readily as a
+    // tick. Both existing callers ignore the argument, so this is additive.
+    if (onChange) onChange(next);
   };
   return (
     <div {...{ ['data-prog-' + slug + '-wrap']: true }} className="mpick-wrap">
@@ -1807,6 +1975,28 @@ function App() {
   // toolbar checkbox was removed 2026-07-16; presence-gating replaces it)
   const showWaitlist = colPresence.waitlist;
   const [showCancels,  setShowCancels]  = useState(() => { try { return localStorage.getItem(LS_SHOW_CANCELS)  === 'true'; } catch { return false; } });
+  /* CANCELLED SECTIONS ARE OUT BY DEFAULT. Dan, 2026-09-03: "we should be
+     excluding canceled sections in the revenue report, but allow the filter to
+     show them."
+
+     Laurel: "it's bringing up stuff that we canceled last summer or we never
+     ran... I was like, Challenge Island, we canceled before it even ran, why is
+     it on this report?" Measured on her exact window: 21 of 195 sections come
+     back Canceled, and there was no way to exclude them — the existing
+     `showCancels` checkbox only ADDS TWO COLUMNS.
+
+     Note those are two different things and must not be folded together:
+     `cancellations` is how many REGISTRATIONS were cancelled on a live
+     section, which is a real metric an org wants; `status === 'Canceled'` is
+     the section itself never running. Merging them would delete the first to
+     fix the second.
+
+     NOT persisted, deliberately. The default is the useful one, and an admin
+     who ticked this once in March should not silently get cancelled sections
+     in their totals for the rest of the year — that is the "my settings keep
+     resetting" complaint in reverse, and the worse direction, because it
+     changes NUMBERS rather than layout. */
+  const [showCanceledSections, setShowCanceledSections] = useState(false);
   const [chartView, setChartView] = useState('revenue');
   const [chartExpanded, setChartExpanded] = useState(false);
   const [chartHover, setChartHover] = useState(null);
@@ -2600,9 +2790,29 @@ function App() {
   // so: the column is always present, and an org with none yields exactly one
   // option, which the control hides.
   const seasonOptions = useMemo(() => {
-    if (!progSections) return [];
     const counts = new Map();
-    progSections.forEach(r => {
+    /* THE ORG'S OWN SEASON LIST GOES IN FIRST, so the control renders on the
+       first paint instead of 31s later.
+
+       Laurel at Shrewsbury: "we don't have the seasons tab" — and Dan, looking
+       at her org on the call: "I'm not seeing seasons up top here." The control
+       was never missing. It is gated on `seasonOptions.length > 1`, and this
+       memo used to return [] while `progSections` was null, so for the entire
+       31.4s her feed takes to answer there was nothing to see. She was told to
+       use a picker that did not exist yet, twice, and concluded her org lacked
+       it. A feed that has not answered is not a feed without that season —
+       the same load-vs-empty shape as `?ci_rows=`, the permits column and the
+       campmap's POS_OK.
+
+       Injected at count 0 so a season the CURRENT window actually contains
+       always outranks it in the busiest-first sort, and so a stale entry (a
+       season since renamed) sinks to the bottom rather than leading. The rows'
+       own list is never replaced — a season new since the last fetch has to
+       appear. */
+    ((window.ORG_CONFIG || {}).knownSeasons || []).forEach(name => {
+      if (name) counts.set(name, 0);
+    });
+    (progSections || []).forEach(r => {
       const v = seasonKey(r);
       counts.set(v, (counts.get(v) || 0) + 1);
     });
@@ -2669,8 +2879,15 @@ function App() {
   // excluded, for 11.6% of programs.
   const scopedRows = useMemo(() => {
     if (!rows) return rows;
-    if (!locFilter && !seasonSel.length && !instrSel.length) return rows;
+    // Cancelled sections are excluded by DEFAULT, so this funnel now runs even
+    // with no filter picked. It has to flatten to sections to test status —
+    // a program is 'Canceled' only when EVERY section is, so filtering at
+    // program grain would keep a cancelled section inside a live program and
+    // drop a live section inside a mostly-cancelled one.
+    const dropCanceled = !showCanceledSections;
+    if (!dropCanceled && !locFilter && !seasonSel.length && !instrSel.length) return rows;
     let out = progSections || [];
+    if (dropCanceled) out = out.filter(r => !progIsCanceledSection(r));
     if (locFilter) {
       out = locFilter === LOC_NONE ? out.filter(r => !r.location)
                                    : out.filter(r => r.location === locFilter);
@@ -2687,7 +2904,7 @@ function App() {
       out = out.filter(r => want.has(instructorKey(r)));
     }
     return sectionGrain ? rollupToPrograms(out) : out;
-  }, [rows, progSections, sectionGrain, locFilter, seasonSel, instrSel]);
+  }, [rows, progSections, sectionGrain, locFilter, seasonSel, instrSel, showCanceledSections]);
 
   // The demographics, retention and check-in tabs read their OWN feeds, which
   // carry neither a location nor a season column — only the programs card
@@ -2701,6 +2918,10 @@ function App() {
     // while every panel beside them moved — the scoped-some-panels-not-others
     // bug. Instructor is the third and had to be added here as well as to the
     // funnel; the funnel alone leaves those two tabs reading everything.
+    // showCanceledSections is NOT a dimension here on purpose: excluding
+    // cancelled sections does not narrow which PROGRAMS the other tabs should
+    // read, and treating it as a narrowing would scope those feeds off a
+    // default nobody chose.
     if ((!locFilter && !seasonSel.length && !instrSel.length) || !scopedRows) return null;
     return new Set(scopedRows.map(r => r.programName));
   }, [locFilter, seasonSel, instrSel, scopedRows]);
@@ -2965,6 +3186,12 @@ function App() {
       }
     }
   }, [rows]);
+  /* How many cancelled sections the window holds — the number ON the control,
+     computed from the SAME predicate the funnel filters with so the two can
+     never disagree. Measured at Shrewsbury on Laurel's window: 21 of 195. */
+  const progCanceledCount = useMemo(
+    () => (progSections || []).filter(progIsCanceledSection).length,
+    [progSections]);
   const hasRegMode       = colPresence.regMode;
   const hasCancellations = colPresence.cancellations;
   const showRegModeCol   = hasRegMode && showRegMode;
@@ -3068,7 +3295,51 @@ function App() {
             title="Scopes the whole report — every tab, every total"
             allLabel={function(n) { return 'All Seasons (' + n + ')'; }}
             someLabel={function(k, n) { return 'Seasons: ' + k + ' of ' + n; }}
-            onChange={function() { setInsights(null); setInsightsMeta(null); }} />
+            onChange={function(next) {
+              setInsights(null); setInsightsMeta(null);
+              /* PICKING A SEASON CLEARS THE DATE RANGE, and this is the fix for
+                 three separate things Laurel hit at once.
+
+                 She set 9/25 -> 12/07 meaning "registrations since the 25th".
+                 The range means "sections whose SESSIONS run then", so she got
+                 26 sections from Spring/Summer and Winter — her "stuff that's
+                 over, from last summer" — and Dan's own advice on the call was
+                 to clear the dates and use the season instead. A season IS the
+                 period; asking for both is asking two different questions and
+                 getting their intersection.
+
+                 It also makes the season list safe. Options now include the
+                 org's remembered seasons, so a ticked season could name one
+                 with nothing in the current window — an empty report, which
+                 the original row-derived list could never produce. Dateless,
+                 the season has its own rows by definition.
+
+                 And it is the cold-load fix. feedCacheKey includes the param
+                 string, so every distinct window is its own entry and prewarm
+                 only warms the default one — her freshly typed range was a
+                 guaranteed 31.4s miss. With no dates this hits the ONE key per
+                 org that prewarm already keeps warm. */
+              if (next && next.length && (startDate || endDate)) {
+                setStartDate(''); setEndDate('');
+                fetchData('', '');
+              }
+            }} />
+        </React.Fragment>)}
+        {/* CANCELLED SECTIONS: out by default, one click to see them, and the
+            count is on the control so the reader knows what it is worth
+            clicking. `progCanceledCount` is computed off the same predicate the
+            funnel uses, so the number and the exclusion cannot disagree.
+            Absent when the window holds none — a checkbox offering to reveal
+            nothing is the dead end this repo keeps writing down. */}
+        {progCanceledCount > 0 && (<React.Fragment>
+          <div className="divider" />
+          <label data-prog-showcanceled={showCanceledSections ? '1' : '0'}
+            style={{flexDirection:'row',alignItems:'center',gap:5,textTransform:'none',color:'#ddd',fontSize:11,cursor:'pointer'}}
+            title={'Cancelled sections never ran. They are out of every total on this report unless you tick this.\n\n' + progCanceledCount + ' of the sections in this window are cancelled.'}>
+            <input type="checkbox" checked={showCanceledSections}
+              onChange={e => { setShowCanceledSections(e.target.checked); setInsights(null); setInsightsMeta(null); }} />
+            Show {progCanceledCount} cancelled
+          </label>
         </React.Fragment>)}
         {instrOptions.length > 1 && (<React.Fragment>
           <div className="divider" />
@@ -3379,6 +3650,14 @@ function App() {
           var ciPctColor = function(p) { return p == null ? '#ccc' : p >= 85 ? '#16a34a' : p <= 25 ? '#dc2626' : '#333'; };
           return (
             <div style={{maxWidth:1100,margin:'0 auto'}}>
+              {/* THE FRONT DOOR, ABOVE EVERYTHING. Dan: "lets build the
+                  lightweight enrollment card right on the program summary
+                  page, at the top." It goes above the compare chip and the KPI
+                  row on purpose — the point of the feedback was that the
+                  answer to the daily question was three levels down. */}
+              {(window.ORG_CONFIG || {}).coffeeChart
+                ? <ProgCoffeeChart basePath={'/' + orgSlug + '/enrollments'} withToken={withToken} />
+                : null}
               {/* ── Compare toggle — prior window mirrors the report's timeframe ── */}
               <div style={{display:'flex',justifyContent:'flex-end',margin:'12px 0 -6px'}}>
                 <span className={'compare-chip' + (compareOn ? ' on' : '')} onClick={toggleCompare}>

@@ -271,6 +271,14 @@ const REPORT_CACHE_TTL = {
   facility: 4 * 60 * 60 * 1000,            // 4 hrs — warmed at 5am
   gl: 15 * 60 * 1000,                     // 15 min — financials need to be near-live; the GL report also shows a "Data as of · Refresh" stamp for on-demand realtime
   roster: 2 * 60 * 60 * 1000,             // 2 hrs — enrollments change
+  /* 5 MINUTES, and it is the shortest TTL on the platform after gl. This feed
+     exists to be watched on a registration morning — Laurel: "registration day
+     opens and I can literally watch people register for stuff". A 4-hour cache
+     would show her a list that has not moved since breakfast, which is worse
+     than no list, because a stale feed of names looks live. It is also cheap
+     to re-run: 11.9s unbounded at Shrewsbury, and the page asks for a bounded
+     window. */
+  enrollments: 5 * 60 * 1000,
   programs: 4 * 60 * 60 * 1000,           // 4 hrs
   memberships: 4 * 60 * 60 * 1000,        // 4 hrs
   products: 4 * 60 * 60 * 1000,           // 4 hrs
@@ -1417,7 +1425,7 @@ const ORGS = {
   },
 };
 
-const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "products", "memberships", "court-utilization", "calendar", "fasttrack", "waitlist", "users", "program-demographics", "instructor-payout", "retention", "annual-report", "section-detail", "ice-calendar", "qoq", "checkins", "program-checkins", "selfservice", "programs-monthly"];
+const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "products", "memberships", "court-utilization", "calendar", "fasttrack", "waitlist", "users", "program-demographics", "instructor-payout", "retention", "annual-report", "section-detail", "ice-calendar", "qoq", "checkins", "program-checkins", "selfservice", "programs-monthly", "enrollments"];
 
 // ── Friendly report directory — label + emoji per report type ──────────
 // Powers the smart Project-Update composer (auto-draft from the changelog):
@@ -1445,6 +1453,7 @@ const REPORT_DIRECTORY = {
   qoq:                 { label: "QoQ Revenue Comparison",   emoji: "📉" },
   selfservice:         { label: "Self-Service Mix",         emoji: "🖱️" },
   "programs-monthly":  { label: "Programs by Month",        emoji: "📅" },
+  "enrollments":       { label: "Enrollments Live",        emoji: "☕" },
 };
 
 // ── Shared Metabase UUIDs (one query per report type, parameterized by org_id) ──
@@ -1486,6 +1495,22 @@ const SHARED_UUIDS = {
   // because a row of confident $0 bars would say the org collected nothing when
   // the truth is that nothing answered.
   "programs-monthly": process.env.MB_PROGRAMS_MONTHLY_UUID || "a9f6a60e-43bf-4368-ada9-c6a7245f639c",
+  /* Card 21286 — the signup feed behind "Laurel's Coffee Chart".
+     Laurel at Shrewsbury, 2026-09-03: "I'm here in the morning, I have my
+     coffee, I'm going to log in and see what everything looks like... I don't
+     have that umbrella viewpoint that I'm used to having, and I miss it."
+     What she had was her own Metabase card 3571 — four columns, newest first,
+     no filters — and it beat our seven-tab Programs report for the question
+     she asks daily.
+
+     THE KEY IS OMITTED ENTIRELY UNTIL SOMEBODY CREATES THE PUBLIC LINK, which
+     is why this is a spread and not a plain assignment. With no key the route
+     404s and the panel is ABSENT — the same rule as programs-monthly and
+     hasAbsent: a "no registrations yet" table would say nobody signed up when
+     the truth is that nothing answered, and on a registration-day morning that
+     is the worst possible lie. Set MB_ENROLLMENTS_UUID and it completes itself
+     with no redeploy. */
+  ...(process.env.MB_ENROLLMENTS_UUID ? { enrollments: process.env.MB_ENROLLMENTS_UUID } : {}),
 };
 
 // Which card does the app ACTUALLY query for a given org + report?
@@ -2049,12 +2074,12 @@ const AMENITY_TAGS = {
 
 // Report types that are valid system-wide but should NOT be offered in the
 // dashboard "+ Add report" flow (e.g. not yet ready for self-serve onboarding).
-const NON_ADDABLE_REPORTS = new Set(["program-demographics", "retention", "annual-report", "section-detail", "qoq", "checkins", "program-checkins", "selfservice", "programs-monthly"]);
+const NON_ADDABLE_REPORTS = new Set(["program-demographics", "retention", "annual-report", "section-detail", "qoq", "checkins", "program-checkins", "selfservice", "programs-monthly", "enrollments"]);
 // Reports that require extra params (e.g. section_id) and cannot be health-checked with org_id alone
 // How many consecutive failed probes before a report is called down. One is
 // load; two in a row is a report. See the flap note in checkOne().
 const HEALTH_ALERT_AFTER = Number(process.env.HEALTH_ALERT_AFTER || 2);
-const HEALTH_SKIP_REPORTS = new Set(["section-detail", "annual-report", "qoq", "qbr-stats", "checkins", "program-checkins", "selfservice", "programs-monthly"]);
+const HEALTH_SKIP_REPORTS = new Set(["section-detail", "annual-report", "qoq", "qbr-stats", "checkins", "program-checkins", "selfservice", "programs-monthly", "enrollments"]);
 const RENTAL_CALENDAR_ORGS = new Set(["watertown", "norman", "niagarafalls"]);
 // Director's Report (quarterly executive summary) — org-wide since 2026-08-04
 // (piloted on Watertown earlier the same day). With ALL_ORGS true every org
@@ -8692,6 +8717,12 @@ app.get("/:org/:report/api/data", resolveOrg, async (req, res) => {
     // never broken a report, and alerting on additions is what made this log
     // unreadable. Additions are still recorded by checkSchemaDrift for the
     // admin panel — they just do not page.
+    // Learn this org's season list off any programs feed that answers, so the
+    // season picker exists on the NEXT first paint instead of 31s in. Reading
+    // it here rather than on the page is the whole point: the page cannot know
+    // a season exists until its own fetch lands.
+    if (reportType === "programs") rememberOrgSeasons(orgSlug, data);
+
     const schemaDrift = checkSchemaDrift(reportType, data, orgSlug);
     if (schemaDrift && schemaDrift.severity === "breaking") {
       sendDriftAlert([schemaDrift], orgSlug, reportType).catch(() => {});
@@ -10404,6 +10435,46 @@ app.get("/:org/historic", (req, res) => {
   res.type("html").send(require("fs").readFileSync(path.join(__dirname, "public", "historic.html"), "utf8"));
 });
 
+/* ── THE SEASON LIST, REMEMBERED PER ORG ─────────────────────────────────────
+   Laurel at Shrewsbury, 2026-09-03: "we don't have the seasons tab" — and Dan
+   on the call, looking at her org: "I'm not seeing seasons up top here."
+
+   The control was never missing. `seasonOptions` on the page is derived from
+   the ROWS, so while a feed is in flight there are no rows, no options, and
+   the picker is gated out at `length > 1` — ABSENT, not disabled. Measured on
+   her exact window: the Shrewsbury programs feed takes 31.4s cold and returns
+   FOUR seasons, so the picker she was told to use did not exist for the first
+   half-minute of every visit, and she reasonably concluded her org did not
+   have it. Same load-vs-empty shape as `?ci_rows=`, the permits column and the
+   campmap's POS_OK: a feed that has not answered is not a feed without that
+   season.
+
+   So the list is learned from every programs feed that answers and kept per
+   org, then injected into ORG_CONFIG so the control renders on FIRST PAINT.
+   The page unions it with what the current rows carry, and never replaces the
+   rows' own list — a season present in this window must appear even if it is
+   new since the last fetch.
+
+   In memory only, deliberately: it is a convenience for the first render, not
+   a source of truth, and a restart just means the first visit behaves the way
+   every visit used to. */
+const _orgSeasonList = {};   // { slug: { seasons: [...], ts } }
+function rememberOrgSeasons(slug, rows) {
+  if (!slug || !Array.isArray(rows) || !rows.length) return;
+  const seen = new Set();
+  for (const r of rows) {
+    const v = r["program_season"] ?? r["Season"] ?? r["season"];
+    // The card COALESCEs to its own literal 'No Season', and a pre-v6 feed
+    // yields empty — both are the same fact, and the page folds them the same
+    // way in seasonKey(). Anything unreadable is skipped rather than stored as
+    // a blank option nobody can tick.
+    const name = (v == null || String(v).trim() === "") ? "No Season" : String(v).trim();
+    seen.add(name);
+  }
+  if (!seen.size) return;
+  _orgSeasonList[slug] = { seasons: [...seen].sort(), ts: Date.now() };
+}
+
 app.get("/:org/programs", (req, res) => {
   const slug = req.params.org;
   const org  = ORGS[slug];
@@ -10417,6 +10488,12 @@ app.get("/:org/programs", (req, res) => {
     token: org.token || "",
     participantsTab: PARTICIPANTS_ENABLED_ALL,
     retentionTab: true,
+    // So the season picker exists on first paint rather than 31s in. Empty on
+    // a cold process, which degrades to exactly the old behaviour.
+    knownSeasons: (_orgSeasonList[slug] || {}).seasons || [],
+    // Absent until somebody creates the public link for card 21286 — the panel
+    // then completes itself with no redeploy.
+    coffeeChart: !!SHARED_UUIDS.enrollments,
   };
   const html = require("fs").readFileSync(path.join(__dirname, "public", "programs.html"), "utf8");
   const inject = `<script>window.ORG_CONFIG=${JSON.stringify(orgConfig)};</script>`;
