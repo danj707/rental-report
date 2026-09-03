@@ -36,7 +36,12 @@ const drSrc = fs.readFileSync(path.join(ROOT, "public", "directors-report.html")
 
 // ── Lift the server's aggregators ──────────────────────────────────────────
 const S_START = "const DIR_OUTDOOR_TYPES =";
-const S_END = "function dirCourt(rows, days) {";
+// The end marker is the function NAME ONLY, never its parameter list. Keying
+// it on "function dirCourt(rows, days) {" made this spec THROW an
+// AssertionError — not fail by name — the moment dirCourt gained the
+// availability arguments. Fifth instance in this repo of a slice reaching past
+// its own inputs, and the third where a guard died instead of failing.
+const S_END = "function dirCourt(";
 const a = serverSrc.indexOf(S_START), b = serverSrc.indexOf(S_END);
 assert.ok(a > 0, "server.js should declare DIR_OUTDOOR_TYPES");
 assert.ok(b > a, "the site-slice helpers should sit above dirCourt()");

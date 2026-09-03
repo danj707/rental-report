@@ -3098,6 +3098,112 @@ leaves *lands on the tab* and *survives the write-back* PASSING while only
 the harness answers `/users/api/data` from a generic stub and the panel looks
 much the same either way — what regressed is that the REQUEST was never made.
 
+## Court utilization: ONE availability source, and the SF QBR is empty (2026-09-03)
+
+Dan, on a partner brief about San Francisco's QBR reading 70% (Q2 2025) against
+53% (Q2 2026): *"confirm we're still using a generic denominator for the courts
+utilization rate, not the ACTUAL court availability, no?"* — then, on the
+answer: *"can we flip the qbr generator to live availability... it should be
+referencing the same availability data."*
+
+### THE COURTS TAB WAS ALREADY ON LIVE AVAILABILITY. The QBR was not.
+
+Two code paths, and only one of them was generic:
+
+| surface | denominator, before |
+|---|---|
+| Courts tab (`facilities.html` → `CourtUtilizationView`) and `/​:org/court-utilization` | **live per-court schedule**, from MCP `list_sites` → `config.bookingPolicies.slots`, per weekday × how many of that weekday fall in the window |
+| QBR (`qbrSumCourt`) and Director's Report (`dirCourt`) | flat `QBR_COURT_HRS_PER_DAY = 11` × courts × days, **clamped at 100%** |
+
+`courtSchedulesFor(org)` is now extracted from the route's body, so the route,
+the QBR and the Director's Report read **one** source — which is the whole ask.
+`courtOpenHours(courtKeys, …)` does the same arithmetic `computeCourtAvail`
+does on the tab, so the two cannot disagree.
+
+- **THE COURT KEY IS THE TAB'S OWN LABEL** — `"<location> — <court>"`, em dash.
+  The QBR used `"|"` internally; a key that does not match sends every court to
+  the fallback and **the number looks unchanged**, which is the worst way for
+  this to break.
+- **The 100% clamp is gone.** Under a real schedule a court over 100% is a
+  finding — booked beyond its published hours — and clamping hid exactly that.
+  The flat denominator needed the clamp because it invented what it divided by.
+- **`utilizationEstimated` is now TRUE only when some of the denominator really
+  is assumed.** It was hardcoded true, so a measured figure carried an "EST."
+  tag — the reason a partner asked what the denominator was in the first place.
+- **`scheduled` / `assumed` travel with the number** and the report prints
+  which: *"from each court's own open hours"*, or *"N of M courts assume X
+  hrs/day"*. A utilization that does not say how much of its denominator was
+  assumed is how the flat figure got trusted.
+- **A failed probe is not cached.** Caching it for four hours would put every
+  court on the flat fallback for the rest of the window — the `POS_OK` rule.
+- `dowCountsInRange` builds dates from PARTS, never `new Date(ymd)` — UTC
+  midnight lands on the previous day west of UTC and would mis-weight a
+  quarter's Mondays.
+
+### THE FLIP DOES NOT MOVE SF'S HEADLINE, and that is worth knowing
+
+Measured against SF's live schedules (107 of its 114 courts resolve):
+
+| quarter | flat denominator | live denominator | util |
+|---|---|---|---|
+| Q2 2025 | 101,101 | **100,867** | 70% either way |
+| Q2 2026 | 107,107 | **105,625** | 53% either way |
+
+Within **1.4%**. SF's mean is **10.85 open hrs per court-day**, a coincidence
+away from the flat 11 — so the flat figure was accidentally right in aggregate
+for this org, and **the −20.6% YoY drop is real in the booking data**, not a
+denominator artifact.
+
+Where the flip pays is PER COURT, and there it is large. The spread across
+SF's 749 scheduled court-days: 419 at 12h, 112 at 13.5h, 42 at 14h — and **18
+at ZERO and 14 at 1.5h**. Presidio Wall runs 1.5 open hrs/day and was being
+divided by 11; on a test row it reads **37% instead of 5%**.
+
+**Two candidate availability sources disagree and Dan's call settled it.** The
+partner brief measured `court_slot` and got 13.58 avg (range 1.5–26); the
+`bookingPolicies` path the tab reads gives 10.85 mean, max 14. Using
+`court_slot` would have produced ~57% / ~43% — a defensible-looking number that
+disagrees with the Courts tab, which is the two-surfaces-disagreeing trap. The
+tab's source wins because the tab is what an org looks at.
+
+### PINNED, AND BIGGER THAN THE DENOMINATOR: the SF QBR is empty
+
+Measured on **production**, `POST /qbr/api/generate`, 2026-09-03:
+
+| org / quarter | sections populated |
+|---|---|
+| **SF Q2 2025** | `financial` ONLY — court, facility, programs, users, retention all **null** |
+| **SF Q2 2026** | **nothing at all** |
+| apex Q2 2026 | `financial` only, `court: null` |
+| watertown Q2 2026 | `financial` + `court` (13 courts, 1,675.5 hrs, 13%) |
+
+Both SF runs took **125–130s**, which is every feed hitting `fetchMBDirect`'s
+**120s** abort (`safe()` swallows it, `dirCourt(null)` returns null, and the
+panel simply does not render). Card **17297** for SF did not return in **240s**
+from this sandbox for one quarter; SF has **575,329 `reservation_court` rows**
+and the org filter alone takes 54s.
+
+**CONSEQUENCE: the numbers in the partner brief did not come from this
+generator — it cannot compute them.** They came from hand-written SQL or
+another system. Do not "regenerate" a QBR for SF and present those figures as
+this system's output; check what actually populated first. A QBR that answers
+200 with five null sections looks like a working report.
+
+**This is the real SF ticket**: cards 17297 (court-utilization) and the
+facility feed cannot answer for a 114-court org inside the request budget.
+Raising the budget alone is not obviously right — see the health-check section
+on slow-vs-broken, and the `materialized` index section for why the fix is
+usually an index rather than a longer wait.
+
+### A spec that THREW instead of failing — fifth instance
+
+`directors-facilities.spec.js` slices server.js from `const DIR_OUTDOOR_TYPES =`
+to the literal `"function dirCourt(rows, days) {"`. Adding the availability
+arguments moved that marker, so the slice failed and the spec died on a bare
+`AssertionError` naming nothing. The end marker is the function NAME ONLY now.
+**Fifth instance of a slice reaching past its own inputs**, and the third where
+a guard died instead of failing by name.
+
 ## Feedback metrics on the Platform Usage cards (2026-09-03)
 
 Dan: *"I feel like displaying the feedback metrics are an easy lift."* It was —

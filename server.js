@@ -10750,18 +10750,41 @@ function dirSiteSlice(rows, types) {
 const dirOutdoor = rows => dirSiteSlice(rows, DIR_OUTDOOR_TYPES);
 const dirFields = rows => dirSiteSlice(rows, ["field"]);
 
-function dirCourt(rows, days) {
+/* LIVE AVAILABILITY, the same data the Courts tab divides by. `avail` is
+   { schedules, fallbackHrsPerDay } from courtSchedulesFor(); pass null and it
+   degrades to the old flat denominator rather than reporting nothing, because
+   a failed MCP probe must not blank a quarterly report.
+
+   THE COURT KEY IS THE TAB'S OWN LABEL. The schedules map is keyed
+   "<location> — <court>" (em dash), so this builds the same string instead of
+   the "|" it used internally — a key that does not match silently sends every
+   court to the fallback and the number looks unchanged. */
+function dirCourt(rows, days, avail, start, end) {
   if (!Array.isArray(rows) || !rows.length) return null;
   const courts = new Set(); let hours = 0;
   for (const r of rows) {
-    courts.add((r.location_name || "") + "|" + (r.court_name || ""));
+    courts.add(((r.location_name || "") + " \u2014 " + (r.court_name || "")));
     hours += dnum(r.duration_hours);
   }
-  const available = courts.size * (days || 0) * QBR_COURT_HRS_PER_DAY;
+  const sched = (avail && avail.schedules) || null;
+  const dows = dowCountsInRange(start, end);
+  const open = courtOpenHours([...courts], sched, dows, days,
+                              (avail && avail.fallbackHrsPerDay) || QBR_COURT_HRS_PER_DAY);
   return {
     hours: Math.round(hours), courts: courts.size,
-    util: available > 0 ? Math.min(100, Math.round(hours / available * 100)) : null,
-    hrsPerDay: QBR_COURT_HRS_PER_DAY,
+    // NOT CLAMPED at 100 any more. Under a real schedule a court over 100% is
+    // a finding — double-booked, or open hours narrower than what is being
+    // sold — and clamping it hid exactly that. The flat denominator needed the
+    // clamp because it invented the number it was dividing by.
+    util: open.hours > 0 ? Math.round(hours / open.hours * 100) : null,
+    openHours: Math.round(open.hours),
+    // What the reader needs to know to trust the figure: how much of the
+    // denominator is measured and how much is assumed.
+    scheduled: open.matched, assumed: open.fellBack,
+    hrsPerDay: open.matched > 0
+      ? Math.round(open.hours / Math.max(1, courts.size * (days || 1)) * 10) / 10
+      : QBR_COURT_HRS_PER_DAY,
+    availSource: open.matched > 0 ? (open.fellBack > 0 ? "mixed" : "schedule") : "flat",
   };
 }
 
@@ -10997,6 +11020,11 @@ async function buildDirectorsQuarter(slug, year, q) {
     safe(fetchMBDirect(slug, "fasttrack", null, null)),
     safe(fetchMBDirect(slug, "retention", null, null)),
   ]);
+  // Joined to the same wave as the feeds, so live availability costs no extra
+  // wall-clock. It is cached four hours per org and never reaches Metabase.
+  const courtAvail = await courtSchedulesFor(ORGS[slug]).catch(e => {
+    console.warn("[directors-report] court schedules failed: " + e.message); return null;
+  });
   const gl = dirSumGL(glC), glPrev = dirSumGL(glP);
   const pg = dirPrograms(pgC), pgPrev = dirPrograms(pgP);
   const fac = dirFacility(facC), facPrev = dirFacility(facP);
@@ -11015,7 +11043,11 @@ async function buildDirectorsQuarter(slug, year, q) {
     programs: pg ? { ...pg, prevEnroll: pgPrev ? pgPrev.enroll : null } : null,
     waitlist: dirWaitlist(wl),
     facility: fac ? { ...fac, prevN: facPrev ? facPrev.n : null, prevRev: facPrev ? facPrev.rev : null } : null,
-    court: dirCourt(court, qbrDaysBetween(cur.start, cur.end)),
+    // LIVE AVAILABILITY, from the same source the Courts tab reads. Fetched
+    // above alongside the feeds so it costs no extra wall-clock; a failure
+    // yields null and dirCourt degrades to the flat denominator rather than
+    // dropping the panel.
+    court: dirCourt(court, qbrDaysBetween(cur.start, cur.end), courtAvail, cur.start, cur.end),
     // Both slice facC, the feed already fetched above — no extra Metabase time.
     outdoor: dirOutdoor(facC),
     fields: dirFields(facC),
@@ -11201,17 +11233,27 @@ app.get("/:org/court-utilization", (req, res) => {
 const cuScheduleCache = {}; // { orgId: { data, ts } }
 const CU_SCHEDULE_TTL = 4 * 60 * 60 * 1000; // 4 hrs (schedules rarely change)
 
-app.get("/:org/court-utilization/api/schedules", async (req, res) => {
-  const slug = req.params.org;
-  const org  = ORGS[slug];
-  if (!org || !org.orgId) return res.json({ schedules: {}, fallbackHrsPerDay: 12 });
+/* ── ONE SOURCE OF COURT AVAILABILITY ────────────────────────────────────────
+   Dan, 2026-09-03: "can we flip the qbr generator to live availability... it
+   should be referencing the same availability data" as the Courts tab.
 
-  // Cache check
+   It now does. This used to be inline in the route below, so the Courts tab
+   read live per-court operating hours while the QBR and the Director's Report
+   divided by a flat QBR_COURT_HRS_PER_DAY. Two surfaces reporting a different
+   utilization for the same quarter is worse than one surface being rough —
+   which is exactly what a partner hit: SF's QBR read 70% / 53% off the flat
+   denominator while the Courts tab was already dividing by each court's real
+   schedule.
+
+   Measured for San Francisco Rec & Park (114 courts) on 2026-09-03: 107 courts
+   resolve to a live schedule, mean 10.85 open hrs per court-day, and the
+   SPREAD is the whole argument — 419 court-days at 12h, 112 at 13.5h, 42 at
+   14h, but also 18 at ZERO and 14 at 1.5h (Presidio Wall). A flat 11 is wrong
+   per court in both directions. */
+async function courtSchedulesFor(org) {
+  if (!org || !org.orgId) return { schedules: {}, fallbackHrsPerDay: 12, courtCount: 0, matchedCount: 0 };
   const cached = cuScheduleCache[org.orgId];
-  if (cached && Date.now() - cached.ts < CU_SCHEDULE_TTL) {
-    return res.json(cached.data);
-  }
-
+  if (cached && Date.now() - cached.ts < CU_SCHEDULE_TTL) return cached.data;
   try {
     const client = await getRecMcpClient();
     if (!client) throw new Error("MCP client not available");
@@ -11289,12 +11331,67 @@ app.get("/:org/court-utilization/api/schedules", async (req, res) => {
 
     const payload = { schedules, fallbackHrsPerDay, courtCount: allSites.length, matchedCount: Object.keys(schedules).length };
     cuScheduleCache[org.orgId] = { data: payload, ts: Date.now() };
-    res.json(payload);
+    return payload;
   } catch (e) {
     console.error("[court-utilization] schedules error:", e.message);
-    res.json({ schedules: {}, fallbackHrsPerDay: 12, error: e.message });
+    // NOT CACHED. A failed probe is not evidence that an org has no schedules,
+    // and caching it for four hours would silently put every court on the flat
+    // fallback for the rest of the window. Same rule as the campmap's POS_OK.
+    return { schedules: {}, fallbackHrsPerDay: 12, courtCount: 0, matchedCount: 0, error: e.message };
   }
+}
+
+app.get("/:org/court-utilization/api/schedules", async (req, res) => {
+  res.json(await courtSchedulesFor(ORGS[req.params.org]));
 });
+
+/* HOW MANY OPEN HOURS A SET OF COURTS HAS IN A WINDOW.
+
+   Per court: sum over the days of week of (that court's open hours on that
+   weekday) x (how many of that weekday fall inside the window) — which is what
+   `computeCourtAvail` on the Courts tab does, so the two cannot disagree.
+
+   `courtKeys` are the tab's own "<location> — <court>" labels, because that is
+   the key the schedules map is built on.
+
+   A COURT WITH NO SCHEDULE FALLS BACK, AND THE FALLBACK IS COUNTED. Reporting
+   a utilization without saying how much of its denominator was assumed is how
+   the flat figure got trusted in the first place, so this returns `matched`
+   and `fellBack` and the caller says so on screen. */
+function courtOpenHours(courtKeys, schedules, dowCounts, days, fallbackHrsPerDay) {
+  let hours = 0, matched = 0, fellBack = 0;
+  const flat = Number(fallbackHrsPerDay) || QBR_COURT_HRS_PER_DAY;
+  for (const key of courtKeys) {
+    const sched = schedules && schedules[key] && schedules[key].dailyHrs;
+    if (sched) {
+      matched++;
+      for (let dow = 1; dow <= 7; dow++) hours += (sched[dow] || 0) * (dowCounts[dow] || 0);
+    } else {
+      fellBack++;
+      hours += flat * (days || 0);
+    }
+  }
+  return { hours, matched, fellBack };
+}
+
+/* How many of each weekday fall in [start, end] inclusive. Built from the date
+   PARTS, never `new Date(ymd)` — that is UTC midnight and lands on the previous
+   day west of UTC, which would mis-weight a quarter's Mondays. The same trap
+   already recorded for fasttrack dates and the check-in day-of-week. */
+function dowCountsInRange(start, end) {
+  const counts = {};
+  if (!start || !end) return counts;
+  const p = ymd => { const [y, m, d] = String(ymd).slice(0, 10).split("-").map(Number); return new Date(y, m - 1, d, 12, 0, 0); };
+  const cur = p(start), stop = p(end);
+  if (isNaN(cur) || isNaN(stop)) return counts;
+  while (cur <= stop) {
+    const js = cur.getDay();
+    const dow = js === 0 ? 7 : js;
+    counts[dow] = (counts[dow] || 0) + 1;
+    cur.setDate(cur.getDate() + 1);
+  }
+  return counts;
+}
 
 // ━━ Annual Report Generator ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 app.get("/:org/annual-report", (req, res) => {
@@ -11652,20 +11749,35 @@ function qbrSumFac(rows) {
   }
   return { bookings: frIds.size || rows.length, locations: locs.size, revenue: rev };
 }
-function qbrSumCourt(rows, days) {
+// Same change as dirCourt, and deliberately the same helper — two quarterly
+// surfaces computing court utilization two ways is the thing being fixed.
+function qbrSumCourt(rows, days, avail, start, end) {
   if (!Array.isArray(rows) || !rows.length) return null;
   const courts = new Set(); let hours = 0;
   for (const r of rows) {
     const c = r["Court Name"] || r["court_name"]; const l = r["Location Name"] || r["location_name"] || "";
-    if (c) courts.add(l + "|" + c);
+    if (c) courts.add(l + " \u2014 " + c);
     hours += qpf(r["Duration Hours"] || r["duration_hours"]);
   }
   const hoursBooked = Math.round(hours * 10) / 10;
   const courtCount = courts.size;
-  const availableHours = courtCount * (days || 0) * QBR_COURT_HRS_PER_DAY;
-  let utilization = availableHours > 0 ? Math.round(hoursBooked / availableHours * 100) : null;
-  if (utilization != null && utilization > 100) utilization = 100;
-  return { hoursBooked, courts: courtCount, utilization, utilizationEstimated: true, hrsPerDay: QBR_COURT_HRS_PER_DAY };
+  const open = courtOpenHours([...courts], (avail && avail.schedules) || null,
+                              dowCountsInRange(start, end), days,
+                              (avail && avail.fallbackHrsPerDay) || QBR_COURT_HRS_PER_DAY);
+  return {
+    hoursBooked, courts: courtCount,
+    utilization: open.hours > 0 ? Math.round(hoursBooked / open.hours * 100) : null,
+    openHours: Math.round(open.hours),
+    scheduled: open.matched, assumed: open.fellBack,
+    // TRUE only when some of the denominator is still assumed. It used to be
+    // hardcoded true, which made a measured figure carry an "EST." tag — the
+    // reason a partner asked what the denominator was.
+    utilizationEstimated: open.fellBack > 0 || open.matched === 0,
+    hrsPerDay: open.matched > 0
+      ? Math.round(open.hours / Math.max(1, courtCount * (days || 1)) * 10) / 10
+      : QBR_COURT_HRS_PER_DAY,
+    availSource: open.matched > 0 ? (open.fellBack > 0 ? "mixed" : "schedule") : "flat",
+  };
 }
 function qbrSumRetention(rows) {
   if (!Array.isArray(rows) || !rows.length) return null;
@@ -11699,6 +11811,9 @@ async function buildQbr(orgCtx, year, q) {
     qbrFetch(orgCtx, "qbr-stats", prev.start, prev.end),
     qbrFetch(orgCtx, "users", null, null),
   ]);
+  const courtAvail = await courtSchedulesFor(ORGS[orgCtx.slug] || orgCtx).catch(e => {
+    console.warn("[qbr] court schedules failed: " + e.message); return null;
+  });
   const gl = qbrSumGL(glC), glPrev = qbrSumGL(glP);
   const pg = qbrSumProg(pgC), pgPrev = qbrSumProg(pgP);
   const fac = qbrSumFac(facC), facPrev = qbrSumFac(facP);
@@ -11717,7 +11832,7 @@ async function buildQbr(orgCtx, year, q) {
       enrollmentsDelta: pgPrev ? qbrPctDelta(pg.enrollments, pgPrev.enrollments) : null } : null,
     facility: fac ? { bookings: fac.bookings, locations: fac.locations, revenue: fac.revenue,
       bookingsDelta: facPrev ? qbrPctDelta(fac.bookings, facPrev.bookings) : null } : null,
-    court: qbrSumCourt(courtC, qbrDaysBetween(cur.start, cur.end)),
+    court: qbrSumCourt(courtC, qbrDaysBetween(cur.start, cur.end), courtAvail, cur.start, cur.end),
     retention: qbrSumRetention(retC),
     users: users ? {
       total: users.total, new: users.new,
