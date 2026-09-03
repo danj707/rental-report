@@ -173,6 +173,14 @@ jobs:
       - name: Programs summary — cancellations, seasons before the rows, pills, sticky toolbar
         run: node scripts/programs-summary.spec.js
 
+      # Card 17295's only date filter was the [[ ]] pair at the very bottom, so
+      # every CTE above it ran over the org's whole history and was then thrown
+      # away. Watertown, Sep 2026: item_tx 14.0s over 9,194 order items, 0.08s
+      # over 890 once scoped. v9 lifts that same predicate to the top and leaves
+      # the bottom clauses in place as the authority.
+      - name: Card 17295 v9 — the window is applied before the work, not after
+        run: node scripts/programs-card-window.spec.js
+
       # Card 19273 inferred a claim from a timestamp that really marked the
       # EXPIRY SWEEP — of 5,371 grants it called claimed, 5,371 were already
       # expired and ZERO were still open. Conversion read 63% where the truth

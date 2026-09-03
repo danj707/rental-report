@@ -1301,6 +1301,108 @@ shared card had none at all.
 Kill strays before driving a page; a stale server is indistinguishable from a
 code failure in the output.
 
+## Card 17295 does the whole org's work and then throws it away (2026-09-03)
+
+Dan, after the same bug was fixed on card 21286: *"yes, profile 17295 and scope
+it like you did the other card."* Profiled, fixed, **NOT PUSHED** — see the last
+section here for why, and `sql/report-cards/17295-programs-report.v9-PENDING.sql`
+for the candidate.
+
+**THE ONLY DATE FILTER IS THE `[[ ]]` PAIR AT THE VERY BOTTOM**, against the `sd`
+LATERAL. So `bk`, `item_tx`, `item_collected`, `sec_fin` (with its
+`payment_plan_installment` LATERAL), `slots`, `ppl`, `wl` and `sec_fac` are all
+computed over the org's **entire history** and then discarded for out-of-window
+sections. Identical shape to the `money` CTE on 21286.
+
+### The measurement, at Watertown over Sep 2026
+
+| | unscoped | scoped |
+|---|---|---|
+| **`item_tx`** — the dominant CTE | **14.0s** / 9,194 order items | **0.08s** / 890 |
+| `slots` | 3.6s / 3,262 sessions | 1.84s / 501 |
+| sections | 773 | 177 |
+| bookings | 9,430 | 945 |
+
+`item_tx` is where the time goes: two per-item LATERALs
+(`order_item_transaction`, `payment_plan_installment`) over ten times the rows
+they can possibly contribute to. At apex the same window keeps **1,371 of 5,926
+sections and 23,127 of 115,188 bookings.**
+
+**DO NOT READ THE WHOLE-QUERY WALL-CLOCK NUMBERS FROM THIS SANDBOX.** Measured
+back to back on the same window, the deployed shape came in at 12.8s and the
+candidate at 15.6s and 19.5s — while a six-`COUNT(*)` probe on the same database
+ranged 0.25s to 56s. That is the *"run the sweep alone"* caveat with teeth: the
+shared Metabase is under variable load and a single whole-query timing from here
+is not evidence of anything. The per-CTE figures above are the honest ones,
+because each is a controlled comparison of the same sub-workload.
+
+### HOW MUCH IT BUYS DEPENDS ENTIRELY ON THE WINDOW
+
+Sections kept at Watertown: **one month 177 of 773 (23%), a quarter 224 (29%),
+twelve months 591 (76%).** So the default page load gets most of the win and a
+full-year pull gets very little — which matters, because the failure Dan asked
+about (*"a bunch of their reports aren't loading"*) was Watertown taking 3m45s
+and then 400ing, and a 12-month Watertown pull measured **259s** alone. **This
+fix is for the common case, not for that timeout.** Saying otherwise would be
+promising a cure for the thing that actually broke.
+
+### `sec_win` IS THE CARD'S OWN FILTER, LIFTED — not a new one
+
+`sd.first_start` is `MIN(g.mn)` over the per-location groups, i.e. the overall
+`MIN(starts_at)`; `sd.last_end` is the overall `MAX(ends_at)`. `sec_env` computes
+exactly those. A section with **no sessions** gets NULLs from `sd` (an aggregate
+over an empty set) and no `sec_env` row at all, and passes both tests either way
+— which is why each bound carries its own `IS NULL` branch.
+
+- **The bottom `[[ ]]` clauses STAY, as the authority.** `sec_win` restricts
+  *inputs*; the output is still governed by the filter that always governed it.
+  Deleting them "because `sec_win` already does it" is how the two predicates
+  drift apart silently.
+- **`sec_env` is ONE `GROUP BY`, not a per-section LATERAL.** The first version
+  used a LATERAL, which re-does per section the work `sd` already does per
+  section — at apex that cost more than it saved and the probe timed out.
+- **The main section list is scoped too** (`JOIN sec_win swm`), so the `sd`
+  LATERAL itself only runs for sections that can survive.
+- The session-booking arm of `slots` carries only a session id, so it needs its
+  own `session` join to reach a section before it can be scoped.
+
+**PROVEN IDENTICAL, not assumed.** Watertown, 2026-09-01..30, an md5 over
+`row_to_json` of every output column:
+
+| shape | rows | fingerprint |
+|---|---|---|
+| deployed (v8) | 177 | `50ed1d95b84df5dab22a104bbe1fb629` |
+| candidate | 177 | `50ed1d95b84df5dab22a104bbe1fb629` |
+
+**Apex could NOT be proven the same way**, and that is a gap to close before the
+push rather than a thing to wave through: both shapes exceed the 60s ceiling on
+every tool available from here, and there is no `MB_API_KEY` in this sandbox to
+go around it. The clean way to close it is a **scratch card** carrying the
+candidate SQL, compared to 17295 through the public endpoint — no risk, no
+downtime, and it needs a public link before it can be read.
+
+### WHY IT IS NOT PUSHED
+
+Pushing takes the Programs report **down for every org** until a human re-types
+the Start/End Date tags: an API push regenerates every tag as Text, the card then
+registers **six** parameters, the app binds by slug and sends two values per
+variable, and Metabase answers *"An error occurred."* That is not a thing to
+start while nobody is at a keyboard. The `verify-report-live.js` sign-off has to
+follow the flip, not precede it, because the verifier fails the same way during
+the window and its failure carries no extra information.
+Flip link: https://rec.metabaseapp.com/question/17295
+
+Guard: `scripts/programs-card-window.spec.js` (**34 assertions, in CI**), which
+reads the PENDING candidate while it exists and the live mirror after the push,
+so it keeps guarding across the rename. Mutation-tested sixteen ways, all failing
+by name: either bottom `[[ ]]` clause deleted (the authority removed), each of
+the eight scoped CTEs unscoped one at a time, an `IS NULL` branch dropped (which
+would silently drop every section with no sessions), `sec_win`'s lower bound
+reading `end_date`, the clauses made non-optional, the session-booking arm's own
+`session` join dropped, `sec_env` reverted to a LATERAL, an output column
+renamed, and the trailing `ORDER BY` dropped — the exact thing that silently
+vanished on card 17300.
+
 ## Programs: instructor + location on screen, and "by month" (2026-09-01)
 
 Dan: *"lets build out the enhancements to the programs report, including
