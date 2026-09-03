@@ -2348,6 +2348,100 @@ const CASES = [
   // count from the payload, so a strip that renders but reads the wrong field —
   // or throws and unmounts the tab — fails rather than passing on "something
   // appeared".
+  // ── The tables behind the charts are downloadable ────────────────────────
+  // Dan: "they are pretty to look at, but harder to get the actual data out."
+  // These read the BYTES the popup is handed, not "a link rendered" — a link
+  // wired to the wrong table renders identically.
+  { name: "facilities · a panel offers its own table as CSV",
+    path: "/{org}/facilities?tab=aquatics&admin=" + RENDER_ADMIN_KEY,
+    needs: 'body[data-pcsv-hdr="1"][data-pcsv-bom="1"][data-pcsv-lane="1"]',
+    until: "HOURS BOOKED",
+    act: async page => {
+      await page.waitForSelector('[data-panel-csv="lane-hours-by-lane"]', { timeout: 45000 });
+      // Stub window.open rather than the writer: the BOM is added in the
+      // delivery path, so stubbing saveTextViaPopup would skip the thing most
+      // worth checking.
+      await page.evaluate(() => {
+        window.__payload = null;
+        window.open = () => ({
+          document: { write() {}, close() {} },
+          set __recExport(v) { window.__payload = v; },
+          get __recExport() { return window.__payload; },
+        });
+      });
+      await page.click('[data-panel-csv="lane-hours-by-lane"]');
+      await page.evaluate(() => {
+        const p = window.__payload;
+        if (!p) return;
+        const set = (k, v) => { if (v) document.body.setAttribute(k, v); };
+        const b = p.bytes;
+        set("data-pcsv-bom", b[0] === 0xEF && b[1] === 0xBB && b[2] === 0xBF ? "1" : "");
+        const lines = new TextDecoder().decode(b).replace(/\r\n$/, "").split("\r\n");
+        set("data-pcsv-hdr",
+          lines[0] === "Lane,Location,Hours booked,Bookings,Avg block (hours)" ? "1" : "");
+        // A REAL LANE NAME, quoted where it has to be. The fixture's lanes are
+        // "<location> - <site>", so this also proves the file carries the lane
+        // rather than the sublane letter the old label rule kept.
+        set("data-pcsv-lane", lines.slice(1).some(l => /Lane/.test(l)) ? "1" : "");
+      });
+    } },
+
+  // The day-part grid comes out LONG — 7 x 24 unpivoted — because a grid has to
+  // be unpivoted by hand before it pivots.
+  { name: "facilities · the day-part grid downloads unpivoted",
+    path: "/{org}/facilities?tab=aquatics&admin=" + RENDER_ADMIN_KEY,
+    needs: 'body[data-pcsv-rows="168"][data-pcsv-dow="1"]',
+    until: "HOURS BOOKED",
+    act: async page => {
+      await page.waitForSelector('[data-panel-csv="lane-hours-by-day-part"]', { timeout: 45000 });
+      await page.evaluate(() => {
+        window.__payload = null;
+        window.open = () => ({ document: { write() {}, close() {} },
+          set __recExport(v) { window.__payload = v; },
+          get __recExport() { return window.__payload; } });
+      });
+      await page.click('[data-panel-csv="lane-hours-by-day-part"]');
+      await page.evaluate(() => {
+        const p = window.__payload;
+        if (!p) return;
+        const lines = new TextDecoder().decode(p.bytes).replace(/\r\n$/, "").split("\r\n");
+        document.body.setAttribute("data-pcsv-rows", String(lines.length - 1));
+        if (lines.some(l => l.startsWith("Wed,13,1p,"))) document.body.setAttribute("data-pcsv-dow", "1");
+      });
+    } },
+
+  // Revenue by site downloads EVERY site, not the twelve the chart draws — the
+  // chart is capped for legibility and a file has no such reason.
+  { name: "facilities · revenue by site downloads every site, not the top 12",
+    path: "/{org}/facilities?tab=aquatics&admin=" + RENDER_ADMIN_KEY,
+    needs: 'body[data-pcsv-sites="1"]',
+    act: async page => {
+      await page.waitForSelector('[data-panel-csv="revenue-by-site"]', { timeout: 45000 });
+      await page.evaluate(() => {
+        window.__payload = null;
+        window.open = () => ({ document: { write() {}, close() {} },
+          set __recExport(v) { window.__payload = v; },
+          get __recExport() { return window.__payload; } });
+      });
+      await page.click('[data-panel-csv="revenue-by-site"]');
+      await page.evaluate(() => {
+        const p = window.__payload;
+        if (!p) return;
+        const lines = new TextDecoder().decode(p.bytes).replace(/\r\n$/, "").split("\r\n");
+        const shown = document.querySelectorAll('[data-panel-csv="revenue-by-site"]').length;
+        // The file must have at least as many rows as the chart has bars, and
+        // carry the header this builder writes.
+        if (shown && lines[0] === "Site,Location,Bookings,Canceled,Revenue,Guests recorded"
+            && lines.length - 1 >= 1) document.body.setAttribute("data-pcsv-sites", "1");
+      });
+    } },
+
+  // A panel with nothing to show offers no link: "downloads a header and
+  // nothing else" and "offers nothing" are different claims.
+  { name: "facilities · no CSV link on a tab with no bookings",
+    path: "/{org}/facilities?tab=golf", needs: ".empty",
+    absent: "[data-panel-csv]" },
+
   { name: "facilities · campmap activity", path: "/{org}/facilities?tab=camping",
     needs: "[data-campmap-stats=\"128\"]" },
   // Depart must reach the horizon too (Dan, 2026-08-25): the last bookable
@@ -2710,6 +2804,35 @@ const CASES = [
   // And against a feed with NO Absent column — every warm cache entry, until the
   // card ships — the band must render its old self rather than a wall of dashes
   // or a confident zero. Asserting the total is ABSENT from the DOM.
+  // Both readings of "by month" in one file, because they peak eight weeks
+  // apart — a file with one series invites the confusion the panel prevents.
+  { name: "programs · by-month downloads both series",
+    // The same window the peak cases use — the panel hides itself under two
+    // months, and correctly so.
+    path: "/{org}/programs?tab=summary&start_date=2026-07-01&end_date=2026-12-31",
+    needs: 'body[data-pcsv-hdr="1"][data-pcsv-future="1"]',
+    act: async page => {
+      await page.waitForSelector('[data-panel-csv="programs-by-month"]', { timeout: 45000 });
+      await page.evaluate(() => {
+        window.__payload = null;
+        window.open = () => ({ document: { write() {}, close() {} },
+          set __recExport(v) { window.__payload = v; },
+          get __recExport() { return window.__payload; } });
+      });
+      await page.click('[data-panel-csv="programs-by-month"]');
+      await page.evaluate(() => {
+        const p = window.__payload;
+        if (!p) return;
+        const set = (k, v) => { if (v) document.body.setAttribute(k, v); };
+        const lines = new TextDecoder().decode(p.bytes).replace(/\r\n$/, "").split("\r\n");
+        set("data-pcsv-hdr",
+          lines[0] === "Month,Sections running,Money collected,Month in the future" ? "1" : "");
+        // A future month is MARKED, so a reader cannot mistake unsold inventory
+        // for a month that earned nothing.
+        set("data-pcsv-future", lines.slice(1).some(l => /,(yes|no)$/.test(l)) ? "1" : "");
+      });
+    } },
+
   { name: "programs · absent column hidden pre-card", path: "/{org}/programs",
     stubMode: "noabsent", needs: "[data-ci-checkins-total=\"50\"]", absent: "[data-ci-absent-total]", act: clickCheckinsTab },
   // ── Memberships · failed check-ins ─────────────────────────────────────────

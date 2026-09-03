@@ -145,6 +145,9 @@ jobs:
       - name: Aquatics scope (pools by default; extra site types are configured, never guessed)
         run: node scripts/aquatics-scope.spec.js
 
+      - name: Chart data is downloadable (panel CSV + workbook sheets)
+        run: node scripts/panel-csv.spec.js
+
       - name: Programs location filter (one funnel; a stale ?loc= cannot empty the report)
         run: node scripts/programs-location.spec.js
 

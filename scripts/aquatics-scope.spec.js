@@ -208,8 +208,8 @@ ok(!/split\('  ?- '\)/.test(code) && !/\.split\(' - '\)/.test(code),
    "no tab derives a site name by splitting on ' - ' any more");
 ok(!/shortSite/.test(code),
    "the four local copies of that rule are gone — one helper, or they drift");
-eq((code.match(/siteLabel\(/g) || []).length - 1, 8,
-   "EIGHT callers read the one helper: the aquatics revenue bars plus the per-site and per-type/location rollups on Camping, Outdoor and Fields");
+eq((code.match(/siteLabel\(/g) || []).length - 1, 9,
+   "NINE callers read the one helper: the aquatics revenue bars, the per-site and per-type/location rollups on Camping, Outdoor and Fields, and the by-site CSV builder — which is why the download carries the lane name and not the sublane letter");
 
 // ── 6. Avg Party is averaged over the bookings that CAN answer ──────────────
 // Measured at El Segundo (Sep 2026, card 19570): 1,257 of 4,578 pool bookings

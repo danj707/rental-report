@@ -3863,7 +3863,7 @@ setTimeout(() => { checkCardParamTypes().catch(() => {}); }, 150 * 1000).unref?.
 // Inert if the env var is unset. Fire-and-forget — never blocks or breaks logging.
 // To change what pings Slack, edit SLACK_NOTIFY. High-frequency events (view/fetch)
 // are debounced per org+report so Slack isn't a firehose.
-const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "campmap-filter", "campmap-amenity", "pdf", "excel", "print", "summary", "game", "map", "outdoor", "fields", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email", "checkin-loc", "checkin-member", "checkin-failed", "form-open", "epact", "settings-open", "settings-unlock", "settings-locked", "settings-save", "settings-reset", "deadlink", "generate", "wizard-save", "mb-autorenew", "mb-salesmix", "ft-export"]);
+const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "campmap-filter", "campmap-amenity", "pdf", "excel", "print", "summary", "game", "map", "outdoor", "fields", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email", "checkin-loc", "checkin-member", "checkin-failed", "form-open", "epact", "settings-open", "settings-unlock", "settings-locked", "settings-save", "settings-reset", "deadlink", "generate", "wizard-save", "mb-autorenew", "mb-salesmix", "ft-export", "panel-csv"]);
 const SLACK_DEBOUNCE_MS = { view: 30 * 60 * 1000, fetch: 30 * 60 * 1000,
   // A broken report stays broken. The health check only reports NEW failures,
   // but a flapping card would otherwise post every hour.
@@ -3875,6 +3875,9 @@ const SLACK_DEBOUNCE_MS = { view: 30 * 60 * 1000, fetch: 30 * 60 * 1000,
 const SLACK_DEFAULT_DEBOUNCE_MS = 60 * 1000; // dedup rapid double-fires of one-off events
 const slackLastSent = new Map();
 const SLACK_EVENT_META = {
+  // WHICH chart someone needed the numbers out of — the most useful signal we
+  // have about where the reports stop being enough on screen.
+  "panel-csv":       { emoji: "\u{1F4C8}", verb: "downloaded chart data from" },
   created: { emoji: "🏢", verb: "New org created" },
   "org-deleted": { emoji: "🗑️", verb: "DELETED from the reporting project" },
   deadlink: { emoji: "\uD83D\uDD17", verb: "dead link" },
@@ -3988,6 +3991,12 @@ function notifySlack(rec) {
       ? `${rec.org}|update|${rec.updateId || ""}|${rec.sentiment || ""}`
     : rec.event === "map"
       ? `${rec.org}|${rec.report}|map|${rec.location || ""}`
+    // Chart downloads key by PANEL, for the same reason: pulling lane hours and
+    // then revenue-by-site is two different needs, and the default key would
+    // keep only whichever was clicked first — which is exactly the signal this
+    // event exists to capture.
+    : rec.event === "panel-csv"
+      ? `${rec.org}|${rec.report}|panel-csv|${rec.panel || ""}`
     // Campsite opens and book-throughs key by SITE for the same reason map pins
     // key by location: a camper comparing six sites should read as six, not as
     // whichever one they happened to open first.
@@ -4236,6 +4245,15 @@ function notifySlack(rec) {
     const n = rec.bookings;
     const on = n == null ? "" : ` — ${n.toLocaleString()} field booking${n === 1 ? "" : "s"} in range`;
     text = `${meta.emoji} ${orgName} (\`${rec.org}\`) opened *Fields* on the facilities report${on}`;
+  } else if (rec.event === "panel-csv") {
+    // NAME THE PANEL, or the message reads "downloaded chart data from
+    // *facility*" and says nothing about which chart — which is the only part
+    // of this event worth reading. Same reason the outdoor branch prints the
+    // tab rather than rec.report.
+    const rows = rec.rows;
+    const many = rows == null ? "" : ` — ${rows.toLocaleString()} row${rows === 1 ? "" : "s"}`;
+    const panel = rec.panel ? `*${rec.panel}*` : "a chart";
+    text = `${meta.emoji} ${orgName} (\`${rec.org}\`) downloaded ${panel} as CSV${many}`;
   } else if (rec.event === "outdoor") {
     // Carry what the tab had to show. An org opening it on zero bookings is a
     // different fact from one opening it on 400 — the first says the pavilions
@@ -6495,14 +6513,19 @@ app.post("/:org/facilities/api/log", (req, res) => {
   const slug = req.params.org;
   if (!ORGS[slug]) return res.status(404).json({ ok: false, error: "Unknown org" });
   const event = req.query.event;
-  const ALLOWED = ["game", "summary", "outdoor", "fields"];
+  const ALLOWED = ["game", "summary", "outdoor", "fields", "panel-csv"];
   if (!ALLOWED.includes(event)) return res.status(400).json({ ok: false, error: "Unknown event" });
   // How much the Outdoor Events tab had to show. "Someone opened it" is trivia;
   // "opened it on 412 bookings" says whether the tab is answering anything.
   const n = Number(req.query.n);
+  const rowN = Number.isFinite(n) && n >= 0 && n <= 999999 ? Math.round(n) : undefined;
   const extra = event === "game" && req.query.game ? { game: String(req.query.game).slice(0, 60) }
-              : (event === "outdoor" || event === "fields")
-                  ? { bookings: Number.isFinite(n) && n >= 0 && n <= 999999 ? Math.round(n) : undefined }
+              : (event === "outdoor" || event === "fields") ? { bookings: rowN }
+              // WHICH panel is the signal, not that a download happened: it
+              // says which chart people actually need the numbers out of. The
+              // panel name is clamped server-side rather than echoed.
+              : event === "panel-csv"
+                  ? { panel: String(req.query.panel || "").slice(0, 60), rows: rowN }
               : undefined;
   logEvent(slug, "facility", event, req, extra);
   res.json({ ok: true });
@@ -6583,10 +6606,15 @@ app.post("/:org/:report/api/log", resolveOrg, (req, res) => {
   const { event, game, location, view } = req.query;
   // view-apply is events.jsonl-only by design — it is not in SLACK_NOTIFY, so
   // logEvent records it without pinging the feed (see the saved-views block).
-  const ALLOWED = ["excel", "print", "summary", "game", "map", "view-apply", "checkin-loc", "checkin-member", "checkin-failed", "form-open", "epact", "settings-open", "mb-autorenew", "mb-salesmix", "ft-export"];
+  const ALLOWED = ["excel", "print", "summary", "game", "map", "view-apply", "checkin-loc", "checkin-member", "checkin-failed", "form-open", "epact", "settings-open", "mb-autorenew", "mb-salesmix", "ft-export", "panel-csv"];
   if (!ALLOWED.includes(event)) return res.status(400).json({ ok: false, error: "Unknown event" });
   const ciN = Number(req.query.n);
   const extra = event === "game" && game ? { game: String(game).slice(0, 60) }
+              // WHICH chart someone needed the numbers out of. Clamped here
+              // rather than echoed from the query string.
+              : event === "panel-csv"
+                ? { panel: String(req.query.panel || "").slice(0, 60),
+                    rows: Number.isFinite(ciN) && ciN >= 0 && ciN <= 9999999 ? Math.round(ciN) : undefined }
               : event === "map" && location ? { location: String(location).slice(0, 80) }
               : event === "view-apply" && view ? { view: String(view).slice(0, 60) }
               : event === "checkin-loc"

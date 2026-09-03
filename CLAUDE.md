@@ -1558,6 +1558,115 @@ column count, and the section row's own `1`; all four mutation-tested (the cell
 removed, the total row losing the column, the section count back to a dash, and
 the presence gate hardcoded true).
 
+## The tables behind the charts are downloadable (2026-09-03)
+
+Dan: *"they are pretty to look at, but harder to get the actual data out that
+they need."* Correct, and the gap was total: **every report exported ONE sheet of
+raw rows and none of the chart aggregates.** Lane hours by lane, revenue by
+site, the day-part grid, bookings by month, programs by month, per-location and
+per-instructor — all of it existed only as pictures. Getting "hours by lane" out
+meant re-deriving the hour maths by hand, and that maths (`oeRowHours`, the
+multi-day exclusion, the clock parse) is not in the export at all.
+
+His call: **both** a per-panel link and a workbook, **Aquatics + Programs first.**
+
+### ONE BUILDER, TWO READERS — the whole design
+
+Each table has one builder, called by **both** the panel's download link and the
+workbook sheet. A sheet that reimplemented its panel's rollup would drift the
+first time either changed, and no source assertion can tell the two apart — the
+same reason `progAutopayCell` goes through `progAutopayShare`.
+
+`aqSheetTables()` is the workbook's registry; `panel-csv.spec.js` asserts every
+builder in it is called **at least three times** (its definition, the panel link,
+the sheet), so a table you can get one way but not the other fails.
+
+**The builders take the already-reduced table, not the raw feed.** Handed raw
+rows they would have to reduce it a second way, which is the drift this exists
+to prevent.
+
+**Lane hours are panel-only, deliberately.** They come from card 17294, which
+the hub page fetches *only inside the lane-hours panel* — the hub feed carries no
+wall-clock times. A sheet would have to re-fetch and re-reduce. The spec pins
+that they are absent from the registry AND present on the panel, so the omission
+is a decision rather than a gap.
+
+### `csvFromRows` is shared, because the quoting rule was being copied
+
+One writer in `public/open-pdf.js` (already loaded by every page that exports):
+RFC4180 quoting, CRLF, ISO dates, empty for null. Both cases it guards are real —
+El Segundo has a lane called `Inst Lane 4-2" Depth (25Y) - A`, and a section
+named `Camp, Red` shifts every column after it. Fast Track and the roster keep
+their own copies (both guarded, one byte-matched against Metabase); the spec
+asserts no NEW page grows a third.
+
+### The decisions worth keeping
+
+- **The grids come out LONG, not wide.** One row per weekday per hour, one per
+  month per weekday. A 7×24 block has to be unpivoted by hand before it pivots.
+- **Revenue by site downloads EVERY site, not the twelve the chart draws** — the
+  chart is capped for legibility and a file has no such reason. Said out loud in
+  the builder, because a reader diffing 12 bars against 70 rows should know
+  which one was capped.
+- **A future month's money is BLANK, never 0.** Unsold inventory and
+  earned-nothing are different facts — the same rule the hatched bars encode.
+- **A blank instructor is its OWN ROW**, not dropped: 65% of El Segundo's
+  sections have none, and omitting them would make the file disagree with the
+  enrolment total on screen.
+- **Per-location and per-instructor are SECTION grain.** 11.6% of programs with
+  a located section run at more than one site, so a program-grain rollup files
+  money against a site the reader excluded.
+- **No control where there is nothing to download** — absent, not disabled, and
+  the workbook skips an empty table rather than writing a bare header.
+- **The Programs sheets read `filteredRows`**, not the unscoped feed. That exact
+  bug is already recorded in this file for the Excel export.
+- Both go through `saveTextViaPopup` and ask for the **BOM**: a download started
+  from a sandboxed iframe is silently dropped, and Excel sniffs bytes.
+
+### `panel-csv` (📈) — WHICH chart, not that a download happened
+
+Which panel people need the numbers out of is the most useful signal we have
+about where the reports stop being enough on screen. So the message **names the
+panel** — "downloaded chart data from *facility*" says nothing — and it
+**debounces by panel**, because pulling lane hours and then revenue-by-site is
+two needs and the default `org|report|event` key would keep only the first.
+
+On **both** log routes: `facilities` is not in `REPORT_TYPES` so the hub needs
+its own, `programs` rides the generic one. Miss either allowlist and the beacon
+400s and, being fire-and-forget, never complains — the trap that has now bitten
+this repo four times.
+
+### Two bugs found while building it
+
+- **`CFG` DOES NOT EXIST ON `programs.html`.** It derives the org from the path
+  (`getOrgAndBase`), so `CFG.slug` threw *"CFG is not defined"* the moment the
+  link was clicked. Invisible in source review and to every spec — the render
+  check caught it on the first run. Copying a component between two pages
+  copies its assumptions about what is in scope.
+- **The season spec THREW instead of failing.** `programs-season.spec.js` slices
+  module scope from `const SEASON_NONE` to `function getParams` and evaluates it
+  with `new Function`, which cannot parse JSX — so defining `ProgPanelCsv` in
+  that range killed the process with *"Unexpected token '<'"* before a single
+  assertion ran. The component now sits deliberately BELOW `getParams`, with a
+  comment saying why. **Fourth instance of a slice reaching past its own
+  inputs** in this file, and the second where a guard died instead of failing.
+
+### Guards
+
+`scripts/panel-csv.spec.js` (**25 assertions, in CI**), which LIFTS AND RUNS the
+shared writer and all nine builders — a source assertion cannot tell a sheet
+that shares a builder from one that reimplements it. Mutation-tested: the comma
+quoting dropped, a table removed from the workbook registry, a link offered on
+an empty table, and the Programs sheets reading the unscoped feed — all fail by
+name.
+
+Plus **five `ci-check-render.js` cases** that read the BYTES the popup is handed
+rather than "a link rendered", since a link wired to the wrong table renders
+identically. Two mutations were verified against them: the lane-hours link
+pointed at a different real table, and the day-part grid emitted wide instead of
+long (7 rows instead of 168). `aquatics-scope.spec.js`'s `siteLabel` caller
+count went 8 → 9, which is how the download inherits the lane-name fix.
+
 ## PINNED: "NET REVENUE" on the Programs summary is LIFETIME, not the window (2026-09-02)
 
 Dan, on Apex over 1-31 August 2026: *"and it seems these revenue amounts are a

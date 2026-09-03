@@ -241,7 +241,12 @@
        which is what a scroller is for. This is the "columns misaligned" Dan
        reported on Essex Junction; the header and body are one table and cannot
        structurally drift, so squeezing was the only thing left. */
-    .prog-table { width: 100%; min-width: max-content; border-collapse: collapse; font-size: 11.5px; font-variant-numeric: tabular-nums; }
+    .panel-csv { font-size:10px; font-weight:600; letter-spacing:.04em; color:#0e6d78;
+             text-decoration:none; border:1px solid #cfe0e3; border-radius:4px;
+             padding:2px 7px; background:#f4f9fa; white-space:nowrap; opacity:.75; }
+.panel-csv:hover { opacity:1; background:#e6f2f4; border-color:#0e6d78; }
+@media print { .panel-csv { display:none; } }
+.prog-table { width: 100%; min-width: max-content; border-collapse: collapse; font-size: 11.5px; font-variant-numeric: tabular-nums; }
 
     /* Column headers */
     .prog-table thead tr {
@@ -804,6 +809,55 @@ function progMonthlyActivity(secRows, startISO, endISO) {
 // feed has not answered or has no Month column, so the caller can tell "this org
 // collected nothing" from "this card is not connected yet". A zero here would
 // say the first and mean the second, which is the hasAbsent / ciHasStatus rule.
+// ── The tables behind the charts ────────────────────────────────────────────
+// Dan: "they are pretty to look at, but harder to get the actual data out."
+// The Excel export writes program rollups; nothing wrote the by-month series,
+// or the per-location and per-instructor cuts the location and instructor
+// filters imply. These build those tables from rows the page already has, and
+// both the panel download link and the workbook sheet call the same builder so
+// the two cannot describe a table differently.
+const PROG_MONEY = v => Math.round((Number(v) || 0) * 100) / 100;
+
+// Both readings of "by month", side by side — they peak eight weeks apart at
+// El Segundo (programming in September, money in August), which is the whole
+// reason the panel draws two series. A file with only one of them would invite
+// the same confusion the panel exists to prevent.
+function progCsvByMonth(act, money) {
+  const byM = {};
+  (act || []).forEach(a => { byM[a.month] = { sections: a.sections, future: a.future ? 'yes' : 'no' }; });
+  (money || []).forEach(m => { byM[m.month] = Object.assign(byM[m.month] || {}, { money: m.value }); });
+  const out = [['Month', 'Sections running', 'Money collected', 'Month in the future']];
+  Object.keys(byM).sort().forEach(m => out.push([
+    m, byM[m].sections == null ? '' : byM[m].sections,
+    byM[m].money == null ? '' : PROG_MONEY(byM[m].money),
+    byM[m].future || '']));
+  return out;
+}
+
+// Per LOCATION and per INSTRUCTOR, from section rows. These are the two cuts
+// El Segundo asked for and the two the toolbar filters by, and neither was in
+// any export — you could narrow the screen to a location but not get the
+// summary out. Section grain on purpose: a location and an instructor are
+// facts about a section, so rolling them up per program would invent
+// "this program is at Urho Saari" for the 11.6% that span sites.
+function progCsvByKey(secRows, key, header) {
+  const agg = {};
+  (secRows || []).forEach(r => {
+    const k = (r[key] || '').trim() || '(none on file)';
+    if (!agg[k]) agg[k] = { sections: 0, enrolled: 0, capacity: 0, collected: 0, refunds: 0 };
+    agg[k].sections++;
+    agg[k].enrolled += Number(r.enrolled) || 0;
+    agg[k].capacity += Number(r.capacity) || 0;
+    agg[k].collected += Number(r.periodReceived) || 0;
+    agg[k].refunds += Number(r.periodRefunds) || 0;
+  });
+  return [[header, 'Sections', 'Enrolled', 'Capacity', 'Fill %', 'Collected in range', 'Refunded in range']]
+    .concat(Object.keys(agg).sort((a, b) => agg[b].enrolled - agg[a].enrolled).map(k => [
+      k, agg[k].sections, agg[k].enrolled, agg[k].capacity,
+      agg[k].capacity ? Math.round(agg[k].enrolled / agg[k].capacity * 1000) / 10 : '',
+      PROG_MONEY(agg[k].collected), PROG_MONEY(agg[k].refunds)]));
+}
+
 function progMonthlyMoney(rows) {
   if (!Array.isArray(rows) || !rows.length) return null;
   const first = rows[0] || {};
@@ -1001,6 +1055,47 @@ function getParams() {
     // so a split(',') would cut a legitimate value in half every time.
     instructors: p.getAll('instructor') };
 }
+
+// ── The per-panel download control ──────────────────────────────────────────
+// DELIBERATELY BELOW getParams, and that placement is load-bearing:
+// programs-season.spec.js slices module scope from `const SEASON_NONE` to
+// `function getParams` and evaluates it with `new Function`, which cannot parse
+// JSX. Defining this component inside that range made the spec throw
+// "Unexpected token '<'" before asserting anything — the fourth instance in
+// this repo of a slice reaching past its own inputs.
+//
+// ABSENT rather than disabled where there is nothing to download: a control
+// that yields an empty file is the dead end this repo keeps writing down.
+// ABSENT rather than disabled where there is nothing to download — a control
+// that yields an empty file is the dead end this repo keeps writing down.
+function ProgPanelCsv({ rows, name }) {
+  if (!rows || rows.length < 2) return null;
+  function go(ev) {
+    ev.preventDefault();
+    // THIS PAGE HAS NO CFG — it derives the org from the path, like
+    // logClientEvent does. Reaching for CFG.slug here threw "CFG is not
+    // defined" the moment the link was clicked, which no source assertion
+    // could see and the render check caught immediately.
+    var parts = window.location.pathname.split('/').filter(Boolean);
+    var slug = parts[0] || 'report';
+    // Through the popup, like every other export here: a download started from
+    // a sandboxed iframe is silently dropped. See open-pdf.js.
+    window.saveTextViaPopup(window.csvFromRows(rows), slug + '-' + name + '.csv', { bom: true });
+    // ?event= in the QUERY STRING — a JSON body comes back 400 and a
+    // fire-and-forget beacon never complains. withToken keeps the org token on
+    // the URL without rebuilding the query string.
+    try {
+      if (parts.length >= 2) fetch(withToken('/' + parts[0] + '/' + parts[1]
+        + '/api/log?event=panel-csv&panel=' + encodeURIComponent(name)
+        + '&n=' + (rows.length - 1)), { method: 'POST', keepalive: true }).catch(function () {});
+    } catch (e) {}
+  }
+  return (
+    <a href="#" className="panel-csv" onClick={go} data-panel-csv={name}
+       title="Download this table as CSV">↓ CSV</a>
+  );
+}
+
 
 function getCurrentMonthRange() {
   const now = new Date(), y = now.getFullYear(), m = now.getMonth();
@@ -2286,6 +2381,33 @@ function App() {
     ];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Program Revenue');
+
+    // ── the tables behind the charts, one sheet each ────────────────────────
+    // The workbook was program rollups only, so the by-month series and the
+    // per-location and per-instructor cuts — the two the toolbar filters by,
+    // and the two El Segundo asked for — had to be rebuilt by hand from it.
+    // These come from the SAME builders the panel download links use.
+    //
+    // From `filteredRows`' own sections, so the sheets are scoped to exactly
+    // what is on screen: the Excel export reading `rows` instead of
+    // `filteredRows` is a bug this file has already had.
+    const secRows = (filteredRows || []).reduce((a, r) => a.concat(r._sections || r.sections || []), []);
+    // The by-month sheet is built exactly as the panel builds it — same
+    // reducers, same section set, same money feed — so the sheet and the chart
+    // cannot show different months.
+    const xlAct = progMonthlyActivity(secRows.length ? secRows : (filteredRows || []),
+                                     loadedStart, loadedEnd);
+    [
+      { sheet: 'By month',      rows: progCsvByMonth(xlAct, progMonthlyMoney(monthlyRows)) },
+      { sheet: 'By location',   rows: progCsvByKey(secRows, 'location',   'Location') },
+      { sheet: 'By instructor', rows: progCsvByKey(secRows, 'instructor', 'Instructor') },
+    ].forEach(t => {
+      if (!t.rows || t.rows.length < 2) return;          // nothing to say, no sheet
+      const sh = XLSX.utils.aoa_to_sheet(t.rows);
+      sh['!cols'] = t.rows[0].map(h => ({ wch: Math.min(34, Math.max(11, String(h).length + 3)) }));
+      XLSX.utils.book_append_sheet(wb, sh, t.sheet.slice(0, 31));
+    });
+
     // Handed to a popup to save rather than written straight from here — a
     // download started by a sandboxed iframe is silently dropped. See open-pdf.js.
     saveWorkbookViaPopup(XLSX, wb, `program-revenue-${orgSlug}-${loadedStart || 'report'}.xlsx`);
@@ -3308,6 +3430,9 @@ function App() {
                     <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10,flexWrap:'wrap'}}>
                       <span style={{fontSize:12,fontWeight:700,color:'#334155',textTransform:'uppercase',letterSpacing:'0.05em'}}>📅 By month</span>
                       <span style={{fontSize:11,color:'#94a3b8'}}>hatched months have not happened yet</span>
+                      <span style={{marginLeft:'auto'}}>
+                        <ProgPanelCsv rows={progCsvByMonth(act, money)} name="programs-by-month" />
+                      </span>
                     </div>
 
                     <div style={{marginBottom:14}}>
