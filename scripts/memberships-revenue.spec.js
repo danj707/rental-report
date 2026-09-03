@@ -940,6 +940,65 @@ test("the split is taken over filteredAnyStatus, not the status-filtered view", 
     "the panel is absent, not zeroed, when residency is unknowable");
 });
 
+/* THE SPLIT LEADS WITH THE PAID BOOK.
+ * A residency register is mostly FREE verification records. El Segundo has
+ * 2,337 of 3,275 priced at $0 and 1,989 of those on the resident side, so
+ * counting every record made the panel read "73.2% of the book · $2,949" —
+ * residents as 73% of the book earning 22% of the money. Both numbers were
+ * right; together they read as a mistake.
+ *
+ * This LIFTS AND RUNS the reducer rather than regexing it: a source assertion
+ * cannot tell a share taken over the paid book from one taken over everything.
+ */
+function runResidencySplit(rows) {
+  const sStart = page.indexOf("const residencySplit = useMemo");
+  const body = page.slice(page.indexOf("{", page.indexOf("=> {", sStart)) + 1,
+                          page.indexOf("}, [data, filteredAnyStatus]);", sStart));
+  return new Function("filteredAnyStatus", "data", "mbHasResidency", "mbResidencyKey",
+                      "mbIsAutoRenew", "useMemo", body)(
+    rows, rows, mbHasResidency, mbResidencyKey, mbIsAutoRenew, null);
+}
+
+test("the resident share is taken over the PAID book, not over free records", () => {
+  // El Segundo's real shape in miniature: residents hold a pile of $0
+  // verification records, non-residents buy the passes.
+  const paidRes    = { hasResidency: true, residency: "Yes", price: 40, netCollected: 40, productKind: "pass" };
+  const paidNonRes = { hasResidency: true, residency: "No",  price: 60, netCollected: 60, productKind: "pass" };
+  const freeRes    = { hasResidency: true, residency: "Yes", price: 0,  netCollected: 0,  productKind: "membership" };
+
+  const rows = [paidRes, paidNonRes, paidNonRes, paidNonRes]
+    .concat(Array.from({ length: 20 }, () => freeRes));
+  const out = runResidencySplit(rows);
+
+  assert.strictEqual(out.resident.n, 1, "one PAID resident record");
+  assert.strictEqual(out.nonresident.n, 3, "three PAID non-resident records");
+  assert.strictEqual(out.residentPct, 25,
+    "25% of the paid book — counting the 20 free records would read 84%, which " +
+    "is the number that made the panel look broken");
+  assert.strictEqual(out.resident.revenue, 40, "free records add no revenue");
+  assert.strictEqual(out.free, 20, "and the free register is REPORTED, never dropped");
+  assert.strictEqual(out.freeResident, 20);
+});
+
+test("an org with no free records reads exactly as it did before", () => {
+  const yes = { hasResidency: true, residency: "Yes", price: 10, netCollected: 10, productKind: "pass" };
+  const no  = { hasResidency: true, residency: "No",  price: 10, netCollected: 10, productKind: "pass" };
+  const out = runResidencySplit([yes, no, no, no]);
+  assert.strictEqual(out.residentPct, 25, "the share is unchanged where nothing is free");
+  assert.strictEqual(out.free, 0, "and the free card does not render");
+});
+
+test("the free register is named on screen rather than silently excluded", () => {
+  assert.match(page, /data-mb-res-free=/,
+    "an excluded population is named with its count — the same rule as the " +
+    "unknown bucket, and as the aquatics scope note");
+  // BOTH cards, counted — one assertion passed while the resident card still
+  // said "of the book", because the non-resident card carried the new wording.
+  assert.strictEqual((page.match(/% of the paid book/g) || []).length, 2,
+    "BOTH the resident and non-resident cards say which book the share is of, " +
+    "or the reader supplies the wrong one for whichever half was missed");
+});
+
 test("the unknown bucket is shown, not folded into non-resident", () => {
   assert.match(page, /data-mb-res-unknown=/,
     "an excluded population is named on screen with its count — a silent " +

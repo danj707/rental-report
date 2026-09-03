@@ -769,6 +769,24 @@ function membershipRows() {
       "Resident?": "No",
     }));
   }
+  // ── A FREE RESIDENCY REGISTER, which is what most residency records are ──
+  // El Segundo: 2,337 of 3,275 records priced at $0, 1,989 of them resident.
+  // Folding these into the split reads 14 of 18 = 77.8% resident on a book
+  // where residents paid $1,440 of $2,320 — the shape that made the panel look
+  // broken. The paid split is 6 of 10 = 60%, so `data-mb-res-pct` is the one
+  // number that separates the two and the existing case now discriminates.
+  for (let i = 0; i < 8; i++) {
+    rows.push(row({
+      "User ID": "b81fea14-be38-46db-96da-40e61ccca25b", "First Name": "Grace", "Last Name": "Hopper " + i,
+      "Membership ID": "m-r" + i, "Membership Type": "Residency", "Group / Plan": "El Segundo Residents",
+      "Status": "active", "Renewal Type": "One-time", "Price": 0,
+      "Start Date": "2026-01-01", "End Date": "", "Created At": "2026-01-0" + (i % 9),
+      "Next Renewal": "", "Coverage": "household", "Plan Season End": null,
+      "Plan Term Days": null, "Auto Renew": false, "Period Start": "",
+      "Product Kind": "membership",
+      "Resident?": "Yes",
+    }));
+  }
   // A second auto-renewing plan that CHURNS — 2 still billing, 3 cancelled, so
   // the per-plan cancel rate is 60% against Monthly Individual's 0%. Without a
   // cancelled row every plan reads 0% and the column proves nothing. One of the
@@ -2103,6 +2121,10 @@ const CASES = [
   // so this one number separates the two row sets.
   { name: "memberships · split is the whole book, not the active view", path: "/{org}/memberships",
     needs: "[data-mb-res-pct=\"60\"]" },
+  // The free register is REPORTED beside the split, never folded in and never
+  // dropped — the same rule as the unknown bucket.
+  { name: "memberships · the free residency register is named", path: "/{org}/memberships",
+    needs: "[data-mb-res-free=\"8\"]" },
   // The filter must scope the WHOLE report, so picking Resident has to move a
   // panel that is not the split — the header count is the cheapest proof.
   { name: "memberships · residency filter scopes the page", path: "/{org}/memberships",

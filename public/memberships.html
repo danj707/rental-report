@@ -1856,23 +1856,42 @@ function normalizeRow(raw) {
       // Deliberately shown even when a residency filter is active: it then
       // reports the slice you are looking at, which is what a reader expects
       // of a breakdown sitting under a scoped page.
+      //
+      // IT LEADS WITH THE PAID BOOK. A residency register is mostly FREE
+      // verification records — El Segundo has 2,337 of 3,275 priced at $0, and
+      // 1,989 of those are the resident side — so counting every record made
+      // the panel read "73.2% of the book · $2,949": residents as 73% of the
+      // book earning 22% of the money. Both figures were right and together
+      // they read as a mistake. The share is now taken over records somebody
+      // actually paid for, which is the question "resident vs non-resident"
+      // is asked to answer, and the free records are stated beside it rather
+      // than folded in or hidden.
+      //
+      // A $0 record is a real membership, just not a purchase — so `free` is
+      // reported, never dropped. And an org with NO free records reads exactly
+      // as it did before.
       const residencySplit = useMemo(() => {
         if (!mbHasResidency(data)) return null;
-        const acc = {
-          resident:    { n: 0, revenue: 0, autoRenew: 0 },
-          nonresident: { n: 0, revenue: 0, autoRenew: 0 },
-          unknown:     { n: 0, revenue: 0, autoRenew: 0 },
-        };
+        const blank = () => ({ n: 0, revenue: 0, autoRenew: 0, free: 0 });
+        const acc = { resident: blank(), nonresident: blank(), unknown: blank() };
         for (const r of filteredAnyStatus) {
           const k = mbResidencyKey(r) || 'unknown';
-          acc[k].n++;
-          acc[k].revenue += (r.netCollected || 0);
-          if (mbIsAutoRenew(r)) acc[k].autoRenew++;
+          const isPaid = (r.price || 0) > 0;
+          if (isPaid) {
+            acc[k].n++;
+            acc[k].revenue += (r.netCollected || 0);
+            if (mbIsAutoRenew(r)) acc[k].autoRenew++;
+          } else {
+            acc[k].free++;
+          }
         }
         const known = acc.resident.n + acc.nonresident.n;
+        const freeKnown = acc.resident.free + acc.nonresident.free;
         return {
           ...acc,
           known,
+          free: freeKnown + acc.unknown.free,
+          freeResident: acc.resident.free,
           residentPct: known > 0 ? Math.round(acc.resident.n / known * 1000) / 10 : null,
         };
       }, [data, filteredAnyStatus]);
@@ -4049,7 +4068,7 @@ function normalizeRow(raw) {
                     {residencySplit.resident.n.toLocaleString()}
                   </div>
                   <div className="card-sub" data-mb-res-pct={residencySplit.residentPct == null ? '' : residencySplit.residentPct}>
-                    {residencySplit.residentPct}% of the book · {money(residencySplit.resident.revenue)}
+                    {residencySplit.residentPct}% of the paid book · {money(residencySplit.resident.revenue)}
                   </div>
                 </div>
                 <div className="summary-card" style={{borderLeft:'3px solid #8a5c0c'}}>
@@ -4058,10 +4077,22 @@ function normalizeRow(raw) {
                     {residencySplit.nonresident.n.toLocaleString()}
                   </div>
                   <div className="card-sub">
-                    {residencySplit.residentPct == null ? '' : (Math.round((100 - residencySplit.residentPct) * 10) / 10) + '% of the book · '}
+                    {residencySplit.residentPct == null ? '' : (Math.round((100 - residencySplit.residentPct) * 10) / 10) + '% of the paid book · '}
                     {money(residencySplit.nonresident.revenue)}
                   </div>
                 </div>
+                {residencySplit.free > 0 && (
+                  <div className="summary-card">
+                    <div className="card-label">Free Records</div>
+                    <div className="card-value" data-mb-res-free={residencySplit.free}>
+                      {residencySplit.free.toLocaleString()}
+                    </div>
+                    <div className="card-sub">
+                      priced at $0 — mostly residency verification, so they are
+                      counted here rather than in the split above
+                    </div>
+                  </div>
+                )}
                 {residencySplit.unknown.n > 0 && (
                   <div className="summary-card">
                     <div className="card-label">Residency Unknown</div>
