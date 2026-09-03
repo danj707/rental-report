@@ -964,6 +964,75 @@ function rosterRows() {
   ];
 }
 
+/* The Community Intelligence feed. SEVEN downloadable segments derive from these
+   rows, and every one of them has to hold DIFFERENT households — a button wired
+   to the wrong list renders identically and produces a perfectly plausible file,
+   so the only way to tell is the bytes. Membership by design:
+
+     unbooked       Ruby Solo + Blaise Pascal   (net 0)
+     solo-unbooked  Ruby Solo                   (net 0, household of one)
+     non-resident   Alan Turing + Ruby Solo     (Residency? not Yes)
+     lapsing        Alan Turing                 (last transaction > 90 days)
+     programs-only  Ada Lovelace + Alan Turing  (programme money, no facility)
+     facility-only  Grace Hopper
+     engaged        Katherine Johnson           (both categories)
+
+   The household SIZES are load-bearing too: the "activate solo households"
+   lever only appears when pairs convert better than singles, and that lever is
+   what renders the leverage list's own download button. */
+function intelRows() {
+  const ago = d => new Date(Date.now() - d * 86400000).toISOString().slice(0, 10);
+  const r = (o) => Object.assign({
+    "Household ID": "", "Role": "Head of Household", "First Name": "", "Last Name": "",
+    "Email": "", "Phone": "555-0100", "City": "El Segundo", "State": "CA",
+    "Zip Code": "90245", "Residency?": "Yes", "Created At": ago(200), "Age": "41",
+    "Gender": "female", "Grade": "", "Gross Revenue": "0", "Refunds": "0",
+    "Net Revenue": "0", "Program Revenue": "0", "Facility Revenue": "0",
+    "Fee Revenue": "0", "Product Revenue": "0", "Items Purchased": "0",
+    "Last Transaction": ago(10),
+  }, o);
+  return [
+    // Programme money only.
+    r({ "Household ID": "hh-1", "First Name": "Ada", "Last Name": "Lovelace",
+        "Email": "ada@example.com", "Gross Revenue": "300", "Net Revenue": "300",
+        "Program Revenue": "300", "Items Purchased": "3" }),
+    // Facility money only — a pair, so it counts toward the size-2 conversion.
+    r({ "Household ID": "hh-2", "First Name": "Grace", "Last Name": "Hopper",
+        "Email": "grace@example.com", "Gross Revenue": "400", "Net Revenue": "400",
+        "Facility Revenue": "400", "Items Purchased": "2" }),
+    r({ "Household ID": "hh-2", "Role": "Member", "First Name": "Vera",
+        "Last Name": "Hopper", "Email": "vera@example.com", "Age": "9",
+        "Grade": "4th" }),
+    // Non-resident, and nothing bought in six months. Programme money only, so
+    // the ENGAGED segment stays a single household that is not this one — two
+    // lists of one row cannot be told apart by their length.
+    r({ "Household ID": "hh-3", "First Name": "Alan", "Last Name": "Turing",
+        "Email": "alan@example.com", "Residency?": "No", "Gross Revenue": "120",
+        "Net Revenue": "120", "Program Revenue": "120",
+        "Items Purchased": "1", "Last Transaction": ago(200) }),
+    r({ "Household ID": "hh-3", "Role": "Member", "First Name": "Chris",
+        "Last Name": "Turing", "Email": "chris@example.com", "Residency?": "No",
+        "Age": "12", "Grade": "7th" }),
+    // Signed up, never bought, household of one.
+    r({ "Household ID": "hh-4", "First Name": "Ruby", "Last Name": "Solo",
+        "Email": "ruby@example.com", "Residency?": "No", "Last Transaction": "" }),
+    // Signed up, never bought, but a pair — so unbooked without being solo.
+    r({ "Household ID": "hh-5", "First Name": "Blaise", "Last Name": "Pascal",
+        "Email": "blaise@example.com", "Last Transaction": "" }),
+    r({ "Household ID": "hh-5", "Role": "Member", "First Name": "Etta",
+        "Last Name": "Pascal", "Email": "etta@example.com", "Age": "7",
+        "Grade": "2nd", "Last Transaction": "" }),
+    // Both categories and a resident: the engaged segment, distinct from lapsing.
+    r({ "Household ID": "hh-6", "First Name": "Katherine", "Last Name": "Johnson",
+        "Email": "katherine@example.com", "Gross Revenue": "500",
+        "Net Revenue": "500", "Program Revenue": "250", "Facility Revenue": "250",
+        "Items Purchased": "4" }),
+    r({ "Household ID": "hh-6", "Role": "Member", "First Name": "Joylette",
+        "Last Name": "Johnson", "Email": "joylette@example.com", "Age": "11",
+        "Grade": "6th" }),
+  ];
+}
+
 // Set per case via `stubMode`, so a case can drive a feed's failure path. The
 // stubs see the API request URL, not the page's, so a query flag on the page
 // cannot reach them.
@@ -1068,6 +1137,9 @@ const STUBS = [
   // `window` is what the real feed now echoes back: the date range it actually
   // covers, read off the parameters that were sent. The wizard prints it, so the
   // case below asserts the formatted string rather than merely that a chip drew.
+  // Must precede the catch-all /api/data. Community Intelligence, and Fast
+  // Track's three chipped tabs, both read this feed.
+  { match: /\/users\/api\/data/,      body: () => ({ rows: intelRows(), meta: { org_id: "org-uuid-1" } }) },
   { match: /\/api\/data/,                   body: () => ({ rows: campsiteRows(),
       meta: { window: { start: "2026-08-19", end: "2026-08-26" } } }) },
   { match: /\/api\/pulse/,                  body: () => ({ items: [], generated: null }) },
@@ -2259,6 +2331,85 @@ const CASES = [
       await page.waitForFunction(
         () => /Demographics/.test(document.querySelector(".tab.active")?.textContent || ""),
         { timeout: 45000 });
+    } },
+
+  /* The Community Intelligence contact lists. Dan re-enabled these downloads,
+     and NO SOURCE ASSERTION CAN CHECK THEM: seven buttons call one writer with
+     seven different lists, so a button handed the wrong list renders
+     identically and produces a perfectly plausible file. The only
+     discriminating evidence is the bytes, over a fixture where every segment
+     holds different households. Both cases stub window.open rather than the
+     writer, so the BOM — which is added in the delivery path — is covered. */
+  { name: "users · the unbooked list is the unbooked households",
+    path: "/{org}/users?tab=strategy",
+    needs: 'body[data-icsv-hdr="1"][data-icsv-bom="1"][data-icsv-rows="2"][data-icsv-who="1"]',
+    act: async page => {
+      await page.waitForSelector('[data-intel-csv="unbooked"]', { timeout: 45000 });
+      await page.evaluate(() => {
+        window.__payload = null;
+        window.open = () => ({ document: { write() {}, close() {} },
+          set __recExport(v) { window.__payload = v; },
+          get __recExport() { return window.__payload; } });
+      });
+      await page.click('[data-intel-csv="unbooked"]');
+      await page.evaluate(() => {
+        const p = window.__payload;
+        if (!p) return;
+        const b = p.bytes;
+        const set = (k, v) => { if (v) document.body.setAttribute(k, v); };
+        set("data-icsv-bom", b[0] === 0xEF && b[1] === 0xBB && b[2] === 0xBF ? "1" : "");
+        const lines = new TextDecoder().decode(b).replace(/\r\n$/, "").split("\r\n");
+        set("data-icsv-hdr", lines[0] === "First Name,Last Name,Email,Phone,City,"
+          + "State,Zip Code,Residency,Signup Date,HH Size,Net Revenue" ? "1" : "");
+        set("data-icsv-rows", String(lines.length - 1));
+        // The two households that never bought, and NOT the three that did.
+        const body = lines.slice(1).join("\n");
+        set("data-icsv-who", /Solo/.test(body) && /Pascal/.test(body)
+          && !/Lovelace|Hopper|Johnson/.test(body) ? "1" : "");
+      });
+    } },
+
+  /* Lapsing and engaged are both a single household in this fixture, and
+     DELIBERATELY not the same one — Turing stopped buying, Johnson buys in both
+     categories. Two lists of one row are indistinguishable by count, so this
+     keys on the name in each file. It also proves the download is on the
+     record: the beacon is what pays for these files leaving directly. */
+  { name: "users · each segment downloads its own households",
+    path: "/{org}/users?tab=strategy",
+    needs: 'body[data-icsv-lapsing="Turing"][data-icsv-engaged="Johnson"][data-icsv-beacon="1"]',
+    act: async page => {
+      await page.waitForSelector('[data-intel-csv="lapsing"]', { timeout: 45000 });
+      await page.evaluate(() => {
+        window.__payload = null;
+        window.open = () => ({ document: { write() {}, close() {} },
+          set __recExport(v) { window.__payload = v; },
+          get __recExport() { return window.__payload; } });
+        window.__beacons = [];
+        const realFetch = window.fetch;
+        window.fetch = (u, o) => { window.__beacons.push(String(u)); return realFetch(u, o); };
+        window.__surname = () => {
+          const p = window.__payload;
+          if (!p) return "";
+          const lines = new TextDecoder().decode(p.bytes)
+            .replace(/\r\n$/, "").split("\r\n");
+          return lines.length === 2 ? (lines[1].split(",")[1] || "") : "";
+        };
+      });
+      await page.click('[data-intel-csv="lapsing"]');
+      await page.evaluate(() => {
+        document.body.setAttribute("data-icsv-lapsing", window.__surname());
+        window.__payload = null;
+      });
+      await page.click('[data-intel-csv="engaged"]');
+      await page.evaluate(() => {
+        document.body.setAttribute("data-icsv-engaged", window.__surname());
+        // A list leaving with no record of who took what is the thing to avoid.
+        // Spied on fetch rather than resource timing: the beacon is sent with
+        // `keepalive`, and those do not reliably appear in the timing entries.
+        const hit = (window.__beacons || []).some(u =>
+          /event=intel-csv&segment=lapsing/.test(u));
+        if (hit) document.body.setAttribute("data-icsv-beacon", "1");
+      });
     } },
 
   /* Fast Track's chips. Keyed on WHICH tab is LIT, not on "a tab strip

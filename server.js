@@ -3863,7 +3863,7 @@ setTimeout(() => { checkCardParamTypes().catch(() => {}); }, 150 * 1000).unref?.
 // Inert if the env var is unset. Fire-and-forget — never blocks or breaks logging.
 // To change what pings Slack, edit SLACK_NOTIFY. High-frequency events (view/fetch)
 // are debounced per org+report so Slack isn't a firehose.
-const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "campmap-filter", "campmap-amenity", "pdf", "excel", "print", "summary", "game", "map", "outdoor", "fields", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email", "checkin-loc", "checkin-member", "checkin-failed", "form-open", "epact", "settings-open", "settings-unlock", "settings-locked", "settings-save", "settings-reset", "deadlink", "generate", "wizard-save", "mb-autorenew", "mb-salesmix", "ft-export", "panel-csv"]);
+const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "campmap-filter", "campmap-amenity", "pdf", "excel", "print", "summary", "game", "map", "outdoor", "fields", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email", "checkin-loc", "checkin-member", "checkin-failed", "form-open", "epact", "settings-open", "settings-unlock", "settings-locked", "settings-save", "settings-reset", "deadlink", "generate", "wizard-save", "mb-autorenew", "mb-salesmix", "ft-export", "panel-csv", "intel-csv"]);
 const SLACK_DEBOUNCE_MS = { view: 30 * 60 * 1000, fetch: 30 * 60 * 1000,
   // A broken report stays broken. The health check only reports NEW failures,
   // but a flapping card would otherwise post every hour.
@@ -3878,6 +3878,8 @@ const SLACK_EVENT_META = {
   // WHICH chart someone needed the numbers out of — the most useful signal we
   // have about where the reports stop being enough on screen.
   "panel-csv":       { emoji: "\u{1F4C8}", verb: "downloaded chart data from" },
+  // Deliberately a louder glyph than panel-csv: this one carries PII.
+  "intel-csv":       { emoji: "\u{1F4C7}", verb: "downloaded a contact list from" },
   created: { emoji: "🏢", verb: "New org created" },
   "org-deleted": { emoji: "🗑️", verb: "DELETED from the reporting project" },
   deadlink: { emoji: "\uD83D\uDD17", verb: "dead link" },
@@ -3997,6 +3999,10 @@ function notifySlack(rec) {
     // event exists to capture.
     : rec.event === "panel-csv"
       ? `${rec.org}|${rec.report}|panel-csv|${rec.panel || ""}`
+    // Per SEGMENT: pulling the lapsing list and then the non-resident list is
+    // two different contact lists leaving, and each one should be on the record.
+    : rec.event === "intel-csv"
+      ? `${rec.org}|${rec.report}|intel-csv|${rec.segment || ""}`
     // Campsite opens and book-throughs key by SITE for the same reason map pins
     // key by location: a camper comparing six sites should read as six, not as
     // whichever one they happened to open first.
@@ -4254,6 +4260,14 @@ function notifySlack(rec) {
     const many = rows == null ? "" : ` — ${rows.toLocaleString()} row${rows === 1 ? "" : "s"}`;
     const panel = rec.panel ? `*${rec.panel}*` : "a chart";
     text = `${meta.emoji} ${orgName} (\`${rec.org}\`) downloaded ${panel} as CSV${many}`;
+  } else if (rec.event === "intel-csv") {
+    // NAME THE SEGMENT AND THE COUNT. "Someone exported contacts" is not the
+    // record this event exists to be — which list, and how many residents were
+    // in it, is.
+    const n = rec.contacts;
+    const many = n == null ? "" : ` \u2014 ${n.toLocaleString()} contact${n === 1 ? "" : "s"}`;
+    const seg = rec.segment ? `*${rec.segment}*` : "a segment";
+    text = `${meta.emoji} ${orgName} (\`${rec.org}\`) downloaded the ${seg} contact list${many}`;
   } else if (rec.event === "outdoor") {
     // Carry what the tab had to show. An org opening it on zero bookings is a
     // different fact from one opening it on 400 — the first says the pavilions
@@ -6606,7 +6620,7 @@ app.post("/:org/:report/api/log", resolveOrg, (req, res) => {
   const { event, game, location, view } = req.query;
   // view-apply is events.jsonl-only by design — it is not in SLACK_NOTIFY, so
   // logEvent records it without pinging the feed (see the saved-views block).
-  const ALLOWED = ["excel", "print", "summary", "game", "map", "view-apply", "checkin-loc", "checkin-member", "checkin-failed", "form-open", "epact", "settings-open", "mb-autorenew", "mb-salesmix", "ft-export", "panel-csv"];
+  const ALLOWED = ["excel", "print", "summary", "game", "map", "view-apply", "checkin-loc", "checkin-member", "checkin-failed", "form-open", "epact", "settings-open", "mb-autorenew", "mb-salesmix", "ft-export", "panel-csv", "intel-csv"];
   if (!ALLOWED.includes(event)) return res.status(400).json({ ok: false, error: "Unknown event" });
   const ciN = Number(req.query.n);
   const extra = event === "game" && game ? { game: String(game).slice(0, 60) }
@@ -6615,6 +6629,13 @@ app.post("/:org/:report/api/log", resolveOrg, (req, res) => {
               : event === "panel-csv"
                 ? { panel: String(req.query.panel || "").slice(0, 60),
                     rows: Number.isFinite(ciN) && ciN >= 0 && ciN <= 9999999 ? Math.round(ciN) : undefined }
+              // A CONTACT LIST LEFT THE PLATFORM. These files carry resident
+              // names, emails and phone numbers, so the segment and the head
+              // count are the record of who took what — the thing that pays
+              // for the download being direct at all.
+              : event === "intel-csv"
+                ? { segment: String(req.query.segment || "").slice(0, 60),
+                    contacts: Number.isFinite(ciN) && ciN >= 0 && ciN <= 9999999 ? Math.round(ciN) : undefined }
               : event === "map" && location ? { location: String(location).slice(0, 80) }
               : event === "view-apply" && view ? { view: String(view).slice(0, 60) }
               : event === "checkin-loc"

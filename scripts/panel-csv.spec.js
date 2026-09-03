@@ -281,9 +281,11 @@ test("panel-csv reaches the activity feed on both routes", () => {
   // that has bitten this repo four times.
   assert.match(srv, /"game", "summary", "outdoor", "fields", "panel-csv"/,
     "the facilities hub route allows it");
-  assert.match(srv, /"mb-salesmix", "ft-export", "panel-csv"\]/,
+  assert.match(srv, /"ft-export", "panel-csv", "intel-csv"\];/,
     "the generic report route allows it");
-  assert.match(srv, /"ft-export", "panel-csv"\]\);/,
+  // SLACK_NOTIFY is a Set, so its literal ends `]);` where the route array
+  // ends `];` — that is the only thing telling these two assertions apart.
+  assert.match(srv, /"ft-export", "panel-csv", "intel-csv"\]\);/,
     "and it is in SLACK_NOTIFY, or it is recorded and never posted");
 });
 
@@ -301,6 +303,65 @@ test("the panel name is clamped server-side, never echoed", () => {
   assert.match(srv, /panel: String\(req\.query\.panel \|\| ""\)\.slice\(0, 60\)/);
   assert.ok((srv.match(/String\(req\.query\.panel \|\| ""\)\.slice\(0, 60\)/g) || []).length === 2,
     "on both routes");
+});
+
+/* ── 6. Community Intel: the contact lists download again ─────────────── */
+const users = fs.readFileSync(path.join(root, "public/users.html"), "utf8");
+
+test("the request-only modal is gone, and so is its state", () => {
+  // It existed only to block the download: seven buttons opened a sheet saying
+  // exports were withdrawn and pointing the reader at an email address. Dan
+  // re-enabled them — the households are the org's own residents, and emailing
+  // the lapsing ones is the point of the segment.
+  assert.doesNotMatch(users, /CSV Export Restricted/,
+    "the restriction sheet is removed, not merely unreachable");
+  assert.doesNotMatch(users, /no longer available for direct download/);
+  assert.doesNotMatch(users, /requestCSV/,
+    "and no caller is left pointing at a function that no longer exists");
+  assert.doesNotMatch(users, /csvRequestModal/, "nor its state");
+});
+
+test("all seven segments download, through the ONE writer", () => {
+  const want = ["unbooked", "non-resident", "solo-unbooked", "lapsing",
+                "programs-only", "facility-only", "engaged"];
+  want.forEach(seg => assert.ok(users.includes("'" + seg + "'"),
+    seg + " is a downloadable segment"));
+  // One writer, so the column set cannot drift between segments.
+  assert.strictEqual((users.match(/function downloadContacts\(/g) || []).length, 1);
+  // EIGHT call sites for seven segments: `unbooked` is offered twice, from the
+  // leverage list and from its own button, and both must reach the same writer.
+  assert.strictEqual((users.match(/downloadContacts\(/g) || []).length, 1 + 8,
+    "eight call sites and one definition");
+  assert.match(users, /window\.saveTextViaPopup\(window\.csvFromRows\(rows\)/,
+    "and it goes through the shared writer and the popup");
+  assert.match(users, /bom: true/, "with the BOM, so an accented name is not mojibake");
+});
+
+test("an empty list yields no file", () => {
+  assert.match(users, /if \(!list \|\| !list\.length\) return;/,
+    "a download that produces a header and nothing else is a dead end");
+});
+
+test("EVERY contact download is on the record", () => {
+  // This is what pays for the download being direct: the files carry resident
+  // names, emails and phone numbers, so a list leaving the platform with no
+  // record of who took what is the thing to avoid.
+  assert.match(users, /event=intel-csv&segment=/,
+    "the beacon names the segment");
+  assert.match(users, /&n=' \+ list\.length/, "and the contact count");
+  assert.match(srv, /"panel-csv", "intel-csv"\];/, "the log route allows it");
+  assert.match(srv, /"panel-csv", "intel-csv"\]\);/, "and it is in SLACK_NOTIFY");
+  assert.match(srv, /downloaded the \$\{seg\} contact list/,
+    "the message names the segment, not just that an export happened");
+  assert.match(srv, /rec\.event === "intel-csv"\s*\n\s*\? `\$\{rec\.org\}\|\$\{rec\.report\}\|intel-csv\|\$\{rec\.segment \|\| ""\}`/,
+    "debounced per segment — two lists leaving is two records");
+  assert.match(srv, /segment: String\(req\.query\.segment \|\| ""\)\.slice\(0, 60\)/,
+    "and the segment is clamped server-side, never echoed");
+});
+
+test("the contact columns are one list, declared once", () => {
+  assert.match(users, /var INTEL_COLS = \['First Name', 'Last Name', 'Email'/,
+    "the header is a named constant, so seven files cannot carry seven shapes");
 });
 
 /* ── report ─────────────────────────────────────────────────────────────── */

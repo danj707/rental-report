@@ -1653,7 +1653,8 @@ this repo four times.
 
 ### Guards
 
-`scripts/panel-csv.spec.js` (**25 assertions, in CI**), which LIFTS AND RUNS the
+`scripts/panel-csv.spec.js` (**30 assertions, in CI**, the last five covering
+the Community Intel lists below), which LIFTS AND RUNS the
 shared writer and all nine builders — a source assertion cannot tell a sheet
 that shares a builder from one that reimplements it. Mutation-tested: the comma
 quoting dropped, a table removed from the workbook registry, a link offered on
@@ -1666,6 +1667,62 @@ identically. Two mutations were verified against them: the lane-hours link
 pointed at a different real table, and the day-part grid emitted wide instead of
 long (7 rows instead of 168). `aquatics-scope.spec.js`'s `siteLabel` caller
 count went 8 → 9, which is how the download inherits the lane-name fix.
+
+## Community Intel's contact lists download again (2026-09-03)
+
+Dan: *"lets also reenable the csv downloads from the community intel report
+(we'd previously hidden them behind a different button)."*
+
+There were seven **"📋 Request CSV"** buttons, and every one of them opened a
+sheet reading *"🔒 CSV Export Restricted — to protect user privacy, CSV exports
+containing personally identifiable information are no longer available for
+direct download"*, pointing the reader at `partnersupport@rec.us`. `git log -S`
+shows `users.html` entered this repo already carrying that block, so the modal's
+own text was the only stated reason for it anywhere.
+
+**It is reversed on Dan's call, and the Slack record is what pays for it.** The
+files carry resident names, emails and phone numbers, so the thing to avoid is a
+list leaving the platform with no record of who took what: every download now
+beacons `intel-csv` (📇) carrying the **segment and the contact count**, so the
+activity feed says *"downloaded the lapsing contact list — 412 contacts"* rather
+than that an export happened. Debounced **per segment**, like `epact` and
+`ft-export`: pulling the lapsing list and then the non-resident one is two
+different asks. The segment is clamped server-side, never echoed.
+
+- **THE RESTRICTION SHEET IS DELETED, not left unreachable.** `requestCSV` and
+  `csvRequestModal` are gone with it — a modal nothing opens is the dead-end
+  pattern this file keeps writing down, and the spec asserts the copy cannot
+  come back.
+- **ONE writer for all seven segments** (`downloadContacts`), so `INTEL_COLS` is
+  declared once and seven files cannot carry seven shapes. It goes through
+  `csvFromRows` + `saveTextViaPopup` with the **BOM**, like every other download
+  here — a sandboxed iframe's own download is silently dropped, and Excel sniffs
+  bytes rather than trusting UTF-8.
+- **An empty list yields no file.** A header row and nothing under it is the
+  dead end, so the guard is on the list, not on the button being disabled.
+- Eight call sites for seven segments: **`unbooked` is offered twice**, from the
+  leverage list and from its own button, and both reach the same writer.
+
+**NO SOURCE ASSERTION CAN CHECK ANY OF THIS.** Seven buttons call one writer
+with seven different lists, so a button handed the wrong list renders
+identically and produces a perfectly plausible file. So the two render cases
+read the BYTES the popup is handed, over an `intelRows()` fixture built so that
+**every segment holds different households** — unbooked is Solo + Pascal,
+lapsing is Turing, engaged is Johnson, programs-only is Lovelace + Turing. Two
+lists of one row cannot be told apart by their length, which is why the second
+case keys on the NAME in each file. Verified to fail on the engaged button
+pointed at the lapsing list, on the BOM dropped, and on the beacon renamed.
+
+**The fixture's household SIZES are load-bearing**, which is not obvious: the
+"activate solo households" lever only renders when pairs convert better than
+singles, and that lever is what draws the leverage list's own download button.
+A fixture of five single-person households renders no lever and the case would
+have nothing to click.
+
+**And the beacon had to be spied on `fetch`, not read from resource timing** —
+it is sent with `keepalive`, and those requests do not reliably appear in
+`performance.getEntriesByType("resource")`. The first draft of that assertion
+passed nothing and read as a page failure.
 
 ## PINNED: "NET REVENUE" on the Programs summary is LIFETIME, not the window (2026-09-02)
 
