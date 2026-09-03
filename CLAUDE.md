@@ -3098,6 +3098,138 @@ leaves *lands on the tab* and *survives the write-back* PASSING while only
 the harness answers `/users/api/data` from a generic stub and the panel looks
 much the same either way — what regressed is that the REQUEST was never made.
 
+## Feedback metrics on the Platform Usage cards (2026-09-03)
+
+Dan: *"I feel like displaying the feedback metrics are an easy lift."* It was —
+**the data has been in `events.jsonl` since each surface shipped and nothing
+displayed it** — but not for the reason it looks. What made it more than a
+display job is that **a thumb is recorded three different ways depending on
+which surface took it.** Measured against production over the whole log:
+
+| event | field | rows | notes |
+|---|---|---|---|
+| `insights-feedback` | `score` (1/0) | 18 | AI Insights |
+| `vote` | `sentiment` | 15 | a report page's quick thumbs |
+| `wizard-feedback` | `vote` | **11** | rental calendar — **and never in `SLACK_NOTIFY`** |
+| `chat-feedback` | `score` | 9 | Rec AI Chat |
+| `feedback` | `vote` | 9 | Report Wizard — carries the **PROMPT** |
+| `update-vote` | `sentiment` | 3 | the What's New popup |
+| | | **65** | across 15 orgs, all inside 90 days |
+
+### `/api/admin/feedback` READ TWO OF THE SIX, and the two dead ones
+
+That route filtered `chat-feedback || insights-feedback` — **27 of the 65** — and
+those are precisely the two families with **zero activity in the last 30 days**,
+while `vote`, `feedback`, `wizard-feedback` and `update-vote` account for **all
+17 recent ratings**. So the endpoint the roadmap called *"already exists; needs a
+frontend readout"* would have rendered an **empty panel on a month in which
+seventeen people rated something.** It goes through the shared aggregator now.
+
+### ONE predicate, and an unreadable row is counted on NEITHER side
+
+`feedbackSentiment(e)` reads all six families and all three field names, at
+module scope so the spec can RUN it. `score` is compared **strictly** — a string
+`"1"` is a malformed row, not a thumbs up.
+
+**A row with no readable sentiment returns `null` and is counted on neither
+side**, reported separately as `unreadable`. A default would file it as
+agreement or as a complaint, and a thumbs figure that invents a direction is
+worse than one that says it could not tell. The same rule as `hasAbsent`.
+
+**`feedbackSubject(e)` names the thing rated in the ROW'S OWN FIELD** — an
+update names the update, a wizard row names the generated report, a rental row
+names the site type. Printing the report type for all six reads
+*"Report Wizard on report-wizard"*: the report type twice and the thing rated
+never, which is the exact defect already fixed once in the Slack branch.
+
+**On a wizard row the PROMPT is the comment.** The question somebody typed and
+did not get a good answer to is the highest-signal text on the platform, and it
+existed only in a JSONL file — *"all revenue for Pequos summer camp, Week 2
+sections"* → thumbs down.
+
+### TWO WINDOWS, each saying which it is
+
+The KPI counts the **same 30 days** as every card beside it, because one card in
+a row meaning a different window is the lifetime-vs-window confusion fixed on
+the Programs summary the same day. The **list is everything on record** and its
+header says so — 30 days holds 17 ratings while the corpus is 65, and the
+comments worth reading are older.
+
+- **No share over a handful.** `FEEDBACK_MIN_RATINGS = 5`; under it the counts
+  are the whole answer. Same rule as `RATE_MIN_VIEWS` and `WL_CONV_MIN_OFFERS`.
+- **The per-org column prints COUNTS, never a percentage** — 30 days is 17
+  ratings across 10 orgs, so a per-org share reads "100%" off one thumb. A faint
+  dot where there are none, because a grid of `0 · 0` reads as data.
+- **`upPct` is null, never 0.** "Nobody has rated anything" is not "everybody
+  hated it".
+- **THE COUNT OPENS SOMETHING.** A number with nowhere to go is the dead end
+  this repo keeps writing down (the Failed check-ins tile, the "2 ending soon"
+  section). The KPI is the way in, and the list is **closed until asked for** —
+  an always-open list of every rating is a different, noisier feature.
+- **`oldest` is a MIN, not an array position.** The header prints that date as a
+  fact, and reading it off the last element is an assumption about file order.
+  The mutation proves it: with rows sorted newest-first, the positional read
+  reports the **newest** rating as the oldest.
+
+### `wizard-feedback` was never in `SLACK_NOTIFY` — FIFTH instance
+
+11 ratings written to `events.jsonl` and none announced, since the day it
+shipped. Now wired, debounced **per site type** (rating the pavilion suggestion
+and then the picnic-table one is two answers), with the site type in the message
+because *"somebody rated a suggestion"* says nothing. **Consequence to expect:
+Slack starts getting rental-calendar suggestion thumbs it has never had.**
+
+The guard is the generalised form: every event name `server.js` logs whose name
+mentions a vote or feedback must be in `FEEDBACK_SOURCES` **and** in
+`SLACK_NOTIFY`, derived from `server.js` rather than transcribed — so a seventh
+surface fails the spec instead of being quietly missing.
+
+### A REGEX COMMENT-STRIPPER IS UNSOUND ON server.js — it made four assertions here pass vacuously
+
+Found because this spec passed while the route assertions could not possibly
+have matched. **Two independent strays:**
+
+- **line 5837** carries the text `/* stay reachable so it can be` **inside a
+  `//` comment** — legal JS. Strip block comments *first* and that opener pairs
+  with a real close fifteen hundred lines later, swallowing **2,792 lines**.
+  **Nine specs in this repo had that order** and were blind over that region;
+  all nine now strip line comments first.
+- **line ~5918** carries a `/*` **inside a template literal** — real code, not a
+  comment. *No* strip order helps, and both orders swallow the region holding
+  `/api/admin/feedback`.
+
+So this spec reads the **RAW** source and slices the route's own text where it
+needs to be scoped. **Generalise it: if a spec must not see comments, slice the
+region it cares about rather than regex-stripping a 19,000-line file.** And
+writing this note as a block comment containing a literal close-comment marker
+ends the comment early — the same mistake one level up, which is why the spec's
+copy spells it out in words.
+
+### Guards
+
+`scripts/feedback-metrics.spec.js` (**91 assertions, in CI**), which LIFTS AND
+RUNS the four helpers over the six shapes production actually writes, and boots
+a real server on a fixture `DATA_DIR` for the rendered half — apex 1/1 against
+watertown 2/3, so a cell reading the wrong org's counts fails rather than
+rendering a plausible number. It also pins **one `<td>` per `<th>`** and that the
+feedback cell sits where its header's sort index points, which is the fault the
+last three column additions caused. `SKIP_SOURCE=1` drops the source half.
+
+Mutation-tested seven ways, all failing by name: a family dropped from the map
+(the bug as `wizard-feedback` shipped), unreadable rows filed as DOWN, the share
+floor removed and zero-defaulted, the route back to two families, the event
+dropped from `SLACK_NOTIFY`, `oldest` read off an array position, and the list
+rendered always-open.
+
+**The route mutation THREW instead of failing by name** — `api.byOrg.apex.up`
+became a TypeError and the spec died reporting *"Cannot read properties of
+undefined"*, naming nothing. Third instance of that lesson here; the live half
+reads through a safe accessor now.
+
+Plus a browser check that the KPI **opens** the panel and closes again, and that
+sorting on the new column works — `ci-check-admin-js` proves the handler exists
+and parses, which is not the same claim.
+
 ## Slack activity notifications — wire every new surface (IMPORTANT)
 
 Standing rule (see Working preferences): any new button, export, download, or
@@ -3131,7 +3263,9 @@ is already off the platform defaults), `settings-save`/
 flagging an ePACT template that left the verified set) (📤 a participant list
 exported for the ePACT camp-forms vendor, with the count and whether it was one
 class or the whole view), `ft-export` (📤 the people who fast-tracked one section were exported,
-with the section, the head count and the hold count), and three platform alerts —
+with the section, the head count and the hold count), `wizard-feedback` (🗓️ the rental calendar's site-type suggestion was rated,
+naming the site type — **11 ratings were recorded and never posted before
+2026-09-03**), and three platform alerts —
 `report-down` (a report's card stopped answering, links straight to the report
 with its token), `schema-break` (a table or column the reports depend on is
 gone), `param-drift` (a date template tag is no longer typed Date). The three

@@ -3863,7 +3863,7 @@ setTimeout(() => { checkCardParamTypes().catch(() => {}); }, 150 * 1000).unref?.
 // Inert if the env var is unset. Fire-and-forget — never blocks or breaks logging.
 // To change what pings Slack, edit SLACK_NOTIFY. High-frequency events (view/fetch)
 // are debounced per org+report so Slack isn't a firehose.
-const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "campmap-filter", "campmap-amenity", "pdf", "excel", "print", "summary", "game", "map", "outdoor", "fields", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email", "checkin-loc", "checkin-member", "checkin-failed", "form-open", "epact", "settings-open", "settings-unlock", "settings-locked", "settings-save", "settings-reset", "deadlink", "generate", "wizard-save", "mb-autorenew", "mb-salesmix", "ft-export", "panel-csv", "intel-csv"]);
+const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "campmap-filter", "campmap-amenity", "pdf", "excel", "print", "summary", "game", "map", "outdoor", "fields", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email", "checkin-loc", "checkin-member", "checkin-failed", "form-open", "epact", "settings-open", "settings-unlock", "settings-locked", "settings-save", "settings-reset", "deadlink", "generate", "wizard-save", "mb-autorenew", "mb-salesmix", "ft-export", "panel-csv", "intel-csv", "wizard-feedback"]);
 const SLACK_DEBOUNCE_MS = { view: 30 * 60 * 1000, fetch: 30 * 60 * 1000,
   // A broken report stays broken. The health check only reports NEW failures,
   // but a flapping card would otherwise post every hour.
@@ -3880,6 +3880,11 @@ const SLACK_EVENT_META = {
   "panel-csv":       { emoji: "\u{1F4C8}", verb: "downloaded chart data from" },
   // Deliberately a louder glyph than panel-csv: this one carries PII.
   "intel-csv":       { emoji: "\u{1F4C7}", verb: "downloaded a contact list from" },
+  // The rental calendar's site-type suggestion thumbs. FIFTH instance of the
+  // recorded-but-never-posted trap: 11 ratings since it shipped, every one of
+  // them written to events.jsonl and none of them announced, because the event
+  // was simply missing from SLACK_NOTIFY.
+  "wizard-feedback": { emoji: "\u{1F5D3}\uFE0F", verb: "rated a site suggestion on" },
   created: { emoji: "🏢", verb: "New org created" },
   "org-deleted": { emoji: "🗑️", verb: "DELETED from the reporting project" },
   deadlink: { emoji: "\uD83D\uDD17", verb: "dead link" },
@@ -4003,6 +4008,10 @@ function notifySlack(rec) {
     // two different contact lists leaving, and each one should be on the record.
     : rec.event === "intel-csv"
       ? `${rec.org}|${rec.report}|intel-csv|${rec.segment || ""}`
+    // By SITE TYPE: rating the pavilion suggestion and then the picnic-table
+    // one is two answers about two suggestions.
+    : rec.event === "wizard-feedback"
+      ? `${rec.org}|${rec.report}|wizard-feedback|${rec.siteType || ""}`
     // Campsite opens and book-throughs key by SITE for the same reason map pins
     // key by location: a camper comparing six sites should read as six, not as
     // whichever one they happened to open first.
@@ -4304,6 +4313,12 @@ function notifySlack(rec) {
     const q = rec.prompt ? `\n> \u201C${String(rec.prompt).slice(0, 160)}\u201D` : "";
     const mention = SLACK_MENTION_USER_ID ? ` <@${SLACK_MENTION_USER_ID}>` : "";
     text = `${thumbs} ${orgName} (\`${rec.org}\`) rated a Report Wizard report${what}${said}${mention}${q}`;
+  } else if (rec.event === "wizard-feedback") {
+    // The SITE TYPE is the rating. "somebody rated a suggestion" says nothing;
+    // which suggestion they were shown is the only part worth reading.
+    const thumbs = rec.vote === "up" ? "\uD83D\uDC4D" : "\uD83D\uDC4E";
+    const what = rec.siteType ? ` for *${String(rec.siteType).slice(0, 60)}*` : "";
+    text = `${thumbs} ${orgName} (\`${rec.org}\`) rated the rental calendar's site suggestion${what}`;
   } else if (rec.event === "insights-feedback" || rec.event === "chat-feedback" || rec.event === "vote") {
     const thumbs = (rec.score === 1 || rec.vote === "up" || rec.sentiment === "up") ? "\uD83D\uDC4D" : "\uD83D\uDC4E";
     // `feedback` (the wizard's own thumbs) is handled in its own branch above and
@@ -4517,6 +4532,116 @@ function readEvents(daysBack) {
     if (events[mid].ts < cutoff) lo = mid + 1; else hi = mid;
   }
   return events.slice(lo);
+}
+
+/* ── Feedback: SIX event names, THREE field names, one fact ─────────────────
+   Dan: the thumbs metrics belong on the Platform Usage cards. The data has
+   been in events.jsonl since each surface shipped and nothing displayed it.
+
+   The hard part is that a thumb is recorded three different ways depending on
+   which surface took it — measured against production 2026-09-03:
+
+     event              field       rows (all-time)
+     vote               sentiment   15
+     insights-feedback  score        18
+     wizard-feedback    vote         11   <- and never posted to Slack until now
+     chat-feedback      score         9
+     feedback           vote          9   <- the Report Wizard, carries the PROMPT
+     update-vote        sentiment     3
+
+   65 ratings across 15 orgs, all inside the last 90 days. So ONE predicate
+   reads all six, and every surface goes through it — the existing
+   /api/admin/feedback route reads `chat-feedback` and `insights-feedback`
+   ONLY, which is 27 of those 65, and those two families have had ZERO
+   activity in the last 30 days while the other four account for all 17 recent
+   ratings. A panel built on that route would have rendered empty on a month
+   that got 17 ratings.
+
+   A ROW WITH NO READABLE SENTIMENT IS COUNTED ON NEITHER SIDE. Returning a
+   default would put an unreadable row in the up or the down column, and a
+   thumbs figure that quietly invents a direction is worse than one that says
+   it could not tell. `unreadable` is reported separately. */
+const FEEDBACK_SOURCES = {
+  "vote":              { label: "Report",         emoji: "\u{1F4CA}" },
+  "insights-feedback": { label: "AI Insights",    emoji: "\u2728" },
+  "chat-feedback":     { label: "Rec AI Chat",    emoji: "\u{1F4AC}" },
+  "feedback":          { label: "Report Wizard",  emoji: "\u{1FA84}" },
+  "wizard-feedback":   { label: "Rental Wizard",  emoji: "\u{1F5D3}" },
+  "update-vote":       { label: "What\u2019s New", emoji: "\u{1F4E3}" },
+};
+// A share over a handful of ratings is not a share. Same rule as
+// RATE_MIN_VIEWS on the campmap strip and WL_CONV_MIN_OFFERS on the waitlist:
+// under the floor the raw counts are printed instead of a percentage.
+const FEEDBACK_MIN_RATINGS = 5;
+
+function feedbackSentiment(e) {
+  if (!e || !FEEDBACK_SOURCES[e.event]) return null;
+  if (e.sentiment === "up"   || e.vote === "up"   || e.score === 1) return "up";
+  if (e.sentiment === "down" || e.vote === "down" || e.score === 0) return "down";
+  return null;
+}
+
+/* WHAT WAS RATED, in the row's own words. Each surface names its subject in a
+   different field, and a list that printed the report type for all six would
+   say "Report Wizard on report-wizard" — the report type twice and the thing
+   rated never, which is the exact defect already fixed in the Slack branch. */
+function feedbackSubject(e) {
+  if (e.event === "update-vote") return e.updateTitle || "an update";
+  if (e.event === "feedback")    return e.title || "a generated report";
+  if (e.event === "wizard-feedback") return e.siteType ? "site type: " + e.siteType : "a suggestion";
+  return e.report || "";
+}
+// The comment is the whole reason a thumbs-down is worth reading. On a wizard
+// row the PROMPT is that: the question somebody typed and did not get a good
+// answer to is the highest-signal text on the platform.
+function feedbackNote(e) {
+  const c = e.comment || e.userComment;
+  if (c) return String(c).slice(0, 300);
+  if (e.event === "feedback" && e.prompt) return "\u201C" + String(e.prompt).slice(0, 200) + "\u201D";
+  return null;
+}
+
+// ONE aggregator, read by the admin KPI, the per-org column and the API route.
+// Three surfaces deriving this separately is how the dashboard and the API
+// start disagreeing about how many ratings exist.
+function buildFeedback(daysBack, opts) {
+  const limit = (opts && opts.limit) || 200;
+  const evts = readEvents(daysBack);
+  let up = 0, down = 0, unreadable = 0;
+  const byOrg = {};
+  const rows = [];
+  evts.forEach(e => {
+    const src = FEEDBACK_SOURCES[e.event];
+    if (!src) return;
+    const s = feedbackSentiment(e);
+    if (s === "up") up++;
+    else if (s === "down") down++;
+    else { unreadable++; return; }
+    const o = byOrg[e.org] || (byOrg[e.org] = { up: 0, down: 0 });
+    o[s]++;
+    rows.push({
+      ts: e.ts, org: e.org, event: e.event, source: src.label, emoji: src.emoji,
+      sentiment: s, report: e.report || null,
+      subject: feedbackSubject(e), note: feedbackNote(e),
+    });
+  });
+  // Newest first for display. `oldest` is a MIN rather than the last element:
+  // events.jsonl is append-only so it is normally sorted, but reading "the
+  // oldest rating" off an array position is an assumption about file order,
+  // and the header prints that date as a fact.
+  let oldest = null;
+  rows.forEach(r => { if (!oldest || r.ts < oldest) oldest = r.ts; });
+  rows.sort((a, b) => (a.ts < b.ts ? 1 : a.ts > b.ts ? -1 : 0));
+  const total = up + down;
+  return {
+    up, down, total, unreadable, byOrg,
+    // null, never 0 — "nobody has rated anything" is not "everybody hated it".
+    upPct: total >= FEEDBACK_MIN_RATINGS ? Math.round(up / total * 100) : null,
+    minRatings: FEEDBACK_MIN_RATINGS,
+    oldest,
+    rows: rows.slice(0, limit),
+    shown: Math.min(rows.length, limit),
+  };
 }
 
 // Aggregate events into metrics for one org
@@ -6449,25 +6574,25 @@ app.get("/:org/api/calendar-conversion", (req, res) => {
   });
 });
 
-// ── GET /api/admin/feedback — recent feedback across all orgs ─────────
+// ── GET /api/admin/feedback — every rating, across all orgs ───────────
+// IT USED TO READ TWO OF THE SIX FAMILIES. `chat-feedback` and
+// `insights-feedback` are 27 of the 65 ratings on record, and both have had
+// zero activity in the last 30 days while `vote`, `feedback`,
+// `wizard-feedback` and `update-vote` account for all 17 recent ones — so this
+// route answered "no feedback" for a month in which seventeen people rated
+// something. It goes through buildFeedback now, like the dashboard does.
+//
+// `feedback` (the old field name) is kept alongside `rows` so anything already
+// reading this route does not break; it is the same list.
 app.get("/api/admin/feedback", (req, res) => {
   res.set("Cache-Control", "no-store");
   const days = parseInt(req.query.days) || 30;
-  const events = readEvents(days);
-  const feedback = events
-    .filter(e => e.event === "chat-feedback" || e.event === "insights-feedback")
-    .map(e => ({
-      ts: e.ts,
-      org: e.org,
-      type: e.event === "chat-feedback" ? "chat" : "insights",
-      report: e.report || null,
-      score: e.score,
-      comment: e.comment || e.userComment || null,
-      messageId: e.messageId || e.traceId || null,
-    }))
-    .reverse()
-    .slice(0, 100);
-  res.json({ feedback, total: feedback.length });
+  const f = buildFeedback(days, { limit: 200 });
+  res.json({
+    days, up: f.up, down: f.down, total: f.total, upPct: f.upPct,
+    unreadable: f.unreadable, minRatings: f.minRatings, oldest: f.oldest,
+    byOrg: f.byOrg, rows: f.rows, feedback: f.rows, shown: f.shown,
+  });
 });
 
 // ── GET /metrics/api/data — cross-org summary ────────────────────────
@@ -15138,6 +15263,17 @@ app.get("/", (req, res) => {
     } catch(e) { return { slug, name: org.displayName || slug, views: 0, exports: 0, aiCalls: 0, reports: 0, active: 0, subscribers: 0, emailsSent: 0, sparkDays: new Array(30).fill(0), trend: 0, trendDir: 0 }; }
   }).sort((a, b) => b.views - a.views);
   const maxViews = Math.max(...usageRows.map(r => r.views), 1);
+  /* ── Feedback ──
+     Dan: the thumbs metrics belong on these cards. TWO windows on purpose, and
+     each says which it is:
+       · the KPI counts the SAME 30 days as every card beside it, because one
+         card in a row meaning a different window is the lifetime-vs-window
+         confusion just fixed on the Programs summary;
+       · the LIST is everything on record, because 30 days holds 17 ratings
+         while the whole corpus is 65 and the comments worth reading are older.
+         Its header states the window and the date it reaches back to. */
+  const fb30  = buildFeedback(30, { limit: 0 });
+  const fbAll = buildFeedback(null, { limit: 200 });
   // Daily usage sparkline (last 30 days)
   const usageDaily = (() => {
     const evts = readEvents(30);
@@ -15164,6 +15300,49 @@ app.get("/", (req, res) => {
   // of 0s reads as data when the truth is that there is none.
   const uNum = v => v === 0 ? '<span class="usage-dot">·</span>' : v.toLocaleString();
 
+  /* THE LIST IS CLOSED UNTIL ASKED FOR, and it is what makes the KPI more than
+     a number. A count with nowhere to go is the dead end this repo keeps
+     writing down — the Failed check-ins tile, the "2 ending soon" section. The
+     comment (or, on a wizard row, the PROMPT somebody typed and did not get a
+     good answer to) is the highest-signal text on the platform, and it existed
+     only in a JSONL file until now. */
+  const fbListHtml = fbAll.rows.map(r => {
+    const when = r.ts.substring(0, 10);
+    const org = ORGS[r.org] ? (ORGS[r.org].displayName || r.org) : r.org;
+    const thumb = r.sentiment === "up"
+      ? '<span style="color:#16a34a">\u{1F44D}</span>'
+      : '<span style="color:#dc2626">\u{1F44E}</span>';
+    const note = r.note
+      ? `<div class="fb-note">${String(r.note).replace(/[<>&]/g, c => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]))}</div>`
+      : "";
+    const subj = r.subject
+      ? `<span class="fb-subj">${String(r.subject).replace(/[<>&]/g, c => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;" }[c]))}</span>`
+      : "";
+    return `<div class="fb-row">
+      <div class="fb-when">${when}</div>
+      <div class="fb-thumb">${thumb}</div>
+      <div class="fb-body">
+        <div class="fb-head"><b>${org}</b> <span class="fb-src">${r.emoji} ${r.source}</span> ${subj}</div>
+        ${note}
+      </div>
+    </div>`;
+  }).join("");
+  const fbSince = fbAll.oldest ? fbAll.oldest.substring(0, 10) : null;
+  const feedbackListHtml = `
+    <div id="fb-list" class="fb-list" style="display:none">
+      <div class="fb-list-head">
+        ${fbAll.total
+          ? `Every rating on record \u00b7 <b>${fbAll.total}</b> \u00b7 ${fbAll.up} up, ${fbAll.down} down${fbSince ? ` \u00b7 since ${fbSince}` : ""}${fbAll.shown < fbAll.total ? ` \u00b7 newest ${fbAll.shown} shown` : ""}`
+          : "Nobody has rated anything yet."}
+        ${/* Never folded into either side: a row whose sentiment cannot be read
+             must not be counted as agreement or as a complaint. */
+          fbAll.unreadable
+            ? ` \u00b7 <span style="color:#b45309">${fbAll.unreadable} unreadable</span>`
+            : ""}
+      </div>
+      ${fbListHtml || ""}
+    </div>`;
+
   const usageTableHtml = `
     <div class="usage-table-wrap">
       <div class="usage-kpis">
@@ -15171,22 +15350,51 @@ app.get("/", (req, res) => {
         <div class="usage-kpi"><div class="usage-kpi-v">${usageTotals.exports.toLocaleString()}</div><div class="usage-kpi-l">Exports</div></div>
         <div class="usage-kpi"><div class="usage-kpi-v">${usageTotals.ai.toLocaleString()}</div><div class="usage-kpi-l">AI insights</div></div>
         <div class="usage-kpi"><div class="usage-kpi-v">${usageTotals.emails.toLocaleString()}</div><div class="usage-kpi-l">Emails sent</div></div>
+        <div class="usage-kpi usage-kpi-fb" id="fb-kpi" onclick="toggleFeedback()" title="Thumbs on reports, AI insights, Rec AI Chat, both wizards and the What&#39;s New popup. Click for every rating on record.">
+          <div class="usage-kpi-v" data-fb-total="${fb30.total}">${
+            fb30.total === 0
+              ? '<span class="usage-dot">\u00b7</span>'
+              : '<span style="color:#16a34a">\u{1F44D} ' + fb30.up + '</span> <span style="color:#dc2626;margin-left:6px">\u{1F44E} ' + fb30.down + '</span>'
+          }</div>
+          <div class="usage-kpi-l">Feedback${
+            /* A share over a handful of ratings is not a share. Under the floor
+               the counts above are the whole answer, and the label says so
+               rather than printing a confident percentage of four. */
+            fb30.upPct != null ? ' \u00b7 ' + fb30.upPct + '% up' : ''
+          } <span class="fb-open">${fbAll.total ? "view " + fbAll.total : ""}</span></div>
+        </div>
         <div class="usage-kpi usage-kpi-spark"><span style="font-size:11px;color:#9ca3af">30-day trend</span><svg viewBox="0 0 200 32" style="width:180px;height:28px"><polyline points="${sparkPts}" fill="none" stroke="#6d28d9" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
       </div>
       <table class="usage-table">
-        <thead><tr><th onclick="sortUsage(this,0)" style="cursor:pointer">Organization<span class="usort"></span></th><th style="width:76px">30d</th><th class="num" onclick="sortUsage(this,2)" style="cursor:pointer;width:118px" title="Views, with the last 15 days against the prior 15">Views<span class="usort"></span></th><th class="num" onclick="sortUsage(this,3)" style="cursor:pointer">Exports<span class="usort"></span></th><th class="num" onclick="sortUsage(this,4)" style="cursor:pointer" title="AI insights">AI<span class="usort"></span></th><th class="num" onclick="sortUsage(this,5)" style="cursor:pointer" title="Subscribers and emails sent, sorted on the two together">Subs &middot; Email<span class="usort"></span></th><th class="num" onclick="sortUsage(this,6)" style="cursor:pointer">Reports<span class="usort"></span></th><th style="width:28px"></th></tr></thead>
+        <thead><tr><th onclick="sortUsage(this,0)" style="cursor:pointer">Organization<span class="usort"></span></th><th style="width:76px">30d</th><th class="num" onclick="sortUsage(this,2)" style="cursor:pointer;width:118px" title="Views, with the last 15 days against the prior 15">Views<span class="usort"></span></th><th class="num" onclick="sortUsage(this,3)" style="cursor:pointer">Exports<span class="usort"></span></th><th class="num" onclick="sortUsage(this,4)" style="cursor:pointer" title="AI insights">AI<span class="usort"></span></th><th class="num" onclick="sortUsage(this,5)" style="cursor:pointer" title="Thumbs up and down, last 30 days. Sorted on the two together, like Subs &middot; Email &mdash; who is telling us anything at all.">&#128077; &middot; &#128078;<span class="usort"></span></th><th class="num" onclick="sortUsage(this,6)" style="cursor:pointer" title="Subscribers and emails sent, sorted on the two together">Subs &middot; Email<span class="usort"></span></th><th class="num" onclick="sortUsage(this,7)" style="cursor:pointer">Reports<span class="usort"></span></th><th style="width:28px"></th></tr></thead>
         <tbody id="usage-tbody">${usageRows.map((r, i) => `<tr${i >= USAGE_VISIBLE_ROWS ? ' class="usage-tail" style="display:none"' : ''}>
           <td data-sort="${(r.name || '').toLowerCase().replace(/"/g, '')}"><a href="#org-${r.slug}" class="usage-org-name" style="text-decoration:none;color:#1e1b4b" onclick="event.preventDefault();var el=document.getElementById('org-'+'${r.slug}');if(el){el.scrollIntoView({behavior:'smooth',block:'start'});var body=el.querySelector('.org-body');if(body&&body.style.display==='none'){body.style.display='';var chev=el.querySelector('.org-collapse-chevron');if(chev)chev.style.transform='rotate(90deg)'}}">${r.name}</a><span class="usage-slug">${r.slug}</span></td>
           <td><svg viewBox="0 0 64 16" style="width:64px;height:14px;display:block">${(() => { const mx = Math.max(...r.sparkDays, 1); const pts = r.sparkDays.map((v, i2) => (i2 / 29 * 62 + 1).toFixed(1) + ',' + (14 - v / mx * 12 + 1).toFixed(1)).join(' '); return '<polyline points="' + pts + '" fill="none" stroke="#6d28d9" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/>'; })()}</svg></td>
           <td class="num usage-views" data-sort="${r.views}"><span class="usage-views-fill" style="width:${Math.max(6, Math.round(r.views / maxViews * 96))}%"></span><span class="usage-views-num">${r.views === 0 ? '<span class="usage-dot">·</span>' : r.views.toLocaleString()}</span>${r.trendDir > 0 ? '<span class="usage-delta" style="color:#16a34a" title="Trending up">▲</span>' : r.trendDir < 0 ? '<span class="usage-delta" style="color:#dc2626" title="Trending down">▼</span>' : '<span class="usage-delta usage-dot" title="Flat">–</span>'}</td>
           <td class="num" data-sort="${r.exports}">${uNum(r.exports)}</td>
           <td class="num" data-sort="${r.aiCalls}">${uNum(r.aiCalls)}</td>
+          ${(() => {
+            /* PRESENCE, not a percentage. Measured: 30 days holds 17 ratings
+               across 10 orgs, so a per-org share would be "100%" off one
+               thumb for most of them. The counts are the honest reading at
+               this scale, and a faint dot where there are none — a grid of
+               0 &middot; 0 reads as data when the truth is that there is none. */
+            const f = fb30.byOrg[r.slug] || { up: 0, down: 0 };
+            const n = f.up + f.down;
+            const cell = n === 0
+              ? '<span class="usage-dot">\u00b7</span>'
+              : (f.up ? '<b style="color:#16a34a">' + f.up + '</b>' : '<span class="usage-dot">0</span>')
+                + ' <span class="usage-dot">\u00b7</span> '
+                + (f.down ? '<b style="color:#dc2626">' + f.down + '</b>' : '<span class="usage-dot">0</span>');
+            return `<td class="num usage-pair" data-sort="${n}" data-fb-org="${r.slug}" title="${f.up} up, ${f.down} down in the last 30 days">${cell}</td>`;
+          })()}
           <td class="num usage-pair" data-sort="${r.subscribers + r.emailsSent}" title="${r.subscribers} subscriber${r.subscribers === 1 ? '' : 's'}, ${r.emailsSent} email${r.emailsSent === 1 ? '' : 's'} sent">${(r.subscribers || r.emailsSent) ? '<b>' + r.subscribers + '</b> &middot; <b>' + r.emailsSent + '</b>' : '<span class="usage-dot">·</span>'}</td>
           <td class="num" data-sort="${r.active}">${r.active}/${r.reports}</td>
           <td style="text-align:center"><a href="/${r.slug}?token=${ORGS[r.slug]?.token || ''}" target="_blank" title="Open ${r.name} reports" style="color:#9ca3af;text-decoration:none"><i class="ph ph-arrow-square-out" style="font-size:14px"></i></a></td>
         </tr>`).join('')}</tbody>
-        ${usageTailRows > 0 ? `<tfoot><tr class="usage-more" id="usage-more-row"><td colspan="8" onclick="showAllUsage()">Show all ${usageRows.length} organizations &mdash; ${usageTailRows} more, ${usageTailViews.toLocaleString()} view${usageTailViews === 1 ? '' : 's'} between them &#9662;</td></tr></tfoot>` : ''}
+        ${usageTailRows > 0 ? `<tfoot><tr class="usage-more" id="usage-more-row"><td colspan="9" onclick="showAllUsage()">Show all ${usageRows.length} organizations &mdash; ${usageTailRows} more, ${usageTailViews.toLocaleString()} view${usageTailViews === 1 ? '' : 's'} between them &#9662;</td></tr></tfoot>` : ''}
       </table>
+      ${feedbackListHtml}
     </div>`;
 
   // Arcade leaderboard (current season) — top scores from the hidden banner games
@@ -15300,6 +15508,31 @@ app.get("/", (req, res) => {
     .usage-kpi-v { font-size: 17px; font-weight: 700; color: #1e1b4b; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
     .usage-kpi-l { font-size: 9.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #9ca3af; margin-top: 2px; }
     .usage-kpi-spark { margin-left: auto; display: flex; align-items: center; gap: 10px; border-right: none; }
+    /* Feedback: a KPI that OPENS something, so it looks like it does. */
+    .usage-kpi-fb { cursor: pointer; }
+    .usage-kpi-fb:hover { background: #fbfaf8; }
+    .usage-kpi-fb .fb-open { color: #6d28d9; font-weight: 700; }
+    .usage-kpi-fb.open .fb-open::after { content: " \u25B4"; }
+    .usage-kpi-fb:not(.open) .fb-open::after { content: " \u25BE"; }
+    .fb-list { border-top: 1px solid #e8e5df; background: #fbfaf8; max-height: 420px; overflow-y: auto; }
+    .fb-list-head {
+      padding: 9px 14px; font-size: 11px; color: #6b7280;
+      border-bottom: 1px solid #f0efec; position: sticky; top: 0; background: #fbfaf8;
+    }
+    .fb-row { display: flex; gap: 10px; padding: 8px 14px; border-bottom: 1px solid #f0efec; font-size: 12px; }
+    .fb-row:last-child { border-bottom: none; }
+    .fb-when { color: #9ca3af; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .fb-thumb { width: 16px; text-align: center; }
+    .fb-body { min-width: 0; flex: 1; }
+    .fb-head { color: #374151; }
+    .fb-src { color: #6b7280; margin: 0 4px; }
+    .fb-subj { color: #9ca3af; }
+    /* The comment wraps rather than being clipped: it is the reason the row is
+       worth reading, and a truncated complaint is worse than none. */
+    .fb-note {
+      margin-top: 3px; color: #4b5563; font-style: italic;
+      white-space: pre-wrap; overflow-wrap: anywhere;
+    }
     .usage-more td {
       padding: 8px 14px; background: #fbfaf8; font-size: 11.5px; font-weight: 600;
       color: #6d28d9; cursor: pointer; white-space: nowrap;
@@ -16780,9 +17013,8 @@ app.get("/", (req, res) => {
         <ul>
           <li><strong>Firebase OAuth Integration</strong> &#8212; Server-side token verification using Firebase Auth. Currently exploring whether dashboards accessed exclusively from within the rec.us admin interface are natively protected by Firebase sessions, or if additional server-side verification is needed for the direct-link access pattern.</li>
           <li><strong>Report Wizard Langfuse Integration</strong> &#8212; Wire AI observability tracing into the Report Wizard&#x27;s Claude API calls, matching the pattern already deployed on AI Insights and Chat.</li>
-          <li><strong>Admin Feedback Panel</strong> &#8212; Surface AI thumbs up/down ratings and free-text comments from <code>events.jsonl</code> in an in-app admin view. The GET endpoint (<code>/api/admin/feedback</code>) already exists; needs a frontend readout.</li>
         </ul>
-        <p style="font-size:11px;color:#888;margin-top:8px"><strong>Recently completed:</strong> Cross-project org sync + visibility API, schema drift overhaul (org-aware, severity-based), error screens show actual errors, email domain verification (sends from <code>reports@rec.us</code>), Metabase query audit, Inter font migration.</p>
+        <p style="font-size:11px;color:#888;margin-top:8px"><strong>Recently completed:</strong> Feedback metrics on Platform Usage (thumbs from all six rating surfaces, per org, with every comment), cross-project org sync + visibility API, schema drift overhaul (org-aware, severity-based), error screens show actual errors, email domain verification (sends from <code>reports@rec.us</code>), Metabase query audit, Inter font migration.</p>
       </div>
     </div>
 
@@ -17802,6 +18034,17 @@ app.get("/", (req, res) => {
       for (var i = 0; i < rows.length; i++) rows[i].style.display = '';
       var more = document.getElementById('usage-more-row');
       if (more) more.style.display = 'none';
+    }
+    // The Feedback KPI is the way IN to the ratings, which is the whole reason
+    // it is a click target rather than a number. Closed by default: an
+    // always-open list of every rating is a different and noisier feature.
+    function toggleFeedback() {
+      var list = document.getElementById('fb-list');
+      var kpi = document.getElementById('fb-kpi');
+      if (!list) return;
+      var open = list.style.display !== 'none';
+      list.style.display = open ? 'none' : '';
+      if (kpi) kpi.classList.toggle('open', !open);
     }
     function sortUsage(th, col) {
       var table = th.closest('table'); if (!table) return;

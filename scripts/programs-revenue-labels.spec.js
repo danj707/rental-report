@@ -60,7 +60,7 @@ const src  = fs.readFileSync(PAGE, "utf8");
 // The source assertions run over a comment-stripped copy: the comments quote
 // the OLD labels ("total for these programs") on purpose, so a naive test for
 // their absence passes on the broken page and fails on the fixed one.
-const code = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+const code = src.replace(/^\s*\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
 
 let pass = 0;
 const failures = [];

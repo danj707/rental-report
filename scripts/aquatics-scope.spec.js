@@ -49,8 +49,8 @@ const server = fs.readFileSync(SERVER, "utf8");
 // Both files QUOTE the removed regex in their comments on purpose, so every
 // source assertion runs over a comment-stripped copy or it fails on correct
 // code. Fourth instance of this note in the repo.
-const code = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
-const srv  = server.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+const code = src.replace(/^\s*\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
+const srv  = server.replace(/^\s*\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
 
 let pass = 0;
 const failures = [];

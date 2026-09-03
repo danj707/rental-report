@@ -27,7 +27,7 @@ const fac = fs.readFileSync(path.join(root, "public/facilities.html"), "utf8");
 const prog = fs.readFileSync(path.join(root, "public/programs.html"), "utf8");
 const openPdf = fs.readFileSync(path.join(root, "public/open-pdf.js"), "utf8");
 const srv = fs.readFileSync(path.join(root, "server.js"), "utf8");
-const strip = t => t.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+const strip = t => t.replace(/^\s*\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
 
 function liftFn(text, name) {
   const start = text.indexOf("function " + name + "(");
@@ -279,13 +279,23 @@ test("panel-csv reaches the activity feed on both routes", () => {
   // `programs` is, so it rides the generic one. Both allowlists must carry it
   // or the beacon 400s and, being fire-and-forget, never complains — the trap
   // that has bitten this repo four times.
-  assert.match(srv, /"game", "summary", "outdoor", "fields", "panel-csv"/,
-    "the facilities hub route allows it");
-  assert.match(srv, /"ft-export", "panel-csv", "intel-csv"\];/,
-    "the generic report route allows it");
-  // SLACK_NOTIFY is a Set, so its literal ends `]);` where the route array
-  // ends `];` — that is the only thing telling these two assertions apart.
-  assert.match(srv, /"ft-export", "panel-csv", "intel-csv"\]\);/,
+  // MEMBERSHIP, never position. Pinning the END of one of these arrays is a
+  // brittleness this repo has now recorded three times: appending any later
+  // event breaks the assertion with nothing about panel-csv having changed.
+  // (It just happened again — "wizard-feedback" was appended to SLACK_NOTIFY.)
+  const arr = (label, re) => {
+    const m = srv.match(re);
+    assert.ok(m, label + " array not found");
+    return m[1];
+  };
+  const hubAllowed = arr("the hub log route's ALLOWED",
+    /const ALLOWED = \[("game",[^\]]*)\]/);
+  const genericAllowed = arr("the generic log route's ALLOWED",
+    /const ALLOWED = \[("excel",[^\]]*)\]/);
+  const notify = arr("SLACK_NOTIFY", /const SLACK_NOTIFY = new Set\(\[([\s\S]*?)\]\)/);
+  assert.ok(hubAllowed.includes('"panel-csv"'), "the facilities hub route allows it");
+  assert.ok(genericAllowed.includes('"panel-csv"'), "the generic report route allows it");
+  assert.ok(notify.includes('"panel-csv"'),
     "and it is in SLACK_NOTIFY, or it is recorded and never posted");
 });
 
@@ -349,8 +359,11 @@ test("EVERY contact download is on the record", () => {
   assert.match(users, /event=intel-csv&segment=/,
     "the beacon names the segment");
   assert.match(users, /&n=' \+ list\.length/, "and the contact count");
-  assert.match(srv, /"panel-csv", "intel-csv"\];/, "the log route allows it");
-  assert.match(srv, /"panel-csv", "intel-csv"\]\);/, "and it is in SLACK_NOTIFY");
+  // Membership, not position — see the note in the panel-csv beacon test.
+  const genericAllowed2 = srv.match(/const ALLOWED = \[("excel",[^\]]*)\]/)[1];
+  const notify2 = srv.match(/const SLACK_NOTIFY = new Set\(\[([\s\S]*?)\]\)/)[1];
+  assert.ok(genericAllowed2.includes('"intel-csv"'), "the log route allows it");
+  assert.ok(notify2.includes('"intel-csv"'), "and it is in SLACK_NOTIFY");
   assert.match(srv, /downloaded the \$\{seg\} contact list/,
     "the message names the segment, not just that an export happened");
   assert.match(srv, /rec\.event === "intel-csv"\s*\n\s*\? `\$\{rec\.org\}\|\$\{rec\.report\}\|intel-csv\|\$\{rec\.segment \|\| ""\}`/,

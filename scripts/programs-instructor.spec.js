@@ -92,7 +92,7 @@ const deq = (g, w, m) => ok(JSON.stringify(g) === JSON.stringify(w),
 // Comments quote the broken forms on purpose (`new Date(`, a raw comma split),
 // so every source assertion runs over a comment-stripped copy or it fails on
 // correct code. Same note as checkin-status.spec.js and fasttrack-export.spec.js.
-const code = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+const code = src.replace(/^\s*\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
 
 function liftFn(text, name) {
   const start = text.indexOf("function " + name + "(");

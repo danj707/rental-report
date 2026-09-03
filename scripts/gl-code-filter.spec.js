@@ -43,7 +43,7 @@ const PAGE = path.join(__dirname, "..", "public", "gl.html");
 const src = fs.readFileSync(PAGE, "utf8");
 // Comments quote the shapes being warned against, so source assertions run over
 // a stripped copy or they pass on correct code.
-const code = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+const code = src.replace(/^\s*\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
 
 let pass = 0;
 const failures = [];
