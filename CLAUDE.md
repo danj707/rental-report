@@ -3098,7 +3098,7 @@ leaves *lands on the tab* and *survives the write-back* PASSING while only
 the harness answers `/users/api/data` from a generic stub and the panel looks
 much the same either way — what regressed is that the REQUEST was never made.
 
-## Court utilization: ONE availability source, and the SF QBR is empty (2026-09-03)
+## Court utilization: ONE availability source (2026-09-03)
 
 Dan, on a partner brief about San Francisco's QBR reading 70% (Q2 2025) against
 53% (Q2 2026): *"confirm we're still using a generic denominator for the courts
@@ -3166,34 +3166,47 @@ partner brief measured `court_slot` and got 13.58 avg (range 1.5–26); the
 disagrees with the Courts tab, which is the two-surfaces-disagreeing trap. The
 tab's source wins because the tab is what an org looks at.
 
-### PINNED, AND BIGGER THAN THE DENOMINATOR: the SF QBR is empty
+### CORRECTED: the SF QBR is RIGHT. A COLD generate can drop sections.
 
-Measured on **production**, `POST /qbr/api/generate`, 2026-09-03:
+**I reported that the SF QBR was empty and that is wrong.** Dan exported both
+quarters and the PDFs carry exactly the figures in the partner brief:
 
-| org / quarter | sections populated |
+| | Q2 2025 | Q2 2026 |
+|---|---|---|
+| booked court hours | **70,903** | **56,310** |
+| courts | **101** | **107** |
+| utilization | **70% EST.** | **53% EST.** |
+
+with the footnote *"Court utilization estimated against a 11 hr/day operating
+window"* — the flat denominator, exactly as the brief reverse-engineered it. So
+**Lindsay's numbers did come from this generator** and `qbrSumCourt` matches the
+brief's definition.
+
+**HOW I GOT IT WRONG, because that is the reusable part.** I probed
+`POST /qbr/api/generate` while my own 240s card-17297 query and several MCP SQL
+statements were hitting the same Metabase, read the null sections as a finding,
+and wrote it down. That is verbatim the trap already recorded in the card
+sign-off section — *"RUN THE SWEEP ALONE, or it invents failures on cards you
+never touched... never report one as a finding without doing so."* I had the
+rule, did not follow it, and published the conclusion. **A null section is
+evidence about the last two minutes of load, not about the report.**
+
+**What IS real, and is much narrower.** Re-run clean, nothing else in flight:
+
+| run | result |
 |---|---|
-| **SF Q2 2025** | `financial` ONLY — court, facility, programs, users, retention all **null** |
-| **SF Q2 2026** | **nothing at all** |
-| apex Q2 2026 | `financial` only, `court: null` |
-| watertown Q2 2026 | `financial` + `court` (13 courts, 1,675.5 hrs, 13%) |
+| SF Q2 2026, warm cache | `hoursBooked 56310, courts 107, utilization 53` — correct |
+| SF Q2 2025, cold | `court: null`, at **128s**, reproducibly |
 
-Both SF runs took **125–130s**, which is every feed hitting `fetchMBDirect`'s
-**120s** abort (`safe()` swallows it, `dirCourt(null)` returns null, and the
-panel simply does not render). Card **17297** for SF did not return in **240s**
-from this sandbox for one quarter; SF has **575,329 `reservation_court` rows**
-and the org filter alone takes 54s.
+A **cold** SF generate can drop a section against `fetchMBDirect`'s 120s abort,
+and `safe()` swallows it: the response is a 200 and the PDF simply omits the
+panel. Dan's export worked because the 4-hour feed cache was warm.
 
-**CONSEQUENCE: the numbers in the partner brief did not come from this
-generator — it cannot compute them.** They came from hand-written SQL or
-another system. Do not "regenerate" a QBR for SF and present those figures as
-this system's output; check what actually populated first. A QBR that answers
-200 with five null sections looks like a working report.
-
-**This is the real SF ticket**: cards 17297 (court-utilization) and the
-facility feed cannot answer for a 114-court org inside the request budget.
-Raising the budget alone is not obviously right — see the health-check section
-on slow-vs-broken, and the `materialized` index section for why the fix is
-usually an index rather than a longer wait.
+**THAT is the dangerous shape** — a quarterly report that ships without its
+court section and looks complete. Worth fixing as its own thing: a section that
+failed to load should say so rather than vanish, the same rule as `hasAbsent`
+and the permits column. And worth knowing before generating a QBR for a large
+org off a cold cache: warm it, or check what populated.
 
 ### A spec that THREW instead of failing — fifth instance
 
