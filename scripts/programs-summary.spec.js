@@ -187,6 +187,15 @@ const progIsCanceledSection = new Function(
      "and an empty answer never overwrites what we already knew: a feed that did not answer is not an org with no seasons");
   ok(/if \(reportType === "programs"\) rememberOrgSeasons\(orgSlug, data\)/.test(srv),
      "the data route feeds it");
+  /* AND SO DOES PREWARM. `_orgSeasonList` is in memory, so it is empty after
+     every deploy — and the whole point of the picker existing before the feed
+     answers is that the FIRST person to open the report after a restart gets
+     it. Learning only from a live request means that person is exactly the one
+     who does not, which is the case the fix was for. */
+  ok(/if \(rt === "programs"\) rememberOrgSeasons\(slug, data\)/.test(srv),
+     "...and so does prewarm, or the first open after every deploy is the one without a season picker");
+  ok((srv.match(/rememberOrgSeasons\(/g) || []).length >= 3,
+     "both call sites plus the definition");
   ok(/knownSeasons: \(_orgSeasonList\[slug\] \|\| \{\}\)\.seasons \|\| \[\]/.test(srv),
      "and the page is injected with them");
 }

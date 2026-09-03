@@ -975,6 +975,15 @@ async function prewarmCache(reason = 'interval') {
           // data route builds — for a long time they did not, and every entry
           // written here was unreachable.
           if (paramStr) setCache(feedCacheKey(slug, rt, paramStr), result, rt);
+          /* THE SEASON LIST IS LEARNED HERE TOO, not only on the data route.
+             `_orgSeasonList` is in memory, so it is empty after every deploy —
+             and the whole point of the picker existing before the feed answers
+             is that the FIRST person to open the report after a restart gets
+             it. Learning it only from a live request means that person is
+             exactly the one who does not, which is the case the fix was for.
+             Prewarm already holds this org's programme rows; reading the
+             season names off them costs nothing. */
+          if (rt === "programs") rememberOrgSeasons(slug, data);
           // Also store under the explicit "This Month" cache key so users who
           // click This Month (which sends start_date + end_date params) get a
           // cache hit instead of re-querying Metabase.
