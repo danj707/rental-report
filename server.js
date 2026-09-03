@@ -271,14 +271,6 @@ const REPORT_CACHE_TTL = {
   facility: 4 * 60 * 60 * 1000,            // 4 hrs — warmed at 5am
   gl: 15 * 60 * 1000,                     // 15 min — financials need to be near-live; the GL report also shows a "Data as of · Refresh" stamp for on-demand realtime
   roster: 2 * 60 * 60 * 1000,             // 2 hrs — enrollments change
-  /* 5 MINUTES, and it is the shortest TTL on the platform after gl. This feed
-     exists to be watched on a registration morning — Laurel: "registration day
-     opens and I can literally watch people register for stuff". A 4-hour cache
-     would show her a list that has not moved since breakfast, which is worse
-     than no list, because a stale feed of names looks live. It is also cheap
-     to re-run: 11.9s unbounded at Shrewsbury, and the page asks for a bounded
-     window. */
-  enrollments: 5 * 60 * 1000,
   programs: 4 * 60 * 60 * 1000,           // 4 hrs
   memberships: 4 * 60 * 60 * 1000,        // 4 hrs
   products: 4 * 60 * 60 * 1000,           // 4 hrs
@@ -1425,7 +1417,7 @@ const ORGS = {
   },
 };
 
-const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "products", "memberships", "court-utilization", "calendar", "fasttrack", "waitlist", "users", "program-demographics", "instructor-payout", "retention", "annual-report", "section-detail", "ice-calendar", "qoq", "checkins", "program-checkins", "selfservice", "programs-monthly", "enrollments"];
+const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "products", "memberships", "court-utilization", "calendar", "fasttrack", "waitlist", "users", "program-demographics", "instructor-payout", "retention", "annual-report", "section-detail", "ice-calendar", "qoq", "checkins", "program-checkins", "selfservice", "programs-monthly"];
 
 // ── Friendly report directory — label + emoji per report type ──────────
 // Powers the smart Project-Update composer (auto-draft from the changelog):
@@ -1453,7 +1445,6 @@ const REPORT_DIRECTORY = {
   qoq:                 { label: "QoQ Revenue Comparison",   emoji: "📉" },
   selfservice:         { label: "Self-Service Mix",         emoji: "🖱️" },
   "programs-monthly":  { label: "Programs by Month",        emoji: "📅" },
-  "enrollments":       { label: "Enrollments Live",        emoji: "☕" },
 };
 
 // ── Shared Metabase UUIDs (one query per report type, parameterized by org_id) ──
@@ -1495,22 +1486,6 @@ const SHARED_UUIDS = {
   // because a row of confident $0 bars would say the org collected nothing when
   // the truth is that nothing answered.
   "programs-monthly": process.env.MB_PROGRAMS_MONTHLY_UUID || "a9f6a60e-43bf-4368-ada9-c6a7245f639c",
-  /* Card 21286 — the signup feed behind "Laurel's Coffee Chart".
-     Laurel at Shrewsbury, 2026-09-03: "I'm here in the morning, I have my
-     coffee, I'm going to log in and see what everything looks like... I don't
-     have that umbrella viewpoint that I'm used to having, and I miss it."
-     What she had was her own Metabase card 3571 — four columns, newest first,
-     no filters — and it beat our seven-tab Programs report for the question
-     she asks daily.
-
-     THE KEY IS OMITTED ENTIRELY UNTIL SOMEBODY CREATES THE PUBLIC LINK, which
-     is why this is a spread and not a plain assignment. With no key the route
-     404s and the panel is ABSENT — the same rule as programs-monthly and
-     hasAbsent: a "no registrations yet" table would say nobody signed up when
-     the truth is that nothing answered, and on a registration-day morning that
-     is the worst possible lie. Set MB_ENROLLMENTS_UUID and it completes itself
-     with no redeploy. */
-  ...(process.env.MB_ENROLLMENTS_UUID ? { enrollments: process.env.MB_ENROLLMENTS_UUID } : {}),
 };
 
 // Which card does the app ACTUALLY query for a given org + report?
@@ -2074,12 +2049,12 @@ const AMENITY_TAGS = {
 
 // Report types that are valid system-wide but should NOT be offered in the
 // dashboard "+ Add report" flow (e.g. not yet ready for self-serve onboarding).
-const NON_ADDABLE_REPORTS = new Set(["program-demographics", "retention", "annual-report", "section-detail", "qoq", "checkins", "program-checkins", "selfservice", "programs-monthly", "enrollments"]);
+const NON_ADDABLE_REPORTS = new Set(["program-demographics", "retention", "annual-report", "section-detail", "qoq", "checkins", "program-checkins", "selfservice", "programs-monthly"]);
 // Reports that require extra params (e.g. section_id) and cannot be health-checked with org_id alone
 // How many consecutive failed probes before a report is called down. One is
 // load; two in a row is a report. See the flap note in checkOne().
 const HEALTH_ALERT_AFTER = Number(process.env.HEALTH_ALERT_AFTER || 2);
-const HEALTH_SKIP_REPORTS = new Set(["section-detail", "annual-report", "qoq", "qbr-stats", "checkins", "program-checkins", "selfservice", "programs-monthly", "enrollments"]);
+const HEALTH_SKIP_REPORTS = new Set(["section-detail", "annual-report", "qoq", "qbr-stats", "checkins", "program-checkins", "selfservice", "programs-monthly"]);
 const RENTAL_CALENDAR_ORGS = new Set(["watertown", "norman", "niagarafalls"]);
 // Director's Report (quarterly executive summary) — org-wide since 2026-08-04
 // (piloted on Watertown earlier the same day). With ALL_ORGS true every org
@@ -10491,9 +10466,6 @@ app.get("/:org/programs", (req, res) => {
     // So the season picker exists on first paint rather than 31s in. Empty on
     // a cold process, which degrades to exactly the old behaviour.
     knownSeasons: (_orgSeasonList[slug] || {}).seasons || [],
-    // Absent until somebody creates the public link for card 21286 — the panel
-    // then completes itself with no redeploy.
-    coffeeChart: !!SHARED_UUIDS.enrollments,
   };
   const html = require("fs").readFileSync(path.join(__dirname, "public", "programs.html"), "utf8");
   const inject = `<script>window.ORG_CONFIG=${JSON.stringify(orgConfig)};</script>`;

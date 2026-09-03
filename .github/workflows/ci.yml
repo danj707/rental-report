@@ -164,6 +164,15 @@ jobs:
       - name: Programs summary — the revenue labels and Total Refunds
         run: node scripts/programs-revenue-labels.spec.js
 
+      # Laurel at Shrewsbury: cancelled sections on the report, and a season
+      # picker that only existed once a 31-second load had finished. Plus the
+      # bugs found the same afternoon — the Top Programs bars scaled to the
+      # first row rather than the largest, three noisy bands above the numbers
+      # people come for, and every report's toolbar pinned UNDERNEATH the
+      # early-access banner.
+      - name: Programs summary — cancellations, seasons before the rows, pills, sticky toolbar
+        run: node scripts/programs-summary.spec.js
+
       # Card 19273 inferred a claim from a timestamp that really marked the
       # EXPIRY SWEEP — of 5,371 grants it called claimed, 5,371 were already
       # expired and ZERO were still open. Conversion read 63% where the truth

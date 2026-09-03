@@ -628,13 +628,20 @@ function programRows() {
     // One unseasoned section, so ticking "No Season" has something to find and
     // the option is not vacuous — and with no location, so "No location set" is
     // a real option.
-    sec("Lap Swim",          "Open Lap Swim",                  "sec-ls-1",  9, 20, "No Season",          null,   [0,    0, 1,  200], [ 75,  25,   0,  50,   0], null,                                ["2026-09-01", "2026-09-30"], [10000, 1000, 1000, 100]),
+    /* THE ONLY 'Upcoming' PROGRAMME, so the status pills have two live options
+       and one of them selects exactly one row. A fixture where every section
+       carries the same status renders no pill row at all (one status is not a
+       filter) and no case could tell a working pill from a missing one. */
+    Object.assign(
+      sec("Lap Swim",          "Open Lap Swim",                  "sec-ls-1",  9, 20, "No Season",          null,   [0,    0, 1,  200], [ 75,  25,   0,  50,   0], null,                                ["2026-09-01", "2026-09-30"], [10000, 1000, 1000, 100]),
+      { "Section Status": "Upcoming" }),
     /* A CANCELLED SECTION, which the fixture had none of — so no case could
        have caught that cancelled sections were unfilterable. Laurel:
        "Challenge Island, we canceled before it even ran, why is it on this
        report?" Measured at Shrewsbury: 21 of 195 sections in her window.
-       It is its OWN program, so excluding it changes `data-prog-count` from 5
-       to 4 — inside an existing program the program count would not move and
+       It is its OWN program, so excluding it changes `data-prog-count` from 4
+       to 3 (the fixture is 5 sections over 4 programs — Aquatic Exercise has
+       two) — inside an existing program the program count would not move and
        the case could not discriminate. */
     Object.assign(
       sec("Challenge Island", "Challenge Island Summer",        "sec-ci-1", 11, 20, "Spring/Summer 26",   URHO,   [0,    0, 2,  300], [  0,   0,   0,   0,   0], ["Pearlena Sok", 1],                 ["2026-08-15", "2026-09-15"], [ 3000,  0,  0,  0]),
@@ -1155,34 +1162,6 @@ const STUBS = [
   // The window matters here too: the Report Wizard reads `programs` as a source
   // and prints the range the feed covers, so a stub without one silently breaks
   // that case rather than this one.
-  /* The signup feed behind Laurel's Coffee Chart. Must precede
-     /programs/api/data — "/enrollments/api/data" would otherwise fall through
-     to it and the panel would render programme rollups as if they were people.
-     stubMode "nocoffee" answers 404, i.e. nobody has created the public link
-     for card 21286 yet: the panel must then be ABSENT, because a "no
-     registrations" table on a registration morning says nobody signed up when
-     the truth is that nothing answered.
-     THE PARTICIPANT IS POPULATED ON SOME ROWS AND NOT OTHERS, on purpose: a
-     booking for the account holder has none, and echoing the buyer there would
-     invent a child. Two rows share the newest DAY so the "signups on the
-     newest day" count is 2 and not the row count — a panel that prints the
-     total there passes on a single-day fixture. */
-  { match: /\/enrollments\/api\/data/,
-    status: () => (STUB_MODE === "nocoffee" ? 404 : 200),
-    body: () => (STUB_MODE === "nocoffee" ? { error: true } : { rows: [
-      { "Signed Up At": "2026-09-03T14:41:48", "Customer Name": "Rita Perri",
-        "Email": "perri@example.com", "Participant": null,
-        "Section": "Play on 60+ Beginner Oxygen Dance", "Program": "Oxygen Dance Aerobics",
-        "Price": 25, "Paid": 25, "Status": "confirmed" },
-      { "Signed Up At": "2026-09-03T13:06:40", "Customer Name": "Ryan Little",
-        "Email": "ryan@example.com", "Participant": "Brayden Little",
-        "Section": "Boys (Grades 4-5) Tryouts", "Program": "SBA Travel Teams",
-        "Price": 25, "Paid": 25, "Status": "confirmed" },
-      { "Signed Up At": "2026-09-02T20:15:37", "Customer Name": "Kaitlin Gentile",
-        "Email": "kait@example.com", "Participant": "Cecelia Gentile",
-        "Section": "Girls Grades 7-8", "Program": "Shrewsbury Rec Youth Basketball",
-        "Price": 170, "Paid": 170, "Status": "confirmed" },
-    ], meta: {} }) },
   { match: /\/programs\/api\/data/,   body: () => ({ rows: programRows(),
       meta: { window: { start: "2026-08-19", end: "2026-08-26" } } }) },
   { match: /\/directors-report\/api\/quarters/, body: () => ({ ok: true, quarters: [{ year: 2026, q: 2, key: "2026-Q2", label: "Q2 2026", stored: true }] }) },
@@ -2831,34 +2810,37 @@ const CASES = [
   // rollups. Keyed on the row count so a panel wired to /programs/api/data
   // (which the URL would fall through to without its own stub) fails instead of
   // rendering plausible-looking rubbish.
-  { name: "programs · the coffee chart is the front door", path: "/{org}/programs",
-    needs: '[data-prog-coffee="3"]' },
-  // ...and it counts TODAY, not the list. Two of the three fixture rows share
-  // the newest day, so a panel printing the row count reads 3 and fails.
-  { name: "programs · ...and counts the newest day, not the list", path: "/{org}/programs",
-    needs: '[data-prog-coffee-today="2"]' },
-  // It sits ABOVE the KPI cards. "A panel rendered" passes just as happily on
-  // one buried below the fold, which is the whole complaint.
-  { name: "programs · the coffee chart is above the numbers", path: "/{org}/programs",
-    needs: 'body[data-coffee-first="1"]', act: async page => {
-      await page.waitForSelector(".sum-cards", { timeout: 45000 });
-      const ok = await page.evaluate(() => {
-        const c = document.querySelector(".coffee"), k = document.querySelector(".sum-cards");
-        return !!(c && k) && (c.compareDocumentPosition(k) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
-      });
-      await page.evaluate(o => { if (o) document.body.setAttribute("data-coffee-first", "1"); }, ok);
+  { name: "programs · the All Programs table has status pills", path: "/{org}/programs",
+    needs: '[data-prog-pill="Upcoming"]' },
+  { name: "programs · a pill scopes the table", path: "/{org}/programs",
+    needs: '[data-prog-shown="1"]',
+    act: async page => {
+      await page.waitForSelector('[data-prog-shown="3"]', { timeout: 45000 });
+      await page.click('[data-prog-pill="Upcoming"]');
     } },
-  // ABSENT, never empty, when nobody has created the public link. A "no
-  // registrations" table on a registration morning is the most damaging
-  // possible false zero.
-  { name: "programs · no coffee chart without its card", path: "/{org}/programs",
-    stubMode: "nocoffee", needs: ".sum-cards", absent: ".coffee" },
-
-  /* CANCELLED SECTIONS ARE OUT BY DEFAULT. The fixture's cancelled section is
-     its own program, so the program count moves 5 -> 4 — inside an existing
-     program it would not move and the case could not discriminate. */
+  // ...and Clear puts them all back, or the pills are a one-way door.
+  { name: "programs · Clear puts the programs back", path: "/{org}/programs",
+    needs: '[data-prog-shown="3"] table',
+    act: async page => {
+      await page.waitForSelector('[data-prog-pill="Upcoming"]', { timeout: 45000 });
+      await page.click('[data-prog-pill="Upcoming"]');
+      await page.waitForSelector('[data-prog-shown="1"]', { timeout: 45000 });
+      await page.click('.prog-pill-clear');
+    } },
+  /* THE BARS ARE SCALED TO THE LARGEST, not to whichever row sorted first.
+     Dan's screenshot had four bars pegged full width at $1,575, $4,400, $7,650
+     and $2,145 — a chart that cannot move is a chart that looks unfiltered.
+     Exactly ONE bar may read 100. */
+  { name: "programs · the revenue bars are scaled to the biggest", path: "/{org}/programs",
+    needs: '[data-prog-toprev="100"]',
+    act: async page => {
+      await page.waitForSelector('[data-prog-toprev]', { timeout: 45000 });
+      const pegged = await page.evaluate(() =>
+        [...document.querySelectorAll('[data-prog-toprev]')].filter(e => e.getAttribute('data-prog-toprev') === '100').length);
+      await page.evaluate(n => { if (n !== 1) document.body.innerHTML = ''; }, pegged);
+    } },
   { name: "programs · cancelled sections are excluded by default", path: "/{org}/programs",
-    needs: '[data-prog-count="4"]' },
+    needs: '[data-prog-count="3"]' },
   { name: "programs · ...and the control says how many", path: "/{org}/programs",
     needs: '[data-prog-showcanceled="0"]', act: async page => {
       await page.waitForFunction(
@@ -2867,7 +2849,7 @@ const CASES = [
     } },
   // Ticking it brings them back — the filter Dan asked for.
   { name: "programs · ticking it shows them", path: "/{org}/programs",
-    needs: '[data-prog-count="5"]', act: async page => {
+    needs: '[data-prog-count="4"]', act: async page => {
       await page.waitForSelector('[data-prog-showcanceled] input', { timeout: 45000 });
       await page.click('[data-prog-showcanceled] input');
     } },
@@ -3559,8 +3541,7 @@ const child = spawn(process.execPath, [path.join(__dirname, "..", "server.js")],
             placeholder. The value is never dereferenced: every /api/ request
             the browser makes is answered from STUBS. The `nocoffee` stubMode
             covers the unwired case from the other direction. */
-         MB_ENROLLMENTS_UUID: "render-check-placeholder",
-         // The Report Wizard is DISABLED for every org in production. Its six
+                  // The Report Wizard is DISABLED for every org in production. Its six
          // render cases still have to run — a switched-off feature whose guards
          // stop running comes back broken — so this server enables it. `org` is
          // resolved after the spawn, hence the slug list read from server.js.

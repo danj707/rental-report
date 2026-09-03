@@ -162,9 +162,19 @@ function liftRollup() {
   // supplied or the slice throws — which is the honest signal that a dimension
   // was added, and is why the throw is caught and recorded below rather than
   // being allowed to kill the process.
+  /* showCanceledSections arrives with the FOURTH thing this funnel does
+     (2026-09-03): cancelled sections are excluded by DEFAULT now, so the funnel
+     runs even with no filter picked. Every argument the funnel reads has to be
+     supplied or the slice throws — the honest signal that a dimension was
+     added, which is why the throw is caught and recorded rather than allowed to
+     kill the process. These cases pass `true` (cancellations SHOWN) so they
+     keep testing exactly what they were written to test; the default is
+     covered by programs-coffee.spec.js, which owns that behaviour. */
   const raw = new Function("rows", "progSections", "sectionGrain", "locFilter",
-                           "seasonSel", "instrSel", "LOC_NONE", "seasonKey",
+                           "seasonSel", "instrSel", "showCanceledSections",
+                           "progIsCanceledSection", "LOC_NONE", "seasonKey",
                            "instructorKey", "rollupToPrograms", body);
+  const isCanceled = r => { const st = r && (r.status || r.sectionStatus); return st === "Canceled" || st === "Cancelled"; };
   const SECS = [
     { programName: "Pickleball", season: "Fall '26",         location: "Oak Middle" },
     { programName: "Yoga",       season: "Fall '26",         location: "Senior Center" },
@@ -177,7 +187,7 @@ function liftRollup() {
   const run = (locFilter, seasonSel, rows, instrSel) => {
     try {
       return raw(rows || SECS, SECS, false, locFilter, seasonSel, instrSel || [],
-                 "\u0000none", seasonKey, instructorKey, x => x);
+                 true, isCanceled, "\u0000none", seasonKey, instructorKey, x => x);
     } catch (e) { failures.push("the scopedRows funnel THREW: " + e.message); return []; }
   };
   const names = rs => (rs || []).map(r => r.programName).sort();
@@ -214,7 +224,7 @@ function liftRollup() {
   let out;
   try {
     out = raw([{ programName: "Aquatics", programId: "p-aq", _sections: SPANNING }],
-              SPANNING, true, "Urho Saari", [], [], "\u0000none", seasonKey,
+              SPANNING, true, "Urho Saari", [], [], true, isCanceled, "\u0000none", seasonKey,
               r => (r && r.instructor) || "\u0000noinstructor", rollup);
   } catch (e) { failures.push("the re-rollup THREW: " + e.message); out = []; }
   // EVERY read is defensive, for the reason this file already records: a
@@ -237,11 +247,20 @@ function liftRollup() {
   // flattening/re-rolling on every render for nothing is wasted work.
   let none;
   try {
-    none = raw(["ROLLUPS"], SPANNING, true, "", [], [], "\u0000none", seasonKey,
+    none = raw(["ROLLUPS"], SPANNING, true, "", [], [], true, isCanceled, "\u0000none", seasonKey,
                r => (r && r.instructor) || "\u0000noinstructor", rollup);
   } catch (e) { failures.push("the unfiltered path THREW: " + e.message); none = null; }
   eq(Array.isArray(none) ? none[0] : null, "ROLLUPS",
-     "with nothing ticked the funnel returns `rows` as-is");
+     "with nothing ticked AND cancellations shown, the funnel returns `rows` as-is");
+  /* ...and with cancellations HIDDEN it does not, because that exclusion is
+     now the default and has to reach a report nobody has filtered. */
+  let dflt;
+  try {
+    dflt = raw(["ROLLUPS"], SPANNING, true, "", [], [], false, isCanceled, "\u0000none", seasonKey,
+               r => (r && r.instructor) || "\u0000noinstructor", rollup);
+  } catch (e) { failures.push("the default path THREW: " + e.message); dflt = null; }
+  ok(Array.isArray(dflt) && dflt[0] !== "ROLLUPS",
+     "with cancellations hidden the funnel RUNS rather than short-circuiting — the exclusion is the default, so it cannot wait for a filter");
 }
 
 // ── source invariants ───────────────────────────────────────────────────────

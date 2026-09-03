@@ -18,7 +18,7 @@
 
     /* ── Toolbar ── */
     .toolbar {
-      position: sticky; top: 0; z-index: 100;
+      position: sticky; top: var(--rec-banner-h, 0px); z-index: 100;
       display: flex; align-items: center; gap: 10px;
       padding: 8px 20px;
       background: #2c2c2c; color: #eee;
@@ -316,34 +316,15 @@
     /* ── Tabs ── */
 
     /* ── Summary Tab ── */
-    /* ── Laurel's Coffee Chart ──
-       Deliberately plain. The whole point of the panel is that it is readable
-       before anything is configured, and a decorated table reads slower than
-       an undecorated one. `.panel` does not exist on this page (the tables here
-       are bare), so it carries its own box. */
-    .coffee { background: #fff; border: 1px solid #e8e6e0; border-radius: 8px; margin: 16px 0; overflow: hidden; }
-    .coffee-head { display: flex; align-items: flex-start; justify-content: space-between;
-      gap: 12px; padding: 12px 14px; border-bottom: 1px solid #f0efec; }
-    .coffee-title { font-size: 14px; font-weight: 700; color: #1e1b4b; }
-    .coffee-sub { display: block; font-size: 11.5px; color: #6b7280; margin-top: 2px; }
-    .coffee-pause { display: flex; align-items: center; gap: 5px; font-size: 11px; color: #6b7280;
-      white-space: nowrap; cursor: pointer; }
-    /* A BOUNDED SCROLLER, not the whole list on the page: 60 rows of names
-       below the KPI cards would bury the report this panel sits on top of.
-       max-content so the columns take their natural width and the container
-       scrolls — the mistake already recorded for .prog-table, which had
-       width:100% inside a scroller and compressed every column to fit. */
-    .coffee-scroll { max-height: 320px; overflow: auto; }
-    .coffee-table { width: 100%; min-width: max-content; border-collapse: collapse; font-size: 12px; }
-    .coffee-table th { position: sticky; top: 0; background: #fbfaf8; text-align: left;
-      font-size: 10px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase;
-      color: #9ca3af; padding: 7px 12px; border-bottom: 1px solid #eceae5; }
-    .coffee-table td { padding: 7px 12px; border-bottom: 1px solid #f5f4f1; vertical-align: top; }
-    .coffee-table tr:last-child td { border-bottom: none; }
-    .coffee-table .r { text-align: right; font-variant-numeric: tabular-nums; }
-    .coffee-table .nw { white-space: nowrap; }
-    .coffee-em { font-size: 10.5px; color: #9ca3af; }
-    .coffee-foot { padding: 7px 14px; font-size: 10.5px; color: #9ca3af; border-top: 1px solid #f0efec; }
+    .prog-pills { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 18px 0 -6px; }
+    .prog-pill-lab { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: #9ca3af; margin-right: 2px; }
+    .prog-pill { font: inherit; font-size: 11.5px; padding: 3px 10px; border-radius: 999px; cursor: pointer;
+                 border: 1px solid #e0ded8; background: #fff; color: #4b5563; display: inline-flex; align-items: center; gap: 5px; }
+    .prog-pill:hover { border-color: #c9c5bc; }
+    .prog-pill.on { background: #1f2937; border-color: #1f2937; color: #fff; }
+    .prog-pill-n { font-variant-numeric: tabular-nums; opacity: .6; }
+    .prog-pill-clear { font: inherit; font-size: 11px; padding: 3px 8px; border: none; background: none;
+                       color: #6366f1; cursor: pointer; }
     .sum-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 16px 0; }
     .sum-card { background: #fff; border: 1px solid #e8e6e0; border-radius: 8px; padding: 14px 16px; }
     .sum-card .sc-label { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: #888; font-weight: 700; margin-bottom: 4px; }
@@ -985,6 +966,18 @@ function progSetCell(r, key) {
    The card emits 'Canceled'; some feeds and some of this page's own rollups
    carry 'Cancelled'. Both spellings, always — testing one silently keeps half
    of them. */
+/* THE STATUS PILLS' VOCABULARY, in the order an admin thinks about a season:
+   what has not started, what is running, what has finished, what fell over.
+   'Past' is labelled "Ran", the same word the table's own badge uses — two
+   spellings of one status on one screen is how a filter stops matching what
+   the reader sees. Module scope so a spec can read it. */
+const PROG_STATUSES = [
+  { key: 'Upcoming',    label: 'Upcoming' },
+  { key: 'In Progress', label: 'In Progress' },
+  { key: 'Past',        label: 'Ran' },
+  { key: 'Canceled',    label: 'Cancelled' },
+];
+
 function progIsCanceledSection(r) {
   const st = r && (r.status || r.sectionStatus);
   return st === 'Canceled' || st === 'Cancelled';
@@ -1146,127 +1139,21 @@ function getParams() {
 //
 // ABSENT rather than disabled where there is nothing to download: a control
 // that yields an empty file is the dead end this repo keeps writing down.
-/* ── "Laurel's Coffee Chart" ─────────────────────────────────────────────────
-   Named for Laurel Rossiter at Shrewsbury, whose feedback on 2026-09-03
-   produced it: "I'm here in the morning, I have my coffee, I'm going to log in
-   and see what everything looks like. I don't have that umbrella viewpoint
-   that I'm used to having, and I miss it."
+/* LAUREL'S COFFEE CHART LIVES ON THE ORG DASHBOARD, NOT HERE (Dan,
+   2026-09-03, reversing an earlier call in the same afternoon): "the new live
+   coffee counter widget, and all other live widgets, need to live on the
+   org-dashboard project. A dashboard is the spot for live data, not static
+   reports."
 
-   THE DESIGN IS THE RESTRAINT. What she already had was a Metabase card with
-   four columns, sorted newest first, with no filters and no date range — and
-   it beat this seven-tab report for the one question she asks daily. So this
-   panel commits to one opinionated default and offers almost nothing to
-   configure: newest signup first, everything, no window. Measured contrast at
-   the time: her card 4 columns / 0 filters / instant, this report 7 tabs / 10
-   controls / 14 KPI cards / 31.4s.
+   The line that draws is between a REPORT and a DASHBOARD, not between two
+   features: this page answers a question about a window somebody chose, and a
+   panel that refreshes itself under that answer is a second, contradictory
+   clock on the same screen. It is the rec-dashboard project's "Live Widgets"
+   section now, reading the same card (21286, mirrored in that repo).
 
-   Every instinct to add a filter here should be resisted. The deep report
-   exists for analysis; this is the front door, and its whole value is that it
-   answers before you touch it.
-
-   ABSENT, NEVER EMPTY, when the feed cannot answer. `coffeeChart` is injected
-   server-side and false until somebody creates the public link for card 21286,
-   and a failed fetch leaves the panel out too. A "no registrations" table on a
-   registration-day morning would say nobody signed up when the truth is that
-   nothing answered — the hasAbsent rule, and here it is the most damaging
-   possible version of it. */
-function ProgCoffeeChart({ basePath, withToken }) {
-  const [rows, setRows]   = React.useState(null);
-  const [err, setErr]     = React.useState(false);
-  const [at, setAt]       = React.useState(null);
-  const [paused, setPaused] = React.useState(false);
-  const load = React.useCallback(() => {
-    fetch(withToken(basePath + '/api/data'))
-      .then(r => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-      .then(j => {
-        if (!j || !Array.isArray(j.rows)) throw new Error('shape');
-        setRows(j.rows); setErr(false); setAt(new Date());
-      })
-      .catch(() => setErr(true));
-  }, [basePath, withToken]);
-  React.useEffect(() => { load(); }, [load]);
-  /* It REFRESHES, because a list of names that has not moved since breakfast
-     looks live and is not — and "watch people register" was the literal ask.
-     60s against a 5-minute feed cache, so most ticks are free; the visible
-     clock is what tells the reader whether they are looking at now. Pausing
-     stops it, because a list that reorders under the cursor while you are
-     reading a name is the haunted-text-box problem one surface over. */
-  React.useEffect(() => {
-    if (paused) return;
-    const t = setInterval(load, 60000);
-    return () => clearInterval(t);
-  }, [load, paused]);
-
-  if (err || !rows) return null;
-  if (!rows.length) return null;
-
-  const money = v => {
-    const n = Number(v);
-    return Number.isFinite(n) && n > 0 ? '$' + n.toLocaleString(undefined, { maximumFractionDigits: 0 }) : '\u2014';
-  };
-  /* NEVER `new Date(ymd)`. The card emits a bare local wall-clock string
-     ("2026-09-03T14:41:48") already converted to the org's timezone, so
-     parsing it as a Date and reformatting would re-apply the VIEWER's zone and
-     shift a 9pm signup onto the wrong day. Read the parts. */
-  const when = ts => {
-    const m = String(ts || '').match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
-    if (!m) return String(ts || '');
-    const h = Number(m[4]), ap = h >= 12 ? 'pm' : 'am', h12 = h % 12 === 0 ? 12 : h % 12;
-    return Number(m[2]) + '/' + Number(m[3]) + ' ' + h12 + ':' + m[5] + ap;
-  };
-  const today = rows.length ? String(rows[0]['Signed Up At'] || '').slice(0, 10) : '';
-  const todayN = rows.filter(r => String(r['Signed Up At'] || '').slice(0, 10) === today).length;
-
-  return (
-    <div className="panel coffee" data-prog-coffee={String(rows.length)}>
-      <div className="coffee-head">
-        <div>
-          <span className="coffee-title">{'\u2615'} Laurel&rsquo;s Coffee Chart</span>
-          {/* The count that matters on a registration morning is TODAY'S, and
-              it is stated rather than left to be counted down the list. */}
-          <span className="coffee-sub" data-prog-coffee-today={String(todayN)}>
-            {todayN} {todayN === 1 ? 'signup' : 'signups'} on the newest day {'\u00b7'} {rows.length} shown, newest first
-          </span>
-        </div>
-        <label className="coffee-pause" title="Stops the 60-second refresh, so a row cannot move while you are reading it.">
-          <input type="checkbox" checked={paused} onChange={e => setPaused(e.target.checked)} /> Pause
-        </label>
-      </div>
-      <div className="coffee-scroll">
-        <table className="coffee-table">
-          <thead><tr>
-            <th>Signed up</th><th>Who</th><th>Participant</th><th>Section</th><th className="r">Price</th>
-          </tr></thead>
-          <tbody>
-            {rows.slice(0, 60).map((r, i) => (
-              <tr key={i}>
-                <td className="nw">{when(r['Signed Up At'])}</td>
-                <td>
-                  <div>{r['Customer Name']}</div>
-                  {r['Email'] ? <div className="coffee-em">{r['Email']}</div> : null}
-                </td>
-                {/* A dash, not the buyer's name repeated: a booking for the
-                    account holder themselves has no separate participant, and
-                    echoing the buyer would imply a child who is not there. */}
-                <td>{r['Participant'] || '\u2014'}</td>
-                <td>
-                  <div>{r['Section']}</div>
-                  {r['Program'] && r['Program'] !== r['Section']
-                    ? <div className="coffee-em">{r['Program']}</div> : null}
-                </td>
-                <td className="r nw">{money(r['Price'])}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <div className="coffee-foot">
-        {at ? 'Live \u00b7 refreshed ' + at.toLocaleTimeString() : ''}
-        {paused ? ' \u00b7 paused' : ''}
-      </div>
-    </div>
-  );
-}
+   What stays here from that work: cancelled sections excluded by default, the
+   season picker that exists before the feed answers, and the summary with
+   three noisy bands taken off it. Those are report questions. */
 
 function ProgPanelCsv({ rows, name }) {
   if (!rows || rows.length < 2) return null;
@@ -1875,6 +1762,14 @@ function App() {
   const [endDate,     setEndDate]     = useState(params.end_date   || defaults.end);
   const [rows,        setRows]        = useState(null);
   const [sectionGrain, setSectionGrain] = useState(false);
+  /* Quick status pills over the All Programs table (Dan, 2026-09-03). EMPTY
+     MEANS ALL, the same rule as the season and instructor pickers — so there
+     is a Clear and no "select all", because two controls producing one state
+     is a control that looks broken. Not persisted and not in the URL: this is
+     a glance at one table, not a saved view of the report. */
+  const [progStatusSel, setProgStatusSel] = useState([]);
+  const toggleProgStatus = k => setProgStatusSel(v =>
+    v.indexOf(k) >= 0 ? v.filter(x => x !== k) : v.concat([k]));
   const [open,        setOpen]        = useState(() => new Set());
   const [meta,        setMeta]        = useState({});
   const [error,       setError]       = useState(null);
@@ -1887,8 +1782,17 @@ function App() {
   const [priorStats, setPriorStats] = useState(null); // { enrolled, net, cancelled, start, end }
   const [compareOn,  setCompareOn]  = useState(() => { try { return localStorage.getItem('rr_compare') !== 'false'; } catch { return true; } });
   const toggleCompare = () => setCompareOn(v => { try { localStorage.setItem('rr_compare', String(!v)); } catch {} return !v; });
-  // ── Self-service / staff workload (orders by channel) ──
-  const [ssData, setSsData] = useState(null);
+  /* THE SELF-SERVICE FEED IS GONE WITH ITS PANEL. It was two Metabase fetches
+     (this window and the prior one) on every summary load, and after the panel
+     was removed nothing read the result — a fetch nobody reads is the dead end
+     this file keeps writing down, and this one was being paid on the page whose
+     load time is the complaint. Card 19174 and /:org/selfservice are untouched;
+     only this page's calls to them are.
+     CONSEQUENCE WORTH KNOWING: `selfservice` had no `view` events of its own —
+     it was ACTIVE purely because this page fetched it — so it will age out of
+     REPORT_ACTIVITY_WINDOW_DAYS and its schema-break / param-drift alerts will
+     stop. That is the activity gate working as designed, not a regression, but
+     it is a real change in what is watched. */
 
   // Share Link: expose the live applied filter state so the floating Share
   // widget copies a URL that reproduces the on-screen view (mirrors the PDF).
@@ -2503,43 +2407,6 @@ function App() {
     return () => { alive = false; };
   }, [loadedStart, loadedEnd, orgSlug]);
 
-  // ── Self-service split: orders by channel for the current + prior window.
-  // Hidden gracefully when the org has no selfservice card configured.
-  useEffect(() => {
-    setSsData(null);
-    if (!loadedStart || !loadedEnd) return;
-    let alive = true;
-    const w = priorWindow(loadedStart, loadedEnd);
-    const get = (sd, ed) =>
-      fetch(withToken(`/${orgSlug}/selfservice/api/data?start_date=${encodeURIComponent(sd)}&end_date=${encodeURIComponent(ed)}`))
-        .then(r => r.ok ? r.json() : null).catch(() => null);
-    Promise.all([get(loadedStart, loadedEnd), w ? get(w.start, w.end) : Promise.resolve(null)]).then(([curJ, prevJ]) => {
-      if (!alive || !curJ || !Array.isArray(curJ.rows)) return;
-      const parse = (json, isPrior) => {
-        const byMonth = {}; let self = 0, staff = 0, staffD = 0;
-        ((json && json.rows) || []).forEach(r => {
-          const m = String(r.month || r.Month || '').slice(0, 7);
-          const ch = String(r.channel || r.Channel || '').toLowerCase() === 'staff' ? 'staff' : 'self';
-          const n = fmtNum(r.orders ?? r.Orders);
-          const d = fmtNum(r.dollars ?? r.Dollars);
-          if (!m) return;
-          if (!byMonth[m]) byMonth[m] = { key: m, self: 0, staff: 0, prior: isPrior };
-          byMonth[m][ch] += n;
-          if (ch === 'staff') staff += n; else self += n;
-          if (ch === 'staff') staffD += d;
-        });
-        return { byMonth, self, staff, staffD };
-      };
-      const c = parse(curJ, false);
-      if (c.self + c.staff === 0) return;
-      const p = parse(prevJ, true);
-      const merged = Object.assign({}, p.byMonth);
-      Object.values(c.byMonth).forEach(m => { merged[m.key] = m; }); // current wins on overlap
-      const months = Object.values(merged).sort((a, b) => a.key < b.key ? -1 : 1).slice(-6);
-      setSsData({ months, cur: c, prev: prevJ ? p : null });
-    });
-    return () => { alive = false; };
-  }, [loadedStart, loadedEnd, orgSlug]);
 
   function setMonth(offset) {
     const now = new Date();
@@ -3645,6 +3512,14 @@ function App() {
           // Sort by cash collected in the period, then lifetime net — early in a
           // month period figures are mostly $0 and the tiebreak keeps order stable
           var progsSorted = progs.slice().sort(function(a,b){ return (b.periodNet - a.periodNet) || (b.netRevenue - a.netRevenue); });
+          /* The pills scope the TABLE, not the cards above it — the ask was a
+             quick way to read one table, and moving the KPI row with it would
+             make "Upcoming" look like the whole report. Which is exactly why
+             the Total row below says what it covers instead of quietly
+             disagreeing with the rows above it. */
+          var shownProgs = progStatusSel.length
+            ? progsSorted.filter(function(p){ return progStatusSel.indexOf(p.status) >= 0; })
+            : progsSorted;
           // Show attendance columns only when this org tracks check-ins
           var showCi = !!(checkinSummary && checkinSummary.totalCheckIns > 0);
           var ciPctColor = function(p) { return p == null ? '#ccc' : p >= 85 ? '#16a34a' : p <= 25 ? '#dc2626' : '#333'; };
@@ -3655,8 +3530,6 @@ function App() {
                   page, at the top." It goes above the compare chip and the KPI
                   row on purpose — the point of the feedback was that the
                   answer to the daily question was three levels down. */}
-              {(window.ORG_CONFIG || {}).coffeeChart
-                ? <ProgCoffeeChart basePath={'/' + orgSlug + '/enrollments'} withToken={withToken} />
                 : null}
               {/* ── Compare toggle — prior window mirrors the report's timeframe ── */}
               <div style={{display:'flex',justifyContent:'flex-end',margin:'12px 0 -6px'}}>
@@ -3865,144 +3738,19 @@ function App() {
                 );
               })()}
 
-              {/* ── Self-Service & Staff Workload — orders by channel ── */}
-              {ssData && (() => {
-                const rate = ssData.cur.self + ssData.cur.staff > 0 ? Math.round(ssData.cur.self / (ssData.cur.self + ssData.cur.staff) * 1000) / 10 : null;
-                const prevRate = ssData.prev && (ssData.prev.self + ssData.prev.staff > 0) ? Math.round(ssData.prev.self / (ssData.prev.self + ssData.prev.staff) * 1000) / 10 : null;
-                const hoursSaved = Math.round(ssData.cur.self * 5 / 60);
-                const maxTotal = Math.max(...ssData.months.map(m => m.self + m.staff), 1);
-                const monthLabel = k => { try { return new Date(k + '-15T12:00:00').toLocaleDateString('en-US', { month: 'short' }); } catch { return k; } };
-                return (
-                  <div style={{margin:'0 0 16px',padding:'14px 18px',border:'1px solid #dbeafe',background:'linear-gradient(135deg,#eff6ff,#ffffff)',borderRadius:12}}>
-                    <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12,flexWrap:'wrap'}}>
-                      <span style={{fontSize:12,fontWeight:700,color:'#1e40af',textTransform:'uppercase',letterSpacing:'0.05em'}}>🖱️ Self-Service &amp; Staff Workload</span>
-                      <span style={{fontSize:11,color:'#94a3b8'}}>resident self-serve online vs. processed by staff (front desk, phone, cash/check/terminal)</span>
-                    </div>
-                    <div style={{display:'flex',gap:28,flexWrap:'wrap',alignItems:'flex-start'}}>
-                      <div>
-                        <div style={{fontSize:22,fontWeight:800,color:'#16a34a',lineHeight:1.1}}>{rate != null ? rate + '%' : '—'}</div>
-                        <div style={{fontSize:11,color:'#64748b'}}>Self-service rate</div>
-                        {compareOn && prevRate != null && rate != null && <DeltaPill cur={rate} prev={prevRate} label="vs prior" />}
-                      </div>
-                      <div>
-                        <div style={{fontSize:22,fontWeight:800,color:'#2563eb',lineHeight:1.1}}>{ssData.cur.staff.toLocaleString()}</div>
-                        <div style={{fontSize:11,color:'#64748b'}}>Staff-assisted orders{ssData.cur.staffD > 0 ? ' · $' + Math.round(ssData.cur.staffD).toLocaleString() : ''}</div>
-                        {compareOn && ssData.prev && <DeltaPill cur={ssData.cur.staff} prev={ssData.prev.staff} goodWhenDown={true} label="vs prior" />}
-                      </div>
-                      <div>
-                        <div style={{fontSize:22,fontWeight:800,color:'#334155',lineHeight:1.1}}>~{hoursSaved.toLocaleString()} hrs</div>
-                        <div style={{fontSize:11,color:'#64748b'}}>Staff time saved (self-serve × 5 min)</div>
-                      </div>
-                      <div style={{flex:'1 1 auto',minWidth:210}}>
-                        {/* Columns keep their width whether there are two months
-                            or six, and sit on a baseline so short bars still
-                            read as bars rather than floating chips. The plot
-                            shrinks to the months it has; the legend below keeps
-                            the full width so it never wraps a word per line. */}
-                        <div style={{maxWidth:Math.min(400, ssData.months.length * 54 + (ssData.months.length - 1) * 8)}}>
-                        <div style={{display:'flex',alignItems:'flex-end',gap:8,height:72,borderBottom:'1px solid #cbd5e1'}}>
-                          {ssData.months.map(m => {
-                            const tot = m.self + m.staff;
-                            const h = tot / maxTotal * 52;
-                            const selfH = Math.max(tot > 0 ? h * m.self / tot : 0, m.self > 0 ? 3 : 0);
-                            const staffH = Math.max(h - selfH, m.staff > 0 ? 3 : 0);
-                            return (
-                              <div key={m.key} title={monthLabel(m.key) + ': ' + m.self.toLocaleString() + ' self / ' + m.staff.toLocaleString() + ' staff'}
-                                   style={{flex:'1 1 0',minWidth:26,maxWidth:54,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'flex-end',height:'100%'}}>
-                                <div style={{fontSize:9.5,fontWeight:700,color:m.prior ? '#b7b3aa' : '#475569',marginBottom:3,lineHeight:1}}>{tot.toLocaleString()}</div>
-                                <div style={{width:'80%',maxWidth:30,display:'flex',flexDirection:'column',opacity:m.prior ? 0.42 : 1}}>
-                                  {staffH > 0 && <div style={{height:staffH,background:'#2563eb',borderRadius:'3px 3px 0 0'}} />}
-                                  {selfH > 0 && <div style={{height:selfH,background:'#16a34a',borderRadius:staffH > 0 ? 0 : '3px 3px 0 0'}} />}
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                        <div style={{display:'flex',gap:8,marginTop:4}}>
-                          {ssData.months.map(m => (
-                            <div key={m.key} style={{flex:'1 1 0',minWidth:26,maxWidth:54,textAlign:'center',fontSize:9.5,fontWeight:600,color:m.prior ? '#b7b3aa' : '#64748b'}}>{monthLabel(m.key)}</div>
-                          ))}
-                        </div>
-                        </div>
-                        <div style={{display:'flex',gap:12,marginTop:7,fontSize:9.5,color:'#64748b',whiteSpace:'nowrap'}}>
-                          <span><span style={{display:'inline-block',width:7,height:7,borderRadius:2,background:'#16a34a',marginRight:3}} />Self-service</span>
-                          <span><span style={{display:'inline-block',width:7,height:7,borderRadius:2,background:'#2563eb',marginRight:3}} />Staff-assisted</span>
-                          {ssData.months.some(m => m.prior) && <span style={{opacity:.7}}>faded = prior period</span>}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })()}
+              {/* THREE PANELS WERE REMOVED FROM HERE (Dan, 2026-09-03: "remove
+                  these three sections, they are noisy"): Self-Service & Staff
+                  Workload, Session Attendance and Waitlist Demand. Each was a
+                  full-width tinted band above the numbers people come for, and
+                  together they pushed the charts and the programme table below
+                  the fold on the summary that is meant to be the front door.
 
-              {/* ── Attendance / Check-In rollup ── */}
-              {checkinSummary && checkinSummary.totalCheckIns > 0 && (
-                <div style={{margin:'0 0 16px',padding:'14px 18px',border:'1px solid #dcfce7',background:'linear-gradient(135deg,#f0fdf4,#ffffff)',borderRadius:12}}>
-                  <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12}}>
-                    <span style={{fontSize:12,fontWeight:700,color:'#166534',textTransform:'uppercase',letterSpacing:'0.05em'}}>✅ Session Attendance</span>
-                    <span style={{fontSize:11,color:'#94a3b8'}}>across {checkinSummary.sectionsTracked} section{checkinSummary.sectionsTracked === 1 ? '' : 's'} tracking check-ins</span>
-                    <span style={{flex:1}} />
-                    <span onClick={()=>switchTab('checkins')} style={{fontSize:11,fontWeight:600,color:'#16a34a',cursor:'pointer'}}>View breakdown →</span>
-                  </div>
-                  <div style={{display:'flex',gap:28,flexWrap:'wrap'}}>
-                    <div><div style={{fontSize:22,fontWeight:800,color:'#16a34a',lineHeight:1.1}}>{checkinSummary.checkInPct != null ? checkinSummary.checkInPct + '%' : '\u2014'}</div><div style={{fontSize:11,color:'#64748b'}}>Check-in rate</div></div>
-                    <div><div style={{fontSize:22,fontWeight:800,color:'#d97706',lineHeight:1.1}}>{checkinSummary.checkOutPct != null ? checkinSummary.checkOutPct + '%' : '\u2014'}</div><div style={{fontSize:11,color:'#64748b'}}>Check-out rate</div></div>
-                    <div><div style={{fontSize:22,fontWeight:800,color:'#334155',lineHeight:1.1}}>{checkinSummary.totalCheckIns.toLocaleString()}</div><div style={{fontSize:11,color:'#64748b'}}>Total check-ins</div></div>
-                    <div><div style={{fontSize:22,fontWeight:800,color:'#334155',lineHeight:1.1}}>{checkinSummary.totalAttendIn.toLocaleString()}</div><div style={{fontSize:11,color:'#64748b'}}>Unique attendees</div></div>
-                  </div>
-                </div>
-              )}
-
-              {/* ── Waitlist Demand — unmet demand from full sections (requires v4 card SQL) ── */}
-              {colPresence.waitlist && (() => {
-                var wlActive = progs.reduce(function(s,p){ return s + (p.waitlist || 0); }, 0);
-                var wlAll    = progs.reduce(function(s,p){ return s + (p.waitlistTotal || 0); }, 0);
-                var wlConv   = progs.reduce(function(s,p){ return s + (p.waitlistConverted || 0); }, 0);
-                var wlDemand = progs.reduce(function(s,p){ return s + (p.waitlistDemand || 0); }, 0);
-                if (wlAll === 0) return null;
-                var convPct = wlAll > 0 ? Math.round(wlConv / wlAll * 1000) / 10 : null;
-                var pressure = progs.filter(function(p){ return (p.waitlist || 0) > 0; })
-                                    .sort(function(a,b){ return b.waitlist - a.waitlist; }).slice(0, 3);
-                return (
-                  <div style={{margin:'0 0 16px',padding:'14px 18px',border:'1px solid #fde68a',background:'linear-gradient(135deg,#fffbeb,#ffffff)',borderRadius:12}}>
-                    <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12,flexWrap:'wrap'}}>
-                      <span style={{fontSize:12,fontWeight:700,color:'#92400e',textTransform:'uppercase',letterSpacing:'0.05em'}}>⏳ Waitlist Demand</span>
-                      <span style={{fontSize:11,color:'#94a3b8'}}>residents waiting for spots in full sections — a signal to add capacity</span>
-                      <span style={{flex:1}} />
-                      <a href={(function(){ var qs = new URLSearchParams(window.location.search); var t = qs.get('token'); return '/' + orgSlug + '/waitlist' + (t ? '?token=' + encodeURIComponent(t) : ''); })()} style={{fontSize:11,fontWeight:600,color:'#92400e',textDecoration:'none'}}>Full waitlist report →</a>
-                    </div>
-                    <div style={{display:'flex',gap:28,flexWrap:'wrap',alignItems:'flex-start'}}>
-                      <div>
-                        <div style={{fontSize:22,fontWeight:800,color:'#d97706',lineHeight:1.1}}>{wlActive.toLocaleString()}</div>
-                        <div style={{fontSize:11,color:'#64748b'}}>Waitlisted now</div>
-                      </div>
-                      <div>
-                        <div style={{fontSize:22,fontWeight:800,color:'#16a34a',lineHeight:1.1}}>{convPct != null ? convPct + '%' : '—'}</div>
-                        <div style={{fontSize:11,color:'#64748b'}}>Joined waitlist → enrolled ({wlConv.toLocaleString()} of {wlAll.toLocaleString()})</div>
-                      </div>
-                      {wlDemand > 0 && (
-                        <div>
-                          <div style={{fontSize:22,fontWeight:800,color:'#334155',lineHeight:1.1}}>{fmt$(wlDemand)}</div>
-                          <div style={{fontSize:11,color:'#64748b'}}>Unmet demand (waitlisted × program price)</div>
-                        </div>
-                      )}
-                      {pressure.length > 0 && (
-                        <div style={{flex:1,minWidth:220}}>
-                          <div style={{fontSize:10,fontWeight:700,color:'#92400e',textTransform:'uppercase',letterSpacing:'0.05em',marginBottom:4}}>Highest pressure</div>
-                          {pressure.map(function(p){
-                            return (
-                              <div key={p.name} style={{display:'flex',justifyContent:'space-between',gap:12,fontSize:11.5,color:'#334155',padding:'2px 0'}}>
-                                <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{p.name}</span>
-                                <span style={{fontWeight:700,whiteSpace:'nowrap'}}>{p.waitlist.toLocaleString()} waiting{p.waitlistDemand > 0 ? ' · ' + fmt$(p.waitlistDemand) : ''}</span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })()}
+                  `checkinSummary` and the waitlist columns are untouched and
+                  still read by the Check-Ins tab, the programme table and the
+                  Excel export, so restoring either panel is markup rather than
+                  a rebuild. The self-service FETCH went with its panel — see
+                  the note where ssData used to be declared. Removed from the
+                  SUMMARY, not from the report. */}
 
               {/* ── Completion Bar ── */}
               {totalSections > 1 && (
@@ -4024,14 +3772,32 @@ function App() {
                 <div className="sum-chart-box">
                   <div className="sum-chart-title">Top Programs by Revenue</div>
                   {(() => {
-                    var top10 = progsSorted.filter(function(p){ return p.netRevenue > 0; }).slice(0, 10);
-                    var maxRev = top10.length > 0 ? top10[0].netRevenue : 1;
+                    /* SORTED BY THE FIGURE IT DRAWS. `progsSorted` orders by
+                       periodNet (right for the table, which leads with cash in
+                       the window); this chart's bars and labels are LIFETIME
+                       net, so taking its top ten from that order picked the ten
+                       biggest earners THIS PERIOD and then drew a different
+                       number beside them — which is why a filter looked like it
+                       changed nothing: the ten rows barely moved while the
+                       lengths never did.
+
+                       AND THE SCALE WAS THE FIRST ROW, NOT THE LARGEST. maxRev
+                       read top10[0], so any program with more lifetime revenue
+                       than whichever one happened to sort first computed over
+                       100% and CLIPPED — the chart in Dan's screenshot had four
+                       bars pegged full width at $1,575, $4,400, $7,650 and
+                       $2,145. Both halves are scoped: this reads filteredRows
+                       through progs, like every other panel here. */
+                    var top10 = progs.filter(function(p){ return p.netRevenue > 0; })
+                                     .sort(function(a,b){ return b.netRevenue - a.netRevenue; })
+                                     .slice(0, 10);
+                    var maxRev = top10.reduce(function(m,p){ return Math.max(m, p.netRevenue); }, 0) || 1;
                     return top10.map(function(p, i) {
-                      var pct = (p.netRevenue / maxRev * 100);
+                      var pct = Math.min(100, (p.netRevenue / maxRev * 100));
                       var barColors = ['#d97706','#2563eb','#16a34a','#dc2626','#7c3aed','#0891b2','#ea580c','#64748b','#db2777','#059669'];
                       return <div key={p.name} style={{display:'flex',alignItems:'center',gap:6,marginBottom:5}}>
                         <span style={{fontSize:10,color:'#666',width:160,textAlign:'right',flexShrink:0,lineHeight:'1.3',wordBreak:'break-word'}} title={p.name}>{p.name}</span>
-                        <div style={{flex:1,height:18,background:'#f0eeea',borderRadius:3,overflow:'hidden'}}><div style={{width:pct+'%',height:'100%',background:barColors[i%barColors.length],borderRadius:3}} /></div>
+                        <div style={{flex:1,height:18,background:'#f0eeea',borderRadius:3,overflow:'hidden'}}><div data-prog-toprev={String(Math.round(pct))} style={{width:pct+'%',height:'100%',background:barColors[i%barColors.length],borderRadius:3}} /></div>
                         <span style={{fontSize:10,color:'#888',width:65,textAlign:'right',fontVariantNumeric:'tabular-nums'}}>{fmt$(p.netRevenue)}</span>
                       </div>;
                     });
@@ -4084,13 +3850,43 @@ function App() {
               </div>
 
               {/* ── Program Detail Table (hero) ── */}
-              <div style={{fontSize:13,fontWeight:700,color:'#333',marginBottom:6,marginTop:16}}>All Programs ({progs.length})</div>
-              <div style={{background:'#fff',border:'1px solid #e8e6e0',borderRadius:8,overflow:'hidden',marginBottom:20}}>
+              {(() => {
+                /* Counts come from `progs` — the set already scoped by the
+                   toolbar — so a pill reading (0) is a real fact about this
+                   window. A pill with nothing behind it is NOT rendered at all:
+                   an org that never cancels a programme should not be offered a
+                   Cancelled filter that can only ever empty the table. */
+                var counts = {};
+                progs.forEach(function(p){ counts[p.status] = (counts[p.status] || 0) + 1; });
+                var live = PROG_STATUSES.filter(function(st){ return (counts[st.key] || 0) > 0; });
+                if (live.length < 2) return null;   // one status is not a filter
+                return (
+                  <div className="prog-pills" data-prog-pills={String(progStatusSel.length)}>
+                    <span className="prog-pill-lab">Show</span>
+                    {live.map(function(st){
+                      var on = progStatusSel.indexOf(st.key) >= 0;
+                      return <button key={st.key} type="button"
+                        className={'prog-pill' + (on ? ' on' : '')}
+                        data-prog-pill={st.key}
+                        aria-pressed={on ? 'true' : 'false'}
+                        onClick={function(){ toggleProgStatus(st.key); }}>
+                        {st.label} <span className="prog-pill-n">{counts[st.key]}</span>
+                      </button>;
+                    })}
+                    {progStatusSel.length > 0 && (
+                      <button type="button" className="prog-pill-clear"
+                        onClick={function(){ setProgStatusSel([]); }}>Clear</button>
+                    )}
+                  </div>
+                );
+              })()}
+              <div style={{fontSize:13,fontWeight:700,color:'#333',marginBottom:6,marginTop:16}}>All Programs ({shownProgs.length === progs.length ? progs.length : shownProgs.length + ' of ' + progs.length})</div>
+              <div data-prog-shown={String(shownProgs.length)} style={{background:'#fff',border:'1px solid #e8e6e0',borderRadius:8,overflow:'hidden',marginBottom:20}}>
                 <div style={{maxHeight:700,overflow:'auto'}}>
                   <table className="sum-prog-table">
                     <thead><tr><th>Program</th><th style={{textAlign:'center'}}>Status</th><th style={{textAlign:'center'}}>Sections</th><th style={{textAlign:'right'}}>Utilization</th><th style={{textAlign:'right'}}>Fill %</th>{progHasInstructor && <th title="Facilitators across this program's sections">Instructor</th>}{progHasLocation && <th title="Locations across this program's sections">Location</th>}{showCi && <th style={{textAlign:'right'}}>Check-In %</th>}{showCi && <th style={{textAlign:'right'}}>Check-Out %</th>}<th style={{textAlign:'right'}} title="Payments received within the selected date range">Collected</th><th style={{textAlign:'right'}} title="Lifetime net revenue for these programs (received minus refunds)">Net Rev</th><th>Dates</th></tr></thead>
                     <tbody>
-                      {progsSorted.map(function(p) {
+                      {shownProgs.map(function(p) {
                         var isCancelled = p.status === 'Canceled';
                         var badgeClass = (p.status === 'Past' || p.status === 'In Progress') ? 'sum-badge-ran' : p.status === 'Canceled' ? 'sum-badge-cancel' : p.status === 'Upcoming' ? 'sum-badge-upcoming' : 'sum-badge-active';
                         var statusLabel = p.status === 'Past' ? 'Ran' : p.status;
@@ -4109,7 +3905,7 @@ function App() {
                           <td style={{fontSize:10,color:'#888',whiteSpace:'nowrap'}}>{fmtD(p.startDate)}{fmtD(p.endDate) ? ' \u2013 ' + fmtD(p.endDate) : ''}</td>
                         </tr>;
                       })}
-                      <tr className="totals-row"><td>Total</td><td /><td style={{textAlign:'center'}}>{cancelledSections > 0 ? <span>{totalSections - cancelledSections} ran<span style={{color:'#dc2626',fontSize:10}}> / {cancelledSections} canc.</span></span> : totalSections}</td><td style={{textAlign:'right',whiteSpace:'nowrap'}}>{totalEnrolled.toLocaleString()} <span style={{color:'#888'}}>/ {totalCapacity > 0 ? totalCapacity.toLocaleString() : '\u2014'}</span>{totalCancellations > 0 && <span style={{color:'#dc2626'}}> / {totalCancellations.toLocaleString()}</span>}</td><td style={{textAlign:'right',color:'#888'}}>{avgFill > 0 ? avgFill + '%' : ''}</td>{progHasInstructor && <td />}{progHasLocation && <td />}{showCi && <td style={{textAlign:'right',fontWeight:700}}>{checkinSummary.checkInPct != null ? checkinSummary.checkInPct + '%' : '\u2014'}</td>}{showCi && <td style={{textAlign:'right',fontWeight:700}}>{checkinSummary.checkOutPct != null ? checkinSummary.checkOutPct + '%' : '\u2014'}</td>}<td style={{textAlign:'right',fontWeight:700}}>{fmt$(periodTotalRev)}</td><td style={{textAlign:'right',fontWeight:700}}>{fmt$(totalRev)}</td><td /></tr>
+                      <tr className="totals-row"><td>Total{shownProgs.length !== progs.length ? <span style={{fontWeight:400,color:'#888'}}> · all {progs.length}</span> : null}</td><td /><td style={{textAlign:'center'}}>{cancelledSections > 0 ? <span>{totalSections - cancelledSections} ran<span style={{color:'#dc2626',fontSize:10}}> / {cancelledSections} canc.</span></span> : totalSections}</td><td style={{textAlign:'right',whiteSpace:'nowrap'}}>{totalEnrolled.toLocaleString()} <span style={{color:'#888'}}>/ {totalCapacity > 0 ? totalCapacity.toLocaleString() : '\u2014'}</span>{totalCancellations > 0 && <span style={{color:'#dc2626'}}> / {totalCancellations.toLocaleString()}</span>}</td><td style={{textAlign:'right',color:'#888'}}>{avgFill > 0 ? avgFill + '%' : ''}</td>{progHasInstructor && <td />}{progHasLocation && <td />}{showCi && <td style={{textAlign:'right',fontWeight:700}}>{checkinSummary.checkInPct != null ? checkinSummary.checkInPct + '%' : '\u2014'}</td>}{showCi && <td style={{textAlign:'right',fontWeight:700}}>{checkinSummary.checkOutPct != null ? checkinSummary.checkOutPct + '%' : '\u2014'}</td>}<td style={{textAlign:'right',fontWeight:700}}>{fmt$(periodTotalRev)}</td><td style={{textAlign:'right',fontWeight:700}}>{fmt$(totalRev)}</td><td /></tr>
                     </tbody>
                   </table>
                 </div>
@@ -5075,7 +4871,8 @@ function App() {
             <div style={{marginBottom:16}}>
               <span onClick={()=>{setTab('summary');document.body.removeAttribute('data-hide-widgets');}} style={{cursor:'pointer',color:'#6366f1',fontSize:13,fontWeight:600}}>← Back to Revenue</span>
             </div>
-            <div style={{background:'#f8f7f4',border:'1px solid #e4e4e0',borderRadius:8,padding:'16px 20px',marginBottom:20}}>
+            <div data-prog-detail-open={detailSectionId || ''}
+                 style={{background:'#f8f7f4',border:'1px solid #e4e4e0',borderRadius:8,padding:'16px 20px',marginBottom:20}}>
               <div style={{fontSize:18,fontWeight:700,color:'#111827',marginBottom:4}}>{detailSection}</div>
               <div style={{fontSize:13,color:'#6b7280'}}>Registrant revenue detail — {startDate || 'all dates'} to {endDate || 'present'}</div>
             </div>

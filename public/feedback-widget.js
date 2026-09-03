@@ -208,6 +208,32 @@
     banner.appendChild(fbBtn);
 
     document.body.insertBefore(banner, document.body.firstChild);
+
+    /* THE BANNER AND EVERY REPORT'S TOOLBAR ARE BOTH `position: sticky; top: 0`,
+       and this banner wins on z-index — so the toolbar parked UNDERNEATH it and
+       the top of the date fields was cut off the moment the page scrolled. Dan,
+       2026-09-03: "we need to 'pin' this top header with all the search stuff.
+       scrolling down and having it disappear is super frustrating."
+
+       The banner owns its own height, so it is the only thing that can publish
+       it. Every page sticks its toolbar at `var(--rec-banner-h, 0px)`, which
+       falls back to 0 wherever this widget is not loaded — so a page that never
+       shows the banner is unchanged.
+
+       MEASURED, NOT ASSUMED: the banner WRAPS on a narrow viewport and gets
+       taller, so a hardcoded 44px pins the toolbar into it on a laptop and
+       leaves a gap on a phone. Re-measured on resize, and through a
+       ResizeObserver where there is one, because the message can rewrap without
+       the window changing size. */
+    var setBannerH = function () {
+      var h = banner.offsetHeight || 0;
+      document.documentElement.style.setProperty("--rec-banner-h", h + "px");
+    };
+    setBannerH();
+    window.addEventListener("resize", setBannerH);
+    if (typeof ResizeObserver === "function") {
+      try { new ResizeObserver(setBannerH).observe(banner); } catch (e) {}
+    }
   }
 
   // ── Reaction burst ────────────────────────────────────────────

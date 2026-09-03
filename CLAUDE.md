@@ -1888,6 +1888,228 @@ card's sub-line (labelled together, not separately), and the card is
 presence-gated on the raw response so a real $0 renders while a pre-v3 feed
 shows nothing.
 
+## Laurel's asks on the Programs summary (2026-09-03)
+
+Laurel Rossiter at Shrewsbury, on a call, on why she does not use this report:
+
+> *"registration day opens and I can literally watch people register for stuff
+> and keep track... This one, I'm like, oh, let me run this report. But then
+> it's bringing up stuff that we canceled like last summer or we never ran...
+> I feel like I'm not doing it right."*
+> *"Challenge Island, we canceled before it even ran. Like, why is it on this
+> report? And that's from, like, last year."*
+> *"this enhanced reports when it's not working, we don't have the seasons
+> tab."*
+
+Dan: *"Maybe we've gone too deep down the rabbit hole of functionality and lost
+focus on what people need."* The measured contrast, on her own window: **her
+Metabase card is 4 columns, 0 filters, instant; this report is 7 tabs, 10
+controls, 14 KPI cards and 31.4 seconds** — 195 sections, **21 of them
+Canceled**, 26 outside the season she was looking at, and four season options
+that *did* exist but could not be seen until the load finished.
+
+### CANCELLED SECTIONS ARE OUT BY DEFAULT
+
+`progIsCanceledSection(r)` is the one predicate, read by the funnel **and** by
+the control's own count — two copies and the checkbox offers "Show 21
+cancelled" while ticking it moves 19 rows.
+
+- **The funnel now runs with NOTHING ticked**, which is the load-bearing change:
+  `scopedRows` used to hand `rows` straight back when no filter was picked,
+  correct while every filter was opt-in and wrong the moment one became the
+  DEFAULT. The early return is gated on `dropCanceled` too.
+- **It filters at SECTION grain.** A program is `Canceled` only when every
+  section is, so a program-grain test keeps a cancelled section inside a live
+  program and drops a live section inside a mostly-cancelled one.
+- **Both spellings.** `Canceled` and `Cancelled` are both in the data and the
+  section table has tested both since it shipped.
+- **Not persisted.** Whether to look at cancellations is a question about this
+  window, not a layout preference — an admin returning to a silently widened
+  report reads a superset as the whole truth.
+- **Absent where there is nothing**: no checkbox reading "Show 0 cancelled".
+
+### THE SEASON PICKER NO LONGER WAITS FOR THE FEED
+
+Her complaint reads as a missing feature and is a timing one: the options were
+built from the rows, so **during the 31 seconds the control that would have
+narrowed those 31 seconds does not exist.**
+
+`rememberOrgSeasons(slug, rows)` keeps what each org's programs feed last
+carried and `knownSeasons` is injected into `ORG_CONFIG`; the options are the
+**union** of that and the current rows.
+
+- **Seeded at ZERO.** A season with nothing in this window is still tickable and
+  its count says so — the honest form of "we know this season exists".
+- **An empty answer never overwrites what we knew.** A feed that did not answer
+  is not an org with no seasons.
+- **Picking a season CLEARS the dates and refetches.** Intersecting a season
+  with a date range typed for a different question is how a filter appears to
+  do nothing; the season is the window.
+- Empty folds to the card's own literal `No Season`, exactly as `seasonKey`
+  already does, or a pre-v6 feed produces a second unticked option for the same
+  fact.
+
+### Laurel's Coffee Chart LIVES ON THE ORG DASHBOARD, not here
+
+Built here first, then moved the same afternoon. Dan: *"I ruminated on the live
+reports/widgets, and decided they don't belong on the reporting project side...
+The new live coffee counter widget, and all other live widgets, need to live on
+the org-dashboard project. A dashboard is the spot for live data, not static
+reports."*
+
+**The line is between a REPORT and a DASHBOARD, not between two features.** This
+page answers a question about a window somebody chose; a panel refreshing itself
+under that answer is a second, contradictory clock on the same screen. It is
+rec-dashboard's **Live Widgets** section now, and the card mirror moved with it
+to `rec-dashboard/sql/enrollments-live.sql`.
+
+**What came out of rental-report when it moved**, so nothing is left half-wired:
+the `ProgCoffeeChart` component and its CSS, the `enrollments` report type
+(`REPORT_TYPES`, `REPORT_META`, `NON_ADDABLE_REPORTS`, `HEALTH_SKIP_REPORTS`,
+its 5-minute TTL and its `SHARED_UUIDS` entry), the `coffeeChart` injection, and
+the `coffee-open` beacon in all four places it was wired. A registered report
+type nothing serves is the dead-end pattern this file keeps writing down.
+
+**Card 21286 stays** — it is the dashboard's now. See that repo's notes for the
+four defects it fixes against Laurel's own card 3571.
+
+### THE 31 SECONDS IS A CACHE MISS BY CONSTRUCTION
+
+Dan: *"wasn't this cached from an earlier run?"* No, and it cannot be:
+`feedCacheKey` includes the encoded parameter string, so **every distinct date
+window is its own entry**, and prewarm writes exactly three keys per org — no
+dates, the default window, and This Month. A window an admin types is a
+guaranteed cold run of card 17295.
+
+Four levers, cheapest first, and only the first is done:
+
+1. **Don't block the page on it.** The coffee chart, the toolbar and the season
+   picker now paint immediately, so the wait is "list on screen, table filling
+   in" rather than 31 seconds of nothing.
+2. **Warm the windows people open** — last/next month and the org's season
+   spans, 2–3 more queries per org per day.
+3. **Serve stale while revalidating**, which needs care: it must never show one
+   window's numbers under another window's label.
+4. **Split card 17295.** The KPI row needs ~8 aggregates; the section table
+   needs 30+ columns per section. Two cards means the numbers land in seconds.
+   This is the real fix and it is a push, a tag flip and downtime on the
+   platform's most-used card — a decision, not a drive-by.
+
+### THREE PANELS REMOVED, and the fetch went with them
+
+Dan: *"remove these three sections, they are noisy."* Self-Service & Staff
+Workload, Session Attendance and Waitlist Demand — three full-width tinted bands
+above the numbers people come for, together pushing the charts and the programme
+table below the fold on the summary that is meant to be the front door.
+
+**The self-service FEED went too**: two Metabase fetches per load whose result
+nothing read any more, on the page whose load time is the complaint. Everything
+else is untouched — `checkinSummary` and the waitlist columns are still computed
+and still displayed by the Check-Ins tab, the programme table and the Excel
+export, so restoring a panel is markup rather than a rebuild.
+
+**CONSEQUENCE WORTH KNOWING:** `selfservice` had no `view` events of its own —
+it was ACTIVE purely because this page fetched it — so it will age out of
+`REPORT_ACTIVITY_WINDOW_DAYS` and its `schema-break` / `param-drift` alerts will
+stop. That is the activity gate working as designed, and it is still a real
+change in what is watched.
+
+### "Top Programs by Revenue doesn't react to the filters" — it was the SCALE
+
+The row set was scoped all along (it comes off `filteredRows`). Two things were
+wrong and together they made the picture look frozen:
+
+- **The bars were scaled to `top10[0].netRevenue`** — the row that happened to
+  sort first, not the largest — so anything bigger computed over 100% and
+  clipped. Dan's screenshot has **four bars pegged full width across a
+  $1,575-to-$7,650 range**.
+- **The chart took its top ten from an order by `periodNet`** and then labelled
+  and drew `netRevenue`. A chart whose order disagrees with its own bars barely
+  moves when the rows change.
+
+Now sorted by the figure it draws, scaled to the maximum over the rows drawn,
+clamped at 100. `data-prog-toprev` carries the computed percentage so a render
+case can require **exactly one** bar reading 100.
+
+### Status pills over All Programs
+
+Dan: *"add quick, pill style filters to the top of the 'all programs' section to
+filter by upcoming, in progress, etc."* `PROG_STATUSES` at module scope, counts
+from the already-scoped set.
+
+- **Empty means ALL**, the same rule as the season and instructor pickers — so
+  there is a Clear and no "select all", because two controls producing one state
+  is a control that looks broken.
+- **`Past` is labelled "Ran"**, the word the table's own badge uses. Two
+  spellings of one status on one screen is how a filter stops matching what the
+  reader sees.
+- **A status with nothing behind it is not offered**, and with fewer than two
+  live statuses there is no pill row at all — one status is not a filter, and a
+  Cancelled pill that can only empty the table is a dead end.
+- **The pills scope the TABLE, not the cards above it.** The ask was a quick way
+  to read one table; moving the KPI row with it would make "Upcoming" look like
+  the whole report. Which is exactly why the Total row **says what it covers**
+  (`Total · all 27`) instead of quietly disagreeing with the rows above it.
+
+### THE TOOLBAR WAS PINNED — UNDERNEATH THE BANNER
+
+Dan: *"we need to 'pin' this top header with all the search stuff. scrolling
+down and having it disappear is super frustrating."* It **was** pinned:
+`.toolbar` is `position: sticky; top: 0` and has been for months. So is the
+early-access banner (`.rec-banner`, z-index 99998), and it wins — so the
+toolbar stuck *behind* it and the top of the date fields was cut off the moment
+the page scrolled.
+
+**The banner owns its height, so the banner publishes it.**
+`feedback-widget.js` sets `--rec-banner-h` on the root element and every report
+sticks at `var(--rec-banner-h, 0px)` — a 0px fallback, so a page that never
+loads the widget is unchanged.
+
+- **MEASURED, never a constant.** The banner WRAPS on a narrow viewport and
+  gets taller: a hardcoded 44px pins the toolbar into it on a laptop and leaves
+  a gap on a phone. Re-measured on resize, and through a `ResizeObserver`
+  because the message can rewrap without the window changing size.
+- **Fixed on all 15 live report pages, not just the one Dan was looking at.**
+  The bug is the PAIR of rules, so it exists everywhere both appear — every
+  report on the platform had it. The mockups are left alone.
+
+### Guards
+
+`scripts/programs-summary.spec.js` (**68 assertions, in CI**), which LIFTS AND
+RUNS `progIsCanceledSection`. Mutation-tested, all failing by
+name: the bar scale reverted to the first row (the bug as Dan saw it), the
+funnel's early return no longer gated on `dropCanceled` (so the exclusion
+silently waits for another filter), the table reading the unscoped set, and —
+while the coffee chart was still here — its link's presence gate hardcoded true
+and `coffee-open` dropped from the log route's `ALLOWED` list.
+
+**One mutation survived the first draft**, and the reason generalises: the
+presence-gate assertion tested `r['Section Id'] ?` file-wide, which also matches
+the **nullish coalescing** in `normalizeRow` and in `checkinRows`. Scope an
+assertion to the surface it is about.
+
+**Four assertions passed vacuously on the first draft**, for the reason already
+recorded in this file: I ran them against a comment-STRIPPED copy of server.js,
+and a `/*` inside a template literal means no strip order is sound there — both
+orders swallow the region holding the log route. Those assertions read the raw
+source and slice the region instead.
+
+Plus **`ci-check-render.js` cases keyed on computed values**: the pill-scoped
+table count and the single 100% bar. The fixture gained a **cancelled section
+that is its own programme** (so excluding it moves `data-prog-count` 4 → 3;
+inside an existing programme the count would not move and no case could
+discriminate) and an **Upcoming** programme (so the pills have two live options
+and one selects exactly one row).
+
+**Two pre-existing specs had to be taught about the new funnel argument**, and
+both are instances of shapes this file already records:
+`programs-instructor.spec.js` pinned the literal dependency array, so adding a
+fourth dimension broke it with nothing about instructors having changed — it
+tests membership now; and `programs-season.spec.js` RUNS the real funnel, so it
+had to supply `showCanceledSections`, which it passes as `true` to keep testing
+what it was written to test, plus one new assertion that the funnel does NOT
+short-circuit when cancellations are hidden.
+
 ## PINNED TO FIX: the Programs REVENUE tab table (Dan, 2026-09-02)
 
 *(Recorded first as "the detail table", which was wrong and would have sent the

@@ -228,8 +228,19 @@ ok(/instructorKey\(/.test(funnel) && /instrSel/.test(funnel),
    "scopedRows applies the INSTRUCTOR dimension — a separate funnel is how the facility Summary scoped some panels and not others");
 ok(/locFilter/.test(funnel) && /seasonSel/.test(funnel),
    "...and still applies location and season, so the third dimension was added to the funnel rather than beside it");
-ok(/\[rows, progSections, sectionGrain, locFilter, seasonSel, instrSel\]/.test(funnel),
-   "instrSel is in the funnel's dependency list, or ticking an instructor recomputes nothing");
+/* MEMBERSHIP, NOT POSITION. This pinned the literal dependency array, so
+   adding a FOURTH dimension to the funnel (the cancelled-section default)
+   broke it with nothing about the instructor filter having changed. Fourth
+   instance of that shape in this repo — the log route's ALLOWED array,
+   SLACK_NOTIFY twice, and now this. Re-verified to still fail when instrSel
+   is removed from the deps. */
+{
+  const deps = (funnel.match(/\}, \[([^\]]*)\]\)/) || [])[1] || "";
+  ok(/\binstrSel\b/.test(deps),
+     "instrSel is in the funnel's dependency list, or ticking an instructor recomputes nothing — deps are [" + deps + "]");
+  ok(/\brows\b/.test(deps) && /\bseasonSel\b/.test(deps) && /\blocFilter\b/.test(deps),
+     "...alongside the dimensions it shares the funnel with");
+}
 
 // 2. scopedProgramSet fires on ANY dimension.
 const setBlock = code.slice(code.indexOf("const scopedProgramSet = useMemo"),
