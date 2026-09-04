@@ -1546,8 +1546,8 @@ function normalizeRow(raw) {
         if (params._nocache === '1' || params._refresh === '1') qs.set('_nocache', '1');
         const qsStr = qs.toString();
         fetch(withToken(`/${orgSlug}/${reportType}/api/data${qsStr ? '?' + qsStr : ''}`))
-          .then(r => {
-            if (!r.ok) throw new Error(`Server returned ${r.status}`);
+          .then(async r => {
+            if (!r.ok) throw await reportFetchError(r);
             return r.json();
           })
           .then(payload => {

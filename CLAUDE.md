@@ -1,5 +1,125 @@
 # Project notes for Claude
 
+## The Memberships summary 504 on Pawnee (2026-09-04)
+
+Dan: *"memberships report summary page is struggling"* — Pawnee, 09/04/2025 to
+09/30/2026, the KPI cards showing 49 active / 22 canceled / 78 expired / $7,965
+net collected while the panel under them read **"Server returned 504"**.
+
+**Both halves of that screen are explained, and they are different bugs.**
+
+### THE KPIs WERE THE PREVIOUS WINDOW, not a half-loaded one
+
+`fetchData` sets `error` and leaves `data` alone, so a failed re-run keeps the
+last successful window's numbers on screen under a fresh error banner. Nothing
+is wrong with that in itself — but it means **the figures a reader is looking at
+when they see the error are for a range they are no longer asking about**, and
+nothing on screen says so. Not changed here; worth knowing before diagnosing
+one of these from a screenshot.
+
+### THE CARD GENUINELY CANNOT ANSWER THAT WINDOW
+
+Measured cache-independently through the public endpoint (`verify-report-live`),
+card 17301, Pawnee:
+
+| window | result |
+|---|---|
+| 2025-09-04 → 2026-09-30 (Dan's) | **TIMEOUT past 300s** |
+| 2026-09-01 → 2026-09-30 | **55.0s — and ZERO rows** |
+
+**A one-month window with no output rows at all still costs 55 seconds**, which
+is where the cause is: the work is not proportional to the answer. Card 17301's
+`tx_oi` and `tx_cust` CTEs each scan `materialized.item_log_report` filtered on
+`organization_id` ALONE — the date window is applied only at the very bottom,
+against `mp.created_at`. That table has **exactly one index, its primary key**
+(2.26M rows, 1230 MB), so each is a full parallel seq scan, and the card does
+**two of them per load**. Timing one alone exceeded the 60s tool ceiling.
+
+So 55s is the FLOOR for any Pawnee memberships load, against a 120s budget —
+every org-month is one busy minute away from a 504. This is the fourth card with
+this exact shape (17293, 20197, 17295 and now 17301); see the
+`materialized`-schema section, whose measured conclusion — **index the table,
+do not rebuild the cards on base tables** — still stands.
+
+**AND THE STALE-CACHE SAFETY NET STRUCTURALLY CANNOT HELP HERE.** The timeout
+path tries `getStaleCached(...)` first, but `feedCacheKey` includes the encoded
+parameter string, so **every distinct date range is its own entry** — a window a
+person types by hand has never been warmed and has no stale entry to fall back
+on, ever. That is why Dan got a 504 instead of stale numbers.
+
+### WHAT WAS FIXED: the page was throwing the answer away
+
+The data route already sends back a sentence that says what to do:
+
+> `Metabase query timed out after 60s+120s retry — try a shorter date range or refresh`
+
+...and **eight report pages threw `new Error("Server returned " + r.status)`,
+dropping the body.** So the reader was told the transport and not the remedy, on
+a failure whose remedy is one control away — the dead-end pattern this file
+keeps writing down, and here the remedy is not a platitude: the same report over
+one month returns.
+
+`reportFetchError(r)` reads it, in **`public/open-pdf.js`** — the file every
+report page already loads, because eight copies of the recovery would drift the
+first time the route's wording changed.
+
+- **IT MUST NOT ASSUME JSON.** A 502/504 from Railway's edge never reaches the
+  app and comes back as an HTML page, so a bare `r.json()` on the error path
+  would throw INSIDE the error handler and replace a poor message with a
+  confusing one. Anything unparseable falls back to the status code — exactly
+  today's behaviour — so this can only ever improve a message.
+- **The status still travels with the sentence.** *"Which failure was it"* is the
+  first thing asked when one of these is reported, and a sentence alone loses it.
+- **A 504 with no readable body still says what to try**, because that is the
+  edge-timeout case and it is the one where the page has nothing else to go on.
+- **`metrics.html` is deliberately untouched** — it does not load `open-pdf.js`,
+  and a call to a function that is not on the page is worse than the old throw.
+- **`throw await` needs an ASYNC arrow.** Four of the seven call sites were
+  one-liners and three were blocks, and a non-async arrow makes this a
+  SyntaxError that takes the whole babel block with it — the blank-page class
+  this repo has shipped twice, and invisible to `node --check` because the code
+  is a string inside an HTML file. The spec walks back from every
+  `throw await` to its owning arrow.
+
+### NOT DONE, and why
+
+**Card 17301 is not pushed.** Collapsing the two scans into one pass
+(`WITH org_ilr AS MATERIALIZED (...)` feeding both aggregates) should roughly
+halve the dominant cost with identical values — same predicates, same
+aggregates, one read — but **it is unmeasured**, because no tool here can time a
+query past 60s. The clean way to measure it is a **scratch card** carrying the
+candidate SQL, compared to 17301 through the public endpoint: no risk, no
+downtime, and it needs a public link before it can be read.
+
+And a push would take the Memberships report **down for every org** until a
+human re-types the Start/End Date tags — the six-parameter trap recorded above.
+**This project is parked (see the push-to-main section), so this landed on a
+branch as a PR and nothing was merged.**
+
+### Guards
+
+`scripts/feed-error-message.spec.js` (**32 assertions, in CI**), which LIFTS AND
+RUNS `reportFetchError` over the four shapes a failing response really takes —
+the route's JSON, the edge's HTML, an unreadable body, and JSON with no `error`
+key. Mutation-tested: a page reverted to the bare status, an owning arrow no
+longer async, the 504 fallback dropped, the body parsed with no guard at all, and
+the ROUTE stopping sending the remedy (the page can only surface what the server
+puts in the body, so the pair is the guard).
+
+**Its first draft DIED instead of failing by name** on the unguarded-parse
+mutation — sixth instance of that lesson in this file. Every call is wrapped now,
+so a throwing implementation fails on the assertion that provoked it; and the
+fake response carries **both `text()` and `json()`**, or the mutation errors
+about a missing method rather than on the real failure.
+
+Plus two `ci-check-render.js` cases over a new **`timeout504`** stub mode, keyed
+on the remedy being ON SCREEN and the bare status NOT being the whole message —
+*"an error panel rendered"* passes just as happily on the version Dan was looking
+at. Verified to fail on the bug as he hit it. `ci-check-render.js` gained a
+per-case **`expectsConsoleError`**, because a case that drives a failing response
+expects the page to log it, and without that an error-path case can only ever
+fail.
+
 ## Working preferences (from Dan, dan@rec.us)
 
 - **Always share the Railway PR-preview URL** whenever I open a PR for this repo,

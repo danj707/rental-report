@@ -2320,8 +2320,8 @@ function App() {
       : '/api/data';
 
     fetch(withToken(`${apiBase}?${qs.toString()}`))
-      .then(r => {
-        if (!r.ok) throw new Error(`Server returned ${r.status}`);
+      .then(async r => {
+        if (!r.ok) throw await reportFetchError(r);
         return r.json();
       })
       .then(json => {

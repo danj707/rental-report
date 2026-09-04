@@ -1166,7 +1166,16 @@ const STUBS = [
       meta: { window: { start: "2026-08-19", end: "2026-08-26" } } }) },
   { match: /\/directors-report\/api\/quarters/, body: () => ({ ok: true, quarters: [{ year: 2026, q: 2, key: "2026-Q2", label: "Q2 2026", stored: true }] }) },
   { match: /\/directors-report\/api\/quarter/,  body: () => directorsQuarter() },
-  { match: /\/memberships\/api\/data/,  body: () => ({ rows: membershipRows(), meta: { org_id: "org-uuid-1" } }) },
+  /* A `timeout504` mode, so the REMEDY can be shown to reach the screen. Dan
+     got *"Server returned 504"* on Pawnee over thirteen months while the route
+     had already sent "try a shorter date range" in the body — and only a
+     browser can tell a page that surfaces that from one that prints the status
+     code, because both render an error panel of the same shape. */
+  { match: /\/memberships\/api\/data/,
+    status: () => (STUB_MODE === "timeout504" ? 504 : 200),
+    body: () => (STUB_MODE === "timeout504"
+      ? { error: "Metabase query timed out after 60s+120s retry — try a shorter date range or refresh" }
+      : { rows: membershipRows(), meta: { org_id: "org-uuid-1" } }) },
   // Must precede the catch-all /api/data below.
   { match: /\/roster\/api\/data/,      body: () => ({ rows: rosterRows(), meta: {} }) },
   // `window` is what the real feed now echoes back: the date range it actually
@@ -2232,6 +2241,35 @@ const CASES = [
   // RUNS vertRowMatch over all four combinations of extra types and scope. It is
   // deliberately not a render case: driving it in the browser needs the server's
   // settings store changed mid-run, and that store is memoised on first read.
+  /* THE 504 SAYS WHAT TO DO. Keyed on the REMEDY being on screen and the bare
+     status NOT being the whole message — "an error panel rendered" passes just
+     as happily on the version Dan was looking at. */
+  { name: "memberships · a timed-out feed says to shorten the range",
+    path: "/{org}/memberships", stubMode: "timeout504", expectsConsoleError: true,
+    needs: "body[data-feed-err*='shorter date range']",
+    absent: "body[data-feed-err='Server returned 504']",
+    act: async page => {
+      await page.waitForFunction(() => /shorter date range|Server returned/.test(document.body.innerText),
+                                 { timeout: 20000 });
+      await page.evaluate(() => {
+        const t = document.body.innerText;
+        const m = t.match(/Metabase query[^\n]*|Server returned \d+|The report timed out[^\n]*/);
+        document.body.setAttribute('data-feed-err', m ? m[0].trim() : '');
+      });
+    } },
+  // ...and the status still travels with it, because "which failure was it" is
+  // the first thing asked when one of these is reported.
+  { name: "memberships · ...and still names the status",
+    path: "/{org}/memberships", stubMode: "timeout504", expectsConsoleError: true,
+    needs: "body[data-feed-err*='504']",
+    act: async page => {
+      await page.waitForFunction(() => /shorter date range/.test(document.body.innerText), { timeout: 20000 });
+      await page.evaluate(() => {
+        const t = document.body.innerText;
+        const m = t.match(/Metabase query[^\n]*/);
+        document.body.setAttribute('data-feed-err', m ? m[0].trim() : '');
+      });
+    } },
   { name: "memberships · residency split", path: "/{org}/memberships",
     needs: "[data-mb-res-count=\"6\"]" },
   { name: "memberships · residency non-resident count", path: "/{org}/memberships",
@@ -3668,6 +3706,12 @@ function waitForServer(started) {
       const t = m.text();
       // Network noise from the dead Metabase port is expected and not a defect.
       if (/ERR_|Failed to load resource|net::/.test(t)) return;
+      /* A case that DRIVES a failing response expects the page to log it — the
+         error panel is the thing under test. Without this an error-path case
+         can only ever fail, which is why the 504 cases were the first ones to
+         need it: they assert the page reports the failure, and reporting it
+         means console.error. Only the cases that opt in are excused. */
+      if (c.expectsConsoleError) return;
       errs.push("console: " + t.slice(0, 200));
     });
     await page.setRequestInterception(true);

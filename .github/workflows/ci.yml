@@ -51,6 +51,9 @@ jobs:
       - name: PDF export helper spec (popup, not a sandboxed download)
         run: node scripts/open-pdf.spec.js
 
+      - name: Feed error message spec
+        run: node scripts/feed-error-message.spec.js
+
       - name: Saved-view helpers spec (one date mirror; offered ranges are storable; per-report allowlists)
         run: node scripts/saved-views.spec.js
 
