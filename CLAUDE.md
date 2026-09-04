@@ -4441,6 +4441,32 @@ guess is silent and wrong in a finance document, and the sign-off gate needed to
 retire that risk is most of the cost of the work. An index gets the same speed
 while the numbers keep coming from the definition finance already trusts.
 
+## A PUSH TO `main` IS AN OPERATIONAL EVENT, not just a code change (Dan, 2026-09-04)
+
+Dan, after a **documentation-only** PR was merged into a project he had parked:
+*"I'd planned to let that system sit and reload the cache, not push a MD file
+out and disrupt everything."*
+
+**The rule: while this project is parked, nothing goes to `main` — including a
+CLAUDE.md-only change.** Park it on a branch and let it ride in with the next
+change that has a reason to deploy. "It's only a markdown file" describes the
+diff, not the deploy.
+
+What a deploy actually does, read out of the code rather than assumed:
+
+- The feed cache **survives** it. `CACHE_DIR` is `DATA_DIR/cache` on the Railway
+  volume and `hydrateCacheFromDisk()` runs at boot, so a restart does not by
+  itself empty it.
+- `PREWARM_STARTUP_SKIP_MS` is **6 hours**: if a full warm cycle finished inside
+  that window the restart serves the hydrated disk cache, and if it did not,
+  boot fans out across ~28 orgs against production Metabase. That fan-out is the
+  disruption — the same shape as the post-deploy prewarm storm that 502'd the
+  facility Summary and got v2 rolled back (see that section).
+- So the cost of a push is not "the cache is gone", it is **a restart that can
+  trigger a prewarm storm, plus whatever was mid-flight**. Either way it is not
+  free, and it is not the author's call to spend when someone has asked for the
+  system to be left alone.
+
 ## Railway deploys
 
 Railway project **lucid-possibility** (`37e39bf4-114d-446f-b7e3-5a8cedc7fafd`),
