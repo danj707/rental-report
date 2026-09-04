@@ -3737,6 +3737,22 @@ function waitForServer(started) {
         return m ? m[0] + "  in: " + t.slice(Math.max(0, t.indexOf(m[0]) - 40), t.indexOf(m[0]) + 40).replace(/\s+/g, " ") : null;
       });
       if (rawEscapes) errs.push("an unrendered escape reached the screen: " + rawEscapes);
+
+      // JSX THAT LEAKED AS TEXT, on EVERY case, for the same reason: it is a
+      // class of bug, and a stray text node is not an error — the page renders
+      // perfectly and simply has rubbish on it. Dan found ": null}" under the
+      // tabs on Watertown's Programs summary: the Coffee Chart moved to the
+      // dashboard project and its conditional came out, leaving the TAIL of
+      // the ternary behind as a literal child. Every programs case passed.
+      const leaked = await page.evaluate(() => {
+        const t = document.body.innerText || "";
+        // Each of these is unambiguous: none is legitimate copy anywhere on
+        // this platform, and each is what a half-removed expression, a missing
+        // guard or a stringified object actually looks like on screen.
+        const m = t.match(/:\s*null\}|:\s*undefined\}|\[object Object\]|\bundefined\b\s*\}|\{\s*\}/);
+        return m ? m[0] + "  in: " + t.slice(Math.max(0, t.indexOf(m[0]) - 60), t.indexOf(m[0]) + 40).replace(/\s+/g, " ") : null;
+      });
+      if (leaked) errs.push("JSX leaked to the screen as text: " + leaked);
     } catch (e) {
       errs.push("navigation: " + e.message.split("\n")[0].slice(0, 160));
     }
