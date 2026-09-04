@@ -1397,6 +1397,10 @@ const ORGS = {
   "san-francisco-rec-park": {
     token:   "3U9JURrf6TXXbRPE",
     orgId:   "17380e28-7e02-4b52-82c5-fab18557fd7a",
+    // Added 2026-09-04. Without this the court map had no viewbox to bias its
+    // geocoding AND no fallback point, which is why SF specifically drew parks
+    // in Argentina. Measured: the centroid of its 28 court locations.
+    coords:  { lat: 37.7648, lon: -122.4436 },
     logoUrl: "https://www.rec.us/_next/image?url=https%3A%2F%2Fprod-rec-tech-img-bucket-8656aa2.s3.us-west-1.amazonaws.com%2Forganization-17380e28-7e02-4b52-82c5-fab18557fd7a%2FfullLogo.png%3F1712696824645&w=1920&q=75",
     displayName: "San Francisco Parks and Rec",
   },
@@ -4861,6 +4865,78 @@ async function renderHtmlPdf(html, opts = {}) {
 //                       fence is a dead QR in the real world, so this one must
 //                       not be answered from a 4-hour-old list.
 const PERMITS_UUID = process.env.MB_PERMITS_UUID || "6771e2fe-1d9c-41c1-a921-7d875115305e";
+
+// ── Location coordinates (card 21385) ───────────────────────────────────────
+// THE COURT UTILIZATION MAP USED TO GEOCODE LOCATION NAMES, and San Francisco
+// is the proof of why that cannot work: its parks are called Balboa, Dolores,
+// Buena Vista, Richmond and Sunset, and there are towns called Dolores and
+// Buena Vista in Argentina and Uruguay. A free-text Nominatim search with
+// `limit=1` took the first global hit, so SF tennis courts drew in South
+// America at 19% and 26% utilization while the stored data was perfect —
+// verified 2026-09-04, all 28 SF court locations correct, Balboa at
+// 37.7229268, -122.4447946.
+//
+// The product REQUIRES a real map location to save a Location (the Address
+// field is a place picker), so these coordinates are the authoritative answer
+// and a name search is never justified while they exist. Dan: "should read the
+// actual location data, since it's required to have an actual google maps
+// location to save."
+//
+// UNSET ENV ⇒ the map falls back to geocoding, which is the OLD behaviour made
+// safe (bounded, sanity-checked, and dropping what it cannot place) rather than
+// a blank map. Same contract as MB_GL_DETAIL_UUID and FORMS_UUID.
+const LOCATION_COORDS_UUID = process.env.MB_LOCATION_COORDS_UUID || "8f903de5-25ad-4952-a787-ea2879bf02bb";
+const LOCATION_COORDS_TTL = 6 * 60 * 60 * 1000;   // a park does not move
+const _locCoordsCache = new Map();
+let _locCoordsParamDefs = null;
+
+async function locationCoordsParamDefs() {
+  if (_locCoordsParamDefs && Date.now() - _locCoordsParamDefs.ts < 60 * 60 * 1000) return _locCoordsParamDefs.params;
+  const resp = await fetch(`${METABASE_URL}/api/public/card/${LOCATION_COORDS_UUID}`, { signal: AbortSignal.timeout(15000) });
+  if (!resp.ok) throw new Error(`location-coords card definition HTTP ${resp.status}`);
+  const def = await resp.json();
+  const params = Array.isArray(def.parameters) ? def.parameters : [];
+  _locCoordsParamDefs = { ts: Date.now(), params };
+  return params;
+}
+
+// { "Balboa": { lat, lng } } for one org. The card already rejects a value that
+// is not a plain decimal or that falls outside the real world, and this rejects
+// it again on the way in: a coordinate is the one field here that renders as a
+// confident pin somewhere wrong rather than as an obvious blank.
+function locationCoordRows(rows) {
+  const out = {};
+  for (const r of Array.isArray(rows) ? rows : []) {
+    const name = String(r.Location == null ? "" : r.Location).trim();
+    const lat = Number(r.Lat), lng = Number(r.Lng);
+    if (!name) continue;
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+    if (lat < -90 || lat > 90 || lng < -180 || lng > 180) continue;
+    // 0,0 is Null Island — the classic "no coordinate stored" sentinel, and a
+    // pin in the Gulf of Guinea is exactly the class of lie this replaces.
+    if (lat === 0 && lng === 0) continue;
+    out[name] = { lat, lng };
+  }
+  return out;
+}
+
+async function fetchLocationCoords(orgId) {
+  if (!LOCATION_COORDS_UUID) return {};
+  const hit = _locCoordsCache.get(orgId);
+  if (hit && Date.now() - hit.ts < LOCATION_COORDS_TTL) return hit.coords;
+  const params = (await locationCoordsParamDefs())
+    .filter(p => p.slug === "org_id")
+    .map(p => ({ id: p.id, type: p.type, target: p.target, slug: p.slug, value: orgId }));
+  if (!params.length) throw new Error("location-coords card has no org_id parameter");
+  const url = `${METABASE_URL}/api/public/card/${LOCATION_COORDS_UUID}/query/json?parameters=${encodeURIComponent(JSON.stringify(params))}`;
+  const resp = await fetch(url, { signal: AbortSignal.timeout(60000) });
+  if (!resp.ok) throw new Error(`Metabase HTTP ${resp.status}`);
+  const rows = await resp.json();
+  if (!Array.isArray(rows)) throw new Error("Metabase returned an error for the location-coords card");
+  const coords = locationCoordRows(rows);
+  _locCoordsCache.set(orgId, { ts: Date.now(), coords });
+  return coords;
+}
 const PERMIT_CACHE_TTL = 5 * 60 * 1000;
 // Exports ask for live data so a revoked permit can never reach a fence post,
 // but "live" does not have to mean "re-run the card for every click": printing
@@ -10225,6 +10301,24 @@ app.get("/:org/facility/api/forms", async (req, res) => {
     console.warn(`[forms] ${slug} count feed failed: ${err.message}`);
     // Soft-fail: a schedule with no Forms column is degraded, not broken.
     res.json({ forms: {}, error: true });
+  }
+});
+
+// ── GET /:org/facilities/api/location-coords — where each location actually is ──
+// `ok` is PRESENCE, not count: an org with no stored coordinates and a feed that
+// never answered are different facts, and only the second one justifies the
+// page falling back to guessing from a name.
+app.get("/:org/facilities/api/location-coords", async (req, res) => {
+  const slug = req.params.org;
+  const org = ORGS[slug];
+  if (!org) return res.status(404).json({ error: "Unknown org" });
+  if (!LOCATION_COORDS_UUID) return res.json({ coords: {}, ok: false, disabled: true });
+  try {
+    const coords = await fetchLocationCoords(org.orgId);
+    res.json({ coords, ok: true, count: Object.keys(coords).length });
+  } catch (err) {
+    console.warn(`[location-coords] ${slug} feed failed: ${err.message}`);
+    res.json({ coords: {}, ok: false, error: true });
   }
 });
 
