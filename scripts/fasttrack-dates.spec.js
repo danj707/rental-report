@@ -309,7 +309,7 @@ test("no countdown on the page is computed by dividing milliseconds", () => {
   // Comments are stripped first — this file's own explanation of the bug quotes
   // the broken expression, and a guard that trips on its own documentation is
   // worse than no guard.
-  const code = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  const code = src.replace(/^\s*\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
   const forward = code.match(/Math\.ceil\(\([^)]*\)\s*\/\s*86400000\)/g) || [];
   assert.deepStrictEqual(forward, [],
     "found a countdown still using 24-hour spans: " + forward.join(", "));

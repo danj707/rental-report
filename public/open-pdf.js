@@ -260,6 +260,34 @@
     }, opts);
   };
 
+  /* csvFromRows(rows) — the ONE CSV writer for a table a page already holds.
+     `rows` is an array of arrays, the first being the header.
+
+     RFC4180: CRLF line endings and a field quoted whenever it contains a comma,
+     a quote or a newline. Both matter with real data — a section named
+     "Camp, Red" or a lane named 'Inst Lane 4-2" Depth' shifts every column
+     after it otherwise, and some Windows importers refuse a bare LF.
+
+     It lives here because this file is already loaded by every page that
+     exports, and because the quoting rule was being copied per page: Fast
+     Track and the roster each carry their own, which is how two exports start
+     disagreeing about one edge case. New callers use this.
+
+     Values are stringified, null and undefined become empty (never the text
+     "null"), and a Date is written as YYYY-MM-DD rather than a locale string a
+     spreadsheet would re-parse in whatever order its own locale prefers. */
+  window.csvFromRows = function (rows) {
+    var cell = function (v) {
+      if (v == null) return "";
+      if (v instanceof Date) return isNaN(v) ? "" : v.toISOString().slice(0, 10);
+      var t = String(v);
+      return /[",\r\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t;
+    };
+    return (rows || []).map(function (r) {
+      return (r || []).map(cell).join(",");
+    }).join("\r\n") + "\r\n";
+  };
+
   /* A minimal RFC4180 reader — enough to turn our own CSV back into columns for
      the clipboard. Quoted fields may hold commas and newlines, so splitting on
      /,/ would mangle exactly the rows a section name with a comma produces. */

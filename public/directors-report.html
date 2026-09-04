@@ -14,7 +14,7 @@
     font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
 
   /* ── Standard dark report toolbar ── */
-  .toolbar { position: sticky; top: 0; z-index: 100; display: flex; align-items: center; gap: 10px; padding: 8px 20px; background: #2c2c2c; color: #eee; font-size: 13px; flex-wrap: wrap; }
+  .toolbar { position: sticky; top: var(--rec-banner-h, 0px); z-index: 100; display: flex; align-items: center; gap: 10px; padding: 8px 20px; background: #2c2c2c; color: #eee; font-size: 13px; flex-wrap: wrap; }
   .toolbar-title { font-weight: 600; margin-right: 4px; }
   .toolbar-back { color: #9ca3af; text-decoration: none; font-size: 12px; }
   .toolbar-back:hover { color: #fff; }
@@ -795,7 +795,22 @@ function App() {
                   <table className="mini" style={{ marginTop: 12 }}>
                     <tbody>
                       {d.court && <tr><td className="b">Court hours booked ({d.court.courts} courts)</td><td className="r">{fmtNum(d.court.hours)} hrs</td></tr>}
-                      {d.court && d.court.util != null && <tr><td className="b">Share of open court time <span className="tiny">est. {d.court.hrsPerDay} hrs/day</span></td><td className="r">~{d.court.util}%</td></tr>}
+                      {/* SAY WHICH DENOMINATOR THIS IS. It used to read
+                          "est. 11 hrs/day" whatever the org's courts actually
+                          do, which is the line a partner asked about. Now it
+                          names the source: a measured schedule loses the "~"
+                          and the "est.", a mixed one says how many courts fell
+                          back, and a failed probe still says est. */}
+                      {d.court && d.court.util != null && (() => {
+                        const c = d.court, src = c.availSource || 'flat';
+                        const label = src === 'schedule'
+                          ? 'from each court\u2019s own open hours'
+                          : src === 'mixed'
+                            ? c.assumed + ' of ' + c.courts + ' courts assume ' + c.hrsPerDay + ' hrs/day'
+                            : 'est. ' + c.hrsPerDay + ' hrs/day';
+                        return <tr><td className="b">Share of open court time <span className="tiny">{label}</span></td>
+                          <td className="r" data-dir-court-util={String(c.util)} data-dir-court-src={src}>{src === 'schedule' ? '' : '~'}{c.util}%</td></tr>;
+                      })()}
                       <tr><td className="b">Resident share of reservations</td><td className="r">{d.facility.residentPct}%</td></tr>
                     </tbody>
                   </table>
@@ -1006,7 +1021,11 @@ function App() {
           <div className="panel" style={{ marginTop: 20, background: "#faf9f7" }}>
             <div className="panel-h">&#128203; Data notes</div>
             <div className="panel-note" style={{ marginTop: 0 }}>
-              Revenue and transactions from GL Code Rollup (payment-date basis). Enrollment counts sections with sessions in the quarter; program revenue is in-period receipts. Waitlist funnel covers offers sent in the quarter. Facility figures exclude canceled reservations; court utilization assumes {d.court ? d.court.hrsPerDay : 11} open hrs/day per court. Community demographics are all-time; &ldquo;new&rdquo; means accounts created inside the quarter. Fast Track signups are counted by signup date inside the quarter; its conversion, revenue-to-date, oversubscription and left-on-table figures are all-time from the card, and the quarterly revenue figure is derived (converted signups × section price) because the card carries no per-quarter revenue. Staff-hours are an estimate at {d.fasttrack ? d.fasttrack.minutesPerReg : 2} minutes per registration, not a measurement. Retention is all-time cumulative.
+              Revenue and transactions from GL Code Rollup (payment-date basis). Enrollment counts sections with sessions in the quarter; program revenue is in-period receipts. Waitlist funnel covers offers sent in the quarter. Facility figures exclude canceled reservations. Court utilization divides booked court-hours by each court&rsquo;s own published open hours &mdash; the same availability data the Courts report uses &mdash; {d.court && d.court.availSource === 'schedule'
+                ? 'for every court in the quarter'
+                : d.court && d.court.availSource === 'mixed'
+                  ? 'for ' + d.court.scheduled + ' of ' + d.court.courts + ' courts; the remaining ' + d.court.assumed + ' have no published schedule and assume ' + d.court.hrsPerDay + ' open hrs/day'
+                  : 'where one is published; none was available here, so it assumes ' + (d.court ? d.court.hrsPerDay : 11) + ' open hrs/day per court'}. A court over 100% is booked beyond its published hours rather than a miscount. Community demographics are all-time; &ldquo;new&rdquo; means accounts created inside the quarter. Fast Track signups are counted by signup date inside the quarter; its conversion, revenue-to-date, oversubscription and left-on-table figures are all-time from the card, and the quarterly revenue figure is derived (converted signups × section price) because the card carries no per-quarter revenue. Staff-hours are an estimate at {d.fasttrack ? d.fasttrack.minutesPerReg : 2} minutes per registration, not a measurement. Retention is all-time cumulative.
               {d.fromSnapshot ? " This report is an archived snapshot generated at quarter close." : ""}
             </div>
           </div>

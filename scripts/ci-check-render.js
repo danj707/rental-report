@@ -546,7 +546,12 @@ function programRows() {
   // which the columns must be ABSENT rather than a row of dashes claiming
   // nobody teaches anything.
   const VINSTR = STUB_MODE !== "previnstr";
-  const sec = (prog, name, sid, enrolled, capacity, season, loc, ap, out, instr, dates) => ({
+  // stubMode "prev3" drops the refund columns — a warm PRE-v3 cache entry, on
+  // which the Refunds in Period card must be ABSENT rather than a confident $0
+  // saying this org refunded nothing. (The mapper defaults both to 0, so only a
+  // browser can tell the two apart.)
+  const V3 = STUB_MODE !== "prev3";
+  const sec = (prog, name, sid, enrolled, capacity, season, loc, ap, out, instr, dates, money) => ({
     "Program": prog, "Program Id": "prog-" + prog.toLowerCase().replace(/\W+/g, "-"),
     "Section": name, "Section Id": sid, "Section Status": "Open",
     // PER-SECTION SPANS, so the by-month activity chart has a shape to find.
@@ -557,7 +562,20 @@ function programRows() {
     "Start Date": (dates && dates[0]) || "2026-08-01",
     "End Date":   (dates && dates[1]) || "2026-09-30",
     "Enrolled": enrolled, "Capacity": capacity, "Utilized": enrolled,
-    "Charged": enrolled * 40, "Received": enrolled * 40, "Refunds": 0,
+    "Charged": enrolled * 40, "Received": enrolled * 40,
+    /* ── The money, and the LIFETIME-vs-WINDOW gap that is the whole point ──
+       `money` is [lifetime net, lifetime refunds, period received, period
+       refunds]. Lifetime is deliberately an ORDER OF MAGNITUDE above the
+       window, because that gap is exactly what Dan hit on Apex: $2,768,423
+       lifetime beside $275,553 in-window under an August header. A fixture
+       where the two are close cannot tell a card reading the right column
+       from one reading the other.
+       Period net is derived here rather than given, so the fixture cannot
+       break the card's own received - refunds identity. */
+    "Net Revenue": money[0], "Refunds": V3 ? money[1] : undefined,
+    "Period Received": money[2],
+    ...(V3 ? { "Period Refunds": money[3] } : {}),
+    "Period Net": money[2] - (V3 ? money[3] : 0),
     "Activity": "Aquatics", "Category": "Fitness",
     // v6. The location filter shipped unable to render because NOTHING mapped
     // this onto a row, and no fixture carried it — so no render case could have
@@ -604,13 +622,30 @@ function programRows() {
     // of programs on prod do. Filtering to Urho must keep only sec-aq-1, so the
     // auto-pay share reads 100% — filtering whole PROGRAMS keeps sec-aq-2's
     // $800 of manual plans too and reads 75%. One number separates the two.
-    sec("Aquatic Exercise",  "Aquatic Stations with Pearlena", "sec-aq-1", 21, 24, "Fall '26",           URHO,   [1, 2400, 0,    0], [600, 100, 500,   0,   0], ["Pearlena Sok", 1],                 ["2026-08-01", "2026-10-31"]),
-    sec("Aquatic Exercise",  "Water Waves with Yvette",        "sec-aq-2", 20, 24, "Fall '26",           GORDON, [0,    0, 8,  800], [250,  50,   0, 200,   0], ["Eric Stenberg, Penny Finders", 2], ["2026-09-01", "2026-12-31"]),
-    sec("Water Walking",     "Water Walking August 24",        "sec-ww-1", 12, 16, "Spring/Summer 26",   GORDON, [0,    0, 10, 1000], [400,   0,   0, 300, 100], ["Pearlena Sok", 1],                 ["2026-07-01", "2026-09-30"]),
+    sec("Aquatic Exercise",  "Aquatic Stations with Pearlena", "sec-aq-1", 21, 24, "Fall '26",           URHO,   [1, 2400, 0,    0], [600, 100, 500,   0,   0], ["Pearlena Sok", 1],                 ["2026-08-01", "2026-10-31"], [40000, 5000, 4000, 400]),
+    sec("Aquatic Exercise",  "Water Waves with Yvette",        "sec-aq-2", 20, 24, "Fall '26",           GORDON, [0,    0, 8,  800], [250,  50,   0, 200,   0], ["Eric Stenberg, Penny Finders", 2], ["2026-09-01", "2026-12-31"], [30000, 4000, 3000, 300]),
+    sec("Water Walking",     "Water Walking August 24",        "sec-ww-1", 12, 16, "Spring/Summer 26",   GORDON, [0,    0, 10, 1000], [400,   0,   0, 300, 100], ["Pearlena Sok", 1],                 ["2026-07-01", "2026-09-30"], [20000, 2000, 2000, 200]),
     // One unseasoned section, so ticking "No Season" has something to find and
     // the option is not vacuous — and with no location, so "No location set" is
     // a real option.
-    sec("Lap Swim",          "Open Lap Swim",                  "sec-ls-1",  9, 20, "No Season",          null,   [0,    0, 1,  200], [ 75,  25,   0,  50,   0], null,                                ["2026-09-01", "2026-09-30"]),
+    /* THE ONLY 'Upcoming' PROGRAMME, so the status pills have two live options
+       and one of them selects exactly one row. A fixture where every section
+       carries the same status renders no pill row at all (one status is not a
+       filter) and no case could tell a working pill from a missing one. */
+    Object.assign(
+      sec("Lap Swim",          "Open Lap Swim",                  "sec-ls-1",  9, 20, "No Season",          null,   [0,    0, 1,  200], [ 75,  25,   0,  50,   0], null,                                ["2026-09-01", "2026-09-30"], [10000, 1000, 1000, 100]),
+      { "Section Status": "Upcoming" }),
+    /* A CANCELLED SECTION, which the fixture had none of — so no case could
+       have caught that cancelled sections were unfilterable. Laurel:
+       "Challenge Island, we canceled before it even ran, why is it on this
+       report?" Measured at Shrewsbury: 21 of 195 sections in her window.
+       It is its OWN program, so excluding it changes `data-prog-count` from 4
+       to 3 (the fixture is 5 sections over 4 programs — Aquatic Exercise has
+       two) — inside an existing program the program count would not move and
+       the case could not discriminate. */
+    Object.assign(
+      sec("Challenge Island", "Challenge Island Summer",        "sec-ci-1", 11, 20, "Spring/Summer 26",   URHO,   [0,    0, 2,  300], [  0,   0,   0,   0,   0], ["Pearlena Sok", 1],                 ["2026-08-15", "2026-09-15"], [ 3000,  0,  0,  0]),
+      { "Section Status": "Canceled" }),
   ];
 }
 
@@ -767,6 +802,24 @@ function membershipRows() {
       // residency AND on auto-renew, so a split that read the wrong field, or
       // the wrong row set, produces a different number rather than the same one.
       "Resident?": "No",
+    }));
+  }
+  // ── A FREE RESIDENCY REGISTER, which is what most residency records are ──
+  // El Segundo: 2,337 of 3,275 records priced at $0, 1,989 of them resident.
+  // Folding these into the split reads 14 of 18 = 77.8% resident on a book
+  // where residents paid $1,440 of $2,320 — the shape that made the panel look
+  // broken. The paid split is 6 of 10 = 60%, so `data-mb-res-pct` is the one
+  // number that separates the two and the existing case now discriminates.
+  for (let i = 0; i < 8; i++) {
+    rows.push(row({
+      "User ID": "b81fea14-be38-46db-96da-40e61ccca25b", "First Name": "Grace", "Last Name": "Hopper " + i,
+      "Membership ID": "m-r" + i, "Membership Type": "Residency", "Group / Plan": "El Segundo Residents",
+      "Status": "active", "Renewal Type": "One-time", "Price": 0,
+      "Start Date": "2026-01-01", "End Date": "", "Created At": "2026-01-0" + (i % 9),
+      "Next Renewal": "", "Coverage": "household", "Plan Season End": null,
+      "Plan Term Days": null, "Auto Renew": false, "Period Start": "",
+      "Product Kind": "membership",
+      "Resident?": "Yes",
     }));
   }
   // A second auto-renewing plan that CHURNS — 2 still billing, 3 cancelled, so
@@ -946,6 +999,75 @@ function rosterRows() {
   ];
 }
 
+/* The Community Intelligence feed. SEVEN downloadable segments derive from these
+   rows, and every one of them has to hold DIFFERENT households — a button wired
+   to the wrong list renders identically and produces a perfectly plausible file,
+   so the only way to tell is the bytes. Membership by design:
+
+     unbooked       Ruby Solo + Blaise Pascal   (net 0)
+     solo-unbooked  Ruby Solo                   (net 0, household of one)
+     non-resident   Alan Turing + Ruby Solo     (Residency? not Yes)
+     lapsing        Alan Turing                 (last transaction > 90 days)
+     programs-only  Ada Lovelace + Alan Turing  (programme money, no facility)
+     facility-only  Grace Hopper
+     engaged        Katherine Johnson           (both categories)
+
+   The household SIZES are load-bearing too: the "activate solo households"
+   lever only appears when pairs convert better than singles, and that lever is
+   what renders the leverage list's own download button. */
+function intelRows() {
+  const ago = d => new Date(Date.now() - d * 86400000).toISOString().slice(0, 10);
+  const r = (o) => Object.assign({
+    "Household ID": "", "Role": "Head of Household", "First Name": "", "Last Name": "",
+    "Email": "", "Phone": "555-0100", "City": "El Segundo", "State": "CA",
+    "Zip Code": "90245", "Residency?": "Yes", "Created At": ago(200), "Age": "41",
+    "Gender": "female", "Grade": "", "Gross Revenue": "0", "Refunds": "0",
+    "Net Revenue": "0", "Program Revenue": "0", "Facility Revenue": "0",
+    "Fee Revenue": "0", "Product Revenue": "0", "Items Purchased": "0",
+    "Last Transaction": ago(10),
+  }, o);
+  return [
+    // Programme money only.
+    r({ "Household ID": "hh-1", "First Name": "Ada", "Last Name": "Lovelace",
+        "Email": "ada@example.com", "Gross Revenue": "300", "Net Revenue": "300",
+        "Program Revenue": "300", "Items Purchased": "3" }),
+    // Facility money only — a pair, so it counts toward the size-2 conversion.
+    r({ "Household ID": "hh-2", "First Name": "Grace", "Last Name": "Hopper",
+        "Email": "grace@example.com", "Gross Revenue": "400", "Net Revenue": "400",
+        "Facility Revenue": "400", "Items Purchased": "2" }),
+    r({ "Household ID": "hh-2", "Role": "Member", "First Name": "Vera",
+        "Last Name": "Hopper", "Email": "vera@example.com", "Age": "9",
+        "Grade": "4th" }),
+    // Non-resident, and nothing bought in six months. Programme money only, so
+    // the ENGAGED segment stays a single household that is not this one — two
+    // lists of one row cannot be told apart by their length.
+    r({ "Household ID": "hh-3", "First Name": "Alan", "Last Name": "Turing",
+        "Email": "alan@example.com", "Residency?": "No", "Gross Revenue": "120",
+        "Net Revenue": "120", "Program Revenue": "120",
+        "Items Purchased": "1", "Last Transaction": ago(200) }),
+    r({ "Household ID": "hh-3", "Role": "Member", "First Name": "Chris",
+        "Last Name": "Turing", "Email": "chris@example.com", "Residency?": "No",
+        "Age": "12", "Grade": "7th" }),
+    // Signed up, never bought, household of one.
+    r({ "Household ID": "hh-4", "First Name": "Ruby", "Last Name": "Solo",
+        "Email": "ruby@example.com", "Residency?": "No", "Last Transaction": "" }),
+    // Signed up, never bought, but a pair — so unbooked without being solo.
+    r({ "Household ID": "hh-5", "First Name": "Blaise", "Last Name": "Pascal",
+        "Email": "blaise@example.com", "Last Transaction": "" }),
+    r({ "Household ID": "hh-5", "Role": "Member", "First Name": "Etta",
+        "Last Name": "Pascal", "Email": "etta@example.com", "Age": "7",
+        "Grade": "2nd", "Last Transaction": "" }),
+    // Both categories and a resident: the engaged segment, distinct from lapsing.
+    r({ "Household ID": "hh-6", "First Name": "Katherine", "Last Name": "Johnson",
+        "Email": "katherine@example.com", "Gross Revenue": "500",
+        "Net Revenue": "500", "Program Revenue": "250", "Facility Revenue": "250",
+        "Items Purchased": "4" }),
+    r({ "Household ID": "hh-6", "Role": "Member", "First Name": "Joylette",
+        "Last Name": "Johnson", "Email": "joylette@example.com", "Age": "11",
+        "Grade": "6th" }),
+  ];
+}
+
 // Set per case via `stubMode`, so a case can drive a feed's failure path. The
 // stubs see the API request URL, not the page's, so a query flag on the page
 // cannot reach them.
@@ -1050,6 +1172,9 @@ const STUBS = [
   // `window` is what the real feed now echoes back: the date range it actually
   // covers, read off the parameters that were sent. The wizard prints it, so the
   // case below asserts the formatted string rather than merely that a chip drew.
+  // Must precede the catch-all /api/data. Community Intelligence, and Fast
+  // Track's three chipped tabs, both read this feed.
+  { match: /\/users\/api\/data/,      body: () => ({ rows: intelRows(), meta: { org_id: "org-uuid-1" } }) },
   { match: /\/api\/data/,                   body: () => ({ rows: campsiteRows(),
       meta: { window: { start: "2026-08-19", end: "2026-08-26" } } }) },
   { match: /\/api\/pulse/,                  body: () => ({ items: [], generated: null }) },
@@ -2103,6 +2228,10 @@ const CASES = [
   // so this one number separates the two row sets.
   { name: "memberships · split is the whole book, not the active view", path: "/{org}/memberships",
     needs: "[data-mb-res-pct=\"60\"]" },
+  // The free register is REPORTED beside the split, never folded in and never
+  // dropped — the same rule as the unknown bucket.
+  { name: "memberships · the free residency register is named", path: "/{org}/memberships",
+    needs: "[data-mb-res-free=\"8\"]" },
   // The filter must scope the WHOLE report, so picking Resident has to move a
   // panel that is not the split — the header count is the cheapest proof.
   { name: "memberships · residency filter scopes the page", path: "/{org}/memberships",
@@ -2239,6 +2368,85 @@ const CASES = [
         { timeout: 45000 });
     } },
 
+  /* The Community Intelligence contact lists. Dan re-enabled these downloads,
+     and NO SOURCE ASSERTION CAN CHECK THEM: seven buttons call one writer with
+     seven different lists, so a button handed the wrong list renders
+     identically and produces a perfectly plausible file. The only
+     discriminating evidence is the bytes, over a fixture where every segment
+     holds different households. Both cases stub window.open rather than the
+     writer, so the BOM — which is added in the delivery path — is covered. */
+  { name: "users · the unbooked list is the unbooked households",
+    path: "/{org}/users?tab=strategy",
+    needs: 'body[data-icsv-hdr="1"][data-icsv-bom="1"][data-icsv-rows="2"][data-icsv-who="1"]',
+    act: async page => {
+      await page.waitForSelector('[data-intel-csv="unbooked"]', { timeout: 45000 });
+      await page.evaluate(() => {
+        window.__payload = null;
+        window.open = () => ({ document: { write() {}, close() {} },
+          set __recExport(v) { window.__payload = v; },
+          get __recExport() { return window.__payload; } });
+      });
+      await page.click('[data-intel-csv="unbooked"]');
+      await page.evaluate(() => {
+        const p = window.__payload;
+        if (!p) return;
+        const b = p.bytes;
+        const set = (k, v) => { if (v) document.body.setAttribute(k, v); };
+        set("data-icsv-bom", b[0] === 0xEF && b[1] === 0xBB && b[2] === 0xBF ? "1" : "");
+        const lines = new TextDecoder().decode(b).replace(/\r\n$/, "").split("\r\n");
+        set("data-icsv-hdr", lines[0] === "First Name,Last Name,Email,Phone,City,"
+          + "State,Zip Code,Residency,Signup Date,HH Size,Net Revenue" ? "1" : "");
+        set("data-icsv-rows", String(lines.length - 1));
+        // The two households that never bought, and NOT the three that did.
+        const body = lines.slice(1).join("\n");
+        set("data-icsv-who", /Solo/.test(body) && /Pascal/.test(body)
+          && !/Lovelace|Hopper|Johnson/.test(body) ? "1" : "");
+      });
+    } },
+
+  /* Lapsing and engaged are both a single household in this fixture, and
+     DELIBERATELY not the same one — Turing stopped buying, Johnson buys in both
+     categories. Two lists of one row are indistinguishable by count, so this
+     keys on the name in each file. It also proves the download is on the
+     record: the beacon is what pays for these files leaving directly. */
+  { name: "users · each segment downloads its own households",
+    path: "/{org}/users?tab=strategy",
+    needs: 'body[data-icsv-lapsing="Turing"][data-icsv-engaged="Johnson"][data-icsv-beacon="1"]',
+    act: async page => {
+      await page.waitForSelector('[data-intel-csv="lapsing"]', { timeout: 45000 });
+      await page.evaluate(() => {
+        window.__payload = null;
+        window.open = () => ({ document: { write() {}, close() {} },
+          set __recExport(v) { window.__payload = v; },
+          get __recExport() { return window.__payload; } });
+        window.__beacons = [];
+        const realFetch = window.fetch;
+        window.fetch = (u, o) => { window.__beacons.push(String(u)); return realFetch(u, o); };
+        window.__surname = () => {
+          const p = window.__payload;
+          if (!p) return "";
+          const lines = new TextDecoder().decode(p.bytes)
+            .replace(/\r\n$/, "").split("\r\n");
+          return lines.length === 2 ? (lines[1].split(",")[1] || "") : "";
+        };
+      });
+      await page.click('[data-intel-csv="lapsing"]');
+      await page.evaluate(() => {
+        document.body.setAttribute("data-icsv-lapsing", window.__surname());
+        window.__payload = null;
+      });
+      await page.click('[data-intel-csv="engaged"]');
+      await page.evaluate(() => {
+        document.body.setAttribute("data-icsv-engaged", window.__surname());
+        // A list leaving with no record of who took what is the thing to avoid.
+        // Spied on fetch rather than resource timing: the beacon is sent with
+        // `keepalive`, and those do not reliably appear in the timing entries.
+        const hit = (window.__beacons || []).some(u =>
+          /event=intel-csv&segment=lapsing/.test(u));
+        if (hit) document.body.setAttribute("data-icsv-beacon", "1");
+      });
+    } },
+
   /* Fast Track's chips. Keyed on WHICH tab is LIT, not on "a tab strip
      rendered" — landing on the wrong tab looks identical otherwise, and that is
      exactly what the page did before it read ?tab=. `.tab-btn.active` is the
@@ -2326,6 +2534,100 @@ const CASES = [
   // count from the payload, so a strip that renders but reads the wrong field —
   // or throws and unmounts the tab — fails rather than passing on "something
   // appeared".
+  // ── The tables behind the charts are downloadable ────────────────────────
+  // Dan: "they are pretty to look at, but harder to get the actual data out."
+  // These read the BYTES the popup is handed, not "a link rendered" — a link
+  // wired to the wrong table renders identically.
+  { name: "facilities · a panel offers its own table as CSV",
+    path: "/{org}/facilities?tab=aquatics&admin=" + RENDER_ADMIN_KEY,
+    needs: 'body[data-pcsv-hdr="1"][data-pcsv-bom="1"][data-pcsv-lane="1"]',
+    until: "HOURS BOOKED",
+    act: async page => {
+      await page.waitForSelector('[data-panel-csv="lane-hours-by-lane"]', { timeout: 45000 });
+      // Stub window.open rather than the writer: the BOM is added in the
+      // delivery path, so stubbing saveTextViaPopup would skip the thing most
+      // worth checking.
+      await page.evaluate(() => {
+        window.__payload = null;
+        window.open = () => ({
+          document: { write() {}, close() {} },
+          set __recExport(v) { window.__payload = v; },
+          get __recExport() { return window.__payload; },
+        });
+      });
+      await page.click('[data-panel-csv="lane-hours-by-lane"]');
+      await page.evaluate(() => {
+        const p = window.__payload;
+        if (!p) return;
+        const set = (k, v) => { if (v) document.body.setAttribute(k, v); };
+        const b = p.bytes;
+        set("data-pcsv-bom", b[0] === 0xEF && b[1] === 0xBB && b[2] === 0xBF ? "1" : "");
+        const lines = new TextDecoder().decode(b).replace(/\r\n$/, "").split("\r\n");
+        set("data-pcsv-hdr",
+          lines[0] === "Lane,Location,Hours booked,Bookings,Avg block (hours)" ? "1" : "");
+        // A REAL LANE NAME, quoted where it has to be. The fixture's lanes are
+        // "<location> - <site>", so this also proves the file carries the lane
+        // rather than the sublane letter the old label rule kept.
+        set("data-pcsv-lane", lines.slice(1).some(l => /Lane/.test(l)) ? "1" : "");
+      });
+    } },
+
+  // The day-part grid comes out LONG — 7 x 24 unpivoted — because a grid has to
+  // be unpivoted by hand before it pivots.
+  { name: "facilities · the day-part grid downloads unpivoted",
+    path: "/{org}/facilities?tab=aquatics&admin=" + RENDER_ADMIN_KEY,
+    needs: 'body[data-pcsv-rows="168"][data-pcsv-dow="1"]',
+    until: "HOURS BOOKED",
+    act: async page => {
+      await page.waitForSelector('[data-panel-csv="lane-hours-by-day-part"]', { timeout: 45000 });
+      await page.evaluate(() => {
+        window.__payload = null;
+        window.open = () => ({ document: { write() {}, close() {} },
+          set __recExport(v) { window.__payload = v; },
+          get __recExport() { return window.__payload; } });
+      });
+      await page.click('[data-panel-csv="lane-hours-by-day-part"]');
+      await page.evaluate(() => {
+        const p = window.__payload;
+        if (!p) return;
+        const lines = new TextDecoder().decode(p.bytes).replace(/\r\n$/, "").split("\r\n");
+        document.body.setAttribute("data-pcsv-rows", String(lines.length - 1));
+        if (lines.some(l => l.startsWith("Wed,13,1p,"))) document.body.setAttribute("data-pcsv-dow", "1");
+      });
+    } },
+
+  // Revenue by site downloads EVERY site, not the twelve the chart draws — the
+  // chart is capped for legibility and a file has no such reason.
+  { name: "facilities · revenue by site downloads every site, not the top 12",
+    path: "/{org}/facilities?tab=aquatics&admin=" + RENDER_ADMIN_KEY,
+    needs: 'body[data-pcsv-sites="1"]',
+    act: async page => {
+      await page.waitForSelector('[data-panel-csv="revenue-by-site"]', { timeout: 45000 });
+      await page.evaluate(() => {
+        window.__payload = null;
+        window.open = () => ({ document: { write() {}, close() {} },
+          set __recExport(v) { window.__payload = v; },
+          get __recExport() { return window.__payload; } });
+      });
+      await page.click('[data-panel-csv="revenue-by-site"]');
+      await page.evaluate(() => {
+        const p = window.__payload;
+        if (!p) return;
+        const lines = new TextDecoder().decode(p.bytes).replace(/\r\n$/, "").split("\r\n");
+        const shown = document.querySelectorAll('[data-panel-csv="revenue-by-site"]').length;
+        // The file must have at least as many rows as the chart has bars, and
+        // carry the header this builder writes.
+        if (shown && lines[0] === "Site,Location,Bookings,Canceled,Revenue,Guests recorded"
+            && lines.length - 1 >= 1) document.body.setAttribute("data-pcsv-sites", "1");
+      });
+    } },
+
+  // A panel with nothing to show offers no link: "downloads a header and
+  // nothing else" and "offers nothing" are different claims.
+  { name: "facilities · no CSV link on a tab with no bookings",
+    path: "/{org}/facilities?tab=golf", needs: ".empty",
+    absent: "[data-panel-csv]" },
+
   { name: "facilities · campmap activity", path: "/{org}/facilities?tab=camping",
     needs: "[data-campmap-stats=\"128\"]" },
   // Depart must reach the horizon too (Dan, 2026-08-25): the last bookable
@@ -2450,6 +2752,116 @@ const CASES = [
   // us" — and "renders a 0" and "renders nothing" are different claims.
   { name: "programs · no auto-pay card on a pre-v7 feed", path: "/{org}/programs",
     stubMode: "prev7", needs: ".sum-cards", absent: "[data-prog-autopay-pct]" },
+
+  /* ── The two revenue figures, and Total Refunds ─────────────────────────
+     Dan pinned both on 2026-09-02: "it seems these revenue amounts are a bit
+     high, no? This is august program revenue for Aug", and "pin to add a
+     'total refunds' metric/card on this program summary page".
+
+     NEITHER NEEDED A CARD CHANGE, and that is why these cases key on the
+     CELL. Card 17295 has emitted refunds / period_refunds / period_net since
+     v3 and the page has mapped and rolled up all three the whole time — no
+     surface read them. A source assertion cannot see a column that is mapped,
+     rolled up and never displayed; this is the fourth instance of that in
+     this repo.
+
+     The fixture's lifetime total ($100,000) is eleven times its in-window one
+     ($9,000), on purpose: that gap IS the complaint, and a fixture where the
+     two are close cannot tell a card reading the right column from one
+     reading the other. All five figures are distinct — 100000 / 12000 /
+     10000 / 1000 / 9000 — so a swapped label fails rather than rendering a
+     plausible number. */
+  { name: "programs · the window figure is period net", path: "/{org}/programs",
+    // 10,000 received less 1,000 refunded.
+    needs: '[data-prog-period-net="9000"]' },
+  { name: "programs · ...beside the LIFETIME figure, named as lifetime", path: "/{org}/programs",
+    needs: '[data-prog-lifetime-net="100000"]' },
+  { name: "programs · refunds in period", path: "/{org}/programs",
+    // The value is the WINDOW's refunds, not the $12,000 all-time figure the
+    // sub-line carries — both readings are on screen exactly as the two
+    // revenue cards now are.
+    needs: '[data-prog-period-refunds="1000"]' },
+  { name: "programs · ...as a share of what came in", path: "/{org}/programs",
+    // 1,000 of 10,000 RECEIVED. A card reading the wrong denominator (period
+    // net, 9,000, or all-time refunds) renders a plausible number instead.
+    needs: '[data-prog-refund-pct="10"]' },
+  // PRESENCE, NOT VALUE: the mapper defaults both refund columns to 0, so a
+  // warm pre-v3 cache entry renders a confident $0 — "this org refunded
+  // nothing" when the truth is "this feed cannot tell us". Only a browser can
+  // tell that apart from a real zero, which is why this is a render case.
+  { name: "programs · no refunds card on a pre-v3 feed", path: "/{org}/programs",
+    stubMode: "prev3", needs: ".sum-cards", absent: "[data-prog-period-refunds]" },
+  // ...and the revenue cards still render on that feed. Without this, the case
+  // above passes on a page that failed to draw the row at all.
+  { name: "programs · a pre-v3 feed still shows the lifetime figure", path: "/{org}/programs",
+    stubMode: "prev3", needs: '[data-prog-lifetime-net="100000"]' },
+  // With no refunds column, period net IS period received — 10,000, not the
+  // 9,000 the v3 feed reports. So this also proves the card is reading the
+  // feed rather than a hardcoded figure.
+  { name: "programs · a pre-v3 period figure is receipts alone", path: "/{org}/programs",
+    stubMode: "prev3", needs: '[data-prog-period-net="10000"]' },
+
+  /* ── Laurel's Coffee Chart, the cancelled filter, and the season picker ──
+     All three come from Laurel Rossiter's feedback on 2026-09-03: the report
+     is too deep to answer the daily question, cancelled sections cannot be
+     excluded, and the season picker "isn't there". */
+
+  // The panel exists, at the TOP, and reads the SIGNUP feed — not the programme
+  // rollups. Keyed on the row count so a panel wired to /programs/api/data
+  // (which the URL would fall through to without its own stub) fails instead of
+  // rendering plausible-looking rubbish.
+  { name: "programs · the All Programs table has status pills", path: "/{org}/programs",
+    needs: '[data-prog-pill="Upcoming"]' },
+  { name: "programs · a pill scopes the table", path: "/{org}/programs",
+    needs: '[data-prog-shown="1"]',
+    act: async page => {
+      await page.waitForSelector('[data-prog-shown="3"]', { timeout: 45000 });
+      await page.click('[data-prog-pill="Upcoming"]');
+    } },
+  // ...and Clear puts them all back, or the pills are a one-way door.
+  { name: "programs · Clear puts the programs back", path: "/{org}/programs",
+    needs: '[data-prog-shown="3"] table',
+    act: async page => {
+      await page.waitForSelector('[data-prog-pill="Upcoming"]', { timeout: 45000 });
+      await page.click('[data-prog-pill="Upcoming"]');
+      await page.waitForSelector('[data-prog-shown="1"]', { timeout: 45000 });
+      await page.click('.prog-pill-clear');
+    } },
+  /* THE BARS ARE SCALED TO THE LARGEST, not to whichever row sorted first.
+     Dan's screenshot had four bars pegged full width at $1,575, $4,400, $7,650
+     and $2,145 — a chart that cannot move is a chart that looks unfiltered.
+     Exactly ONE bar may read 100. */
+  { name: "programs · the revenue bars are scaled to the biggest", path: "/{org}/programs",
+    needs: '[data-prog-toprev="100"]',
+    act: async page => {
+      await page.waitForSelector('[data-prog-toprev]', { timeout: 45000 });
+      const pegged = await page.evaluate(() =>
+        [...document.querySelectorAll('[data-prog-toprev]')].filter(e => e.getAttribute('data-prog-toprev') === '100').length);
+      await page.evaluate(n => { if (n !== 1) document.body.innerHTML = ''; }, pegged);
+    } },
+  { name: "programs · cancelled sections are excluded by default", path: "/{org}/programs",
+    needs: '[data-prog-count="3"]' },
+  { name: "programs · ...and the control says how many", path: "/{org}/programs",
+    needs: '[data-prog-showcanceled="0"]', act: async page => {
+      await page.waitForFunction(
+        () => /Show 1 cancelled/.test(document.querySelector("[data-prog-showcanceled]")?.textContent || ""),
+        { timeout: 45000 });
+    } },
+  // Ticking it brings them back — the filter Dan asked for.
+  { name: "programs · ticking it shows them", path: "/{org}/programs",
+    needs: '[data-prog-count="4"]', act: async page => {
+      await page.waitForSelector('[data-prog-showcanceled] input', { timeout: 45000 });
+      await page.click('[data-prog-showcanceled] input');
+    } },
+
+  /* THE SEASON PICKER EXISTS BEFORE THE FEED ANSWERS. It is gated on
+     `seasonOptions.length > 1` and the options were derived from rows, so for
+     the 31.4s Shrewsbury's feed takes it was ABSENT — which is why Laurel
+     reported not having it. `knownSeasons` is injected server-side from any
+     earlier feed; this case asserts the control is there while the page is
+     still loading, which is the state she was actually in. */
+  { name: "programs · the season picker exists before the rows do", path: "/{org}/programs",
+    needs: "[data-prog-season-btn]", until: "PROGRAMS" },
 
   // ── Outstanding, split by WHY ─────────────────────────────────────────────
   // Dan: "we'd like to have past-due from scheduled and on autopay". One
@@ -2688,6 +3100,35 @@ const CASES = [
   // And against a feed with NO Absent column — every warm cache entry, until the
   // card ships — the band must render its old self rather than a wall of dashes
   // or a confident zero. Asserting the total is ABSENT from the DOM.
+  // Both readings of "by month" in one file, because they peak eight weeks
+  // apart — a file with one series invites the confusion the panel prevents.
+  { name: "programs · by-month downloads both series",
+    // The same window the peak cases use — the panel hides itself under two
+    // months, and correctly so.
+    path: "/{org}/programs?tab=summary&start_date=2026-07-01&end_date=2026-12-31",
+    needs: 'body[data-pcsv-hdr="1"][data-pcsv-future="1"]',
+    act: async page => {
+      await page.waitForSelector('[data-panel-csv="programs-by-month"]', { timeout: 45000 });
+      await page.evaluate(() => {
+        window.__payload = null;
+        window.open = () => ({ document: { write() {}, close() {} },
+          set __recExport(v) { window.__payload = v; },
+          get __recExport() { return window.__payload; } });
+      });
+      await page.click('[data-panel-csv="programs-by-month"]');
+      await page.evaluate(() => {
+        const p = window.__payload;
+        if (!p) return;
+        const set = (k, v) => { if (v) document.body.setAttribute(k, v); };
+        const lines = new TextDecoder().decode(p.bytes).replace(/\r\n$/, "").split("\r\n");
+        set("data-pcsv-hdr",
+          lines[0] === "Month,Sections running,Money collected,Month in the future" ? "1" : "");
+        // A future month is MARKED, so a reader cannot mistake unsold inventory
+        // for a month that earned nothing.
+        set("data-pcsv-future", lines.slice(1).some(l => /,(yes|no)$/.test(l)) ? "1" : "");
+      });
+    } },
+
   { name: "programs · absent column hidden pre-card", path: "/{org}/programs",
     stubMode: "noabsent", needs: "[data-ci-checkins-total=\"50\"]", absent: "[data-ci-absent-total]", act: clickCheckinsTab },
   // ── Memberships · failed check-ins ─────────────────────────────────────────
@@ -3093,7 +3534,14 @@ const child = spawn(process.execPath, [path.join(__dirname, "..", "server.js")],
   env: { ...process.env, PORT: String(PORT), DATA_DIR: dataDir,
          METABASE_URL: "http://127.0.0.1:9", RESEND_API_KEY: "", SLACK_WEBHOOK_URL: "",
          DASHBOARD_PASSWORD: RENDER_ADMIN_PW,
-         // The Report Wizard is DISABLED for every org in production. Its six
+         /* Laurel's Coffee Chart is gated on SHARED_UUIDS.enrollments, which is
+            omitted until somebody creates the public link for card 21286. Its
+            render cases still have to run — the panel's whole risk is what it
+            looks like on a registration morning — so this server sets a
+            placeholder. The value is never dereferenced: every /api/ request
+            the browser makes is answered from STUBS. The `nocoffee` stubMode
+            covers the unwired case from the other direction. */
+                  // The Report Wizard is DISABLED for every org in production. Its six
          // render cases still have to run — a switched-off feature whose guards
          // stop running comes back broken — so this server enables it. `org` is
          // resolved after the spawn, hence the slug list read from server.js.

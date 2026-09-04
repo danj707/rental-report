@@ -67,7 +67,7 @@ const eq = (g, w, m) => ok(g === w, m + " — got " + JSON.stringify(g) + ", wan
 // old heuristic and the page's comments describe it — so every source assertion
 // runs over a comment-stripped copy or it fails on correct code. Same note as
 // checkin-status.spec.js and programs-instructor.spec.js.
-const code = src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+const code = src.replace(/^\s*\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
 const sql = card.replace(/^\s*--.*$/gm, "");
 
 function liftFn(text, name) {

@@ -155,7 +155,7 @@ const FEED = [
     // form on purpose, so a bare test fails on correct code — the same note is
     // already recorded for checkin-status.spec.js and the uncast date tags.
     const body = liftFn(page, "ftExportRows")
-      .replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+      .replace(/^\s*\/\/.*$/gm, "").replace(/\/\*[\s\S]*?\*\//g, "");
     assert.ok(!/new Date\(/.test(body),
       "ftExportRows must compare the card's own ISO strings, not construct Dates");
   });

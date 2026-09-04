@@ -18,7 +18,7 @@
 
     /* ── Toolbar ── */
     .toolbar {
-      position: sticky; top: 0; z-index: 100;
+      position: sticky; top: var(--rec-banner-h, 0px); z-index: 100;
       display: flex; align-items: center; gap: 10px;
       padding: 8px 20px;
       background: #2c2c2c; color: #eee;
@@ -241,7 +241,12 @@
        which is what a scroller is for. This is the "columns misaligned" Dan
        reported on Essex Junction; the header and body are one table and cannot
        structurally drift, so squeezing was the only thing left. */
-    .prog-table { width: 100%; min-width: max-content; border-collapse: collapse; font-size: 11.5px; font-variant-numeric: tabular-nums; }
+    .panel-csv { font-size:10px; font-weight:600; letter-spacing:.04em; color:#0e6d78;
+             text-decoration:none; border:1px solid #cfe0e3; border-radius:4px;
+             padding:2px 7px; background:#f4f9fa; white-space:nowrap; opacity:.75; }
+.panel-csv:hover { opacity:1; background:#e6f2f4; border-color:#0e6d78; }
+@media print { .panel-csv { display:none; } }
+.prog-table { width: 100%; min-width: max-content; border-collapse: collapse; font-size: 11.5px; font-variant-numeric: tabular-nums; }
 
     /* Column headers */
     .prog-table thead tr {
@@ -311,6 +316,15 @@
     /* ── Tabs ── */
 
     /* ── Summary Tab ── */
+    .prog-pills { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 18px 0 -6px; }
+    .prog-pill-lab { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: #9ca3af; margin-right: 2px; }
+    .prog-pill { font: inherit; font-size: 11.5px; padding: 3px 10px; border-radius: 999px; cursor: pointer;
+                 border: 1px solid #e0ded8; background: #fff; color: #4b5563; display: inline-flex; align-items: center; gap: 5px; }
+    .prog-pill:hover { border-color: #c9c5bc; }
+    .prog-pill.on { background: #1f2937; border-color: #1f2937; color: #fff; }
+    .prog-pill-n { font-variant-numeric: tabular-nums; opacity: .6; }
+    .prog-pill-clear { font: inherit; font-size: 11px; padding: 3px 8px; border: none; background: none;
+                       color: #6366f1; cursor: pointer; }
     .sum-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 16px 0; }
     .sum-card { background: #fff; border: 1px solid #e8e6e0; border-radius: 8px; padding: 14px 16px; }
     .sum-card .sc-label { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: #888; font-weight: 700; margin-bottom: 4px; }
@@ -804,6 +818,55 @@ function progMonthlyActivity(secRows, startISO, endISO) {
 // feed has not answered or has no Month column, so the caller can tell "this org
 // collected nothing" from "this card is not connected yet". A zero here would
 // say the first and mean the second, which is the hasAbsent / ciHasStatus rule.
+// ── The tables behind the charts ────────────────────────────────────────────
+// Dan: "they are pretty to look at, but harder to get the actual data out."
+// The Excel export writes program rollups; nothing wrote the by-month series,
+// or the per-location and per-instructor cuts the location and instructor
+// filters imply. These build those tables from rows the page already has, and
+// both the panel download link and the workbook sheet call the same builder so
+// the two cannot describe a table differently.
+const PROG_MONEY = v => Math.round((Number(v) || 0) * 100) / 100;
+
+// Both readings of "by month", side by side — they peak eight weeks apart at
+// El Segundo (programming in September, money in August), which is the whole
+// reason the panel draws two series. A file with only one of them would invite
+// the same confusion the panel exists to prevent.
+function progCsvByMonth(act, money) {
+  const byM = {};
+  (act || []).forEach(a => { byM[a.month] = { sections: a.sections, future: a.future ? 'yes' : 'no' }; });
+  (money || []).forEach(m => { byM[m.month] = Object.assign(byM[m.month] || {}, { money: m.value }); });
+  const out = [['Month', 'Sections running', 'Money collected', 'Month in the future']];
+  Object.keys(byM).sort().forEach(m => out.push([
+    m, byM[m].sections == null ? '' : byM[m].sections,
+    byM[m].money == null ? '' : PROG_MONEY(byM[m].money),
+    byM[m].future || '']));
+  return out;
+}
+
+// Per LOCATION and per INSTRUCTOR, from section rows. These are the two cuts
+// El Segundo asked for and the two the toolbar filters by, and neither was in
+// any export — you could narrow the screen to a location but not get the
+// summary out. Section grain on purpose: a location and an instructor are
+// facts about a section, so rolling them up per program would invent
+// "this program is at Urho Saari" for the 11.6% that span sites.
+function progCsvByKey(secRows, key, header) {
+  const agg = {};
+  (secRows || []).forEach(r => {
+    const k = (r[key] || '').trim() || '(none on file)';
+    if (!agg[k]) agg[k] = { sections: 0, enrolled: 0, capacity: 0, collected: 0, refunds: 0 };
+    agg[k].sections++;
+    agg[k].enrolled += Number(r.enrolled) || 0;
+    agg[k].capacity += Number(r.capacity) || 0;
+    agg[k].collected += Number(r.periodReceived) || 0;
+    agg[k].refunds += Number(r.periodRefunds) || 0;
+  });
+  return [[header, 'Sections', 'Enrolled', 'Capacity', 'Fill %', 'Collected in range', 'Refunded in range']]
+    .concat(Object.keys(agg).sort((a, b) => agg[b].enrolled - agg[a].enrolled).map(k => [
+      k, agg[k].sections, agg[k].enrolled, agg[k].capacity,
+      agg[k].capacity ? Math.round(agg[k].enrolled / agg[k].capacity * 1000) / 10 : '',
+      PROG_MONEY(agg[k].collected), PROG_MONEY(agg[k].refunds)]));
+}
+
 function progMonthlyMoney(rows) {
   if (!Array.isArray(rows) || !rows.length) return null;
   const first = rows[0] || {};
@@ -896,6 +959,30 @@ function progSetCell(r, key) {
 // null when there is no plan money at all: 0% would say "nobody uses autopay"
 // when the truth is "this org runs no payment plans", which is a different fact
 // and not one this metric is for. At module scope so the spec can RUN it.
+/* Is this row a cancelled SECTION? Module scope so a spec can run it, and one
+   definition because the funnel and the on-screen note both have to agree
+   about what was taken out.
+
+   The card emits 'Canceled'; some feeds and some of this page's own rollups
+   carry 'Cancelled'. Both spellings, always — testing one silently keeps half
+   of them. */
+/* THE STATUS PILLS' VOCABULARY, in the order an admin thinks about a season:
+   what has not started, what is running, what has finished, what fell over.
+   'Past' is labelled "Ran", the same word the table's own badge uses — two
+   spellings of one status on one screen is how a filter stops matching what
+   the reader sees. Module scope so a spec can read it. */
+const PROG_STATUSES = [
+  { key: 'Upcoming',    label: 'Upcoming' },
+  { key: 'In Progress', label: 'In Progress' },
+  { key: 'Past',        label: 'Ran' },
+  { key: 'Canceled',    label: 'Cancelled' },
+];
+
+function progIsCanceledSection(r) {
+  const st = r && (r.status || r.sectionStatus);
+  return st === 'Canceled' || st === 'Cancelled';
+}
+
 function progAutopayShare(rows) {
   let apItems = 0, manItems = 0, apValue = 0, manValue = 0;
   (rows || []).forEach(r => {
@@ -986,6 +1073,46 @@ function progOutstandingSplit(rows) {
   };
 }
 
+/* ── The revenue figures on the Summary tab, and their LABELS ───────────────
+   Dan, on Apex over 1-31 August 2026: "it seems these revenue amounts are a bit
+   high, no? This is august program revenue for Aug". The row read
+   NET REVENUE $2,768,423 beside COLLECTED IN PERIOD $275,553, and Apex's real
+   August programme money is $721,749 net. Neither figure was wrong; both
+   labels were.
+
+   Card 17295 windows SECTIONS by their session dates overlapping the range, so
+   August returns every section that RUNS in August. `net_total` is then
+   ALL-TIME for those sections, and `period_net` is cash that moved inside the
+   window for those sections only. One figure is ~3.8x August and the other
+   ~38% of it, each correct for what it measures.
+
+   ONE REDUCER, N READERS — the cards and the two Grand Total rows all read
+   this. Six inline reduces over the same rows is how two surfaces start
+   reporting different totals for one window; `progAutopayCell` going through
+   `progAutopayShare` is the same rule, one card over.
+
+   The refund SHARE is refunds against payments RECEIVED in the same window: a
+   cash-flow ratio, not a per-registration refund rate. An August refund of a
+   June payment is ordinary, so the two need not describe the same
+   registrations — and it is null rather than 0 when nothing was received,
+   because "nothing came in" is not a 0% refund rate. */
+function progRevTotals(progs) {
+  let lifetimeNet = 0, periodNet = 0, lifetimeRefunds = 0, periodRefunds = 0, periodReceived = 0;
+  (progs || []).forEach(p => {
+    lifetimeNet     += fmtNum(p.netRevenue);
+    periodNet       += fmtNum(p.periodNet);
+    lifetimeRefunds += fmtNum(p.refunds);
+    periodRefunds   += fmtNum(p.periodRefunds);
+    periodReceived  += fmtNum(p.periodReceived);
+  });
+  return {
+    lifetimeNet, periodNet, lifetimeRefunds, periodRefunds, periodReceived,
+    refundPct: periodReceived > 0
+      ? Math.round(periodRefunds / periodReceived * 1000) / 10
+      : null,
+  };
+}
+
 function getParams() {
   const p = new URLSearchParams(window.location.search);
   // NOTE: this is an explicit whitelist. A parameter missing from here reads
@@ -1001,6 +1128,61 @@ function getParams() {
     // so a split(',') would cut a legitimate value in half every time.
     instructors: p.getAll('instructor') };
 }
+
+// ── The per-panel download control ──────────────────────────────────────────
+// DELIBERATELY BELOW getParams, and that placement is load-bearing:
+// programs-season.spec.js slices module scope from `const SEASON_NONE` to
+// `function getParams` and evaluates it with `new Function`, which cannot parse
+// JSX. Defining this component inside that range made the spec throw
+// "Unexpected token '<'" before asserting anything — the fourth instance in
+// this repo of a slice reaching past its own inputs.
+//
+// ABSENT rather than disabled where there is nothing to download: a control
+// that yields an empty file is the dead end this repo keeps writing down.
+/* LAUREL'S COFFEE CHART LIVES ON THE ORG DASHBOARD, NOT HERE (Dan,
+   2026-09-03, reversing an earlier call in the same afternoon): "the new live
+   coffee counter widget, and all other live widgets, need to live on the
+   org-dashboard project. A dashboard is the spot for live data, not static
+   reports."
+
+   The line that draws is between a REPORT and a DASHBOARD, not between two
+   features: this page answers a question about a window somebody chose, and a
+   panel that refreshes itself under that answer is a second, contradictory
+   clock on the same screen. It is the rec-dashboard project's "Live Widgets"
+   section now, reading the same card (21286, mirrored in that repo).
+
+   What stays here from that work: cancelled sections excluded by default, the
+   season picker that exists before the feed answers, and the summary with
+   three noisy bands taken off it. Those are report questions. */
+
+function ProgPanelCsv({ rows, name }) {
+  if (!rows || rows.length < 2) return null;
+  function go(ev) {
+    ev.preventDefault();
+    // THIS PAGE HAS NO CFG — it derives the org from the path, like
+    // logClientEvent does. Reaching for CFG.slug here threw "CFG is not
+    // defined" the moment the link was clicked, which no source assertion
+    // could see and the render check caught immediately.
+    var parts = window.location.pathname.split('/').filter(Boolean);
+    var slug = parts[0] || 'report';
+    // Through the popup, like every other export here: a download started from
+    // a sandboxed iframe is silently dropped. See open-pdf.js.
+    window.saveTextViaPopup(window.csvFromRows(rows), slug + '-' + name + '.csv', { bom: true });
+    // ?event= in the QUERY STRING — a JSON body comes back 400 and a
+    // fire-and-forget beacon never complains. withToken keeps the org token on
+    // the URL without rebuilding the query string.
+    try {
+      if (parts.length >= 2) fetch(withToken('/' + parts[0] + '/' + parts[1]
+        + '/api/log?event=panel-csv&panel=' + encodeURIComponent(name)
+        + '&n=' + (rows.length - 1)), { method: 'POST', keepalive: true }).catch(function () {});
+    } catch (e) {}
+  }
+  return (
+    <a href="#" className="panel-csv" onClick={go} data-panel-csv={name}
+       title="Download this table as CSV">↓ CSV</a>
+  );
+}
+
 
 function getCurrentMonthRange() {
   const now = new Date(), y = now.getFullYear(), m = now.getMonth();
@@ -1089,7 +1271,13 @@ function cancelPct(cancellations, enrollments) {
 function MultiPicker({ slug, allLabel, someLabel, options, sel, setSel, open, setOpen, title, onChange }) {
   const fire = function(next) {
     setSel(next);
-    if (onChange) onChange();
+    // THE NEW SELECTION IS PASSED THROUGH. It used to call onChange() bare, so
+    // a caller that needs to react to WHAT was ticked could not — reading
+    // `sel` inside the handler gives the value before this click. The season
+    // picker needs it to decide whether to clear the date range, and reading
+    // stale state there would clear the dates on an UNtick as readily as a
+    // tick. Both existing callers ignore the argument, so this is additive.
+    if (onChange) onChange(next);
   };
   return (
     <div {...{ ['data-prog-' + slug + '-wrap']: true }} className="mpick-wrap">
@@ -1574,6 +1762,14 @@ function App() {
   const [endDate,     setEndDate]     = useState(params.end_date   || defaults.end);
   const [rows,        setRows]        = useState(null);
   const [sectionGrain, setSectionGrain] = useState(false);
+  /* Quick status pills over the All Programs table (Dan, 2026-09-03). EMPTY
+     MEANS ALL, the same rule as the season and instructor pickers — so there
+     is a Clear and no "select all", because two controls producing one state
+     is a control that looks broken. Not persisted and not in the URL: this is
+     a glance at one table, not a saved view of the report. */
+  const [progStatusSel, setProgStatusSel] = useState([]);
+  const toggleProgStatus = k => setProgStatusSel(v =>
+    v.indexOf(k) >= 0 ? v.filter(x => x !== k) : v.concat([k]));
   const [open,        setOpen]        = useState(() => new Set());
   const [meta,        setMeta]        = useState({});
   const [error,       setError]       = useState(null);
@@ -1586,8 +1782,17 @@ function App() {
   const [priorStats, setPriorStats] = useState(null); // { enrolled, net, cancelled, start, end }
   const [compareOn,  setCompareOn]  = useState(() => { try { return localStorage.getItem('rr_compare') !== 'false'; } catch { return true; } });
   const toggleCompare = () => setCompareOn(v => { try { localStorage.setItem('rr_compare', String(!v)); } catch {} return !v; });
-  // ── Self-service / staff workload (orders by channel) ──
-  const [ssData, setSsData] = useState(null);
+  /* THE SELF-SERVICE FEED IS GONE WITH ITS PANEL. It was two Metabase fetches
+     (this window and the prior one) on every summary load, and after the panel
+     was removed nothing read the result — a fetch nobody reads is the dead end
+     this file keeps writing down, and this one was being paid on the page whose
+     load time is the complaint. Card 19174 and /:org/selfservice are untouched;
+     only this page's calls to them are.
+     CONSEQUENCE WORTH KNOWING: `selfservice` had no `view` events of its own —
+     it was ACTIVE purely because this page fetched it — so it will age out of
+     REPORT_ACTIVITY_WINDOW_DAYS and its schema-break / param-drift alerts will
+     stop. That is the activity gate working as designed, not a regression, but
+     it is a real change in what is watched. */
 
   // Share Link: expose the live applied filter state so the floating Share
   // widget copies a URL that reproduces the on-screen view (mirrors the PDF).
@@ -1660,7 +1865,7 @@ function App() {
     return out.filter(r => (r['Activity'] || activityInfo.map[r['Program']||''] || '') === activityFilter);
   }, [demoRows, activityFilter, activityInfo, scopedProgramSet]);
 
-  const [colPresence, setColPresence] = useState({ regMode: false, cancellations: false, waitlist: false, location: false, instructor: false, autopay: false, outSplit: false });
+  const [colPresence, setColPresence] = useState({ regMode: false, cancellations: false, waitlist: false, location: false, instructor: false, autopay: false, outSplit: false, refunds: false });
   const [insights,        setInsights]        = useState(null);
   const [insightsMeta,    setInsightsMeta]    = useState(null); // { programCount, names }
   const [insightsLoading, setInsightsLoading] = useState(false);
@@ -1674,6 +1879,28 @@ function App() {
   // toolbar checkbox was removed 2026-07-16; presence-gating replaces it)
   const showWaitlist = colPresence.waitlist;
   const [showCancels,  setShowCancels]  = useState(() => { try { return localStorage.getItem(LS_SHOW_CANCELS)  === 'true'; } catch { return false; } });
+  /* CANCELLED SECTIONS ARE OUT BY DEFAULT. Dan, 2026-09-03: "we should be
+     excluding canceled sections in the revenue report, but allow the filter to
+     show them."
+
+     Laurel: "it's bringing up stuff that we canceled last summer or we never
+     ran... I was like, Challenge Island, we canceled before it even ran, why is
+     it on this report?" Measured on her exact window: 21 of 195 sections come
+     back Canceled, and there was no way to exclude them — the existing
+     `showCancels` checkbox only ADDS TWO COLUMNS.
+
+     Note those are two different things and must not be folded together:
+     `cancellations` is how many REGISTRATIONS were cancelled on a live
+     section, which is a real metric an org wants; `status === 'Canceled'` is
+     the section itself never running. Merging them would delete the first to
+     fix the second.
+
+     NOT persisted, deliberately. The default is the useful one, and an admin
+     who ticked this once in March should not silently get cancelled sections
+     in their totals for the rest of the year — that is the "my settings keep
+     resetting" complaint in reverse, and the worse direction, because it
+     changes NUMBERS rather than layout. */
+  const [showCanceledSections, setShowCanceledSections] = useState(false);
   const [chartView, setChartView] = useState('revenue');
   const [chartExpanded, setChartExpanded] = useState(false);
   const [chartHover, setChartHover] = useState(null);
@@ -2103,6 +2330,15 @@ function App() {
           instructor:    raw.some(r => 'instructor' in r || 'Instructor' in r),
           autopay:       raw.some(r => 'autopay_plan_items' in r),
           outSplit:      raw.some(r => 'past_due_value' in r),
+          // Card 17295 has emitted refunds / period_refunds / period_net since
+          // v3, and the page has mapped all three the whole time — no surface
+          // read them. PRESENCE, asked of the RAW response, because the mapper
+          // defaults both refund columns to 0: a value test on a warm pre-v3
+          // cache entry renders a confident $0, which says "this org refunded
+          // nothing" when the truth is "this feed cannot tell us". A REAL $0
+          // still shows — an org that refunded nothing in the window is an
+          // answer worth reading.
+          refunds:       raw.some(r => 'period_refunds' in r || 'Period Refunds' in r),
         });
       })
       .catch(err => setError(err.message))
@@ -2133,15 +2369,17 @@ function App() {
         const normalized = json.rows.map(normalizeRow);
         const isSec = normalized.some(r => r.isSection);
         const progRows = isSec ? rollupToPrograms(normalized) : normalized;
-        let enrolled = 0, net = 0, cancelled = 0, periodNet = 0;
+        let enrolled = 0, net = 0, cancelled = 0, periodNet = 0, periodRefunds = 0;
         progRows.forEach(r => {
           enrolled += fmtNum(r.enrollments);
           net      += fmtNum(r.netRevenue);
           periodNet += fmtNum(r.periodNet);
+          periodRefunds += fmtNum(r.periodRefunds);
           const secs = r._sections || [r];
           cancelled += secs.filter(s => s.status === 'Canceled' || s.status === 'Cancelled').length;
         });
-        setPriorStats({ enrolled, net, cancelled, periodNet, start: w.start, end: w.end });
+        setPriorStats({ enrolled, net, cancelled, periodNet, periodRefunds,
+                        start: w.start, end: w.end });
       })
       .catch(() => {});
     return () => { alive = false; };
@@ -2169,43 +2407,6 @@ function App() {
     return () => { alive = false; };
   }, [loadedStart, loadedEnd, orgSlug]);
 
-  // ── Self-service split: orders by channel for the current + prior window.
-  // Hidden gracefully when the org has no selfservice card configured.
-  useEffect(() => {
-    setSsData(null);
-    if (!loadedStart || !loadedEnd) return;
-    let alive = true;
-    const w = priorWindow(loadedStart, loadedEnd);
-    const get = (sd, ed) =>
-      fetch(withToken(`/${orgSlug}/selfservice/api/data?start_date=${encodeURIComponent(sd)}&end_date=${encodeURIComponent(ed)}`))
-        .then(r => r.ok ? r.json() : null).catch(() => null);
-    Promise.all([get(loadedStart, loadedEnd), w ? get(w.start, w.end) : Promise.resolve(null)]).then(([curJ, prevJ]) => {
-      if (!alive || !curJ || !Array.isArray(curJ.rows)) return;
-      const parse = (json, isPrior) => {
-        const byMonth = {}; let self = 0, staff = 0, staffD = 0;
-        ((json && json.rows) || []).forEach(r => {
-          const m = String(r.month || r.Month || '').slice(0, 7);
-          const ch = String(r.channel || r.Channel || '').toLowerCase() === 'staff' ? 'staff' : 'self';
-          const n = fmtNum(r.orders ?? r.Orders);
-          const d = fmtNum(r.dollars ?? r.Dollars);
-          if (!m) return;
-          if (!byMonth[m]) byMonth[m] = { key: m, self: 0, staff: 0, prior: isPrior };
-          byMonth[m][ch] += n;
-          if (ch === 'staff') staff += n; else self += n;
-          if (ch === 'staff') staffD += d;
-        });
-        return { byMonth, self, staff, staffD };
-      };
-      const c = parse(curJ, false);
-      if (c.self + c.staff === 0) return;
-      const p = parse(prevJ, true);
-      const merged = Object.assign({}, p.byMonth);
-      Object.values(c.byMonth).forEach(m => { merged[m.key] = m; }); // current wins on overlap
-      const months = Object.values(merged).sort((a, b) => a.key < b.key ? -1 : 1).slice(-6);
-      setSsData({ months, cur: c, prev: prevJ ? p : null });
-    });
-    return () => { alive = false; };
-  }, [loadedStart, loadedEnd, orgSlug]);
 
   function setMonth(offset) {
     const now = new Date();
@@ -2286,6 +2487,33 @@ function App() {
     ];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Program Revenue');
+
+    // ── the tables behind the charts, one sheet each ────────────────────────
+    // The workbook was program rollups only, so the by-month series and the
+    // per-location and per-instructor cuts — the two the toolbar filters by,
+    // and the two El Segundo asked for — had to be rebuilt by hand from it.
+    // These come from the SAME builders the panel download links use.
+    //
+    // From `filteredRows`' own sections, so the sheets are scoped to exactly
+    // what is on screen: the Excel export reading `rows` instead of
+    // `filteredRows` is a bug this file has already had.
+    const secRows = (filteredRows || []).reduce((a, r) => a.concat(r._sections || r.sections || []), []);
+    // The by-month sheet is built exactly as the panel builds it — same
+    // reducers, same section set, same money feed — so the sheet and the chart
+    // cannot show different months.
+    const xlAct = progMonthlyActivity(secRows.length ? secRows : (filteredRows || []),
+                                     loadedStart, loadedEnd);
+    [
+      { sheet: 'By month',      rows: progCsvByMonth(xlAct, progMonthlyMoney(monthlyRows)) },
+      { sheet: 'By location',   rows: progCsvByKey(secRows, 'location',   'Location') },
+      { sheet: 'By instructor', rows: progCsvByKey(secRows, 'instructor', 'Instructor') },
+    ].forEach(t => {
+      if (!t.rows || t.rows.length < 2) return;          // nothing to say, no sheet
+      const sh = XLSX.utils.aoa_to_sheet(t.rows);
+      sh['!cols'] = t.rows[0].map(h => ({ wch: Math.min(34, Math.max(11, String(h).length + 3)) }));
+      XLSX.utils.book_append_sheet(wb, sh, t.sheet.slice(0, 31));
+    });
+
     // Handed to a popup to save rather than written straight from here — a
     // download started by a sandboxed iframe is silently dropped. See open-pdf.js.
     saveWorkbookViaPopup(XLSX, wb, `program-revenue-${orgSlug}-${loadedStart || 'report'}.xlsx`);
@@ -2429,9 +2657,29 @@ function App() {
   // so: the column is always present, and an org with none yields exactly one
   // option, which the control hides.
   const seasonOptions = useMemo(() => {
-    if (!progSections) return [];
     const counts = new Map();
-    progSections.forEach(r => {
+    /* THE ORG'S OWN SEASON LIST GOES IN FIRST, so the control renders on the
+       first paint instead of 31s later.
+
+       Laurel at Shrewsbury: "we don't have the seasons tab" — and Dan, looking
+       at her org on the call: "I'm not seeing seasons up top here." The control
+       was never missing. It is gated on `seasonOptions.length > 1`, and this
+       memo used to return [] while `progSections` was null, so for the entire
+       31.4s her feed takes to answer there was nothing to see. She was told to
+       use a picker that did not exist yet, twice, and concluded her org lacked
+       it. A feed that has not answered is not a feed without that season —
+       the same load-vs-empty shape as `?ci_rows=`, the permits column and the
+       campmap's POS_OK.
+
+       Injected at count 0 so a season the CURRENT window actually contains
+       always outranks it in the busiest-first sort, and so a stale entry (a
+       season since renamed) sinks to the bottom rather than leading. The rows'
+       own list is never replaced — a season new since the last fetch has to
+       appear. */
+    ((window.ORG_CONFIG || {}).knownSeasons || []).forEach(name => {
+      if (name) counts.set(name, 0);
+    });
+    (progSections || []).forEach(r => {
       const v = seasonKey(r);
       counts.set(v, (counts.get(v) || 0) + 1);
     });
@@ -2498,8 +2746,15 @@ function App() {
   // excluded, for 11.6% of programs.
   const scopedRows = useMemo(() => {
     if (!rows) return rows;
-    if (!locFilter && !seasonSel.length && !instrSel.length) return rows;
+    // Cancelled sections are excluded by DEFAULT, so this funnel now runs even
+    // with no filter picked. It has to flatten to sections to test status —
+    // a program is 'Canceled' only when EVERY section is, so filtering at
+    // program grain would keep a cancelled section inside a live program and
+    // drop a live section inside a mostly-cancelled one.
+    const dropCanceled = !showCanceledSections;
+    if (!dropCanceled && !locFilter && !seasonSel.length && !instrSel.length) return rows;
     let out = progSections || [];
+    if (dropCanceled) out = out.filter(r => !progIsCanceledSection(r));
     if (locFilter) {
       out = locFilter === LOC_NONE ? out.filter(r => !r.location)
                                    : out.filter(r => r.location === locFilter);
@@ -2516,7 +2771,7 @@ function App() {
       out = out.filter(r => want.has(instructorKey(r)));
     }
     return sectionGrain ? rollupToPrograms(out) : out;
-  }, [rows, progSections, sectionGrain, locFilter, seasonSel, instrSel]);
+  }, [rows, progSections, sectionGrain, locFilter, seasonSel, instrSel, showCanceledSections]);
 
   // The demographics, retention and check-in tabs read their OWN feeds, which
   // carry neither a location nor a season column — only the programs card
@@ -2530,6 +2785,10 @@ function App() {
     // while every panel beside them moved — the scoped-some-panels-not-others
     // bug. Instructor is the third and had to be added here as well as to the
     // funnel; the funnel alone leaves those two tabs reading everything.
+    // showCanceledSections is NOT a dimension here on purpose: excluding
+    // cancelled sections does not narrow which PROGRAMS the other tabs should
+    // read, and treating it as a narrowing would scope those feeds off a
+    // default nobody chose.
     if ((!locFilter && !seasonSel.length && !instrSel.length) || !scopedRows) return null;
     return new Set(scopedRows.map(r => r.programName));
   }, [locFilter, seasonSel, instrSel, scopedRows]);
@@ -2794,6 +3053,12 @@ function App() {
       }
     }
   }, [rows]);
+  /* How many cancelled sections the window holds — the number ON the control,
+     computed from the SAME predicate the funnel filters with so the two can
+     never disagree. Measured at Shrewsbury on Laurel's window: 21 of 195. */
+  const progCanceledCount = useMemo(
+    () => (progSections || []).filter(progIsCanceledSection).length,
+    [progSections]);
   const hasRegMode       = colPresence.regMode;
   const hasCancellations = colPresence.cancellations;
   const showRegModeCol   = hasRegMode && showRegMode;
@@ -2897,7 +3162,51 @@ function App() {
             title="Scopes the whole report — every tab, every total"
             allLabel={function(n) { return 'All Seasons (' + n + ')'; }}
             someLabel={function(k, n) { return 'Seasons: ' + k + ' of ' + n; }}
-            onChange={function() { setInsights(null); setInsightsMeta(null); }} />
+            onChange={function(next) {
+              setInsights(null); setInsightsMeta(null);
+              /* PICKING A SEASON CLEARS THE DATE RANGE, and this is the fix for
+                 three separate things Laurel hit at once.
+
+                 She set 9/25 -> 12/07 meaning "registrations since the 25th".
+                 The range means "sections whose SESSIONS run then", so she got
+                 26 sections from Spring/Summer and Winter — her "stuff that's
+                 over, from last summer" — and Dan's own advice on the call was
+                 to clear the dates and use the season instead. A season IS the
+                 period; asking for both is asking two different questions and
+                 getting their intersection.
+
+                 It also makes the season list safe. Options now include the
+                 org's remembered seasons, so a ticked season could name one
+                 with nothing in the current window — an empty report, which
+                 the original row-derived list could never produce. Dateless,
+                 the season has its own rows by definition.
+
+                 And it is the cold-load fix. feedCacheKey includes the param
+                 string, so every distinct window is its own entry and prewarm
+                 only warms the default one — her freshly typed range was a
+                 guaranteed 31.4s miss. With no dates this hits the ONE key per
+                 org that prewarm already keeps warm. */
+              if (next && next.length && (startDate || endDate)) {
+                setStartDate(''); setEndDate('');
+                fetchData('', '');
+              }
+            }} />
+        </React.Fragment>)}
+        {/* CANCELLED SECTIONS: out by default, one click to see them, and the
+            count is on the control so the reader knows what it is worth
+            clicking. `progCanceledCount` is computed off the same predicate the
+            funnel uses, so the number and the exclusion cannot disagree.
+            Absent when the window holds none — a checkbox offering to reveal
+            nothing is the dead end this repo keeps writing down. */}
+        {progCanceledCount > 0 && (<React.Fragment>
+          <div className="divider" />
+          <label data-prog-showcanceled={showCanceledSections ? '1' : '0'}
+            style={{flexDirection:'row',alignItems:'center',gap:5,textTransform:'none',color:'#ddd',fontSize:11,cursor:'pointer'}}
+            title={'Cancelled sections never ran. They are out of every total on this report unless you tick this.\n\n' + progCanceledCount + ' of the sections in this window are cancelled.'}>
+            <input type="checkbox" checked={showCanceledSections}
+              onChange={e => { setShowCanceledSections(e.target.checked); setInsights(null); setInsightsMeta(null); }} />
+            Show {progCanceledCount} cancelled
+          </label>
         </React.Fragment>)}
         {instrOptions.length > 1 && (<React.Fragment>
           <div className="divider" />
@@ -3164,8 +3473,10 @@ function App() {
           var cancelledSections = progs.reduce(function(s,p) { return s + p.sections.filter(function(sec) { return sec.status === 'Canceled' || sec.status === 'Cancelled'; }).length; }, 0);
           var totalCancellations = progs.reduce(function(s,p) { return s + (p.cancellations || 0); }, 0);
           var totalCapacity = progs.reduce(function(s,p) { return s + (p.capacity || 0); }, 0);
-          var totalRev = progs.reduce(function(s,p){ return s + p.netRevenue; }, 0);
-          var periodTotalRev = progs.reduce(function(s,p){ return s + p.periodNet; }, 0);
+          // ONE reducer for every money figure in this tab — see progRevTotals.
+          var rev = progRevTotals(progs);
+          var totalRev = rev.lifetimeNet;
+          var periodTotalRev = rev.periodNet;
           var totalEnrolled = progs.reduce(function(s,p){ return s + p.enrolled; }, 0);
           var totalSections = progs.reduce(function(s,p){ return s + p.sections.length; }, 0);
           var ranPct = (ranProgs.length + cancelledProgs.length) > 0 ? Math.round(ranProgs.length / (ranProgs.length + cancelledProgs.length) * 100) : 100;
@@ -3173,6 +3484,10 @@ function App() {
           var avgFill = withCap.length > 0 ? Math.round(withCap.reduce(function(s,p){ return s + p.fillPct; }, 0) / withCap.length) : 0;
           var hasCapacity = progs.some(function(p){ return p.capacity > 0; });
           var fmt$ = function(n) { return '$' + Math.round(n).toLocaleString(); };
+          // Named once, and NEVER fmtRangeShort(null, null) — that renders the
+          // literal "Invalid Date NaN" rather than throwing, so a card would
+          // print it on screen.
+          var winLabel = (loadedStart && loadedEnd) ? fmtRangeShort(loadedStart, loadedEnd) : 'this period';
           // Read off filteredRows — the funnel's own output, exactly what every
           // other card in this row is built from — so location, season, the
           // date range and the program search all scope it together.
@@ -3197,11 +3512,25 @@ function App() {
           // Sort by cash collected in the period, then lifetime net — early in a
           // month period figures are mostly $0 and the tiebreak keeps order stable
           var progsSorted = progs.slice().sort(function(a,b){ return (b.periodNet - a.periodNet) || (b.netRevenue - a.netRevenue); });
+          /* The pills scope the TABLE, not the cards above it — the ask was a
+             quick way to read one table, and moving the KPI row with it would
+             make "Upcoming" look like the whole report. Which is exactly why
+             the Total row below says what it covers instead of quietly
+             disagreeing with the rows above it. */
+          var shownProgs = progStatusSel.length
+            ? progsSorted.filter(function(p){ return progStatusSel.indexOf(p.status) >= 0; })
+            : progsSorted;
           // Show attendance columns only when this org tracks check-ins
           var showCi = !!(checkinSummary && checkinSummary.totalCheckIns > 0);
           var ciPctColor = function(p) { return p == null ? '#ccc' : p >= 85 ? '#16a34a' : p <= 25 ? '#dc2626' : '#333'; };
           return (
             <div style={{maxWidth:1100,margin:'0 auto'}}>
+              {/* THE FRONT DOOR, ABOVE EVERYTHING. Dan: "lets build the
+                  lightweight enrollment card right on the program summary
+                  page, at the top." It goes above the compare chip and the KPI
+                  row on purpose — the point of the feedback was that the
+                  answer to the daily question was three levels down. */}
+                : null}
               {/* ── Compare toggle — prior window mirrors the report's timeframe ── */}
               <div style={{display:'flex',justifyContent:'flex-end',margin:'12px 0 -6px'}}>
                 <span className={'compare-chip' + (compareOn ? ' on' : '')} onClick={toggleCompare}>
@@ -3212,8 +3541,71 @@ function App() {
               <div className="sum-cards">
                 <div className="sum-card"><div className="sc-label">Programs</div><div className="sc-val sc-blue">{progs.length}</div><div className="sc-sub">{totalSections} sections{cancelledSections > 0 ? ' (' + (totalSections - cancelledSections) + ' ran, ' + cancelledSections + ' cancelled)' : ''}</div></div>
                 <div className="sum-card"><div className="sc-label">Participants</div><div className="sc-val sc-green" data-prog-participants={String(totalEnrolled)}>{totalEnrolled.toLocaleString()}</div><div className="sc-sub">{avgFill > 0 ? avgFill + '% avg fill rate' : ''}</div>{compareOn && priorStats && <div><DeltaPill cur={totalEnrolled} prev={priorStats.enrolled} label={'vs ' + fmtRangeShort(priorStats.start, priorStats.end)} /></div>}</div>
-                <div className="sum-card"><div className="sc-label">Net Revenue</div><div className="sc-val sc-amber">{fmt$(totalRev)}</div><div className="sc-sub">total for these programs</div>{compareOn && priorStats && <div><DeltaPill cur={totalRev} prev={priorStats.net} label={'vs ' + fmtRangeShort(priorStats.start, priorStats.end)} /></div>}</div>
-                <div className="sum-card"><div className="sc-label">Collected in Period</div><div className="sc-val sc-green">{fmt$(periodTotalRev)}</div><div className="sc-sub">payments received in date range</div>{compareOn && priorStats && priorStats.periodNet != null && <div><DeltaPill cur={periodTotalRev} prev={priorStats.periodNet} label={'vs ' + fmtRangeShort(priorStats.start, priorStats.end)} /></div>}</div>
+                {/* ── The two revenue figures, LABELLED TOGETHER ──
+                    Dan, on Apex over 1-31 August: "it seems these revenue
+                    amounts are a bit high, no? This is august program revenue
+                    for Aug". He was right and the numbers were not wrong — the
+                    labels were. This row read NET REVENUE $2,768,423 ("total
+                    for these programs") beside COLLECTED IN PERIOD $275,553
+                    ("payments received in date range") under an August header,
+                    and Apex's actual August programme money is $721,749 net.
+                    One figure was ~3.8x it and the other ~38% of it, each
+                    correct for what it measures:
+
+                      - card 17295 windows SECTIONS by their session dates
+                        overlapping the range, so August returns every section
+                        that RUNS in August;
+                      - net_total is ALL-TIME for those sections, however many
+                        months they took to sell;
+                      - period_net is cash that moved in the window, for those
+                        sections only.
+
+                    So the window figure LEADS — a reader of a date-ranged
+                    report means that one by "August revenue" — and each card
+                    now names its own basis instead of leaving the reader to
+                    infer it. The Revenue tab's own cards have said "lifetime
+                    value of these programs" all along; this row is what
+                    disagreed with them. */}
+                <div className="sum-card" title={'Cash that moved between ' + winLabel + ': payments received minus refunds processed.\n\nScoped to programs whose sessions RUN in that window \u2014 so money taken this month for a fall program is not in here, and money taken months ago for a program running now is.'}>
+                  <div className="sc-label">Net Revenue in Period</div>
+                  <div className="sc-val sc-green" data-prog-period-net={String(Math.round(periodTotalRev))}>{fmt$(periodTotalRev)}</div>
+                  <div className="sc-sub">received minus refunds, {winLabel}</div>
+                  {compareOn && priorStats && priorStats.periodNet != null && <div><DeltaPill cur={periodTotalRev} prev={priorStats.periodNet} label={'vs ' + fmtRangeShort(priorStats.start, priorStats.end)} /></div>}
+                </div>
+                {/* ── Total Refunds ──
+                    Dan: "pin to add a 'total refunds' metric/card on this
+                    program summary page. seems like that's a big item we're
+                    missing." No card change: 17295 has emitted refunds,
+                    period_refunds and period_net since v3 and this page has
+                    mapped and rolled up all three the whole time.
+
+                    Windowed leads and lifetime follows, matching the two cards
+                    it sits between rather than opening the same
+                    lifetime-vs-window question again one card over. The share
+                    is refunds against PAYMENTS RECEIVED in the same window,
+                    which is a cash-flow ratio and not a per-registration
+                    refund rate \u2014 an August refund of a June payment is
+                    ordinary, so the two need not describe the same
+                    registrations. */}
+                {colPresence.refunds && (
+                  <div className="sum-card" title={'Refunds processed between ' + winLabel + ', for programs running in that window.\n\nThe percentage is against payments received in the SAME window \u2014 a cash-flow ratio, not a per-registration refund rate: a refund this month can belong to a payment taken months ago.\n\nNet Revenue in Period is already after these refunds; this card says how much of it was given back.'}>
+                    <div className="sc-label">Refunds in Period</div>
+                    <div className="sc-val sc-red" data-prog-period-refunds={String(Math.round(rev.periodRefunds))}>{fmt$(rev.periodRefunds)}</div>
+                    {/* A null share, never 0%: "nothing came in this window"
+                        is not a 0% refund rate. */}
+                    <div className="sc-sub" data-prog-refund-pct={rev.refundPct == null ? '' : String(rev.refundPct)}>
+                      {rev.refundPct == null ? 'no payments received in this window'
+                                             : rev.refundPct + '% of ' + fmt$(rev.periodReceived) + ' received'} · {fmt$(rev.lifetimeRefunds)} all-time
+                    </div>
+                    {compareOn && priorStats && priorStats.periodRefunds != null && <div><DeltaPill cur={rev.periodRefunds} prev={priorStats.periodRefunds} goodWhenDown={true} label={'vs ' + fmtRangeShort(priorStats.start, priorStats.end)} /></div>}
+                  </div>
+                )}
+                <div className="sum-card" title={'LIFETIME net revenue \u2014 every payment minus every refund, since each program went on sale, for the programs running between ' + winLabel + '.\n\nIt is NOT this period\u2019s revenue, and on a long-running program it can be several times larger. Read "Net Revenue in Period" for the window on the header.'}>
+                  <div className="sc-label">Lifetime Net Revenue</div>
+                  <div className="sc-val sc-amber" data-prog-lifetime-net={String(Math.round(totalRev))}>{fmt$(totalRev)}</div>
+                  <div className="sc-sub">all-time for these programs, not just this period</div>
+                  {compareOn && priorStats && <div><DeltaPill cur={totalRev} prev={priorStats.net} label={'vs ' + fmtRangeShort(priorStats.start, priorStats.end)} /></div>}
+                </div>
                 <div className="sum-card"><div className="sc-label">Ran / Active</div><div className="sc-val sc-green">{ranProgs.length}</div><div className="sc-sub">{ranPct}% of programs</div></div>
                 <div className="sum-card"><div className="sc-label">Cancelled</div><div className="sc-val sc-red">{cancelledSections}</div><div className="sc-sub">{cancelledSections === 1 ? '1 section' : cancelledSections + ' sections'}{cancelledProgs.length > 0 ? ' (' + cancelledProgs.length + ' full programs)' : ''}</div>{compareOn && priorStats && <div><DeltaPill cur={cancelledSections} prev={priorStats.cancelled} goodWhenDown={true} label={'vs ' + fmtRangeShort(priorStats.start, priorStats.end)} /></div>}</div>
                 <div className="sum-card"><div className="sc-label">Upcoming</div><div className="sc-val sc-purple">{upcomingProgs.length}</div><div className="sc-sub">Not yet started</div></div>
@@ -3308,6 +3700,9 @@ function App() {
                     <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:10,flexWrap:'wrap'}}>
                       <span style={{fontSize:12,fontWeight:700,color:'#334155',textTransform:'uppercase',letterSpacing:'0.05em'}}>📅 By month</span>
                       <span style={{fontSize:11,color:'#94a3b8'}}>hatched months have not happened yet</span>
+                      <span style={{marginLeft:'auto'}}>
+                        <ProgPanelCsv rows={progCsvByMonth(act, money)} name="programs-by-month" />
+                      </span>
                     </div>
 
                     <div style={{marginBottom:14}}>
@@ -3343,144 +3738,19 @@ function App() {
                 );
               })()}
 
-              {/* ── Self-Service & Staff Workload — orders by channel ── */}
-              {ssData && (() => {
-                const rate = ssData.cur.self + ssData.cur.staff > 0 ? Math.round(ssData.cur.self / (ssData.cur.self + ssData.cur.staff) * 1000) / 10 : null;
-                const prevRate = ssData.prev && (ssData.prev.self + ssData.prev.staff > 0) ? Math.round(ssData.prev.self / (ssData.prev.self + ssData.prev.staff) * 1000) / 10 : null;
-                const hoursSaved = Math.round(ssData.cur.self * 5 / 60);
-                const maxTotal = Math.max(...ssData.months.map(m => m.self + m.staff), 1);
-                const monthLabel = k => { try { return new Date(k + '-15T12:00:00').toLocaleDateString('en-US', { month: 'short' }); } catch { return k; } };
-                return (
-                  <div style={{margin:'0 0 16px',padding:'14px 18px',border:'1px solid #dbeafe',background:'linear-gradient(135deg,#eff6ff,#ffffff)',borderRadius:12}}>
-                    <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12,flexWrap:'wrap'}}>
-                      <span style={{fontSize:12,fontWeight:700,color:'#1e40af',textTransform:'uppercase',letterSpacing:'0.05em'}}>🖱️ Self-Service &amp; Staff Workload</span>
-                      <span style={{fontSize:11,color:'#94a3b8'}}>resident self-serve online vs. processed by staff (front desk, phone, cash/check/terminal)</span>
-                    </div>
-                    <div style={{display:'flex',gap:28,flexWrap:'wrap',alignItems:'flex-start'}}>
-                      <div>
-                        <div style={{fontSize:22,fontWeight:800,color:'#16a34a',lineHeight:1.1}}>{rate != null ? rate + '%' : '—'}</div>
-                        <div style={{fontSize:11,color:'#64748b'}}>Self-service rate</div>
-                        {compareOn && prevRate != null && rate != null && <DeltaPill cur={rate} prev={prevRate} label="vs prior" />}
-                      </div>
-                      <div>
-                        <div style={{fontSize:22,fontWeight:800,color:'#2563eb',lineHeight:1.1}}>{ssData.cur.staff.toLocaleString()}</div>
-                        <div style={{fontSize:11,color:'#64748b'}}>Staff-assisted orders{ssData.cur.staffD > 0 ? ' · $' + Math.round(ssData.cur.staffD).toLocaleString() : ''}</div>
-                        {compareOn && ssData.prev && <DeltaPill cur={ssData.cur.staff} prev={ssData.prev.staff} goodWhenDown={true} label="vs prior" />}
-                      </div>
-                      <div>
-                        <div style={{fontSize:22,fontWeight:800,color:'#334155',lineHeight:1.1}}>~{hoursSaved.toLocaleString()} hrs</div>
-                        <div style={{fontSize:11,color:'#64748b'}}>Staff time saved (self-serve × 5 min)</div>
-                      </div>
-                      <div style={{flex:'1 1 auto',minWidth:210}}>
-                        {/* Columns keep their width whether there are two months
-                            or six, and sit on a baseline so short bars still
-                            read as bars rather than floating chips. The plot
-                            shrinks to the months it has; the legend below keeps
-                            the full width so it never wraps a word per line. */}
-                        <div style={{maxWidth:Math.min(400, ssData.months.length * 54 + (ssData.months.length - 1) * 8)}}>
-                        <div style={{display:'flex',alignItems:'flex-end',gap:8,height:72,borderBottom:'1px solid #cbd5e1'}}>
-                          {ssData.months.map(m => {
-                            const tot = m.self + m.staff;
-                            const h = tot / maxTotal * 52;
-                            const selfH = Math.max(tot > 0 ? h * m.self / tot : 0, m.self > 0 ? 3 : 0);
-                            const staffH = Math.max(h - selfH, m.staff > 0 ? 3 : 0);
-                            return (
-                              <div key={m.key} title={monthLabel(m.key) + ': ' + m.self.toLocaleString() + ' self / ' + m.staff.toLocaleString() + ' staff'}
-                                   style={{flex:'1 1 0',minWidth:26,maxWidth:54,display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'flex-end',height:'100%'}}>
-                                <div style={{fontSize:9.5,fontWeight:700,color:m.prior ? '#b7b3aa' : '#475569',marginBottom:3,lineHeight:1}}>{tot.toLocaleString()}</div>
-                                <div style={{width:'80%',maxWidth:30,display:'flex',flexDirection:'column',opacity:m.prior ? 0.42 : 1}}>
-                                  {staffH > 0 && <div style={{height:staffH,background:'#2563eb',borderRadius:'3px 3px 0 0'}} />}
-                                  {selfH > 0 && <div style={{height:selfH,background:'#16a34a',borderRadius:staffH > 0 ? 0 : '3px 3px 0 0'}} />}
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                        <div style={{display:'flex',gap:8,marginTop:4}}>
-                          {ssData.months.map(m => (
-                            <div key={m.key} style={{flex:'1 1 0',minWidth:26,maxWidth:54,textAlign:'center',fontSize:9.5,fontWeight:600,color:m.prior ? '#b7b3aa' : '#64748b'}}>{monthLabel(m.key)}</div>
-                          ))}
-                        </div>
-                        </div>
-                        <div style={{display:'flex',gap:12,marginTop:7,fontSize:9.5,color:'#64748b',whiteSpace:'nowrap'}}>
-                          <span><span style={{display:'inline-block',width:7,height:7,borderRadius:2,background:'#16a34a',marginRight:3}} />Self-service</span>
-                          <span><span style={{display:'inline-block',width:7,height:7,borderRadius:2,background:'#2563eb',marginRight:3}} />Staff-assisted</span>
-                          {ssData.months.some(m => m.prior) && <span style={{opacity:.7}}>faded = prior period</span>}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })()}
+              {/* THREE PANELS WERE REMOVED FROM HERE (Dan, 2026-09-03: "remove
+                  these three sections, they are noisy"): Self-Service & Staff
+                  Workload, Session Attendance and Waitlist Demand. Each was a
+                  full-width tinted band above the numbers people come for, and
+                  together they pushed the charts and the programme table below
+                  the fold on the summary that is meant to be the front door.
 
-              {/* ── Attendance / Check-In rollup ── */}
-              {checkinSummary && checkinSummary.totalCheckIns > 0 && (
-                <div style={{margin:'0 0 16px',padding:'14px 18px',border:'1px solid #dcfce7',background:'linear-gradient(135deg,#f0fdf4,#ffffff)',borderRadius:12}}>
-                  <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12}}>
-                    <span style={{fontSize:12,fontWeight:700,color:'#166534',textTransform:'uppercase',letterSpacing:'0.05em'}}>✅ Session Attendance</span>
-                    <span style={{fontSize:11,color:'#94a3b8'}}>across {checkinSummary.sectionsTracked} section{checkinSummary.sectionsTracked === 1 ? '' : 's'} tracking check-ins</span>
-                    <span style={{flex:1}} />
-                    <span onClick={()=>switchTab('checkins')} style={{fontSize:11,fontWeight:600,color:'#16a34a',cursor:'pointer'}}>View breakdown →</span>
-                  </div>
-                  <div style={{display:'flex',gap:28,flexWrap:'wrap'}}>
-                    <div><div style={{fontSize:22,fontWeight:800,color:'#16a34a',lineHeight:1.1}}>{checkinSummary.checkInPct != null ? checkinSummary.checkInPct + '%' : '\u2014'}</div><div style={{fontSize:11,color:'#64748b'}}>Check-in rate</div></div>
-                    <div><div style={{fontSize:22,fontWeight:800,color:'#d97706',lineHeight:1.1}}>{checkinSummary.checkOutPct != null ? checkinSummary.checkOutPct + '%' : '\u2014'}</div><div style={{fontSize:11,color:'#64748b'}}>Check-out rate</div></div>
-                    <div><div style={{fontSize:22,fontWeight:800,color:'#334155',lineHeight:1.1}}>{checkinSummary.totalCheckIns.toLocaleString()}</div><div style={{fontSize:11,color:'#64748b'}}>Total check-ins</div></div>
-                    <div><div style={{fontSize:22,fontWeight:800,color:'#334155',lineHeight:1.1}}>{checkinSummary.totalAttendIn.toLocaleString()}</div><div style={{fontSize:11,color:'#64748b'}}>Unique attendees</div></div>
-                  </div>
-                </div>
-              )}
-
-              {/* ── Waitlist Demand — unmet demand from full sections (requires v4 card SQL) ── */}
-              {colPresence.waitlist && (() => {
-                var wlActive = progs.reduce(function(s,p){ return s + (p.waitlist || 0); }, 0);
-                var wlAll    = progs.reduce(function(s,p){ return s + (p.waitlistTotal || 0); }, 0);
-                var wlConv   = progs.reduce(function(s,p){ return s + (p.waitlistConverted || 0); }, 0);
-                var wlDemand = progs.reduce(function(s,p){ return s + (p.waitlistDemand || 0); }, 0);
-                if (wlAll === 0) return null;
-                var convPct = wlAll > 0 ? Math.round(wlConv / wlAll * 1000) / 10 : null;
-                var pressure = progs.filter(function(p){ return (p.waitlist || 0) > 0; })
-                                    .sort(function(a,b){ return b.waitlist - a.waitlist; }).slice(0, 3);
-                return (
-                  <div style={{margin:'0 0 16px',padding:'14px 18px',border:'1px solid #fde68a',background:'linear-gradient(135deg,#fffbeb,#ffffff)',borderRadius:12}}>
-                    <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:12,flexWrap:'wrap'}}>
-                      <span style={{fontSize:12,fontWeight:700,color:'#92400e',textTransform:'uppercase',letterSpacing:'0.05em'}}>⏳ Waitlist Demand</span>
-                      <span style={{fontSize:11,color:'#94a3b8'}}>residents waiting for spots in full sections — a signal to add capacity</span>
-                      <span style={{flex:1}} />
-                      <a href={(function(){ var qs = new URLSearchParams(window.location.search); var t = qs.get('token'); return '/' + orgSlug + '/waitlist' + (t ? '?token=' + encodeURIComponent(t) : ''); })()} style={{fontSize:11,fontWeight:600,color:'#92400e',textDecoration:'none'}}>Full waitlist report →</a>
-                    </div>
-                    <div style={{display:'flex',gap:28,flexWrap:'wrap',alignItems:'flex-start'}}>
-                      <div>
-                        <div style={{fontSize:22,fontWeight:800,color:'#d97706',lineHeight:1.1}}>{wlActive.toLocaleString()}</div>
-                        <div style={{fontSize:11,color:'#64748b'}}>Waitlisted now</div>
-                      </div>
-                      <div>
-                        <div style={{fontSize:22,fontWeight:800,color:'#16a34a',lineHeight:1.1}}>{convPct != null ? convPct + '%' : '—'}</div>
-                        <div style={{fontSize:11,color:'#64748b'}}>Joined waitlist → enrolled ({wlConv.toLocaleString()} of {wlAll.toLocaleString()})</div>
-                      </div>
-                      {wlDemand > 0 && (
-                        <div>
-                          <div style={{fontSize:22,fontWeight:800,color:'#334155',lineHeight:1.1}}>{fmt$(wlDemand)}</div>
-                          <div style={{fontSize:11,color:'#64748b'}}>Unmet demand (waitlisted × program price)</div>
-                        </div>
-                      )}
-                      {pressure.length > 0 && (
-                        <div style={{flex:1,minWidth:220}}>
-                          <div style={{fontSize:10,fontWeight:700,color:'#92400e',textTransform:'uppercase',letterSpacing:'0.05em',marginBottom:4}}>Highest pressure</div>
-                          {pressure.map(function(p){
-                            return (
-                              <div key={p.name} style={{display:'flex',justifyContent:'space-between',gap:12,fontSize:11.5,color:'#334155',padding:'2px 0'}}>
-                                <span style={{overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{p.name}</span>
-                                <span style={{fontWeight:700,whiteSpace:'nowrap'}}>{p.waitlist.toLocaleString()} waiting{p.waitlistDemand > 0 ? ' · ' + fmt$(p.waitlistDemand) : ''}</span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                );
-              })()}
+                  `checkinSummary` and the waitlist columns are untouched and
+                  still read by the Check-Ins tab, the programme table and the
+                  Excel export, so restoring either panel is markup rather than
+                  a rebuild. The self-service FETCH went with its panel — see
+                  the note where ssData used to be declared. Removed from the
+                  SUMMARY, not from the report. */}
 
               {/* ── Completion Bar ── */}
               {totalSections > 1 && (
@@ -3502,14 +3772,32 @@ function App() {
                 <div className="sum-chart-box">
                   <div className="sum-chart-title">Top Programs by Revenue</div>
                   {(() => {
-                    var top10 = progsSorted.filter(function(p){ return p.netRevenue > 0; }).slice(0, 10);
-                    var maxRev = top10.length > 0 ? top10[0].netRevenue : 1;
+                    /* SORTED BY THE FIGURE IT DRAWS. `progsSorted` orders by
+                       periodNet (right for the table, which leads with cash in
+                       the window); this chart's bars and labels are LIFETIME
+                       net, so taking its top ten from that order picked the ten
+                       biggest earners THIS PERIOD and then drew a different
+                       number beside them — which is why a filter looked like it
+                       changed nothing: the ten rows barely moved while the
+                       lengths never did.
+
+                       AND THE SCALE WAS THE FIRST ROW, NOT THE LARGEST. maxRev
+                       read top10[0], so any program with more lifetime revenue
+                       than whichever one happened to sort first computed over
+                       100% and CLIPPED — the chart in Dan's screenshot had four
+                       bars pegged full width at $1,575, $4,400, $7,650 and
+                       $2,145. Both halves are scoped: this reads filteredRows
+                       through progs, like every other panel here. */
+                    var top10 = progs.filter(function(p){ return p.netRevenue > 0; })
+                                     .sort(function(a,b){ return b.netRevenue - a.netRevenue; })
+                                     .slice(0, 10);
+                    var maxRev = top10.reduce(function(m,p){ return Math.max(m, p.netRevenue); }, 0) || 1;
                     return top10.map(function(p, i) {
-                      var pct = (p.netRevenue / maxRev * 100);
+                      var pct = Math.min(100, (p.netRevenue / maxRev * 100));
                       var barColors = ['#d97706','#2563eb','#16a34a','#dc2626','#7c3aed','#0891b2','#ea580c','#64748b','#db2777','#059669'];
                       return <div key={p.name} style={{display:'flex',alignItems:'center',gap:6,marginBottom:5}}>
                         <span style={{fontSize:10,color:'#666',width:160,textAlign:'right',flexShrink:0,lineHeight:'1.3',wordBreak:'break-word'}} title={p.name}>{p.name}</span>
-                        <div style={{flex:1,height:18,background:'#f0eeea',borderRadius:3,overflow:'hidden'}}><div style={{width:pct+'%',height:'100%',background:barColors[i%barColors.length],borderRadius:3}} /></div>
+                        <div style={{flex:1,height:18,background:'#f0eeea',borderRadius:3,overflow:'hidden'}}><div data-prog-toprev={String(Math.round(pct))} style={{width:pct+'%',height:'100%',background:barColors[i%barColors.length],borderRadius:3}} /></div>
                         <span style={{fontSize:10,color:'#888',width:65,textAlign:'right',fontVariantNumeric:'tabular-nums'}}>{fmt$(p.netRevenue)}</span>
                       </div>;
                     });
@@ -3562,13 +3850,43 @@ function App() {
               </div>
 
               {/* ── Program Detail Table (hero) ── */}
-              <div style={{fontSize:13,fontWeight:700,color:'#333',marginBottom:6,marginTop:16}}>All Programs ({progs.length})</div>
-              <div style={{background:'#fff',border:'1px solid #e8e6e0',borderRadius:8,overflow:'hidden',marginBottom:20}}>
+              {(() => {
+                /* Counts come from `progs` — the set already scoped by the
+                   toolbar — so a pill reading (0) is a real fact about this
+                   window. A pill with nothing behind it is NOT rendered at all:
+                   an org that never cancels a programme should not be offered a
+                   Cancelled filter that can only ever empty the table. */
+                var counts = {};
+                progs.forEach(function(p){ counts[p.status] = (counts[p.status] || 0) + 1; });
+                var live = PROG_STATUSES.filter(function(st){ return (counts[st.key] || 0) > 0; });
+                if (live.length < 2) return null;   // one status is not a filter
+                return (
+                  <div className="prog-pills" data-prog-pills={String(progStatusSel.length)}>
+                    <span className="prog-pill-lab">Show</span>
+                    {live.map(function(st){
+                      var on = progStatusSel.indexOf(st.key) >= 0;
+                      return <button key={st.key} type="button"
+                        className={'prog-pill' + (on ? ' on' : '')}
+                        data-prog-pill={st.key}
+                        aria-pressed={on ? 'true' : 'false'}
+                        onClick={function(){ toggleProgStatus(st.key); }}>
+                        {st.label} <span className="prog-pill-n">{counts[st.key]}</span>
+                      </button>;
+                    })}
+                    {progStatusSel.length > 0 && (
+                      <button type="button" className="prog-pill-clear"
+                        onClick={function(){ setProgStatusSel([]); }}>Clear</button>
+                    )}
+                  </div>
+                );
+              })()}
+              <div style={{fontSize:13,fontWeight:700,color:'#333',marginBottom:6,marginTop:16}}>All Programs ({shownProgs.length === progs.length ? progs.length : shownProgs.length + ' of ' + progs.length})</div>
+              <div data-prog-shown={String(shownProgs.length)} style={{background:'#fff',border:'1px solid #e8e6e0',borderRadius:8,overflow:'hidden',marginBottom:20}}>
                 <div style={{maxHeight:700,overflow:'auto'}}>
                   <table className="sum-prog-table">
                     <thead><tr><th>Program</th><th style={{textAlign:'center'}}>Status</th><th style={{textAlign:'center'}}>Sections</th><th style={{textAlign:'right'}}>Utilization</th><th style={{textAlign:'right'}}>Fill %</th>{progHasInstructor && <th title="Facilitators across this program's sections">Instructor</th>}{progHasLocation && <th title="Locations across this program's sections">Location</th>}{showCi && <th style={{textAlign:'right'}}>Check-In %</th>}{showCi && <th style={{textAlign:'right'}}>Check-Out %</th>}<th style={{textAlign:'right'}} title="Payments received within the selected date range">Collected</th><th style={{textAlign:'right'}} title="Lifetime net revenue for these programs (received minus refunds)">Net Rev</th><th>Dates</th></tr></thead>
                     <tbody>
-                      {progsSorted.map(function(p) {
+                      {shownProgs.map(function(p) {
                         var isCancelled = p.status === 'Canceled';
                         var badgeClass = (p.status === 'Past' || p.status === 'In Progress') ? 'sum-badge-ran' : p.status === 'Canceled' ? 'sum-badge-cancel' : p.status === 'Upcoming' ? 'sum-badge-upcoming' : 'sum-badge-active';
                         var statusLabel = p.status === 'Past' ? 'Ran' : p.status;
@@ -3587,7 +3905,7 @@ function App() {
                           <td style={{fontSize:10,color:'#888',whiteSpace:'nowrap'}}>{fmtD(p.startDate)}{fmtD(p.endDate) ? ' \u2013 ' + fmtD(p.endDate) : ''}</td>
                         </tr>;
                       })}
-                      <tr className="totals-row"><td>Total</td><td /><td style={{textAlign:'center'}}>{cancelledSections > 0 ? <span>{totalSections - cancelledSections} ran<span style={{color:'#dc2626',fontSize:10}}> / {cancelledSections} canc.</span></span> : totalSections}</td><td style={{textAlign:'right',whiteSpace:'nowrap'}}>{totalEnrolled.toLocaleString()} <span style={{color:'#888'}}>/ {totalCapacity > 0 ? totalCapacity.toLocaleString() : '\u2014'}</span>{totalCancellations > 0 && <span style={{color:'#dc2626'}}> / {totalCancellations.toLocaleString()}</span>}</td><td style={{textAlign:'right',color:'#888'}}>{avgFill > 0 ? avgFill + '%' : ''}</td>{progHasInstructor && <td />}{progHasLocation && <td />}{showCi && <td style={{textAlign:'right',fontWeight:700}}>{checkinSummary.checkInPct != null ? checkinSummary.checkInPct + '%' : '\u2014'}</td>}{showCi && <td style={{textAlign:'right',fontWeight:700}}>{checkinSummary.checkOutPct != null ? checkinSummary.checkOutPct + '%' : '\u2014'}</td>}<td style={{textAlign:'right',fontWeight:700}}>{fmt$(periodTotalRev)}</td><td style={{textAlign:'right',fontWeight:700}}>{fmt$(totalRev)}</td><td /></tr>
+                      <tr className="totals-row"><td>Total{shownProgs.length !== progs.length ? <span style={{fontWeight:400,color:'#888'}}> · all {progs.length}</span> : null}</td><td /><td style={{textAlign:'center'}}>{cancelledSections > 0 ? <span>{totalSections - cancelledSections} ran<span style={{color:'#dc2626',fontSize:10}}> / {cancelledSections} canc.</span></span> : totalSections}</td><td style={{textAlign:'right',whiteSpace:'nowrap'}}>{totalEnrolled.toLocaleString()} <span style={{color:'#888'}}>/ {totalCapacity > 0 ? totalCapacity.toLocaleString() : '\u2014'}</span>{totalCancellations > 0 && <span style={{color:'#dc2626'}}> / {totalCancellations.toLocaleString()}</span>}</td><td style={{textAlign:'right',color:'#888'}}>{avgFill > 0 ? avgFill + '%' : ''}</td>{progHasInstructor && <td />}{progHasLocation && <td />}{showCi && <td style={{textAlign:'right',fontWeight:700}}>{checkinSummary.checkInPct != null ? checkinSummary.checkInPct + '%' : '\u2014'}</td>}{showCi && <td style={{textAlign:'right',fontWeight:700}}>{checkinSummary.checkOutPct != null ? checkinSummary.checkOutPct + '%' : '\u2014'}</td>}<td style={{textAlign:'right',fontWeight:700}}>{fmt$(periodTotalRev)}</td><td style={{textAlign:'right',fontWeight:700}}>{fmt$(totalRev)}</td><td /></tr>
                     </tbody>
                   </table>
                 </div>
@@ -3625,10 +3943,15 @@ function App() {
         {/* Summary cards */}
         {totals && (
           <div className="summary-cards">
+            {/* Same words as the Summary tab's card, for the same figure. The
+                two tabs used to disagree in a way that mattered: the Summary
+                tab's "Collected in Period" showed period_NET while this tab's
+                card of the same name shows period_RECEIVED — one label, two
+                different numbers, on one report. */}
             <div className="summary-card" style={{borderLeft:'3px solid #16a34a'}}>
-              <div className="card-label">Total Net Revenue</div>
+              <div className="card-label">Lifetime Net Revenue</div>
               <div className="card-value green">{fmtMoney(totals.netRevenue)}</div>
-              <div className="card-sub">lifetime value of these programs</div>
+              <div className="card-sub">all-time for these programs, not just this period</div>
             </div>
             <div className="summary-card" style={{borderLeft:'3px solid #2563eb'}}>
               <div className="card-label">Collected in Period</div>
@@ -4548,7 +4871,8 @@ function App() {
             <div style={{marginBottom:16}}>
               <span onClick={()=>{setTab('summary');document.body.removeAttribute('data-hide-widgets');}} style={{cursor:'pointer',color:'#6366f1',fontSize:13,fontWeight:600}}>← Back to Revenue</span>
             </div>
-            <div style={{background:'#f8f7f4',border:'1px solid #e4e4e0',borderRadius:8,padding:'16px 20px',marginBottom:20}}>
+            <div data-prog-detail-open={detailSectionId || ''}
+                 style={{background:'#f8f7f4',border:'1px solid #e4e4e0',borderRadius:8,padding:'16px 20px',marginBottom:20}}>
               <div style={{fontSize:18,fontWeight:700,color:'#111827',marginBottom:4}}>{detailSection}</div>
               <div style={{fontSize:13,color:'#6b7280'}}>Registrant revenue detail — {startDate || 'all dates'} to {endDate || 'present'}</div>
             </div>

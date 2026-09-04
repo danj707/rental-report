@@ -1301,6 +1301,108 @@ shared card had none at all.
 Kill strays before driving a page; a stale server is indistinguishable from a
 code failure in the output.
 
+## Card 17295 does the whole org's work and then throws it away (2026-09-03)
+
+Dan, after the same bug was fixed on card 21286: *"yes, profile 17295 and scope
+it like you did the other card."* Profiled, fixed, **NOT PUSHED** — see the last
+section here for why, and `sql/report-cards/17295-programs-report.v9-PENDING.sql`
+for the candidate.
+
+**THE ONLY DATE FILTER IS THE `[[ ]]` PAIR AT THE VERY BOTTOM**, against the `sd`
+LATERAL. So `bk`, `item_tx`, `item_collected`, `sec_fin` (with its
+`payment_plan_installment` LATERAL), `slots`, `ppl`, `wl` and `sec_fac` are all
+computed over the org's **entire history** and then discarded for out-of-window
+sections. Identical shape to the `money` CTE on 21286.
+
+### The measurement, at Watertown over Sep 2026
+
+| | unscoped | scoped |
+|---|---|---|
+| **`item_tx`** — the dominant CTE | **14.0s** / 9,194 order items | **0.08s** / 890 |
+| `slots` | 3.6s / 3,262 sessions | 1.84s / 501 |
+| sections | 773 | 177 |
+| bookings | 9,430 | 945 |
+
+`item_tx` is where the time goes: two per-item LATERALs
+(`order_item_transaction`, `payment_plan_installment`) over ten times the rows
+they can possibly contribute to. At apex the same window keeps **1,371 of 5,926
+sections and 23,127 of 115,188 bookings.**
+
+**DO NOT READ THE WHOLE-QUERY WALL-CLOCK NUMBERS FROM THIS SANDBOX.** Measured
+back to back on the same window, the deployed shape came in at 12.8s and the
+candidate at 15.6s and 19.5s — while a six-`COUNT(*)` probe on the same database
+ranged 0.25s to 56s. That is the *"run the sweep alone"* caveat with teeth: the
+shared Metabase is under variable load and a single whole-query timing from here
+is not evidence of anything. The per-CTE figures above are the honest ones,
+because each is a controlled comparison of the same sub-workload.
+
+### HOW MUCH IT BUYS DEPENDS ENTIRELY ON THE WINDOW
+
+Sections kept at Watertown: **one month 177 of 773 (23%), a quarter 224 (29%),
+twelve months 591 (76%).** So the default page load gets most of the win and a
+full-year pull gets very little — which matters, because the failure Dan asked
+about (*"a bunch of their reports aren't loading"*) was Watertown taking 3m45s
+and then 400ing, and a 12-month Watertown pull measured **259s** alone. **This
+fix is for the common case, not for that timeout.** Saying otherwise would be
+promising a cure for the thing that actually broke.
+
+### `sec_win` IS THE CARD'S OWN FILTER, LIFTED — not a new one
+
+`sd.first_start` is `MIN(g.mn)` over the per-location groups, i.e. the overall
+`MIN(starts_at)`; `sd.last_end` is the overall `MAX(ends_at)`. `sec_env` computes
+exactly those. A section with **no sessions** gets NULLs from `sd` (an aggregate
+over an empty set) and no `sec_env` row at all, and passes both tests either way
+— which is why each bound carries its own `IS NULL` branch.
+
+- **The bottom `[[ ]]` clauses STAY, as the authority.** `sec_win` restricts
+  *inputs*; the output is still governed by the filter that always governed it.
+  Deleting them "because `sec_win` already does it" is how the two predicates
+  drift apart silently.
+- **`sec_env` is ONE `GROUP BY`, not a per-section LATERAL.** The first version
+  used a LATERAL, which re-does per section the work `sd` already does per
+  section — at apex that cost more than it saved and the probe timed out.
+- **The main section list is scoped too** (`JOIN sec_win swm`), so the `sd`
+  LATERAL itself only runs for sections that can survive.
+- The session-booking arm of `slots` carries only a session id, so it needs its
+  own `session` join to reach a section before it can be scoped.
+
+**PROVEN IDENTICAL, not assumed.** Watertown, 2026-09-01..30, an md5 over
+`row_to_json` of every output column:
+
+| shape | rows | fingerprint |
+|---|---|---|
+| deployed (v8) | 177 | `50ed1d95b84df5dab22a104bbe1fb629` |
+| candidate | 177 | `50ed1d95b84df5dab22a104bbe1fb629` |
+
+**Apex could NOT be proven the same way**, and that is a gap to close before the
+push rather than a thing to wave through: both shapes exceed the 60s ceiling on
+every tool available from here, and there is no `MB_API_KEY` in this sandbox to
+go around it. The clean way to close it is a **scratch card** carrying the
+candidate SQL, compared to 17295 through the public endpoint — no risk, no
+downtime, and it needs a public link before it can be read.
+
+### WHY IT IS NOT PUSHED
+
+Pushing takes the Programs report **down for every org** until a human re-types
+the Start/End Date tags: an API push regenerates every tag as Text, the card then
+registers **six** parameters, the app binds by slug and sends two values per
+variable, and Metabase answers *"An error occurred."* That is not a thing to
+start while nobody is at a keyboard. The `verify-report-live.js` sign-off has to
+follow the flip, not precede it, because the verifier fails the same way during
+the window and its failure carries no extra information.
+Flip link: https://rec.metabaseapp.com/question/17295
+
+Guard: `scripts/programs-card-window.spec.js` (**34 assertions, in CI**), which
+reads the PENDING candidate while it exists and the live mirror after the push,
+so it keeps guarding across the rename. Mutation-tested sixteen ways, all failing
+by name: either bottom `[[ ]]` clause deleted (the authority removed), each of
+the eight scoped CTEs unscoped one at a time, an `IS NULL` branch dropped (which
+would silently drop every section with no sessions), `sec_win`'s lower bound
+reading `end_date`, the clauses made non-optional, the session-booking arm's own
+`session` join dropped, `sec_env` reverted to a LATERAL, an output column
+renamed, and the trailing `ORDER BY` dropped — the exact thing that silently
+vanished on card 17300.
+
 ## Programs: instructor + location on screen, and "by month" (2026-09-01)
 
 Dan: *"lets build out the enhancements to the programs report, including
@@ -1558,7 +1660,268 @@ column count, and the section row's own `1`; all four mutation-tested (the cell
 removed, the total row losing the column, the section count back to a dash, and
 the presence gate hardcoded true).
 
-## PINNED: "NET REVENUE" on the Programs summary is LIFETIME, not the window (2026-09-02)
+## The tables behind the charts are downloadable (2026-09-03)
+
+Dan: *"they are pretty to look at, but harder to get the actual data out that
+they need."* Correct, and the gap was total: **every report exported ONE sheet of
+raw rows and none of the chart aggregates.** Lane hours by lane, revenue by
+site, the day-part grid, bookings by month, programs by month, per-location and
+per-instructor — all of it existed only as pictures. Getting "hours by lane" out
+meant re-deriving the hour maths by hand, and that maths (`oeRowHours`, the
+multi-day exclusion, the clock parse) is not in the export at all.
+
+His call: **both** a per-panel link and a workbook, **Aquatics + Programs first.**
+
+### ONE BUILDER, TWO READERS — the whole design
+
+Each table has one builder, called by **both** the panel's download link and the
+workbook sheet. A sheet that reimplemented its panel's rollup would drift the
+first time either changed, and no source assertion can tell the two apart — the
+same reason `progAutopayCell` goes through `progAutopayShare`.
+
+`aqSheetTables()` is the workbook's registry; `panel-csv.spec.js` asserts every
+builder in it is called **at least three times** (its definition, the panel link,
+the sheet), so a table you can get one way but not the other fails.
+
+**The builders take the already-reduced table, not the raw feed.** Handed raw
+rows they would have to reduce it a second way, which is the drift this exists
+to prevent.
+
+**Lane hours are panel-only, deliberately.** They come from card 17294, which
+the hub page fetches *only inside the lane-hours panel* — the hub feed carries no
+wall-clock times. A sheet would have to re-fetch and re-reduce. The spec pins
+that they are absent from the registry AND present on the panel, so the omission
+is a decision rather than a gap.
+
+### `csvFromRows` is shared, because the quoting rule was being copied
+
+One writer in `public/open-pdf.js` (already loaded by every page that exports):
+RFC4180 quoting, CRLF, ISO dates, empty for null. Both cases it guards are real —
+El Segundo has a lane called `Inst Lane 4-2" Depth (25Y) - A`, and a section
+named `Camp, Red` shifts every column after it. Fast Track and the roster keep
+their own copies (both guarded, one byte-matched against Metabase); the spec
+asserts no NEW page grows a third.
+
+### The decisions worth keeping
+
+- **The grids come out LONG, not wide.** One row per weekday per hour, one per
+  month per weekday. A 7×24 block has to be unpivoted by hand before it pivots.
+- **Revenue by site downloads EVERY site, not the twelve the chart draws** — the
+  chart is capped for legibility and a file has no such reason. Said out loud in
+  the builder, because a reader diffing 12 bars against 70 rows should know
+  which one was capped.
+- **A future month's money is BLANK, never 0.** Unsold inventory and
+  earned-nothing are different facts — the same rule the hatched bars encode.
+- **A blank instructor is its OWN ROW**, not dropped: 65% of El Segundo's
+  sections have none, and omitting them would make the file disagree with the
+  enrolment total on screen.
+- **Per-location and per-instructor are SECTION grain.** 11.6% of programs with
+  a located section run at more than one site, so a program-grain rollup files
+  money against a site the reader excluded.
+- **No control where there is nothing to download** — absent, not disabled, and
+  the workbook skips an empty table rather than writing a bare header.
+- **The Programs sheets read `filteredRows`**, not the unscoped feed. That exact
+  bug is already recorded in this file for the Excel export.
+- Both go through `saveTextViaPopup` and ask for the **BOM**: a download started
+  from a sandboxed iframe is silently dropped, and Excel sniffs bytes.
+
+### `panel-csv` (📈) — WHICH chart, not that a download happened
+
+Which panel people need the numbers out of is the most useful signal we have
+about where the reports stop being enough on screen. So the message **names the
+panel** — "downloaded chart data from *facility*" says nothing — and it
+**debounces by panel**, because pulling lane hours and then revenue-by-site is
+two needs and the default `org|report|event` key would keep only the first.
+
+On **both** log routes: `facilities` is not in `REPORT_TYPES` so the hub needs
+its own, `programs` rides the generic one. Miss either allowlist and the beacon
+400s and, being fire-and-forget, never complains — the trap that has now bitten
+this repo four times.
+
+### Two bugs found while building it
+
+- **`CFG` DOES NOT EXIST ON `programs.html`.** It derives the org from the path
+  (`getOrgAndBase`), so `CFG.slug` threw *"CFG is not defined"* the moment the
+  link was clicked. Invisible in source review and to every spec — the render
+  check caught it on the first run. Copying a component between two pages
+  copies its assumptions about what is in scope.
+- **The season spec THREW instead of failing.** `programs-season.spec.js` slices
+  module scope from `const SEASON_NONE` to `function getParams` and evaluates it
+  with `new Function`, which cannot parse JSX — so defining `ProgPanelCsv` in
+  that range killed the process with *"Unexpected token '<'"* before a single
+  assertion ran. The component now sits deliberately BELOW `getParams`, with a
+  comment saying why. **Fourth instance of a slice reaching past its own
+  inputs** in this file, and the second where a guard died instead of failing.
+
+### Guards
+
+`scripts/panel-csv.spec.js` (**30 assertions, in CI**, the last five covering
+the Community Intel lists below), which LIFTS AND RUNS the
+shared writer and all nine builders — a source assertion cannot tell a sheet
+that shares a builder from one that reimplements it. Mutation-tested: the comma
+quoting dropped, a table removed from the workbook registry, a link offered on
+an empty table, and the Programs sheets reading the unscoped feed — all fail by
+name.
+
+Plus **five `ci-check-render.js` cases** that read the BYTES the popup is handed
+rather than "a link rendered", since a link wired to the wrong table renders
+identically. Two mutations were verified against them: the lane-hours link
+pointed at a different real table, and the day-part grid emitted wide instead of
+long (7 rows instead of 168). `aquatics-scope.spec.js`'s `siteLabel` caller
+count went 8 → 9, which is how the download inherits the lane-name fix.
+
+## Community Intel's contact lists download again (2026-09-03)
+
+Dan: *"lets also reenable the csv downloads from the community intel report
+(we'd previously hidden them behind a different button)."*
+
+There were seven **"📋 Request CSV"** buttons, and every one of them opened a
+sheet reading *"🔒 CSV Export Restricted — to protect user privacy, CSV exports
+containing personally identifiable information are no longer available for
+direct download"*, pointing the reader at `partnersupport@rec.us`. `git log -S`
+shows `users.html` entered this repo already carrying that block, so the modal's
+own text was the only stated reason for it anywhere.
+
+**It is reversed on Dan's call, and the Slack record is what pays for it.** The
+files carry resident names, emails and phone numbers, so the thing to avoid is a
+list leaving the platform with no record of who took what: every download now
+beacons `intel-csv` (📇) carrying the **segment and the contact count**, so the
+activity feed says *"downloaded the lapsing contact list — 412 contacts"* rather
+than that an export happened. Debounced **per segment**, like `epact` and
+`ft-export`: pulling the lapsing list and then the non-resident one is two
+different asks. The segment is clamped server-side, never echoed.
+
+- **THE RESTRICTION SHEET IS DELETED, not left unreachable.** `requestCSV` and
+  `csvRequestModal` are gone with it — a modal nothing opens is the dead-end
+  pattern this file keeps writing down, and the spec asserts the copy cannot
+  come back.
+- **ONE writer for all seven segments** (`downloadContacts`), so `INTEL_COLS` is
+  declared once and seven files cannot carry seven shapes. It goes through
+  `csvFromRows` + `saveTextViaPopup` with the **BOM**, like every other download
+  here — a sandboxed iframe's own download is silently dropped, and Excel sniffs
+  bytes rather than trusting UTF-8.
+- **An empty list yields no file.** A header row and nothing under it is the
+  dead end, so the guard is on the list, not on the button being disabled.
+- Eight call sites for seven segments: **`unbooked` is offered twice**, from the
+  leverage list and from its own button, and both reach the same writer.
+
+**NO SOURCE ASSERTION CAN CHECK ANY OF THIS.** Seven buttons call one writer
+with seven different lists, so a button handed the wrong list renders
+identically and produces a perfectly plausible file. So the two render cases
+read the BYTES the popup is handed, over an `intelRows()` fixture built so that
+**every segment holds different households** — unbooked is Solo + Pascal,
+lapsing is Turing, engaged is Johnson, programs-only is Lovelace + Turing. Two
+lists of one row cannot be told apart by their length, which is why the second
+case keys on the NAME in each file. Verified to fail on the engaged button
+pointed at the lapsing list, on the BOM dropped, and on the beacon renamed.
+
+**The fixture's household SIZES are load-bearing**, which is not obvious: the
+"activate solo households" lever only renders when pairs convert better than
+singles, and that lever is what draws the leverage list's own download button.
+A fixture of five single-person households renders no lever and the case would
+have nothing to click.
+
+**And the beacon had to be spied on `fetch`, not read from resource timing** —
+it is sent with `keepalive`, and those requests do not reliably appear in
+`performance.getEntriesByType("resource")`. The first draft of that assertion
+passed nothing and read as a page failure.
+
+## The Programs summary revenue labels, and Total Refunds (2026-09-03) — WAS the pin below
+
+Both pins below are FIXED, and the diagnosis under them is kept because what it
+ruled out is the useful part: **the arithmetic never changed.**
+
+### The labels were the bug, so the WINDOW figure leads now
+
+Dan, on Apex over 1-31 August: *"it seems these revenue amounts are a bit high,
+no? This is august program revenue for Aug"*. The row now reads
+
+| card | figure | sub-line |
+|---|---|---|
+| **Net Revenue in Period** | `period_net` | *received minus refunds, Aug 1–31* |
+| **Refunds in Period** | `period_refunds` | *N% of $X received · $Y all-time* |
+| **Lifetime Net Revenue** | `net_total` | *all-time for these programs, not just this period* |
+
+The period figure leads because **a reader of a date-ranged report means that
+one by "August revenue"**, and each card now names its own basis instead of
+leaving the reader to infer it from a header. Nothing about how either number is
+computed moved.
+
+**AND THE TWO TABS DISAGREED UNDER ONE LABEL, which is worse than either card
+being vague.** The Summary tab's *"Collected in Period"* showed `period_NET`
+while the Revenue tab's card of the **same name** shows `period_RECEIVED` — one
+label, two different numbers, on one report. There is exactly one
+*"Collected in Period"* now (the Revenue tab's receipts), and both tabs call the
+all-time figure **Lifetime Net Revenue**. The spec counts both.
+
+### Total Refunds needed NO card change, and that is the fourth instance
+
+Dan: *"pin to add a 'total refunds' metric/card on this program summary page.
+seems like that's a big item we're missing."*
+
+Card 17295 has emitted `refunds`, `period_refunds` and `period_net` **since v3**,
+and `public/programs.html` has mapped, rolled up and Excel-exported all three the
+whole time — **no surface read them.** So this was client-side: no push, no
+date-tag flip, no downtime on the platform's most-used card. Fourth instance of
+the mapped-and-rendered-nowhere pattern (the location filter, then instructor,
+then the auto-pay columns), and it is why the render cases key on the **CELL**.
+
+- **Windowed leads and lifetime follows, inside one card.** Splitting them into
+  two cards would re-open the same lifetime-vs-window question one card over,
+  which is the thing the relabel exists to close.
+- **The share is refunds against payments RECEIVED in the same window** — a
+  cash-flow ratio, not a per-registration refund rate. An August refund of a
+  June payment is ordinary, so the two need not describe the same
+  registrations, and the tooltip says so.
+- **The share is `null`, never 0%, when nothing came in.** "No payments arrived"
+  is not a 0% refund rate. A **real** 0% still shows: money in and none back out
+  is an answer.
+- **Presence-gated on the RAW response** (`colPresence.refunds`), because the
+  mapper defaults BOTH refund columns to `0` — a value test renders a confident
+  `$0` on every warm pre-v3 cache entry, saying *"this org refunded nothing"*
+  when the truth is *"this feed cannot tell us"*. Same rule as `hasAbsent` /
+  `ciHasStatus` / `mbHasProductKind`.
+
+### ONE REDUCER, N READERS — `progRevTotals`
+
+Six inline `reduce`s over the same rows is how the summary row and the two Grand
+Total rows start reporting different totals for one window. `progRevTotals` is
+the single source and the spec fails if any of those reduces comes back inline —
+the same rule that sends `progAutopayCell` through `progAutopayShare`.
+
+**`winLabel` is named once and guards both dates.** `fmtRangeShort(null, null)`
+does not throw: it renders the literal **"Invalid Date NaN"**, so a card would
+print that on screen during the window between mount and the feed answering.
+
+### Guards
+
+`scripts/programs-revenue-labels.spec.js` (**37 assertions, in CI**), which LIFTS
+AND RUNS `progRevTotals` over Apex's real proportions ($2,768,423 lifetime
+against $275,553 in-window) rather than regexing it. Mutation-tested seven ways,
+all failing by name: the labels reverted (the bug exactly as Dan hit it), the
+null share defaulting to 0%, the presence gate hardcoded true, the lifetime card
+put back first, period refunds summed from the all-time column, a reduce
+re-inlined beside the helper, and `winLabel` built without its null guard.
+
+**One assertion could not discriminate at first, and mutation is what showed
+it.** The order check used `indexOf("Net Revenue in Period")` — and the LIFETIME
+card's own tooltip says *"Read "Net Revenue in Period" for the window"*, so
+swapping the two cards left the assertion passing. It keys on the label markup
+(`>…</div>`) now.
+
+Plus **seven `ci-check-render.js` cases**, keyed on the computed VALUE, over a
+fixture whose lifetime total ($100,000) is **eleven times** its in-window one
+($9,000) — that gap IS the complaint, and a fixture where the two are close
+cannot tell a card reading the right column from one reading the other. All five
+figures are deliberately distinct (100000 / 12000 / 10000 / 1000 / 9000). A new
+`prev3` stub mode drops the refund columns, so the pre-v3 degradation is proven
+in a browser: the refunds card is **absent from the DOM**, the two revenue cards
+still render, and period net reads receipts alone (10,000, not 9,000) — which
+also proves the card reads the feed rather than a constant. Both browser-only
+mutations were verified to fail: the presence gate hardcoded true, and the
+refunds cell reading the all-time column.
+
+### The diagnosis, kept — "NET REVENUE" is LIFETIME, not the window (2026-09-02)
 
 Dan, on Apex over 1-31 August 2026: *"and it seems these revenue amounts are a
 bit high, no? This is august program revenue for Aug"* — the tab read
@@ -1599,13 +1962,13 @@ refunds)"*; the card says only *"total for these programs"*. Same defect shape
 as the guessed grain phrases on the wizard: a confident sub-line under a figure
 whose basis it misstates.
 
-**Not fixed — pinned.** What it needs is wording, not arithmetic: name the
-lifetime figure as lifetime, say that the period figure is scoped to sections
-running in the window, and consider leading with `period_net` (which the card
-already emits) since that is the number someone reading a date-ranged report
-means by "August revenue".
+**FIXED 2026-09-03 — see the section above.** It was wording, not arithmetic,
+exactly as this said: the lifetime figure is named as lifetime, the period
+figure says what it is net of, and `period_net` leads. The diagnosis stays
+because what it RULED OUT is the useful part — neither number was wrong, so
+nobody should go looking for a bug in the card.
 
-### ...and TOTAL REFUNDS needs no card change (Dan, same afternoon)
+#### ...and TOTAL REFUNDS needs no card change (Dan, same afternoon)
 
 *"pin to add a 'total refunds' metric/card on this program summary page. seems
 like that's a big item we're missing."*
@@ -1621,11 +1984,233 @@ location filter, then instructor, then the auto-pay columns). **A source
 assertion cannot see a column that is mapped, rolled up and never displayed** —
 so whatever is built must be keyed on the CELL in a render case.
 
-Two things to settle when it is built: which of the two refund figures leads
-(all-time `refunds` or windowed `period_refunds` — the same lifetime-vs-window
-question as above, so they should be labelled together rather than separately),
-and that a real $0 must still render while a pre-v3 feed must not render a
-confident zero.
+**BUILT 2026-09-03 — see the section above.** Both things this said to settle
+were settled the way it suggested: windowed leads with all-time on the same
+card's sub-line (labelled together, not separately), and the card is
+presence-gated on the raw response so a real $0 renders while a pre-v3 feed
+shows nothing.
+
+## Laurel's asks on the Programs summary (2026-09-03)
+
+Laurel Rossiter at Shrewsbury, on a call, on why she does not use this report:
+
+> *"registration day opens and I can literally watch people register for stuff
+> and keep track... This one, I'm like, oh, let me run this report. But then
+> it's bringing up stuff that we canceled like last summer or we never ran...
+> I feel like I'm not doing it right."*
+> *"Challenge Island, we canceled before it even ran. Like, why is it on this
+> report? And that's from, like, last year."*
+> *"this enhanced reports when it's not working, we don't have the seasons
+> tab."*
+
+Dan: *"Maybe we've gone too deep down the rabbit hole of functionality and lost
+focus on what people need."* The measured contrast, on her own window: **her
+Metabase card is 4 columns, 0 filters, instant; this report is 7 tabs, 10
+controls, 14 KPI cards and 31.4 seconds** — 195 sections, **21 of them
+Canceled**, 26 outside the season she was looking at, and four season options
+that *did* exist but could not be seen until the load finished.
+
+### CANCELLED SECTIONS ARE OUT BY DEFAULT
+
+`progIsCanceledSection(r)` is the one predicate, read by the funnel **and** by
+the control's own count — two copies and the checkbox offers "Show 21
+cancelled" while ticking it moves 19 rows.
+
+- **The funnel now runs with NOTHING ticked**, which is the load-bearing change:
+  `scopedRows` used to hand `rows` straight back when no filter was picked,
+  correct while every filter was opt-in and wrong the moment one became the
+  DEFAULT. The early return is gated on `dropCanceled` too.
+- **It filters at SECTION grain.** A program is `Canceled` only when every
+  section is, so a program-grain test keeps a cancelled section inside a live
+  program and drops a live section inside a mostly-cancelled one.
+- **Both spellings.** `Canceled` and `Cancelled` are both in the data and the
+  section table has tested both since it shipped.
+- **Not persisted.** Whether to look at cancellations is a question about this
+  window, not a layout preference — an admin returning to a silently widened
+  report reads a superset as the whole truth.
+- **Absent where there is nothing**: no checkbox reading "Show 0 cancelled".
+
+### THE SEASON PICKER NO LONGER WAITS FOR THE FEED
+
+Her complaint reads as a missing feature and is a timing one: the options were
+built from the rows, so **during the 31 seconds the control that would have
+narrowed those 31 seconds does not exist.**
+
+`rememberOrgSeasons(slug, rows)` keeps what each org's programs feed last
+carried and `knownSeasons` is injected into `ORG_CONFIG`; the options are the
+**union** of that and the current rows.
+
+- **Seeded at ZERO.** A season with nothing in this window is still tickable and
+  its count says so — the honest form of "we know this season exists".
+- **An empty answer never overwrites what we knew.** A feed that did not answer
+  is not an org with no seasons.
+- **Picking a season CLEARS the dates and refetches.** Intersecting a season
+  with a date range typed for a different question is how a filter appears to
+  do nothing; the season is the window.
+- Empty folds to the card's own literal `No Season`, exactly as `seasonKey`
+  already does, or a pre-v6 feed produces a second unticked option for the same
+  fact.
+
+### Laurel's Coffee Chart LIVES ON THE ORG DASHBOARD, not here
+
+Built here first, then moved the same afternoon. Dan: *"I ruminated on the live
+reports/widgets, and decided they don't belong on the reporting project side...
+The new live coffee counter widget, and all other live widgets, need to live on
+the org-dashboard project. A dashboard is the spot for live data, not static
+reports."*
+
+**The line is between a REPORT and a DASHBOARD, not between two features.** This
+page answers a question about a window somebody chose; a panel refreshing itself
+under that answer is a second, contradictory clock on the same screen. It is
+rec-dashboard's **Live Widgets** section now, and the card mirror moved with it
+to `rec-dashboard/sql/enrollments-live.sql`.
+
+**What came out of rental-report when it moved**, so nothing is left half-wired:
+the `ProgCoffeeChart` component and its CSS, the `enrollments` report type
+(`REPORT_TYPES`, `REPORT_META`, `NON_ADDABLE_REPORTS`, `HEALTH_SKIP_REPORTS`,
+its 5-minute TTL and its `SHARED_UUIDS` entry), the `coffeeChart` injection, and
+the `coffee-open` beacon in all four places it was wired. A registered report
+type nothing serves is the dead-end pattern this file keeps writing down.
+
+**Card 21286 stays** — it is the dashboard's now. See that repo's notes for the
+four defects it fixes against Laurel's own card 3571.
+
+### THE 31 SECONDS IS A CACHE MISS BY CONSTRUCTION
+
+Dan: *"wasn't this cached from an earlier run?"* No, and it cannot be:
+`feedCacheKey` includes the encoded parameter string, so **every distinct date
+window is its own entry**, and prewarm writes exactly three keys per org — no
+dates, the default window, and This Month. A window an admin types is a
+guaranteed cold run of card 17295.
+
+Four levers, cheapest first, and only the first is done:
+
+1. **Don't block the page on it.** The coffee chart, the toolbar and the season
+   picker now paint immediately, so the wait is "list on screen, table filling
+   in" rather than 31 seconds of nothing.
+2. **Warm the windows people open** — last/next month and the org's season
+   spans, 2–3 more queries per org per day.
+3. **Serve stale while revalidating**, which needs care: it must never show one
+   window's numbers under another window's label.
+4. **Split card 17295.** The KPI row needs ~8 aggregates; the section table
+   needs 30+ columns per section. Two cards means the numbers land in seconds.
+   This is the real fix and it is a push, a tag flip and downtime on the
+   platform's most-used card — a decision, not a drive-by.
+
+### THREE PANELS REMOVED, and the fetch went with them
+
+Dan: *"remove these three sections, they are noisy."* Self-Service & Staff
+Workload, Session Attendance and Waitlist Demand — three full-width tinted bands
+above the numbers people come for, together pushing the charts and the programme
+table below the fold on the summary that is meant to be the front door.
+
+**The self-service FEED went too**: two Metabase fetches per load whose result
+nothing read any more, on the page whose load time is the complaint. Everything
+else is untouched — `checkinSummary` and the waitlist columns are still computed
+and still displayed by the Check-Ins tab, the programme table and the Excel
+export, so restoring a panel is markup rather than a rebuild.
+
+**CONSEQUENCE WORTH KNOWING:** `selfservice` had no `view` events of its own —
+it was ACTIVE purely because this page fetched it — so it will age out of
+`REPORT_ACTIVITY_WINDOW_DAYS` and its `schema-break` / `param-drift` alerts will
+stop. That is the activity gate working as designed, and it is still a real
+change in what is watched.
+
+### "Top Programs by Revenue doesn't react to the filters" — it was the SCALE
+
+The row set was scoped all along (it comes off `filteredRows`). Two things were
+wrong and together they made the picture look frozen:
+
+- **The bars were scaled to `top10[0].netRevenue`** — the row that happened to
+  sort first, not the largest — so anything bigger computed over 100% and
+  clipped. Dan's screenshot has **four bars pegged full width across a
+  $1,575-to-$7,650 range**.
+- **The chart took its top ten from an order by `periodNet`** and then labelled
+  and drew `netRevenue`. A chart whose order disagrees with its own bars barely
+  moves when the rows change.
+
+Now sorted by the figure it draws, scaled to the maximum over the rows drawn,
+clamped at 100. `data-prog-toprev` carries the computed percentage so a render
+case can require **exactly one** bar reading 100.
+
+### Status pills over All Programs
+
+Dan: *"add quick, pill style filters to the top of the 'all programs' section to
+filter by upcoming, in progress, etc."* `PROG_STATUSES` at module scope, counts
+from the already-scoped set.
+
+- **Empty means ALL**, the same rule as the season and instructor pickers — so
+  there is a Clear and no "select all", because two controls producing one state
+  is a control that looks broken.
+- **`Past` is labelled "Ran"**, the word the table's own badge uses. Two
+  spellings of one status on one screen is how a filter stops matching what the
+  reader sees.
+- **A status with nothing behind it is not offered**, and with fewer than two
+  live statuses there is no pill row at all — one status is not a filter, and a
+  Cancelled pill that can only empty the table is a dead end.
+- **The pills scope the TABLE, not the cards above it.** The ask was a quick way
+  to read one table; moving the KPI row with it would make "Upcoming" look like
+  the whole report. Which is exactly why the Total row **says what it covers**
+  (`Total · all 27`) instead of quietly disagreeing with the rows above it.
+
+### THE TOOLBAR WAS PINNED — UNDERNEATH THE BANNER
+
+Dan: *"we need to 'pin' this top header with all the search stuff. scrolling
+down and having it disappear is super frustrating."* It **was** pinned:
+`.toolbar` is `position: sticky; top: 0` and has been for months. So is the
+early-access banner (`.rec-banner`, z-index 99998), and it wins — so the
+toolbar stuck *behind* it and the top of the date fields was cut off the moment
+the page scrolled.
+
+**The banner owns its height, so the banner publishes it.**
+`feedback-widget.js` sets `--rec-banner-h` on the root element and every report
+sticks at `var(--rec-banner-h, 0px)` — a 0px fallback, so a page that never
+loads the widget is unchanged.
+
+- **MEASURED, never a constant.** The banner WRAPS on a narrow viewport and
+  gets taller: a hardcoded 44px pins the toolbar into it on a laptop and leaves
+  a gap on a phone. Re-measured on resize, and through a `ResizeObserver`
+  because the message can rewrap without the window changing size.
+- **Fixed on all 15 live report pages, not just the one Dan was looking at.**
+  The bug is the PAIR of rules, so it exists everywhere both appear — every
+  report on the platform had it. The mockups are left alone.
+
+### Guards
+
+`scripts/programs-summary.spec.js` (**68 assertions, in CI**), which LIFTS AND
+RUNS `progIsCanceledSection`. Mutation-tested, all failing by
+name: the bar scale reverted to the first row (the bug as Dan saw it), the
+funnel's early return no longer gated on `dropCanceled` (so the exclusion
+silently waits for another filter), the table reading the unscoped set, and —
+while the coffee chart was still here — its link's presence gate hardcoded true
+and `coffee-open` dropped from the log route's `ALLOWED` list.
+
+**One mutation survived the first draft**, and the reason generalises: the
+presence-gate assertion tested `r['Section Id'] ?` file-wide, which also matches
+the **nullish coalescing** in `normalizeRow` and in `checkinRows`. Scope an
+assertion to the surface it is about.
+
+**Four assertions passed vacuously on the first draft**, for the reason already
+recorded in this file: I ran them against a comment-STRIPPED copy of server.js,
+and a `/*` inside a template literal means no strip order is sound there — both
+orders swallow the region holding the log route. Those assertions read the raw
+source and slice the region instead.
+
+Plus **`ci-check-render.js` cases keyed on computed values**: the pill-scoped
+table count and the single 100% bar. The fixture gained a **cancelled section
+that is its own programme** (so excluding it moves `data-prog-count` 4 → 3;
+inside an existing programme the count would not move and no case could
+discriminate) and an **Upcoming** programme (so the pills have two live options
+and one selects exactly one row).
+
+**Two pre-existing specs had to be taught about the new funnel argument**, and
+both are instances of shapes this file already records:
+`programs-instructor.spec.js` pinned the literal dependency array, so adding a
+fourth dimension broke it with nothing about instructors having changed — it
+tests membership now; and `programs-season.spec.js` RUNS the real funnel, so it
+had to supply `showCanceledSections`, which it passes as `true` to keep testing
+what it was written to test, plus one new assertion that the funnel does NOT
+short-circuit when cancellations are hidden.
 
 ## PINNED TO FIX: the Programs REVENUE tab table (Dan, 2026-09-02)
 
@@ -2837,6 +3422,257 @@ leaves *lands on the tab* and *survives the write-back* PASSING while only
 the harness answers `/users/api/data` from a generic stub and the panel looks
 much the same either way — what regressed is that the REQUEST was never made.
 
+## Court utilization: ONE availability source (2026-09-03)
+
+Dan, on a partner brief about San Francisco's QBR reading 70% (Q2 2025) against
+53% (Q2 2026): *"confirm we're still using a generic denominator for the courts
+utilization rate, not the ACTUAL court availability, no?"* — then, on the
+answer: *"can we flip the qbr generator to live availability... it should be
+referencing the same availability data."*
+
+### THE COURTS TAB WAS ALREADY ON LIVE AVAILABILITY. The QBR was not.
+
+Two code paths, and only one of them was generic:
+
+| surface | denominator, before |
+|---|---|
+| Courts tab (`facilities.html` → `CourtUtilizationView`) and `/​:org/court-utilization` | **live per-court schedule**, from MCP `list_sites` → `config.bookingPolicies.slots`, per weekday × how many of that weekday fall in the window |
+| QBR (`qbrSumCourt`) and Director's Report (`dirCourt`) | flat `QBR_COURT_HRS_PER_DAY = 11` × courts × days, **clamped at 100%** |
+
+`courtSchedulesFor(org)` is now extracted from the route's body, so the route,
+the QBR and the Director's Report read **one** source — which is the whole ask.
+`courtOpenHours(courtKeys, …)` does the same arithmetic `computeCourtAvail`
+does on the tab, so the two cannot disagree.
+
+- **THE COURT KEY IS THE TAB'S OWN LABEL** — `"<location> — <court>"`, em dash.
+  The QBR used `"|"` internally; a key that does not match sends every court to
+  the fallback and **the number looks unchanged**, which is the worst way for
+  this to break.
+- **The 100% clamp is gone.** Under a real schedule a court over 100% is a
+  finding — booked beyond its published hours — and clamping hid exactly that.
+  The flat denominator needed the clamp because it invented what it divided by.
+- **`utilizationEstimated` is now TRUE only when some of the denominator really
+  is assumed.** It was hardcoded true, so a measured figure carried an "EST."
+  tag — the reason a partner asked what the denominator was in the first place.
+- **`scheduled` / `assumed` travel with the number** and the report prints
+  which: *"from each court's own open hours"*, or *"N of M courts assume X
+  hrs/day"*. A utilization that does not say how much of its denominator was
+  assumed is how the flat figure got trusted.
+- **A failed probe is not cached.** Caching it for four hours would put every
+  court on the flat fallback for the rest of the window — the `POS_OK` rule.
+- `dowCountsInRange` builds dates from PARTS, never `new Date(ymd)` — UTC
+  midnight lands on the previous day west of UTC and would mis-weight a
+  quarter's Mondays.
+
+### THE FLIP DOES NOT MOVE SF'S HEADLINE, and that is worth knowing
+
+Measured against SF's live schedules (107 of its 114 courts resolve):
+
+| quarter | flat denominator | live denominator | util |
+|---|---|---|---|
+| Q2 2025 | 101,101 | **100,867** | 70% either way |
+| Q2 2026 | 107,107 | **105,625** | 53% either way |
+
+Within **1.4%**. SF's mean is **10.85 open hrs per court-day**, a coincidence
+away from the flat 11 — so the flat figure was accidentally right in aggregate
+for this org, and **the −20.6% YoY drop is real in the booking data**, not a
+denominator artifact.
+
+Where the flip pays is PER COURT, and there it is large. The spread across
+SF's 749 scheduled court-days: 419 at 12h, 112 at 13.5h, 42 at 14h — and **18
+at ZERO and 14 at 1.5h**. Presidio Wall runs 1.5 open hrs/day and was being
+divided by 11; on a test row it reads **37% instead of 5%**.
+
+**Two candidate availability sources disagree and Dan's call settled it.** The
+partner brief measured `court_slot` and got 13.58 avg (range 1.5–26); the
+`bookingPolicies` path the tab reads gives 10.85 mean, max 14. Using
+`court_slot` would have produced ~57% / ~43% — a defensible-looking number that
+disagrees with the Courts tab, which is the two-surfaces-disagreeing trap. The
+tab's source wins because the tab is what an org looks at.
+
+### CORRECTED: the SF QBR is RIGHT. A COLD generate can drop sections.
+
+**I reported that the SF QBR was empty and that is wrong.** Dan exported both
+quarters and the PDFs carry exactly the figures in the partner brief:
+
+| | Q2 2025 | Q2 2026 |
+|---|---|---|
+| booked court hours | **70,903** | **56,310** |
+| courts | **101** | **107** |
+| utilization | **70% EST.** | **53% EST.** |
+
+with the footnote *"Court utilization estimated against a 11 hr/day operating
+window"* — the flat denominator, exactly as the brief reverse-engineered it. So
+**Lindsay's numbers did come from this generator** and `qbrSumCourt` matches the
+brief's definition.
+
+**HOW I GOT IT WRONG, because that is the reusable part.** I probed
+`POST /qbr/api/generate` while my own 240s card-17297 query and several MCP SQL
+statements were hitting the same Metabase, read the null sections as a finding,
+and wrote it down. That is verbatim the trap already recorded in the card
+sign-off section — *"RUN THE SWEEP ALONE, or it invents failures on cards you
+never touched... never report one as a finding without doing so."* I had the
+rule, did not follow it, and published the conclusion. **A null section is
+evidence about the last two minutes of load, not about the report.**
+
+**What IS real, and is much narrower.** Re-run clean, nothing else in flight:
+
+| run | result |
+|---|---|
+| SF Q2 2026, warm cache | `hoursBooked 56310, courts 107, utilization 53` — correct |
+| SF Q2 2025, cold | `court: null`, at **128s**, reproducibly |
+
+A **cold** SF generate can drop a section against `fetchMBDirect`'s 120s abort,
+and `safe()` swallows it: the response is a 200 and the PDF simply omits the
+panel. Dan's export worked because the 4-hour feed cache was warm.
+
+**THAT is the dangerous shape** — a quarterly report that ships without its
+court section and looks complete. Worth fixing as its own thing: a section that
+failed to load should say so rather than vanish, the same rule as `hasAbsent`
+and the permits column. And worth knowing before generating a QBR for a large
+org off a cold cache: warm it, or check what populated.
+
+### A spec that THREW instead of failing — fifth instance
+
+`directors-facilities.spec.js` slices server.js from `const DIR_OUTDOOR_TYPES =`
+to the literal `"function dirCourt(rows, days) {"`. Adding the availability
+arguments moved that marker, so the slice failed and the spec died on a bare
+`AssertionError` naming nothing. The end marker is the function NAME ONLY now.
+**Fifth instance of a slice reaching past its own inputs**, and the third where
+a guard died instead of failing by name.
+
+## Feedback metrics on the Platform Usage cards (2026-09-03)
+
+Dan: *"I feel like displaying the feedback metrics are an easy lift."* It was —
+**the data has been in `events.jsonl` since each surface shipped and nothing
+displayed it** — but not for the reason it looks. What made it more than a
+display job is that **a thumb is recorded three different ways depending on
+which surface took it.** Measured against production over the whole log:
+
+| event | field | rows | notes |
+|---|---|---|---|
+| `insights-feedback` | `score` (1/0) | 18 | AI Insights |
+| `vote` | `sentiment` | 15 | a report page's quick thumbs |
+| `wizard-feedback` | `vote` | **11** | rental calendar — **and never in `SLACK_NOTIFY`** |
+| `chat-feedback` | `score` | 9 | Rec AI Chat |
+| `feedback` | `vote` | 9 | Report Wizard — carries the **PROMPT** |
+| `update-vote` | `sentiment` | 3 | the What's New popup |
+| | | **65** | across 15 orgs, all inside 90 days |
+
+### `/api/admin/feedback` READ TWO OF THE SIX, and the two dead ones
+
+That route filtered `chat-feedback || insights-feedback` — **27 of the 65** — and
+those are precisely the two families with **zero activity in the last 30 days**,
+while `vote`, `feedback`, `wizard-feedback` and `update-vote` account for **all
+17 recent ratings**. So the endpoint the roadmap called *"already exists; needs a
+frontend readout"* would have rendered an **empty panel on a month in which
+seventeen people rated something.** It goes through the shared aggregator now.
+
+### ONE predicate, and an unreadable row is counted on NEITHER side
+
+`feedbackSentiment(e)` reads all six families and all three field names, at
+module scope so the spec can RUN it. `score` is compared **strictly** — a string
+`"1"` is a malformed row, not a thumbs up.
+
+**A row with no readable sentiment returns `null` and is counted on neither
+side**, reported separately as `unreadable`. A default would file it as
+agreement or as a complaint, and a thumbs figure that invents a direction is
+worse than one that says it could not tell. The same rule as `hasAbsent`.
+
+**`feedbackSubject(e)` names the thing rated in the ROW'S OWN FIELD** — an
+update names the update, a wizard row names the generated report, a rental row
+names the site type. Printing the report type for all six reads
+*"Report Wizard on report-wizard"*: the report type twice and the thing rated
+never, which is the exact defect already fixed once in the Slack branch.
+
+**On a wizard row the PROMPT is the comment.** The question somebody typed and
+did not get a good answer to is the highest-signal text on the platform, and it
+existed only in a JSONL file — *"all revenue for Pequos summer camp, Week 2
+sections"* → thumbs down.
+
+### TWO WINDOWS, each saying which it is
+
+The KPI counts the **same 30 days** as every card beside it, because one card in
+a row meaning a different window is the lifetime-vs-window confusion fixed on
+the Programs summary the same day. The **list is everything on record** and its
+header says so — 30 days holds 17 ratings while the corpus is 65, and the
+comments worth reading are older.
+
+- **No share over a handful.** `FEEDBACK_MIN_RATINGS = 5`; under it the counts
+  are the whole answer. Same rule as `RATE_MIN_VIEWS` and `WL_CONV_MIN_OFFERS`.
+- **The per-org column prints COUNTS, never a percentage** — 30 days is 17
+  ratings across 10 orgs, so a per-org share reads "100%" off one thumb. A faint
+  dot where there are none, because a grid of `0 · 0` reads as data.
+- **`upPct` is null, never 0.** "Nobody has rated anything" is not "everybody
+  hated it".
+- **THE COUNT OPENS SOMETHING.** A number with nowhere to go is the dead end
+  this repo keeps writing down (the Failed check-ins tile, the "2 ending soon"
+  section). The KPI is the way in, and the list is **closed until asked for** —
+  an always-open list of every rating is a different, noisier feature.
+- **`oldest` is a MIN, not an array position.** The header prints that date as a
+  fact, and reading it off the last element is an assumption about file order.
+  The mutation proves it: with rows sorted newest-first, the positional read
+  reports the **newest** rating as the oldest.
+
+### `wizard-feedback` was never in `SLACK_NOTIFY` — FIFTH instance
+
+11 ratings written to `events.jsonl` and none announced, since the day it
+shipped. Now wired, debounced **per site type** (rating the pavilion suggestion
+and then the picnic-table one is two answers), with the site type in the message
+because *"somebody rated a suggestion"* says nothing. **Consequence to expect:
+Slack starts getting rental-calendar suggestion thumbs it has never had.**
+
+The guard is the generalised form: every event name `server.js` logs whose name
+mentions a vote or feedback must be in `FEEDBACK_SOURCES` **and** in
+`SLACK_NOTIFY`, derived from `server.js` rather than transcribed — so a seventh
+surface fails the spec instead of being quietly missing.
+
+### A REGEX COMMENT-STRIPPER IS UNSOUND ON server.js — it made four assertions here pass vacuously
+
+Found because this spec passed while the route assertions could not possibly
+have matched. **Two independent strays:**
+
+- **line 5837** carries the text `/* stay reachable so it can be` **inside a
+  `//` comment** — legal JS. Strip block comments *first* and that opener pairs
+  with a real close fifteen hundred lines later, swallowing **2,792 lines**.
+  **Nine specs in this repo had that order** and were blind over that region;
+  all nine now strip line comments first.
+- **line ~5918** carries a `/*` **inside a template literal** — real code, not a
+  comment. *No* strip order helps, and both orders swallow the region holding
+  `/api/admin/feedback`.
+
+So this spec reads the **RAW** source and slices the route's own text where it
+needs to be scoped. **Generalise it: if a spec must not see comments, slice the
+region it cares about rather than regex-stripping a 19,000-line file.** And
+writing this note as a block comment containing a literal close-comment marker
+ends the comment early — the same mistake one level up, which is why the spec's
+copy spells it out in words.
+
+### Guards
+
+`scripts/feedback-metrics.spec.js` (**91 assertions, in CI**), which LIFTS AND
+RUNS the four helpers over the six shapes production actually writes, and boots
+a real server on a fixture `DATA_DIR` for the rendered half — apex 1/1 against
+watertown 2/3, so a cell reading the wrong org's counts fails rather than
+rendering a plausible number. It also pins **one `<td>` per `<th>`** and that the
+feedback cell sits where its header's sort index points, which is the fault the
+last three column additions caused. `SKIP_SOURCE=1` drops the source half.
+
+Mutation-tested seven ways, all failing by name: a family dropped from the map
+(the bug as `wizard-feedback` shipped), unreadable rows filed as DOWN, the share
+floor removed and zero-defaulted, the route back to two families, the event
+dropped from `SLACK_NOTIFY`, `oldest` read off an array position, and the list
+rendered always-open.
+
+**The route mutation THREW instead of failing by name** — `api.byOrg.apex.up`
+became a TypeError and the spec died reporting *"Cannot read properties of
+undefined"*, naming nothing. Third instance of that lesson here; the live half
+reads through a safe accessor now.
+
+Plus a browser check that the KPI **opens** the panel and closes again, and that
+sorting on the new column works — `ci-check-admin-js` proves the handler exists
+and parses, which is not the same claim.
+
 ## Slack activity notifications — wire every new surface (IMPORTANT)
 
 Standing rule (see Working preferences): any new button, export, download, or
@@ -2870,7 +3706,9 @@ is already off the platform defaults), `settings-save`/
 flagging an ePACT template that left the verified set) (📤 a participant list
 exported for the ePACT camp-forms vendor, with the count and whether it was one
 class or the whole view), `ft-export` (📤 the people who fast-tracked one section were exported,
-with the section, the head count and the hold count), and three platform alerts —
+with the section, the head count and the hold count), `wizard-feedback` (🗓️ the rental calendar's site-type suggestion was rated,
+naming the site type — **11 ratings were recorded and never posted before
+2026-09-03**), and three platform alerts —
 `report-down` (a report's card stopped answering, links straight to the report
 with its token), `schema-break` (a table or column the reports depend on is
 gone), `param-drift` (a date template tag is no longer typed Date). The three

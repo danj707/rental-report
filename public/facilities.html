@@ -61,7 +61,7 @@
     body { font-family: 'Inter', system-ui, -apple-system, sans-serif; font-size: 12px; color: #1a1a1a; background: #f5f4f1; line-height: 1.35; }
 
     /* ── Toolbar (matches Programs / Court Utilization) ── */
-    .toolbar { position: sticky; top: 0; z-index: 100; display: flex; align-items: center; gap: 10px; padding: 8px 20px; background: #2c2c2c; color: #eee; font-size: 13px; flex-wrap: wrap; }
+    .toolbar { position: sticky; top: var(--rec-banner-h, 0px); z-index: 100; display: flex; align-items: center; gap: 10px; padding: 8px 20px; background: #2c2c2c; color: #eee; font-size: 13px; flex-wrap: wrap; }
     .toolbar-title { font-weight: 600; margin-right: 4px; }
     .toolbar-back { color: #9ca3af; text-decoration: none; font-size: 12px; }
     .toolbar-back:hover { color: #fff; }
@@ -461,6 +461,16 @@
     .aqua-panel { background:#fff; border:1px solid #e8e6e0; border-radius:10px; padding:14px 16px; }
     .aqua-panel h4 { margin:0 0 12px; font-size:12px; font-weight:700; color:#111; display:flex; align-items:baseline; gap:6px; }
     .aqua-panel h4 .n { font-weight:500; color:#9ca3af; font-size:11px; }
+    /* The per-panel download. Sits at the far right of the panel heading, quiet
+       until hovered — it is a way OUT of the chart, not a call to action. */
+    .sum-bar-label { display:flex; align-items:baseline; gap:8px; }
+    .panel-csv { margin-left:auto; font-size:10px; font-weight:600; letter-spacing:.04em;
+                 color:#0e6d78; text-decoration:none; border:1px solid #cfe0e3;
+                 border-radius:4px; padding:2px 7px; background:#f4f9fa;
+                 white-space:nowrap; opacity:.75; }
+    .panel-csv:hover { opacity:1; background:#e6f2f4; border-color:#0e6d78; }
+    .aqua-sec h3 { display:flex; align-items:baseline; gap:8px; }
+    @media print { .panel-csv { display:none; } }
     .aqua-bars { display:flex; flex-direction:column; gap:7px; }
     .aqua-bar { display:grid; grid-template-columns:120px 1fr auto; align-items:center; gap:9px; font-size:11.5px; }
     .aqua-bar .lbl { color:#374151; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -850,6 +860,155 @@
       if (loc && name.length > loc.length + 3 && name.slice(0, loc.length + 3) === loc + ' - ')
         return name.slice(loc.length + 3);
       return name;
+    }
+
+    // ── The tables behind the charts ─────────────────────────────────────
+    // Dan: "they are pretty to look at, but harder to get the actual data out."
+    // Every panel here reduces the feed to a small table and then draws it and
+    // throws it away, so the only way to get "hours by lane" out was to
+    // re-derive the hour maths — which is not in the export at all.
+    //
+    // These builders turn a panel's OWN computed table into CSV rows. Both the
+    // per-panel download link and the workbook sheet call the same builder, so
+    // a panel and the file taken from it cannot disagree — the same rule that
+    // makes progAutopayCell go through progAutopayShare.
+    //
+    // They take the already-reduced table rather than the raw feed on purpose:
+    // handed raw rows they would have to reduce it a second way, which is the
+    // drift this is meant to prevent.
+    const AQ_MONEY = v => Math.round((Number(v) || 0) * 100) / 100;
+
+    function aqCsvLaneHours(lanes) {
+      return [['Lane', 'Location', 'Hours booked', 'Bookings', 'Avg block (hours)']].concat(
+        (lanes || []).map(l => [l.lane, l.location, Math.round(l.hours * 10) / 10, l.bookings,
+                                l.bookings ? Math.round(l.hours / l.bookings * 10) / 10 : '']));
+    }
+
+    // The day-part grid, long rather than wide: one row per weekday per hour is
+    // what pivots, where a 7x24 block has to be unpivoted by hand first.
+    function aqCsvDayPart(hg) {
+      const out = [['Weekday', 'Hour', 'Hour label', 'Bookings covering this hour']];
+      if (!hg || !hg.heat) return out;
+      const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+      for (let d = 0; d < 7; d++)
+        for (let h = 0; h < 24; h++)
+          out.push([DOW[d], h, oeHour12(h), hg.heat[d][h]]);
+      return out;
+    }
+
+    // DELIBERATELY EVERY SITE, not the top twelve the chart draws. The chart is
+    // capped so it stays readable; a file has no such reason, and someone
+    // pulling this wants the whole list. Said out loud because a reader who
+    // diffs 12 bars against 70 rows should know which one was capped.
+    function aqCsvBySite(sites) {
+      return [['Site', 'Location', 'Bookings', 'Canceled', 'Revenue', 'Guests recorded']].concat(
+        (sites || []).map(x => [siteLabel(x.facility, x.location), x.location, x.bookings,
+                                x.canceled, AQ_MONEY(x.revenue), x.guests]));
+    }
+
+    // The weekday x month grid, long rather than wide — one row per month per
+    // weekday pivots, where a grid has to be unpivoted by hand first.
+    function aqCsvWeekdayMonth(months, hm) {
+      const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+      const out = [['Month', 'Weekday', 'Bookings', 'Revenue']];
+      (months || []).forEach(m => {
+        const cells = hm[m] || [];
+        for (let d = 0; d < 7; d++)
+          out.push([m, DOW[d], cells[d] ? cells[d].n : 0, AQ_MONEY(cells[d] ? cells[d].rev : 0)]);
+      });
+      return out;
+    }
+
+    function aqCsvByMonth(months, byMonth) {
+      return [['Month', 'Bookings', 'Canceled', 'Revenue']].concat(
+        (months || []).map(m => [m, byMonth[m].bookings, byMonth[m].canceled,
+                                 AQ_MONEY(byMonth[m].revenue)]));
+    }
+
+    function aqCsvMix(mix) {
+      return [['Channel', 'Bookings', 'Revenue']].concat(
+        (mix || []).map(x => [x.label, x.n, AQ_MONEY(x.revenue)]));
+    }
+
+    function aqCsvPartySize(partyData) {
+      return [['Party size', 'Bookings']].concat(
+        (partyData || []).map(x => [x.label, x.v]));
+    }
+
+    // ONE REGISTRY, read by the workbook. Each entry is a sheet name plus the
+    // rows for it, built by the same function the matching panel link calls —
+    // so adding a panel is one entry here and one link there, and the two can
+    // never describe the table differently.
+    //
+    // Lane hours are NOT here, and that is not an oversight: they come from card
+    // 17294, which this page only fetches inside the lane-hours panel (the hub
+    // feed carries no wall-clock times). Their download lives on that panel,
+    // where the data is. A sheet here would have to re-fetch and re-reduce,
+    // which is the second implementation this whole design avoids.
+    function aqSheetTables(scoped) {
+      const lc2 = v => String(v || '').toLowerCase();
+      const isCan = r => lc2(r['Status']) === 'canceled';
+      const money = r => isCan(r) ? 0 : (Number(r['Total']) || 0);
+      const head = r => Number(r['Head Cnt']) || 0;
+      const isInst = r => lc2(r['Booking Type']) === 'instant';
+
+      const bySite = {}, byMonth = {}, hm = {};
+      scoped.forEach(r => {
+        const k = (r['Facility'] || '\u2014') + '||' + (r['Location'] || '');
+        if (!bySite[k]) bySite[k] = { facility: r['Facility'] || '\u2014', location: r['Location'] || '',
+                                      bookings: 0, canceled: 0, revenue: 0, guests: 0 };
+        bySite[k].bookings++; bySite[k].revenue += money(r); bySite[k].guests += head(r);
+        if (isCan(r)) bySite[k].canceled++;
+        const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(r['Date'] || ''));
+        if (!m) return;
+        const ym = m[1] + '-' + m[2];
+        if (!byMonth[ym]) byMonth[ym] = { bookings: 0, revenue: 0, canceled: 0 };
+        byMonth[ym].bookings++; byMonth[ym].revenue += money(r); if (isCan(r)) byMonth[ym].canceled++;
+        if (!hm[ym]) hm[ym] = Array.from({ length: 7 }, () => ({ n: 0, rev: 0 }));
+        const dow = new Date(+m[1], +m[2] - 1, +m[3]).getDay();
+        hm[ym][dow].n++; hm[ym][dow].rev += money(r);
+      });
+      const months = Object.keys(byMonth).sort();
+      const sites = Object.values(bySite).sort((a, b) => b.revenue - a.revenue);
+      const inst = scoped.filter(isInst);
+      const mix = [
+        { label: 'Instant-book', n: inst.length, revenue: inst.reduce((a, r) => a + money(r), 0) },
+        { label: 'Staff-booked', n: scoped.length - inst.length,
+          revenue: scoped.reduce((a, r) => a + money(r), 0) - inst.reduce((a, r) => a + money(r), 0) },
+      ];
+      return [
+        { sheet: 'By site',            rows: aqCsvBySite(sites) },
+        { sheet: 'By month',           rows: aqCsvByMonth(months, byMonth) },
+        { sheet: 'Weekday by month',   rows: aqCsvWeekdayMonth(months, hm) },
+        { sheet: 'Booking mix',        rows: aqCsvMix(mix) },
+      ];
+    }
+
+    // One download control, so every panel offers it the same way and a new
+    // panel is one line. ABSENT rather than disabled when there is nothing to
+    // download — a control that yields an empty file is the dead end this repo
+    // keeps writing down.
+    function PanelCsv({ rows, name }) {
+      if (!rows || rows.length < 2) return null;
+      const go = ev => {
+        ev.preventDefault();
+        // Handed to a popup to save, like every other export here: a download
+        // started from a sandboxed iframe is silently dropped. See open-pdf.js.
+        window.saveTextViaPopup(window.csvFromRows(rows),
+          CFG.slug + '-' + name + '.csv', { bom: true });
+        // Standing rule: every new user-facing surface pings the activity feed.
+        // ?event= in the QUERY STRING — a JSON body comes back 400 and a
+        // fire-and-forget beacon never complains, which has bitten this repo
+        // four times. `facilities` needs its own log route (it is not in
+        // REPORT_TYPES) and that route already exists.
+        const tok = CFG.token ? '&token=' + encodeURIComponent(CFG.token) : '';
+        fetch('/' + CFG.slug + '/facilities/api/log?event=panel-csv&panel='
+              + encodeURIComponent(name) + '&n=' + (rows.length - 1) + tok,
+              { method: 'POST', keepalive: true }).catch(() => {});
+      };
+      return e('a', { href: '#', className: 'panel-csv', onClick: go,
+                      'data-panel-csv': name, title: 'Download this table as CSV' },
+        '\u2193 CSV');
     }
 
     function vertRowMatch(r, key) {
@@ -2549,7 +2708,8 @@
         ),
         // Monthly trend (seasonality)
         months.length > 1 ? e('div', { className: 'vtrend-wrap' },
-          e('div', { className: 'sum-bar-label' }, 'Bookings & revenue by month'),
+          e('div', { className: 'sum-bar-label' }, 'Bookings & revenue by month',
+            e(PanelCsv, { rows: aqCsvByMonth(months, byMonth), name: 'bookings-by-month' })),
           e('div', { className: 'vtrend' },
             months.map((m, i) => e('div', { className: 'vtrend-row', key: i },
               e('div', { className: 'vtrend-mo' }, monthLabel(m)),
@@ -2732,7 +2892,8 @@
         e('div', { className: 'aqua-sec' },
           e('h3', null, 'Lane hours', e('span', { className: 'sub' },
             timed.length.toLocaleString() + ' timed booking' + (timed.length === 1 ? '' : 's')
-            + ' across ' + lanes.length.toLocaleString() + ' lane' + (lanes.length === 1 ? '' : 's'))),
+            + ' across ' + lanes.length.toLocaleString() + ' lane' + (lanes.length === 1 ? '' : 's')),
+            e(PanelCsv, { rows: aqCsvLaneHours(lanes), name: 'lane-hours-by-lane' })),
           e('div', { className: 'sum-cards', 'data-aq-hours': String(Math.round(totalHours)) },
             e('div', { className: 'sum-card' },
               e('div', { className: 'sc-label' }, 'Hours booked'),
@@ -2752,7 +2913,8 @@
               ' carr' + (multiDay === 1 ? 'ies' : 'y') + ' no per-day hours and ' + (multiDay === 1 ? 'is' : 'are') + ' excluded from every hour figure above.') : null)),
 
         e('div', { className: 'aqua-sec' },
-          e('h3', null, 'When the water is spoken for', e('span', { className: 'sub' }, 'bookings covering each hour')),
+          e('h3', null, 'When the water is spoken for', e('span', { className: 'sub' }, 'bookings covering each hour'),
+            e(PanelCsv, { rows: aqCsvDayPart(hg), name: 'lane-hours-by-day-part' })),
           e('div', { className: 'aqua-panel' },
             e('div', { className: 'oe-heat-wrap' },
               e('div', { className: 'oe-heat', 'data-aq-heat': 'true',
@@ -3215,7 +3377,8 @@
 
         // Heatmap — when the pools get booked
         e('div', { className: 'aqua-sec' },
-          e('h3', null, 'When the pools get booked', e('span', { className: 'sub' }, 'bookings by weekday & month — deeper = busier')),
+          e('h3', null, 'When the pools get booked', e('span', { className: 'sub' }, 'bookings by weekday & month — deeper = busier'),
+            e(PanelCsv, { rows: aqCsvWeekdayMonth(months, hm), name: 'bookings-by-weekday-and-month' })),
           e('div', { className: 'aqua-panel' },
             e('div', { className: 'aqua-hm', style: { gridTemplateColumns: '68px repeat(7, minmax(0,1fr))' } },
               e('div', { className: 'hm-mo' }, ''),
@@ -3240,7 +3403,9 @@
         e('div', { className: 'aqua-sec' },
           e('div', { className: 'aqua-grid' },
             e('div', { className: 'aqua-panel' },
-              e('h4', null, 'Revenue by site', e('span', { className: 'n' }, 'top ' + topSites.length)),
+              e('h4', null, 'Revenue by site', e('span', { className: 'n' }, 'top ' + topSites.length),
+                e(PanelCsv, { rows: aqCsvBySite(Object.values(bySite).sort((a, b) => b.revenue - a.revenue)),
+                              name: 'revenue-by-site' })),
               // THE LABEL IS THE SITE'S OWN NAME, and only a leading copy of its
               // OWN LOCATION is trimmed. This used to be
               // `facility.split(' - ').slice(1)` — everything before the FIRST
@@ -3253,7 +3418,8 @@
               e(HBars, { data: topSites.map(s => ({ label: siteLabel(s.facility, s.location), title: s.facility,
                 v: s.revenue, valText: money(s.revenue), sub: s.bookings + ' bkgs' })) })),
             e('div', { className: 'aqua-panel' },
-              e('h4', null, 'Party size', e('span', { className: 'n' }, withParty.length.toLocaleString() + ' of ' + bookings.toLocaleString() + ' with a head count')),
+              e('h4', null, 'Party size', e('span', { className: 'n' }, withParty.length.toLocaleString() + ' of ' + bookings.toLocaleString() + ' with a head count'),
+                e(PanelCsv, { rows: aqCsvPartySize(partyData), name: 'party-size' })),
               withParty.length
                 ? e(HBars, { data: partyData })
                 : e('div', { style: { fontSize: 12, color: '#9ca3af', padding: '8px 0' } }, 'No head-count data on these bookings.')))),
@@ -3262,7 +3428,11 @@
         e('div', { className: 'aqua-sec' },
           e('div', { className: useKeys.length ? 'aqua-grid' : '' },
             e('div', { className: 'aqua-panel' },
-              e('h4', null, 'Booking mix'),
+              e('h4', null, 'Booking mix',
+                e(PanelCsv, { rows: aqCsvMix([
+                  { label: 'Instant-book', n: instant, revenue: instRev },
+                  { label: 'Staff-booked', n: managed, revenue: mgdRev },
+                ]), name: 'booking-mix' })),
               e('div', { style: { fontSize: 10, color: '#888', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '.5px', margin: '2px 0 5px' } }, 'Channel'),
               e(SplitBar, { parts: [
                 { label: 'Instant-book', short: 'Instant', n: instant, color: '#0891b2' },
@@ -6416,6 +6586,18 @@
         ws['!cols'] = cols.map(c => ({ wch: Math.min(32, Math.max(10, String(c).length + 4)) }));
         const wb = XLSX.utils.book_new();
         XLSX.utils.book_append_sheet(wb, ws, scopeLabel.slice(0, 31));
+
+        // ── the tables behind the charts, one sheet each ──────────────────
+        // This workbook used to be a single sheet of raw bookings, so the
+        // numbers on every chart had to be re-derived by hand from it. The
+        // sheets come from the SAME builders the per-panel download links use,
+        // so a sheet and the panel it came from cannot disagree.
+        aqSheetTables(scoped).forEach(t => {
+          if (!t.rows || t.rows.length < 2) return;      // nothing to say, no sheet
+          const sh = XLSX.utils.aoa_to_sheet(t.rows);
+          sh['!cols'] = t.rows[0].map(h => ({ wch: Math.min(34, Math.max(11, String(h).length + 3)) }));
+          XLSX.utils.book_append_sheet(wb, sh, t.sheet.slice(0, 31));
+        });
         const tabSuffix = (tab !== 'summary' && tab !== 'utilization') ? '-' + tab : '';
         // Handed to a popup to save rather than written straight from here — a
         // download started by a sandboxed iframe is silently dropped. See open-pdf.js.

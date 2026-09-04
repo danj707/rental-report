@@ -73,6 +73,8 @@ jobs:
 
       - name: Report-activity spec (only alert on reports someone actually uses)
         run: node scripts/report-activity.spec.js
+      - name: Feedback metrics on Platform Usage (six rating surfaces, three field names)
+        run: node scripts/feedback-metrics.spec.js
 
       - name: Dead-link alert spec (a tokened 404 is a broken link, a bare one is a bot)
         run: node scripts/deadlink-alert.spec.js
@@ -145,6 +147,9 @@ jobs:
       - name: Aquatics scope (pools by default; extra site types are configured, never guessed)
         run: node scripts/aquatics-scope.spec.js
 
+      - name: Chart data is downloadable (panel CSV + workbook sheets)
+        run: node scripts/panel-csv.spec.js
+
       - name: Programs location filter (one funnel; a stale ?loc= cannot empty the report)
         run: node scripts/programs-location.spec.js
 
@@ -156,6 +161,25 @@ jobs:
 
       - name: Programs instructor filter + by-month panel (one picker, three dimensions, no date parsing)
         run: node scripts/programs-instructor.spec.js
+      - name: Programs summary — the revenue labels and Total Refunds
+        run: node scripts/programs-revenue-labels.spec.js
+
+      # Laurel at Shrewsbury: cancelled sections on the report, and a season
+      # picker that only existed once a 31-second load had finished. Plus the
+      # bugs found the same afternoon — the Top Programs bars scaled to the
+      # first row rather than the largest, three noisy bands above the numbers
+      # people come for, and every report's toolbar pinned UNDERNEATH the
+      # early-access banner.
+      - name: Programs summary — cancellations, seasons before the rows, pills, sticky toolbar
+        run: node scripts/programs-summary.spec.js
+
+      # Card 17295's only date filter was the [[ ]] pair at the very bottom, so
+      # every CTE above it ran over the org's whole history and was then thrown
+      # away. Watertown, Sep 2026: item_tx 14.0s over 9,194 order items, 0.08s
+      # over 890 once scoped. v9 lifts that same predicate to the top and leaves
+      # the bottom clauses in place as the authority.
+      - name: Card 17295 v9 — the window is applied before the work, not after
+        run: node scripts/programs-card-window.spec.js
 
       # Card 19273 inferred a claim from a timestamp that really marked the
       # EXPIRY SWEEP — of 5,371 grants it called claimed, 5,371 were already
