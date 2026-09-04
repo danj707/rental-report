@@ -191,20 +191,97 @@ first time the route's wording changed.
   is a string inside an HTML file. The spec walks back from every
   `throw await` to its owning arrow.
 
+### CARD 17301 v6 — PUSHED AND SIGNED OFF (2026-09-04)
+
+Dan: *"i'm here to flip the mb report, it can't take 2 min to run that
+memberships query, that's crazy"*. He is right, and the measurement says exactly
+where it went:
+
+| | |
+|---|---|
+| everything in the card EXCEPT the two payment CTEs, over the 13-month window | **559 ms / 100 rows** |
+| ONE scan of `item_log_report` for Pawnee | **39.9 s** (1,774 rows out of 2.26M) |
+| ...and the card did **two**, unwindowed | |
+
+So **99.3% of the report was the org's entire payment history, computed to
+decorate 100 rows.**
+
+v6 lifts the card's own output filter into a `win` CTE and uses it to scope ONE
+`MATERIALIZED` pass feeding both aggregates. **The bottom `[[ ]]` clauses stay as
+the authority** — deleting either is how two predicates drift apart silently
+(the `sec_win` lesson from 17295). `MATERIALIZED` is load-bearing rather than a
+hint: without it Postgres inlines the CTE and scans once per reader again.
+
+**PROVEN VALUE-IDENTICAL TWICE, and the second proof was necessary.** The first
+used two separately-scoped CTEs: 0 presence diffs, 0 value diffs, 0 fallback
+diffs. But the shipped shape is ONE pass whose `WHERE` is the **OR** of what both
+aggregates consume, which that proof did not cover — so it was re-run against the
+real shape: **0 money diffs, identical dollar totals ($7,245 either way)**, while
+reading 99 rows where the deployed card aggregated 1,625 groups.
+
+**THE RESULT, cache-independently through the public endpoint after the flip:**
+
+| org | before | after |
+|---|---|---|
+| pawnee, 2025-09-04 → 2026-09-30 (Dan's) | **TIMEOUT past 300s** | **100 rows in 7.9s** |
+| norman (heaviest, 20,439 rows) | — | **25.8s** |
+| clarksville | — | passes |
+
+**Do NOT read a timing taken from the sandbox mid-investigation.** A combined
+candidate-vs-deployed probe came back in 3.2s while a bare scan of the same table
+minutes earlier took 39.9s — the read replica's buffers were warm from repeated
+probing. The 7.9s and 25.8s above are the honest figures because they are the
+prescribed sign-off: the public endpoint, the app's own parameter shape, after
+the tag flip.
+
+**The push→flip dance behaved exactly as this file predicts.** Both date tags
+came back **Text** and the card registered **SIX** parameters (three real +
+three `string/=` duplicates), so `verify-report-live` returned
+`An error occurred. (HTTP 400)` in 0.1s and the Memberships report was down for
+every org until Dan flipped. The remedy is the documented one: open the card, set
+both to Date, and **re-save until the list is three** — flip link
+https://rec.metabaseapp.com/question/17301
+
+**A manifest row was added for the case that actually broke.** The two existing
+memberships rows pass no dates, so they run the default 7-day window and
+**structurally cannot catch this class of regression** — a one-month window with
+ZERO output rows still cost 55s on v5. The new `pawnee, THIRTEEN MONTHS` row
+carries `start`/`end` explicitly, because a long window is the only shape that
+discriminates.
+
+**THE FLOOR IS STILL ONE SCAN.** Nothing in SQL avoids reading a 1230 MB
+single-index table once. Only an index on `materialized.item_log_report` does —
+the platform ask already pinned in this file, now with a fourth card behind it.
+
 ### NOT DONE, and why
 
-**Card 17301 is not pushed.** Collapsing the two scans into one pass
-(`WITH org_ilr AS MATERIALIZED (...)` feeding both aggregates) should roughly
-halve the dominant cost with identical values — same predicates, same
-aggregates, one read — but **it is unmeasured**, because no tool here can time a
-query past 60s. The clean way to measure it is a **scratch card** carrying the
-candidate SQL, compared to 17301 through the public endpoint: no risk, no
-downtime, and it needs a public link before it can be read.
+**A base-table rewrite of the payment CTEs.** `order_item_transaction` carries
+`(organization_id, confirmed_at)` and reproduces the item log **exactly** for
+`tx_oi` — measured over Pawnee's whole history: 1,625 order items both sides, 0
+only-in-base, 0 only-in-item-log, 0 value diffs, and totals identical to the cent
+($65,301.98 paid / $10,278.50 refunded). That path is indexed and would take this
+from seconds to milliseconds.
 
-And a push would take the Memberships report **down for every org** until a
-human re-types the Start/End Date tags — the six-parameter trap recorded above.
-**This project is parked (see the push-to-main section), so this landed on a
-branch as a PR and nothing was merged.**
+**It is not done because the FALLBACK cannot be reproduced without discovery.**
+`tx_cust` keys on `order_item_type = 'product'`, and `order_item` has no `type`
+column — the obvious guess errors out. Every unknown there is a place a wrong
+guess is silent, which is exactly what the `materialized`-schema decision below
+warns about. Worth finishing, on its own, with its own equivalence gate; not
+worth rushing inside a flip window.
+
+**Card 17301 was not pushed at first, and what changed is worth keeping.** The
+first pass through this deliberately held it: the collapse looked right but was
+**unmeasured** (no tool here can time a query past 60s), and a push takes the
+report down for every org until a human re-types the date tags. So it landed on
+a branch and nothing was merged.
+
+**Two things then unblocked it, and neither was a change of mind about the
+risk.** First, the equivalence could be measured *without* a scratch card after
+all: because the scoped set is a SUBSET of the unscoped one, a single query can
+compute both and diff them, which sidesteps the 60s ceiling entirely — the trick
+worth remembering for the next card of this shape. Second, Dan said *"i'm here
+to flip the mb report"*, which is the one condition the push was waiting on: the
+downtime is only unacceptable when nobody is at a keyboard to end it.
 
 ### Guards
 
