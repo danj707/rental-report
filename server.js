@@ -3943,7 +3943,7 @@ const SLACK_EVENT_META = {
   view:    { emoji: "👀", verb: "viewed" },
   // Pavilions, shelters, picnic areas and bounce houses — a new tab on the
   // Facilities hub, so its own event rather than a bare `view` of `facilities`.
-  outdoor: { emoji: "🎪", verb: "opened Outdoor Event Spaces on the facilities report" },
+  outdoor: { emoji: "🎪", verb: "opened Outdoor Facilities on the facilities report" },
   // Ball fields, soccer pitches and multipurpose turf — leagues and tournaments,
   // a different question from the pavilion rentals `outdoor` covers.
   fields:  { emoji: "⚾", verb: "opened Fields on the facilities report" },
@@ -4299,7 +4299,7 @@ function notifySlack(rec) {
     // rental schedule rather than the hub tab someone actually opened.
     const n = rec.bookings;
     const on = n == null ? "" : ` — ${n.toLocaleString()} pavilion/shelter booking${n === 1 ? "" : "s"} in range`;
-    text = `${meta.emoji} ${orgName} (\`${rec.org}\`) opened *Outdoor Event Spaces* on the facilities report${on}`;
+    text = `${meta.emoji} ${orgName} (\`${rec.org}\`) opened *Outdoor Facilities* on the facilities report${on}`;
   } else if (rec.event === "generate") {
     // The prompt IS the event. A bare "built a custom report" says nothing about
     // whether the wizard is being used for real work, and the questions orgs

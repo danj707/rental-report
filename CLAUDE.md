@@ -29,6 +29,115 @@
   context beats being literal.
 - **Readability over cleverness**, in code and in writing. Human-sounding.
 
+## The Facilities hub loses a tab and a signpost (2026-09-04)
+
+Three asks in one pass, all Dan's, all on `public/facilities.html`.
+
+### Court Utilization is RETIRED AS A TAB — and it really was duplicative
+
+Dan: *"lets remove the 'court utilization' tab off the Facilities report, it's
+duplicitive now that we have the racket sports tab."*
+
+He is right about the org he was looking at, and the reason is worth keeping
+because it is not obvious from the code. `RacketSportsView` wraps the SAME
+`CourtUtilizationView`, filtered by `isRacketCourt` — and when NO court in the
+feed carries a sport in its name it falls back to `() => true`, i.e. every
+court. Measured over live court-type sites:
+
+| shape | orgs | courts | non-racket courts |
+|---|---|---|---|
+| **no racket names** — racket tab already = every court | 28 | 276 | 276 |
+| mixed | 51 | 1,564 | **721** |
+| all racket-named | 22 | 140 | 0 |
+
+**San Francisco is in the first row: 0 of its 114 courts are racket-named**, so
+the two tabs rendered identically there. That is what "duplicitive" was
+describing.
+
+**THE COST FALLS ON THE 51 MIXED ORGS, and it is real: 721 basketball,
+volleyball and multi-use courts now have no utilization view on the hub**, since
+their racket tab genuinely filters. Flagged to Dan rather than worked around —
+the one-line follow-up, if he wants it, is to drop the keyword filter so the
+tab is every court under a racket name.
+
+**The VIEW and card 17297 are NOT retired with the tab.** Racket Sports reads
+them, and the card is load-bearing — `facilities.html` pulls it ~174x/30d across
+13 orgs while the standalone `/:org/court-utilization` page is barely opened. So
+is the stored-coordinates court map, which lives inside that view.
+
+**AND A `?tab=utilization` LINK MUST STILL LAND SOMEWHERE.** With the key gone
+the render switch falls through to Summary's *body* while `tab` still says
+`utilization`, so **no tab carries `.active`** — a page that looks half-broken
+and says nothing. `facEffectiveTab(want)` resolves an unrecognised tab to the
+one the page opens on, at module scope for the `nightStateFrom` reason (a regex
+over a resolver passes on an inverted comparison). Same shape as
+`progEffectiveTab` / `ftEffectiveTab` / `mbEffectiveTab`.
+
+**Every tab now carries `data-fac-tab`**, because *"a tab strip rendered"*
+passes just as happily on the version that still has the tab: the render cases
+key on the retired tab being **ABSENT from the DOM** and on **Summary being the
+lit tab** under the stale link.
+
+**The chip-coverage rule became checkable here for the first time.** Court
+Utilization deliberately had no dashboard chip, so the Facilities card's chips
+could not be compared to the hub's tabs the way the Memberships ones are. They
+can now, and the assertion is set-wise: `chips == TABS − summary`. That is what
+fails the next time a tab is added and the card is forgotten — the bug the
+Memberships chips shipped with for two days.
+
+### Outdoor Events → Outdoor Facilities
+
+Dan: *"And change outdoor events to outdoor facilities"*. The tab label, the
+vertical's own label, the banner, the panel title, the loading line, the
+cross-reference from the rental schedule, the dashboard chip, and the Slack
+message.
+
+- **The EVENT NAME `outdoor` stays.** Renaming it would redefine every row
+  already in `events.jsonl` — the same reasoning that keeps `campmap-book`'s
+  `kind` describing the route rather than the button.
+- **`outdoor-event-space` stays spelled Rec's way** in the site-type filter and
+  in `REC_SITE_TYPES`: that control names Rec's own vocabulary, not our tab.
+- The spec fails if the tab and its chip disagree, because **half a rename is
+  worse than none** — a chip reading one thing and opening another.
+
+### The Private Instructor Lessons panel is gone
+
+Dan: *"remove this section from the racket sports tab (might only be on SF, but
+we just want to remove this section so the instructors report can't be found)."*
+
+**It rendered for EVERY org, and for all but one it was a dead link.**
+`LESSONS_REPORT_ORGS` is `{san-francisco-rec-park}`, so `/:org/lessons` 404s
+everywhere else — the panel advertised a report 28 orgs could not open.
+
+Removed with its CSS (`.tennis-pending` had no other user; a rule with nothing
+to style is what sends the next person looking for the panel it belonged to).
+**The Lessons report itself is untouched** — this closes the way in from the
+Racket tab and nothing else. Worth knowing: **SF still has a Lessons card on
+its org dashboard** (`/api/org-landing` pushes it when the report is enabled),
+so the report is still reachable there; hiding that card is a separate call.
+
+### Guards
+
+`report-tabs.spec.js` 124 → **159 assertions**, lifting and RUNNING
+`facEffectiveTab` over the real tab strip. Mutation-tested six ways, all failing
+by name: the tab put back in `TABS`, the resolver defined but not called by the
+tab state (the lift cannot see that — the function is there either way), the
+resolver no longer validating against `TABS`, `data-fac-tab` dropped, the chip
+renamed while the tab was not, and a dead `tab === 'utilization'` branch left
+behind.
+
+Plus two `ci-check-render.js` cases, both verified to fail in a browser on the
+real regression: `facilities · no Court Utilization tab` (absence, not a
+greyed tab) and `facilities · a stale utilization link lands on Summary` (which
+tab is LIT, which is the only thing that separates the fix from the fall-through).
+
+**A sandbox trap, hit for the SECOND time and by my own hand:** sweeping
+`/proc/*/cmdline` for `rental-report/server.js` kills this session's harness,
+because the sweep's own command line contains that string — every later command
+then exits 144 with no output, which reads exactly like the render check
+crashing. The needle has to be assembled at runtime (or the current pid
+excluded) so the pattern never appears literally in the command.
+
 ## overview and annual-report — RETIRED (Dan, 2026-08-28)
 
 *"do 4, nuke that."* Usage over the whole life of `events.jsonl`: **`overview` 8

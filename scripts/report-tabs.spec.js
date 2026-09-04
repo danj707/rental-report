@@ -47,6 +47,7 @@ const USERS = fs.readFileSync(path.join(ROOT, "public", "users.html"), "utf8");
 const FT = fs.readFileSync(path.join(ROOT, "public", "fasttrack.html"), "utf8");
 const MEM = fs.readFileSync(path.join(ROOT, "public", "memberships.html"), "utf8");
 const ORG = fs.readFileSync(path.join(ROOT, "public", "org.html"), "utf8");
+const FACILITIES = fs.readFileSync(path.join(ROOT, "public", "facilities.html"), "utf8");
 
 let n = 0;
 const SKIP_SOURCE = process.env.SKIP_SOURCE === "1";
@@ -69,6 +70,8 @@ const F = lift(FT, ["FT_URL_TABS", "ftEffectiveTab"],
   /const FT_URL_TABS = \[[\s\S]*?\nfunction ftEffectiveTab\([\s\S]*?\n\}/);
 const M = lift(MEM, ["MB_URL_TABS", "mbEffectiveTab"],
   /var MB_URL_TABS = \[[\s\S]*?\nfunction mbEffectiveTab\([\s\S]*?\n\}/);
+const FAC = lift(FACILITIES, ["TABS", "facEffectiveTab"],
+  /const TABS = \[[\s\S]*?\n    function facEffectiveTab\([\s\S]*?\n    \}/);
 
 const ALL_ON = { participantsTab: true, retentionTab: true };
 
@@ -132,6 +135,52 @@ is(M.mbEffectiveTab("nonsense"), "memberships", "an unknown tab falls back rathe
 is(M.mbEffectiveTab(""), "memberships", "so does an empty one");
 is(M.mbEffectiveTab(null), "memberships", "and a missing one");
 
+// ── 3d. Facilities: Court Utilization is RETIRED as a tab (Dan, 2026-09-04) ──
+// "lets remove the 'court utilization' tab off the Facilities report, it's
+// duplicitive now that we have the racket sports tab." It is, for the orgs he
+// looks at: Racket Sports wraps the same CourtUtilizationView, and where no
+// court name carries a sport it falls back to every court — 0 of San
+// Francisco's 114 courts are racket-named, so the two tabs were identical.
+const FAC_KEYS = FAC.TABS.map((t) => t.key);
+ok(!FAC_KEYS.includes("utilization"),
+   "the Court Utilization tab is gone from the strip");
+for (const k of FAC_KEYS) {
+  is(FAC.facEffectiveTab(k), k, `facilities honours ?tab=${k}`);
+}
+is(FAC.facEffectiveTab("utilization"), "summary",
+   "A ?tab=utilization LINK STILL LANDS SOMEWHERE. Those links are in emails and bookmarks; "
+   + "with the key gone the render switch falls through to Summary's body while `tab` still "
+   + "says 'utilization', so NO tab carries .active and nothing on screen says why");
+is(FAC.facEffectiveTab("nonsense"), "summary", "an unknown tab falls back rather than lighting none");
+is(FAC.facEffectiveTab(""), "summary", "so does an empty one");
+is(FAC.facEffectiveTab(null), "summary", "and a missing one");
+is(FAC.facEffectiveTab(undefined), "summary", "and an absent parameter, which is the common case");
+
+// THE VIEW AND ITS CARD ARE NOT RETIRED WITH THE TAB. Racket Sports renders the
+// same component, and card 17297 is load-bearing — facilities.html pulls it
+// ~174x/30d across 13 orgs while the standalone page is barely opened.
+// A RESOLVER THAT EXISTS AND IS NOT CALLED resolves nothing, and the lift above
+// cannot tell the difference — the function is still there either way.
+src(/React\.useState\(\(\) => facEffectiveTab\(PQS\.get\('tab'\)\)\)/.test(FACILITIES),
+   "…and the tab state READS the URL through it, or a stale ?tab= goes straight into state");
+// Each tab carries its own handle, so a render case can assert which tab is lit
+// and that the retired one is absent. "a tab strip rendered" passes either way.
+src(/'data-fac-tab': t\.key,/.test(FACILITIES),
+   "every tab carries data-fac-tab, which is what the render cases key on");
+
+src(/function CourtUtilizationView\(/.test(FACILITIES),
+   "CourtUtilizationView survives the tab — Racket Sports wraps it");
+src(/e\(CourtUtilizationView, \{ start, end, courtFilter:/.test(FACILITIES),
+   "…and Racket Sports is the caller that keeps it, and card 17297, alive");
+src(!/tab === 'utilization'/.test(FACILITIES),
+   "no branch keyed on the retired tab is left behind — dead code that reads as though the tab "
+   + "still exists is how the next person re-adds it");
+
+// Half a rename is worse than none: the tab and the dashboard chip that opens it
+// must not disagree about what the thing is called.
+src(!/label: 'Outdoor Events'/.test(FACILITIES) && !/label: 'Outdoor Events'/.test(ORG),
+   "Outdoor Events is called Outdoor Facilities on both the tab and its chip (Dan, 2026-09-04)");
+
 // ── 4. THE CHIPS CANNOT NAME A TAB THE PAGE WILL NOT HONOUR ─────────────────
 // This is the invariant that keeps a chip from being a dead end, and it is the
 // one a config-only change would break silently.
@@ -184,6 +233,17 @@ for (const t of CARD_TABS.memberships) {
 is(CARD_TABS.memberships.map((t) => t.tab).sort(),
    M.MB_URL_TABS.filter((t) => t !== "memberships").sort(),
    "the Memberships card chips cover every tab the page has except the one it lands on");
+// The Facilities card is the same rule, and it only became checkable when Court
+// Utilization was retired: that tab deliberately had no chip, so the set could
+// not be compared. Now every tab the hub has is reachable from the dashboard.
+for (const t of CARD_TABS.facilities) {
+  is(FAC.facEffectiveTab(t.tab), t.tab,
+     `the Facilities chip "${t.label}" resolves to its own tab`);
+  ok(t.tab !== "summary", "…and Summary gets no chip: the card already lands there");
+}
+is(CARD_TABS.facilities.map((t) => t.tab).sort(),
+   FAC_KEYS.filter((t) => t !== "summary").sort(),
+   "the Facilities card chips cover every tab the hub has except the one it lands on");
 // The chip icons must match the page's own tab strip, or a reader picks 💰 on
 // the dashboard and lands on a tab labelled with something else.
 {

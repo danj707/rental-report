@@ -447,10 +447,6 @@
 
     /* ── Tennis tab ── */
     .tennis-wrap { margin-top: 4px; }
-    .tennis-pending { border: 1px dashed #86efac; background: #f0fdf4; border-radius: 10px; padding: 14px 18px; margin: 20px 0 6px; }
-    .tennis-pending .tp-head { display: flex; align-items: center; gap: 10px; font-size: 14px; font-weight: 700; color: #14532d; margin-bottom: 5px; }
-    .tennis-pending .tp-badge { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; background: #16a34a; color: #fff; border-radius: 10px; padding: 2px 9px; }
-    .tennis-pending .tp-body { font-size: 12.5px; color: #3f6212; line-height: 1.5; }
     /* ── Pool / Aquatics visual view ── */
     .fac-banner.aqua { border-color:#7dd3fc; box-shadow:0 3px 14px rgba(3,105,161,.18); }
     .aqua-sec { margin:20px 0; }
@@ -566,15 +562,36 @@
 
     const TABS = [
       { key: 'summary',     label: 'Summary' },
-      { key: 'utilization', label: 'Court Utilization' },
       { key: 'camping',     label: 'Camping',        icon: '🏕️' },
-      { key: 'outdoor',     label: 'Outdoor Events', icon: '🎪' },
+      { key: 'outdoor',     label: 'Outdoor Facilities', icon: '🎪' },
       { key: 'fields',      label: 'Fields',         icon: '⚾' },
       { key: 'golf',        label: 'Golf',           icon: '⛳' },
       { key: 'aquatics',    label: 'Pool / Aquatics', icon: '🏊' },
       { key: 'ice',         label: 'Ice',            icon: '⛸️' },
       { key: 'racket',      label: 'Racket Sports',   icon: '🎾' },
     ];
+
+    // COURT UTILIZATION IS RETIRED AS A TAB (Dan, 2026-09-04): "it's
+    // duplicitive now that we have the racket sports tab." Racket Sports wraps
+    // the same CourtUtilizationView, and for the 28 orgs whose court names
+    // carry no sport at all it falls back to EVERY court — San Francisco is
+    // one of those (measured: 0 of its 114 courts are racket-named), so the
+    // two tabs rendered identically there, which is what he was looking at.
+    //
+    // The VIEW and card 17297 stay. Racket Sports reads them, and so does the
+    // standalone /:org/court-utilization report — the card is load-bearing
+    // even though that page is barely opened.
+    //
+    // AND A ?tab=utilization LINK MUST NOT LAND ON A DEAD PAGE. Those links
+    // are in emails and bookmarks; with the key gone the render switch fell
+    // through to Summary while `tab` still said 'utilization', so no tab lit
+    // and nothing said why. An unrecognised tab resolves to the one the page
+    // opens on. At module scope so the spec can RUN it — a regex over a
+    // resolver passes on an inverted comparison.
+    function facEffectiveTab(want) {
+      const t = String(want == null ? '' : want);
+      return TABS.some(x => x.key === t) ? t : 'summary';
+    }
 
     // Rec's real site types (court.type), grouped into the display verticals.
     // These are the filter options — they match what Rec has, per spec.
@@ -795,7 +812,7 @@
       // gathering space. `field` is deliberately OUT: fields are a big enough
       // segment (and a different question — leagues, not parties) to deserve
       // their own tab, and folding them in here would swamp every average.
-      outdoor:  { label: 'Outdoor Event Spaces', icon: '🎪', types: OUTDOOR_TYPES },
+      outdoor:  { label: 'Outdoor Facilities', icon: '🎪', types: OUTDOOR_TYPES },
       // Ball fields, pitches and multipurpose turf. Kept out of Outdoor Event
       // Spaces on purpose (Dan): leagues and tournaments, not parties.
       fields:   { label: 'Fields',           icon: '⚾',  types: ['field'] },
@@ -1303,7 +1320,7 @@
       golf:        { cls: 'fbx-facilities', scene: 'facilities', title: '⛳ Golf',              sub: 'Tee sheets, rounds & revenue.', game: 'golf' },
       camping:     { cls: 'fbx-camp',       scene: 'camp',       title: '🏕️ Camping',          sub: 'Campsite reservations & occupancy.' },
       aquatics:    { cls: 'fbx-pool',       scene: 'pool',       title: '🏊 Pool / Aquatics',   sub: 'Lap swim, lessons & open-swim.' },
-      outdoor:     { cls: 'fbx-pavilion',   scene: 'pavilion',   title: '🎪 Outdoor Event Spaces', sub: 'Pavilions, shelters, picnic areas & bounce houses.' },
+      outdoor:     { cls: 'fbx-pavilion',   scene: 'pavilion',   title: '🎪 Outdoor Facilities', sub: 'Pavilions, shelters, picnic areas & bounce houses.' },
       fields:      { cls: 'fbx-ballfield',  scene: 'ballfield',  title: '⚾ Fields',            sub: 'Diamonds, pitches & multipurpose turf.' },
       ice:         { cls: 'fbx-ice',        scene: 'ice',        title: '⛸️ Ice',               sub: 'Rink schedule & public skate.', game: 'hockey' },
       racket:      { cls: 'fbx-racket',     scene: 'racket',     title: '🎾 Racket Sports',     sub: 'Tennis, pickleball & padel demand.', game: 'pong' },
@@ -4405,7 +4422,7 @@
         e(BannerGame, { game: 'bounce', key: 'game-bounce' }),
         e('div', { className: 'fcb-overlay' },
           e('div', { className: 'fcb-kicker' }, CFG.displayName || 'Parks & Recreation'),
-          e('div', { className: 'fcb-title' }, '🎪 Outdoor Event Spaces'),
+          e('div', { className: 'fcb-title' }, '🎪 Outdoor Facilities'),
           e('div', { className: 'fcb-sub' }, 'Pavilions, shelters, picnic areas & bounce houses — who books them, when, and for how long.'),
           e('div', { className: 'fcb-pills' }, pills.map((p, i) => e('span', { className: 'fcb-pill', key: i }, e('b', null, p[1]), ' ' + p[0]))),
         ),
@@ -4447,10 +4464,10 @@
 
       if (data.err) return e('div', { className: 'empty' },
         e('div', { className: 'em-icon' }, '⚠️'),
-        e('div', { className: 'em-title' }, 'Could not load outdoor event space data'),
+        e('div', { className: 'em-title' }, 'Could not load Outdoor Facilities data'),
         e('div', { className: 'em-sub' }, String(data.err)));
       if (data.rows === null) return e('div', { className: 'empty' },
-        e('div', { className: 'em-title', style: { color: '#9ca3af' } }, 'Loading Outdoor Event Spaces…'),
+        e('div', { className: 'em-title', style: { color: '#9ca3af' } }, 'Loading Outdoor Facilities…'),
         e('div', { className: 'fac-spin' }));
 
       const allRows = data.rows;
@@ -5619,7 +5636,7 @@
             e('div', { className: 'em-sub' }, 'Diamonds, pitches and multipurpose turf are all counted here — field seasons are short, so try a spring or summer month.')),
         e('div', { className: 'section-note' }, 'Fields · ' + bookings.toLocaleString() + ' bookings · '
           + Math.round(hoursTotal).toLocaleString() + ' hours · ' + siteDays.toLocaleString() + ' booked field-days · '
-          + 'per-day reservation feed (canceled bookings not included). Pavilions and picnic areas are on the Outdoor Events tab.'),
+          + 'per-day reservation feed (canceled bookings not included). Pavilions and picnic areas are on the Outdoor Facilities tab.'),
       );
     }
 
@@ -6517,13 +6534,12 @@
       return e('div', { className: 'tennis-wrap' },
         fallback ? e('div', { style: { background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 6, padding: '9px 14px', margin: '0 0 12px', fontSize: 12, color: '#075985' } },
           'Court names here don’t indicate a sport (e.g. “Court 1”), so this tab is showing all court-type sites instead of keyword-matched racket courts.') : null,
+        // THE PRIVATE INSTRUCTOR LESSONS PANEL IS GONE (Dan, 2026-09-04):
+        // "remove this section from the racket sports tab ... so the
+        // instructors report can't be found". It was a signpost to
+        // /:org/lessons on every org, not just SF. The Lessons report itself
+        // is untouched — this removes the way in from here, nothing else.
         e(CourtUtilizationView, { start, end, courtFilter: fallback ? (() => true) : isRacketCourt, theme: RACKET_THEME }),
-        e('div', { className: 'tennis-pending' },
-          e('div', { className: 'tp-head' }, '🎾 Private Instructor Lessons'),
-          e('div', { className: 'tp-body' },
-            'Lessons book through the Lessons product (programs pipeline), not facility reservations — instructor leaderboard, booking trends, price mix, and student loyalty live in their own report. ',
-            e('a', { href: '/' + CFG.slug + '/lessons' + (CFG.token ? '?token=' + encodeURIComponent(CFG.token) : ''), style: { fontWeight: 700, color: '#047857' } }, 'Open the Instructor Lessons report →')),
-        ),
       );
     }
 
@@ -6536,7 +6552,7 @@
       const isPrint = PQS.get('_print') === '1';
       const [start, setStart] = React.useState(PQS.get('start_date') || fmtDate(monthStart(now)));
       const [end, setEnd] = React.useState(PQS.get('end_date') || fmtDate(monthEnd(now)));
-      const [tab, setTab] = React.useState(() => PQS.get('tab') || 'summary');
+      const [tab, setTab] = React.useState(() => facEffectiveTab(PQS.get('tab')));
       const [statusSel, setStatusSel] = React.useState(() =>
         PQS.get('status') ? PQS.get('status').split(',').filter(Boolean) : ['confirmed', 'in-progress', 'canceled']);
       const [typeSel, setTypeSel] = React.useState(() =>
@@ -6662,7 +6678,7 @@
           sh['!cols'] = t.rows[0].map(h => ({ wch: Math.min(34, Math.max(11, String(h).length + 3)) }));
           XLSX.utils.book_append_sheet(wb, sh, t.sheet.slice(0, 31));
         });
-        const tabSuffix = (tab !== 'summary' && tab !== 'utilization') ? '-' + tab : '';
+        const tabSuffix = tab !== 'summary' ? '-' + tab : '';
         // Handed to a popup to save rather than written straight from here — a
         // download started by a sandboxed iframe is silently dropped. See open-pdf.js.
         saveWorkbookViaPopup(XLSX, wb, CFG.slug + '-facilities' + tabSuffix + '-' + start + '-to-' + end + '.xlsx');
@@ -6834,7 +6850,7 @@
           // Filters are context-aware: the site-type filter only makes sense on
           // the Summary (a vertical tab already fixes the type); Court Utilization
           // manages its own filters + dates inside the embed, so no hub filters.
-          (tab === 'utilization' || tab === 'racket' || tab === 'camping' || tab === 'outdoor' || tab === 'fields') ? null : e('div', { className: 'filters' },
+          (tab === 'racket' || tab === 'camping' || tab === 'outdoor' || tab === 'fields') ? null : e('div', { className: 'filters' },
             e(StatusChips, { sel: statusSel, setSel: setStatusSel }),
             tab === 'summary' ? e('div', { className: 'filter-group' },
               e('span', { className: 'filter-lbl' }, 'Site type'),
@@ -6853,6 +6869,11 @@
               const badge = ((VERT_CONFIG[t.key] || t.key === 'racket') && vertCounts[t.key] != null) ? vertCounts[t.key] : null;
               return e('div', {
                 key: t.key,
+                // A HANDLE PER TAB, so a render case can assert both which tab
+                // is lit and that a retired one is ABSENT from the DOM. "a tab
+                // strip rendered" passes just as happily on the version that
+                // still carries Court Utilization.
+                'data-fac-tab': t.key,
                 className: 'tab' + (t.key === tab ? ' active' : ''),
                 onClick: () => {
                   setTab(t.key);
@@ -6864,12 +6885,10 @@
           ),
           tab === 'summary'
             ? e(SummaryTab, { rows: viewRows, err, statusSel, typeSel, lessons, filtersActive: (locSel.length > 0 || typeSel.length > 0) })
-            : tab === 'utilization'
-              ? e(CourtUtilizationView, { start, end })
-              : tab === 'racket'
-                ? e(RacketSportsView, { start, end, fallback: racketFallback })
-                : tab === 'camping'
-                  ? e(CampingView, { start, end })
+            : tab === 'racket'
+              ? e(RacketSportsView, { start, end, fallback: racketFallback })
+              : tab === 'camping'
+                ? e(CampingView, { start, end })
                 : tab === 'outdoor'
                   ? e(OutdoorEventsView, { start, end })
                 : tab === 'fields'

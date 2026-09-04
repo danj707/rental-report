@@ -2010,6 +2010,19 @@ const CASES = [
   { name: "facilities · fields peak hour", path: "/{org}/facilities?tab=fields",  needs: "[data-fld-peak=\"7p\"]" },
   { name: "facilities · fields sport note", path: "/{org}/facilities?tab=fields", needs: "[data-fld-sport-note]" },
   { name: "facilities · racket sports",    path: "/{org}/facilities?tab=racket",  needs: ".court-native .sum-cards" },
+  // ── Court Utilization is retired as a tab (Dan, 2026-09-04) ─────────────
+  // Two things, and neither is "the page rendered". The tab must be ABSENT from
+  // the DOM — a greyed or merely unclicked tab is a different claim — and a
+  // ?tab=utilization link, which is in emails and bookmarks, must land on
+  // Summary WITH SUMMARY LIT. Without the resolver `tab` stays 'utilization',
+  // the switch falls through to Summary's body, and no tab carries .active:
+  // a page that looks half-broken and says nothing. Racket Sports still
+  // renders the same view, which the case above proves.
+  { name: "facilities · no Court Utilization tab", path: "/{org}/facilities?tab=summary",
+    needs: '[data-fac-tab="racket"]', absent: '[data-fac-tab="utilization"]' },
+  { name: "facilities · a stale utilization link lands on Summary",
+    path: "/{org}/facilities?tab=utilization",
+    needs: '[data-fac-tab="summary"].active', absent: '[data-fac-tab="utilization"]' },
   // Memberships → Check-Ins. Six things, none of which "the page rendered"
   // would cover: the time-of-day curve exists and peaks where the data does; the
   // daily chart carries weekday letters (Monday the 24th must read M — a UTC
