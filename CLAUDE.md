@@ -1,5 +1,115 @@
 # Project notes for Claude
 
+## THE RETENTION TAB WAS REWRITING THE REPORT'S DATE RANGE (2026-09-04)
+
+Dan: *"The first few tabs, if they are scoped to the prior 30 days, is fast. But
+once you hit the retention report, the filters change to a year. Then the report
+tries to load an entire year's data, even if you flip back to the other tabs.
+that doesn't seem right."* And then the rule: *"switching back to another tab
+shouldn't change the date filter without me explicitly changing it."*
+
+**ONE LINE CAUSED THREE SEPARATELY-REPORTED BUGS.** Clicking Retention ran
+
+```js
+var w = mbRetentionWindow(startDate, endDate);
+if (w.changed) { setStartDate(w.start); setEndDate(w.end); setActiveRange(null); fetchData(w.start, w.end); }
+```
+
+— a tab-local view **silently redefining the whole report's window**, with
+nothing anywhere putting it back. What followed:
+
+1. **Every later tab switch re-queried thirteen months** — the *"not all data for
+   tabs is caching… it's super slow"* pin. Nothing was wrong with the cache:
+   `feedCacheKey` includes the parameter string, so the widened window is a
+   different key, and `ensureCheckins` correctly refetches for a window it has
+   not seen. **The cache was working; the window had moved underneath it.**
+2. **The header disagreed with its own date inputs.** Dan's screenshot reads
+   *"Sep 1 – Sep 30, 2026 · 152 memberships"* over Start/End boxes saying
+   **09/04/2025 – 09/30/2026** — because `data` was still September while the
+   inputs had been rewritten.
+3. **It is how a hand-typed thirteen-month window came to be asked for at all**,
+   which is what then hit the 504 recorded above. So the 504's *proximate* cause
+   was this, not the user.
+
+### THE FIX: the cohort chart gets its own window and its own rows
+
+`retRows` / `retWin` / `retLoading` / `retErr`, fetched by `fetchRetention()`
+through `ensureRetention()`. **`startDate` and `endDate` are never written.**
+
+- **The panel reading `data` is what FORCED the widening.** While the chart was
+  built from the report's rows, the only way to get twelve months into it was to
+  widen the report. `buildCohorts(retRows)` is what makes the decoupling
+  possible, so the two changes are one change.
+- **`mbRetentionWindow` is UNCHANGED**, and its existing assertions still hold —
+  it still derives the twelve months, it is just **read** from the report's dates
+  and never written back. Same rule as the Failed check-ins toggle, which scopes
+  its own panel and nothing above it: **a tab may show more than the window, it
+  may not change it.**
+- **Cached by window** (`retWin !== key`), like `ensureCheckins` — flipping onto
+  Retention twice must not re-run a twelve-month query.
+- **The panel NAMES its own window on screen** (`data-ret-window`), because it
+  deliberately covers more than the header and a cohort chart quietly
+  disagreeing with the dates above it is how a number stops being trusted.
+- **Absent, never an empty chart, when the feed fails** — a cohort chart drawn
+  from nothing reads as *"nobody retains"*. Loading / error / empty are three
+  distinct states now (`data-ret-state`), where before there was one message
+  telling the reader to click Run Report.
+- **Rec Insights reads `retRows`** too, or the model describes the toolbar's
+  window while the reader is looking at twelve months.
+
+**NOT PREFETCHED, deliberately.** Dan offered *"even if retention was loading in
+the background, that would work too"* — but a background fetch would fire a
+twelve-month query on **every** Memberships page load, for every org, on the
+slowest card on the platform (see the 504 section: ~40s per item-log scan). It
+fetches on click and caches by window instead. Worth revisiting if that card ever
+gets fast.
+
+### `mbRangeLabel`
+
+New, at module scope so a spec can RUN it. Two guards, both load-bearing:
+`'T12:00:00'` rather than a bare ISO date (`new Date("2026-09-01")` is UTC
+midnight and renders as Aug 31 west of UTC — **five** instances of that in this
+file now), and an `isNaN` check, because an unguarded formatter renders the
+literal **"Invalid Date NaN"** on screen between mount and the feed answering —
+the `winLabel` lesson from the Programs summary, one report over.
+
+### Guards
+
+`memberships-revenue.spec.js` 82 → **90 assertions**, lifting and RUNNING
+`mbRangeLabel`, and **slicing the Retention tab button's own handler** — a
+file-wide `setStartDate` test proves nothing, because the date inputs and the
+range presets legitimately call it. Mutation-tested: the button rewriting the
+dates again (the bug exactly as Dan hit it), the panel back on `data`, the
+per-window cache dropped, the label parsing a bare ISO date, and the `isNaN`
+guard removed.
+
+**Two of my own mutations were BENIGN and that is worth recording**: dropping the
+`if (!d) return ''` early return survives, because the `isNaN` check already
+covers null — so the early return is belt-and-braces and the `isNaN` is the real
+guard. Distinguishing the two is the point of mutation testing; reporting the
+first as "caught" would have been wrong.
+
+Plus two `ci-check-render.js` cases. **No source assertion can prove this one** —
+the handler can look correct and a downstream effect can still rewrite the
+inputs — so the case reads the date inputs' VALUES either side of the click and
+requires them identical. Verified to fail on the real bug. The second case
+requires the cohorts to still draw, because a case that only checked the dates
+would pass on a Retention tab that renders nothing at all.
+
+**AND THE ESCAPE GUARD CAUGHT MY OWN COPY.** I wrote `\u2014` and `\u2026`
+inside JSX **text**, which is not a string literal — they render as the literal
+characters. The global unrendered-escape assertion added hours earlier failed on
+it immediately. Same class as the `\uD83D\uDD01` that reached the Auto-Renew
+tab; the guard paid for itself the same day.
+
+### The third instance of the report-goes-last trap
+
+My new spec block was appended **after** `console.log(passed + " assertions
+passed.")`, so all eight assertions ran, incremented the count, and could never
+be reported — the count stayed at 82 and I nearly read that as "no new
+assertions needed". Third time in these two repos. **If a spec prints a summary,
+that print must be the last statement in the file.**
+
 ## The Memberships summary 504 on Pawnee (2026-09-04)
 
 Dan: *"memberships report summary page is struggling"* — Pawnee, 09/04/2025 to
@@ -4560,6 +4670,39 @@ Why this was rejected: the two unknowns above are both places where a wrong
 guess is silent and wrong in a finance document, and the sign-off gate needed to
 retire that risk is most of the cost of the work. An index gets the same speed
 while the numbers keep coming from the definition finance already trusts.
+
+## PINNED: seamless deploys — it is the VOLUME, not the health check (2026-09-04)
+
+Dan: *"any way to get to a seamless style of deployment, where adding a new
+feature or deploying didn't take down the whole reporting project?"* Then:
+*"pin the seamless deploys, might tackle it this weekend."*
+
+**WHAT IS ALREADY FINE, so nobody re-does it:**
+
+- **`healthcheckPath` is already `/healthz`** on the rental-report service, and
+  `serverReady` flips the instant `app.listen` fires — so the gate goes green in
+  a second or two and Railway's cutover is already health-gated.
+- **The feed cache already SURVIVES a deploy.** `CACHE_DIR` is `DATA_DIR/cache`
+  on the volume and `hydrateCacheFromDisk()` runs at boot. A push does not empty
+  it — worth saying because the opposite was believed.
+- **Prewarm is already paced.** `prewarmPace()` gives 3s gaps when Metabase is
+  healthy, 12s when degraded, and **aborts the cycle** when unhealthy;
+  `PREWARM_STARTUP_SKIP_MS` is 6h, so a restart inside that window skips the
+  fan-out entirely.
+
+**THE ACTUAL CAUSE IS ONE REPLICA PLUS A VOLUME.** Service config reads
+`numReplicas: 1` and a volume at `/data`. **A Railway volume attaches to a single
+instance**, so the old and new containers cannot run at once — the deploy is
+stop-then-start by construction, and no health check can hide that gap.
+
+So the order is: move the feed cache and `events.jsonl` off the disk (Postgres or
+Redis), *then* raise replicas, *then* the deploy is seamless. Two traps on the
+way: `events.jsonl` is read by the admin dashboard, the Slack digest,
+`getReportActivity()` (which gates every watchdog alert) and
+`/api/admin/feedback`, so moving it changes all four readers; and with 2+
+replicas **prewarm would run once per replica** against production Metabase
+unless it is leader-elected or moved to a cron service — which would double the
+fan-out this is partly meant to avoid.
 
 ## A PUSH TO `main` IS AN OPERATIONAL EVENT, not just a code change (Dan, 2026-09-04)
 

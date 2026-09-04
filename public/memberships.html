@@ -475,6 +475,9 @@
     @keyframes ai-spin { to { transform:rotate(360deg); } }
 
     /* ── Retention Tab ── */
+.ret-scope { font-size: 12px; color: #64748b; background: #f8fafc; border: 1px solid #e2e8f0;
+             border-left: 3px solid #94a3b8; border-radius: 6px; padding: 8px 12px;
+             margin: 0 0 14px; line-height: 1.5; }
     .ret-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 16px; }
     .ret-kpi { background: #fff; border: 1px solid #e8e6e0; border-radius: 6px; padding: 12px 14px; }
     .ret-kpi .rl { font-size: 10px; font-weight: 600; color: #888; text-transform: uppercase; letter-spacing: .4px; margin-bottom: 3px; }
@@ -791,6 +794,22 @@ function mbRetentionWindow(startDate, endDate, now) {
 
 // ISO date from local parts. Never toISOString() — that is UTC, so an evening
 // in any US timezone rolls to tomorrow and the window silently shifts a day.
+/* ONE LABEL FOR A DATE RANGE, at module scope so the spec can RUN it.
+   'T12:00:00' rather than a bare ISO date: `new Date("2026-09-01")` is UTC
+   midnight and renders as Aug 31 west of UTC — the bug this repo has shipped
+   four times. And it GUARDS BOTH ENDS, because an unguarded formatter renders
+   the literal "Invalid Date NaN" on screen in the window between mount and the
+   feed answering. */
+function mbRangeLabel(a, b) {
+  var f = function (d) {
+    if (!d) return '';
+    var t = new Date(d + 'T12:00:00');
+    return isNaN(t.getTime()) ? '' : t.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  };
+  var x = f(a), y = f(b);
+  return x && y ? x + ' \u2013 ' + y : (x || y || 'the selected dates');
+}
+
 function mbISODate(d) {
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') +
          '-' + String(d.getDate()).padStart(2, '0');
@@ -1575,6 +1594,56 @@ function normalizeRow(raw) {
           .catch(function(e) { console.error('checkin fetch error', e); setCiLoading(false); });
       }
 
+      /* ── RETENTION HAS ITS OWN WINDOW, AND ITS OWN DATA ──────────────────
+         Dan: "once you hit the retention report, the filters change to a year.
+         Then the report tries to load an entire year's data, even if you flip
+         back to the other tabs. that doesn't seem right."
+
+         It didn't. Clicking Retention called setStartDate/setEndDate and
+         refetched, so a tab-local view SILENTLY REDEFINED THE WHOLE REPORT'S
+         window — and nothing ever put it back. Three things followed from that
+         one line, and they were reported as three separate bugs:
+
+           * every later tab switch re-queried thirteen months (the "super
+             slow tab switches" pin),
+           * the header and the toolbar disagreed — Dan's screenshot reads
+             "Sep 1 – Sep 30, 2026" over date inputs saying 09/04/2025 to
+             09/30/2026, because `data` was still September while the inputs
+             had been rewritten,
+           * and it is how a hand-typed thirteen-month window came to be asked
+             for at all, which is what then hit the 504.
+
+         So the cohort chart now fetches its OWN twelve months into its OWN
+         state and the report's dates are never touched. Same rule as the
+         Failed check-ins toggle, which scopes its panel and nothing above it:
+         a tab may show more than the window, it may not change it. */
+      const [retRows, setRetRows] = useState(null);
+      const [retWin, setRetWin]   = useState(null);
+      const [retLoading, setRetLoading] = useState(false);
+      const [retErr, setRetErr]   = useState(false);
+
+      function fetchRetention(sd, ed) {
+        setRetLoading(true); setRetErr(false); setRetWin(sd + '|' + ed);
+        const qs = new URLSearchParams({ start_date: sd, end_date: ed });
+        fetch(withToken(`/${orgSlug}/${reportType}/api/data?` + qs.toString()))
+          .then(async r => { if (!r.ok) throw await reportFetchError(r); return r.json(); })
+          .then(payload => {
+            const rows = (payload.rows || payload.data || payload || []).map(normalizeRow);
+            setRetRows(rows); setRetLoading(false);
+          })
+          .catch(err => { console.error(err); setRetErr(err.message || 'Failed to load'); setRetLoading(false); });
+      }
+
+      /* CACHED BY WINDOW, like ensureCheckins — flipping onto Retention twice
+         must not re-run a twelve-month query. The window is derived from the
+         report's dates so a deliberately WIDER report still gets its own
+         cohorts, but it is only ever read from them, never written back. */
+      function ensureRetention() {
+        const w = mbRetentionWindow(startDate, endDate);
+        const key = w.start + '|' + w.end;
+        if (retWin !== key || (!retRows && !retLoading)) fetchRetention(w.start, w.end);
+      }
+
       const datesChanged = startDate !== loadedStart || endDate !== loadedEnd;
 
       // Fetch check-ins for a window only if they aren't already loaded for it —
@@ -2245,8 +2314,11 @@ function normalizeRow(raw) {
         byHour: hourCts, byDayOfWeek: dayCts, byDeskLocation: deskCts, byProduct: prodCts };
     }
     if (activeTab === 'retention') {
-      if (!data || !data.length) return null;
-      return { reportContext: 'retention', totalMembers: data.length, note: 'Retention cohort analysis tab' };
+      // retRows, not data: the tab shows twelve months and the model must be
+      // told about what is on screen, not about the toolbar's window.
+      if (!retRows || !retRows.length) return null;
+      return { reportContext: 'retention', totalMembers: retRows.length,
+               note: 'Retention cohort analysis tab — twelve months, independent of the report date range' };
     }
     if (!data || !data.length) return null;
     const byStatus = {}; const byType = {};
@@ -2953,15 +3025,11 @@ function normalizeRow(raw) {
               </button>
               <button className={'tab-btn' + (activeTab === 'retention' ? ' active' : '')} onClick={function(){
                   setActiveTab('retention');
-                  // Widen to 12 months for a meaningful cohort chart — and only
-                  // ever widen, so a window that already covers more is kept.
-                  var w = mbRetentionWindow(startDate, endDate);
-                  if (w.changed) {
-                    setStartDate(w.start);
-                    setEndDate(w.end);
-                    setActiveRange(null);
-                    fetchData(w.start, w.end);
-                  }
+                  /* IT NO LONGER TOUCHES startDate/endDate. This used to widen
+                     the report's own window to twelve months and refetch, which
+                     left every other tab querying a year — see the note beside
+                     ensureRetention. The cohort chart fetches its own. */
+                  ensureRetention();
                 }}>
                 📈 Retention
               </button>
@@ -2979,7 +3047,7 @@ function normalizeRow(raw) {
               full-height cohort chart left the button stranded below the fold.
               The same place on every tab beats "sometimes top, sometimes
               bottom". */}
-        {((activeTab === 'memberships' && data && data.length > 0) || (activeTab === 'checkins' && ciView.length > 0) || (activeTab === 'retention' && data && data.length > 0) || (activeTab === 'autorenew' && arBook.size > 0)) && (
+        {((activeTab === 'memberships' && data && data.length > 0) || (activeTab === 'checkins' && ciView.length > 0) || (activeTab === 'retention' && retRows && retRows.length > 0) || (activeTab === 'autorenew' && arBook.size > 0)) && (
           <div className="insights-section no-print">
             <div className="insights-head">
               <button type="button" className="insights-btn" onClick={getInsights} disabled={insightsLoading}>
@@ -3953,8 +4021,15 @@ function normalizeRow(raw) {
           {activeTab === 'retention' && (
             <div style={{maxWidth:1100,margin:'0 auto'}}>
               {(() => {
-                var cohorts = buildCohorts(data);
-                if (!cohorts || cohorts.length === 0) return <div style={{textAlign:'center',padding:40,color:'#999'}}>Loading membership data\u2026 The Retention tab needs 12+ months of data. Dates have been auto-expanded \u2014 click Run Report if data hasn\u2019t loaded.</div>;
+                /* ITS OWN ROWS, not the report's. The panel used to read `data`,
+                   which is why it had to widen the report's window to get
+                   twelve months into it — the thing that broke every other tab. */
+                if (retLoading || (!retRows && !retErr)) return <div style={{textAlign:'center',padding:40,color:'#999'}} data-ret-state="loading">Loading twelve months of cohorts…</div>;
+                /* ABSENT, NEVER AN EMPTY CHART, when the feed could not answer.
+                   A cohort chart drawn from nothing reads as "nobody retains". */
+                if (retErr) return <div style={{textAlign:'center',padding:40,color:'#b45309'}} data-ret-state="error">Cohorts could not load — {retErr}</div>;
+                var cohorts = buildCohorts(retRows);
+                if (!cohorts || cohorts.length === 0) return <div style={{textAlign:'center',padding:40,color:'#999'}} data-ret-state="empty">No cohorts in the last twelve months.</div>;
 
                 var retAt6 = cohorts.filter(function(c){ return c.retention[6] !== null; });
                 var avg6 = retAt6.length > 0 ? Math.round(retAt6.reduce(function(s,c){ return s + c.retention[6]; }, 0) / retAt6.length) : null;
@@ -3972,6 +4047,16 @@ function normalizeRow(raw) {
                       {avgM1drop !== null && <div className="ret-kpi"><div className="rl">Avg month-1 churn</div><div className="rv">{avgM1drop}%</div><div className="rs">Biggest drop-off window</div></div>}
                     </div>
 
+                    {/* THE PANEL NAMES ITS OWN WINDOW. It deliberately covers
+                        more than the report's dates, and a cohort chart that
+                        quietly disagrees with the header above it is how a
+                        number stops being trusted — the two-surfaces-disagree
+                        trap this file keeps recording. */}
+                    <div className="ret-scope" data-ret-window={retWin || ''}>
+                      Cohorts cover the last twelve months, whatever dates are set above — a
+                      cohort chart needs a year to say anything. The rest of this report still
+                      shows {mbRangeLabel(loadedStart || startDate, loadedEnd || endDate)}.
+                    </div>
                     <RetentionChart cohorts={cohorts} />
 
                     <div className="ret-table-wrap">

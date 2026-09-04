@@ -2270,6 +2270,39 @@ const CASES = [
         document.body.setAttribute('data-feed-err', m ? m[0].trim() : '');
       });
     } },
+  /* CLICKING RETENTION MUST NOT MOVE THE DATE FILTER. Dan, twice: "switching
+     back to another tab shouldn't change the date filter without me explicitly
+     changing it." No source assertion can prove this — the handler can look
+     perfectly correct and a downstream effect can still rewrite the inputs —
+     so the case reads the input VALUES either side of the click. */
+  { name: "memberships · Retention does not move the date filter",
+    path: "/{org}/memberships", needs: "body[data-ret-dates='same']",
+    act: async page => {
+      const dates = () => page.evaluate(() => [...document.querySelectorAll('input[type=date]')]
+        .map(i => i.value).join('|'));
+      await page.waitForFunction(() => [...document.querySelectorAll('button')]
+        .some(b => /Retention/.test(b.textContent)), { timeout: 20000 });
+      const before = await dates();
+      await page.evaluate(() => [...document.querySelectorAll('button')]
+        .find(b => /Retention/.test(b.textContent)).click());
+      // Give any rewrite-then-refetch the time it would have needed to land.
+      await new Promise(r => setTimeout(r, 1200));
+      const after = await dates();
+      await page.evaluate(([b, a]) => document.body.setAttribute('data-ret-dates', b === a ? 'same' : 'MOVED ' + b + ' -> ' + a),
+                          [before, after]);
+    } },
+  /* ...AND THE TAB STILL DRAWS ITS COHORTS, from its own twelve months. A case
+     that only checked the dates would pass on a Retention tab that renders
+     nothing at all. */
+  { name: "memberships · ...and still draws twelve months of cohorts",
+    path: "/{org}/memberships", needs: "[data-ret-window]",
+    act: async page => {
+      await page.waitForFunction(() => [...document.querySelectorAll('button')]
+        .some(b => /Retention/.test(b.textContent)), { timeout: 20000 });
+      await page.evaluate(() => [...document.querySelectorAll('button')]
+        .find(b => /Retention/.test(b.textContent)).click());
+      await page.waitForSelector("[data-ret-window], [data-ret-state]", { timeout: 20000 });
+    } },
   { name: "memberships · residency split", path: "/{org}/memberships",
     needs: "[data-mb-res-count=\"6\"]" },
   { name: "memberships · residency non-resident count", path: "/{org}/memberships",
