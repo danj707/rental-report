@@ -29,6 +29,226 @@
   context beats being literal.
 - **Readability over cleverness**, in code and in writing. Human-sounding.
 
+## Lindsay's three questions on court utilization (2026-09-04)
+
+Lindsay Keare, after the backcheck: *"Is there away to add util_actual to the
+dashboard? that is likely what SF cares about the most"*, *"How does utilization
+treat overlapping courts? i.e. if a pickleball court is booked that is on a
+tennis court, does utlization count on both courts? (this was a sticking point
+last time)"*, and *"what is the cancellation metric? is this rate booked at any
+point or booked and actually occured?"* Measured answers below; nothing was
+changed.
+
+### 1. `util_actual` — the report is ALREADY on actual availability
+
+**There is no field called `util_actual` in this repo** — it is Lindsay's own
+name, from a brief that computed utilization against measured availability
+rather than the flat window. As of PR #190 both surfaces divide by each court's
+own published open hours:
+
+| surface | denominator |
+|---|---|
+| Facilities → Racket Sports (was Court Utilization) | per-court `bookingPolicies.slots`, per weekday |
+| QBR + Director's Report (`qbrSumCourt` / `dirCourt`) | the SAME source, via `courtSchedulesFor` |
+
+`scheduled` / `assumed` travel with the number and `utilizationEstimated` is now
+true only when part of the denominator really is assumed, so the "EST." tag
+means something.
+
+**A pure no-assumptions figure is available and barely differs at SF.** Over
+September, courts with a real schedule against all courts:
+
+| | used | available | util |
+|---|---|---|---|
+| all 106 courts with activity | 7,486.5 h | 34,673.0 h | **21.6%** |
+| the 103 on real schedules (`util_actual`) | 7,468.5 h | 33,593.0 h | **22.2%** |
+| the 3 assumed (Dolores 4, 5, 6 @ 12 h/day) | 18.0 h | 1,080.0 h | 1.7% |
+
+The assumed courts are **3.1% of the denominator**, so splitting the KPI in two
+would put 21.6% next to 22.2% and invite a question about a 0.6pp gap. The
+recommendation is to keep ONE number with its provenance stated, and split only
+when the assumed share is material — which is what the "103/106 real" readout
+in the toolbar is for.
+
+**AND THE TWO CANDIDATE "ACTUAL" DENOMINATORS STILL DISAGREE.** Lindsay's brief
+measured `court_slot` (13.58 avg hrs/court-day, range 1.5–26); the
+`bookingPolicies` path the tab reads gives 10.85 mean, max 14. Same question,
+~20% apart on the denominator, so a `util_actual` built on `court_slot` will not
+match the tab (~57%/~43% instead of 70%/53% on SF's QBR quarters). Dan's call
+was the tab's source, because the tab is what an org looks at. Worth saying out
+loud before anyone reconciles two "actual" figures.
+
+### 2. Overlapping courts — the platform cannot express the overlap
+
+**Utilization is per `court` RECORD**: a booking counts on the court(s) its
+reservation is attached to, and nowhere else. A reservation CAN carry more than
+one court (`reservation_court` is a join table) and then it legitimately counts
+on each — but in September only **6 of SF's reservations do**, and none of them
+survives into card 17297's row set (3,880 reservations = 3,880 rows). So there
+is **no double counting in these numbers.**
+
+The real exposure is the opposite one, and SF's data cannot answer it:
+
+- SF's 114 courts are **76 Tennis + 38 Pickleball**, each court carrying
+  **exactly one sport** (`court_sport`), and **10 locations carry both** — Buena
+  Vista, Crocker Amazon, Jackson, Moscone, Parkside Square, Presidio Wall,
+  Richmond, Rossi, Stern Grove, Upper Noe. Presidio Wall is the clean example:
+  **Courts 1-4 Tennis, Courts A/C/E Pickleball.**
+- **`location_site_group_id` is NULL on all 114 courts** and no court carries two
+  sports, so *nothing in the data says Court A is painted on Court 1.*
+- Measured: **525 time-overlapping Tennis × Pickleball reservation pairs at the
+  same location in September.** Either those are separate physical courts (and
+  the numbers are right), or they share concrete and the product is not blocking
+  one when the other sells.
+
+So: **if the pickleball courts are lines on tennis courts, utilization
+UNDERSTATES the pair** — the booked court counts, the shared one reads as
+available — and the "106 active sites" count is bookable sites, not physical
+ones. It never overstates. Which case SF is in is a question only SF can answer,
+and the fix belongs in the product: group the shared courts
+(`location_site_group_id`), and reporting can then divide a group's hours by the
+group's open hours once. A per-org overlap map here (the `aquaticsScope` shape)
+is the fallback if that is a long way off.
+
+### 3. The cancellation metric is BOOKED-THEN-CANCELLED, dated by the booking
+
+`aggregate()` computes `canceled / bookings` over the reservation rows **dated
+in the window**, where `Status` is card 19570's
+`CASE WHEN r.canceled_at IS NOT NULL THEN 'Canceled' ELSE INITCAP(fr.status) END`.
+So it answers *"of everything booked for a date in this window, what share is
+now cancelled"* — **booked at any point, cancelled at any point, attributed to
+the DATE OF THE BOOKING and not the date of the cancellation.** SF September:
+**184 of 4,064 = 4.5%**, rendered 5%.
+
+It is NOT "booked and actually occurred": **no-shows are not recorded anywhere
+in the schema**, so a booking nobody turned up for counts as fulfilled.
+
+**AND ON AN OPEN MONTH IT IS A FLOOR, NOT A RATE**, which is the part that
+matters for a QBR. Split by whether the date has passed, same read:
+
+| September dates | bookings | cancelled | rate |
+|---|---|---|---|
+| already played (1-4 Sep) | 1,550 | 117 | **7.6%** |
+| still ahead (5-30 Sep) | 2,514 | 67 | **2.7%** |
+| whole month | 4,064 | 184 | 4.5% |
+
+The future half has not had its chance to cancel yet, so a part-elapsed month
+reads low and can only rise. **Compare closed months only.** One more thing to
+know: the denominator is the status chips — untick Canceled and the rate reads
+0%, because those rows leave the denominator with the numerator.
+
+## Backcheck: SF Racket Sports, September 2026 (2026-09-04)
+
+Dan, on the deployed tab: *"run a backtest of these numbers against real SF
+data to confirm this is all correct."* **They are correct.** Verified three
+independent ways, and the one defect it found is at the bottom.
+
+### Leg 1 — the page against card 17297, cache-independent
+
+Fetched the card straight from the Metabase public endpoint with the app's own
+parameter shape (3,879 rows in 32.0s), plus the live `/api/schedules` feed from
+production, and ran the page's OWN reducers (`cuNormalize` → `filtered` →
+`grouped` → `stats`) over them:
+
+| KPI | on screen | recomputed |
+|---|---|---|
+| Court Utilization | 22% | **21.6%** (7,486.5 used / 34,673.0 available) |
+| Courts with Activity | 106 | **106** |
+| Distinct Bookings | 2,550 | 2,554 |
+| Reservation Rows | 3,873 | 3,879 |
+| Total Hours | 7,479.5 | 7,486.5 |
+| Instant Bookings | 2,512 · 3,524 h · 47% | 2,517 · 3,531 h · 47% |
+| Leagues / Managed | 101 · 3,956 h · 53% | **101 · 3,956 h · 53%** |
+| schedule sources | 103/106 real · 12 hrs/day fallback | **103/106 · 12** |
+| Alice Marble — Court 1 | 44 bkgs · 36% | **44 bkgs · 36.3%** |
+
+### Leg 2 — the card against the base tables
+
+Independent SQL over `reservation` → `reservation_court` → `court`:
+**3,880 rows / 2,555 rentals / 106 courts / 7,488.0 hours.**
+
+- **The hour basis was checked two ways and agrees exactly.** Summing
+  `upper(reservation_timestamp_range) − lower(...)` (what the card does) and
+  summing `ends_at − starts_at` (a different pair of columns) both give
+  **7,488.0**, and **0 rows** have a Pacific-local `starts_at` date outside the
+  window. So the tsrange, the timestamptz columns and the window all agree.
+- **`reservation.court_id` IS NULL ON ALL 557,367 SF RESERVATIONS.** The site
+  link is the `reservation_court` join table, and `reservation.location_id`
+  points at `location`, not at a court. Two obvious queries return **zero rows**
+  before you find that out — worth knowing before diagnosing "no data".
+- Card 17297's `published_at IS NOT NULL` filter hides nothing here: all 114 SF
+  courts are live and published, 106 had September activity, and **0** courts
+  with activity are excluded by it.
+
+### Leg 3 — the two cards agree with each other
+
+The toolbar and the Racket tab read DIFFERENT cards (19570 vs 17297), so they
+are a cross-check rather than a restatement:
+
+| | fresh 19570 read | on screen |
+|---|---|---|
+| bookings | 4,064 | 4,062 |
+| active sites | **106** | 106 |
+| charged | $47,821 | $47,808 |
+| canceled | 184 → 5% | 183 → 5% |
+
+**4,064 − 184 canceled = 3,880, which IS the court card's row count**, exactly.
+Card 17297 excludes canceled reservations and canceled rentals; 19570 keeps them
+and the status chips count them. The identity holds this month because **no
+September reservation spans two courts** (3,880 reservations = 3,880 card rows) —
+it would not hold in a month that had one.
+
+Also: **every one of SF's 4,064 facility rows is `Site Type = court` and none is
+an invoice line**, which is why two independently-computed site counts are both
+106, and why the org-wide toolbar figure equals the racket figure.
+
+Money, same read: charged $47,821 · collected $32,218 · outstanding $15,602 ·
+refunded $74. The Collected card's *"231% of charged to date"* is arithmetically
+right and reads oddly: **$13,944 of the month is billed to date and $33,877 is
+upcoming**, so money already collected for future bookings exceeds the
+to-date charge. The sub-line says so.
+
+### EVERY GAP IS THE OPEN WINDOW, and it is monotonic in read order
+
+September is not a closed month. Ordered by read time — Dan's screen (a warm
+4-hour cache entry) → 17297 at 13:56 → 19570 at 14:04 → base SQL at 14:01 —
+rows go 3,873 → 3,879 → 3,880 and hours 7,479.5 → 7,486.5 → 7,488.0. **Every
+one of those deltas is on the INSTANT side; the managed figures are identical in
+all three reads** (101 rentals, 3,956 h), which is exactly what a self-service
+booking landing mid-backcheck looks like. Never diff an open window against
+itself across two reads — the Clarksville rule, third instance.
+
+### THE DEFECT: the closure branch is dead for every org
+
+`cuNormalize` reads `r.usage_category || r['Usage Category'] || 'Customer
+Booking'` — and **card 17297 v4 emits `purpose` (`fr.name`), not
+`usage_category`.** So every row defaults to `Customer Booking`, the
+`'Closure / Block'` branch in `grouped` can never fire, and `g.closure` is
+**always 0** on every org.
+
+What it costs at SF, measured: **66 rows / 219.0 hours** are staff blocks named
+*Unavailable* (16 rentals) or *Not Reservable* (2), all `booking_type = managed`
+with no attendee count. They are counted as **booked** time, so:
+
+- utilization reads **21.6%** where excluding them gives **21.0%**,
+- those 66 blocks sit inside the **101** "Leagues / Managed" bookings, and
+- each blocked court's own "N bkgs" count includes them.
+
+Not fixed — which way to fix it is a decision, not a drive-by: a court closed
+for maintenance is not utilised, but it is arguably also not *available*, so the
+choice is between taking the hours out of the numerator and taking them out of
+the denominator, and the two produce different percentages. Flagged to Dan with
+the numbers.
+
+### One labelling note that is NOT wrong
+
+`Instant 2,512 + Managed 101 = 2,613`, against `Distinct Bookings 2,550` one row
+above. Both are right: the two lower cards sum **per-court** distinct rentals
+(`grouped.reduce(... g.customer)`), while the KPI counts distinct rentals across
+the whole view — so a rental touching two courts is counted once above and twice
+below. The per-court "44 bkgs" figures depend on that per-court counting, so it
+is the KPI row's neighbours that invite the comparison, not the arithmetic.
+
 ## The Facilities hub loses a tab and a signpost (2026-09-04)
 
 Three asks in one pass, all Dan's, all on `public/facilities.html`.
