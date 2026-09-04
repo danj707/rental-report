@@ -5691,6 +5691,20 @@
       const mapInst = React.useRef(null);
       const cacheRef = React.useRef({});
       const [geocoded, setGeocoded] = React.useState(null);
+      // null = the coordinates feed has not answered YET, {} = it answered and
+      // this org has none stored. Those are different facts and only the second
+      // one licenses falling back to a name search, so the geocoding effect
+      // waits for this rather than racing it.
+      const [storedCoords, setStoredCoords] = React.useState(null);
+
+      React.useEffect(() => {
+        let alive = true;
+        fetch('/' + CFG.slug + '/facilities/api/location-coords')
+          .then(r => r.ok ? r.json() : { coords: {} })
+          .then(d => { if (alive) setStoredCoords((d && d.coords) || {}); })
+          .catch(() => { if (alive) setStoredCoords({}); });
+        return () => { alive = false; };
+      }, []);
 
       const locations = React.useMemo(() => {
         const byLoc = {};
@@ -5704,17 +5718,46 @@
         return Object.values(byLoc).map(l => { l.utilPct = l.totalAvail > 0 ? Math.round(l.totalUsed / l.totalAvail * 100) : 0; return l; });
       }, [grouped]);
 
+      // WHERE A LOCATION ACTUALLY IS, in priority order:
+      //   1. the coordinates the PRODUCT stores on the Location record. Saving a
+      //      Location requires picking a real place on a map, so this is the
+      //      answer and everything below it is a guess.
+      //   2. failing that, a geocode of the name — BOUNDED to the org's own
+      //      area and rejected if it lands implausibly far away.
+      //   3. failing that, nothing. The location is left OFF the map and
+      //      counted, because a missing pin is honest and a pin on the wrong
+      //      continent is not.
+      //
+      // Step 2 used to be the ONLY step, and San Francisco is why that could
+      // never work: its parks are Balboa, Dolores, Buena Vista, Richmond and
+      // Sunset, and there are towns called Dolores and Buena Vista in Argentina
+      // and Uruguay. `limit=1` on a free-text search put SF tennis courts in
+      // South America while every stored coordinate was correct.
       React.useEffect(() => {
-        if (!locations.length) return;
+        if (!locations.length || storedCoords === null) return;
         const cache = cacheRef.current;
         let cityName = CFG.mapCity || '';
         if (!cityName) cityName = (CFG.displayName || '').replace(/\s*(Parks|Recreation|Department|City of|Town of).*$/i, '').replace(/^(City of|Town of)\s*/i, '').trim();
         let vb = '';
         const oc = CFG.coords || null;
-        if (oc) { const d = 0.15; vb = '&viewbox=' + (oc.lon - d) + ',' + (oc.lat + d) + ',' + (oc.lon + d) + ',' + (oc.lat - d); }
-        let idx = 0; const results = [];
+        // `bounded=1` is the load-bearing half. On its own `viewbox` is only a
+        // soft ranking preference in Nominatim — a name that does not match
+        // locally still returns a global result — so without it there is
+        // nothing at all stopping a hit on another continent.
+        if (oc) { const d = 0.15; vb = '&bounded=1&viewbox=' + (oc.lon - d) + ',' + (oc.lat + d) + ',' + (oc.lon + d) + ',' + (oc.lat - d); }
+        // A geocode more than this far from the org is refused. Generous enough
+        // for a parks department spread across a county, nowhere near generous
+        // enough to reach Argentina.
+        const MAX_KM = 150;
+        const kmFromOrg = (la, lo) => {
+          if (!oc) return 0;
+          const dLa = la - oc.lat, dLo = (lo - oc.lon) * Math.cos(oc.lat * Math.PI / 180);
+          return 111 * Math.sqrt(dLa * dLa + dLo * dLo);
+        };
+        let idx = 0; const results = []; const dropped = [];
         const next = () => {
           if (idx >= locations.length) {
+            results.dropped = dropped;
             for (let i = 0; i < results.length; i++) for (let j = i + 1; j < results.length; j++) {
               const dl = results[i].lat - results[j].lat, dg = results[i].lng - results[j].lng;
               if (Math.sqrt(dl * dl + dg * dg) < 0.003) { const a = j * 2.2; results[j].lat += Math.cos(a) * 0.003; results[j].lng += Math.sin(a) * 0.003; }
@@ -5722,21 +5765,31 @@
             setGeocoded(results); return;
           }
           const loc = locations[idx]; idx++;
-          if (cache[loc.name]) { results.push(Object.assign({}, loc, cache[loc.name])); next(); return; }
+          // 1. The stored coordinate wins outright, and costs no request.
+          const stored = storedCoords && storedCoords[loc.name];
+          if (stored) { results.push(Object.assign({}, loc, stored, { placed: 'stored' })); next(); return; }
+          if (cache[loc.name]) { results.push(Object.assign({}, loc, cache[loc.name], { placed: 'geocoded' })); next(); return; }
           const q = loc.name + (cityName ? ', ' + cityName : '');
           setTimeout(() => {
             fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(q) + vb)
               .then(r => r.json())
               .then(data => {
-                if (data && data[0]) { const c = { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) }; cache[loc.name] = c; results.push(Object.assign({}, loc, c)); }
-                else if (oc) { const off = (results.length * 0.003) - 0.005; results.push(Object.assign({}, loc, { lat: oc.lat + off, lng: oc.lon + off })); }
+                const hit = data && data[0] ? { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) } : null;
+                if (hit && Number.isFinite(hit.lat) && Number.isFinite(hit.lng) && kmFromOrg(hit.lat, hit.lng) <= MAX_KM) {
+                  cache[loc.name] = hit; results.push(Object.assign({}, loc, hit, { placed: 'geocoded' }));
+                } else {
+                  // No usable answer. Deliberately NOT nudged to the org centre
+                  // any more: a pin next to city hall for a park we could not
+                  // find is a made-up location wearing a real one's label.
+                  dropped.push(loc.name);
+                }
                 next();
               })
-              .catch(() => { if (oc) results.push(Object.assign({}, loc, { lat: oc.lat, lng: oc.lon })); next(); });
+              .catch(() => { dropped.push(loc.name); next(); });
           }, 1100);
         };
         next();
-      }, [locations]);
+      }, [locations, storedCoords]);
 
       React.useEffect(() => {
         if (!geocoded || !geocoded.length || !mapRef.current || typeof L === 'undefined') return;
@@ -5763,7 +5816,10 @@
         return () => { if (mapInst.current) { mapInst.current.remove(); mapInst.current = null; } };
       }, [geocoded]);
 
-      if (!geocoded) return e('div', { className: 'cu-loading' }, e('div', { className: 'fac-spin' }), 'Geocoding ' + locations.length + ' location' + (locations.length > 1 ? 's' : '') + '…');
+      // A location we could not place is SAID, not silently missing: the map
+      // otherwise reads as the whole estate when it is a subset.
+      const missing = (geocoded && geocoded.dropped) || [];
+      if (!geocoded) return e('div', { className: 'cu-loading' }, e('div', { className: 'fac-spin' }), 'Locating ' + locations.length + ' location' + (locations.length > 1 ? 's' : '') + '…');
       return e('div', null,
         e('div', { className: 'cu-map-legend' },
           e('span', null, e('span', { className: 'cu-map-dot', style: { background: '#dc2626' } }), '70%+ High'),
@@ -5771,6 +5827,14 @@
           e('span', null, e('span', { className: 'cu-map-dot', style: { background: '#22c55e' } }), '15-40% Moderate'),
           e('span', null, e('span', { className: 'cu-map-dot', style: { background: '#94a3b8' } }), '<15% Low'),
           e('span', { style: { marginLeft: 'auto', fontSize: 10, color: '#bbb' } }, 'Click a location for court breakdown')),
+        missing.length ? e('div', {
+          'data-cu-missing': missing.length,
+          style: { fontSize: 11, color: '#92400e', background: '#fffbeb', border: '1px solid #fde68a',
+                   borderRadius: 6, padding: '6px 10px', margin: '0 0 8px' },
+          title: missing.join(', '),
+        }, '⚠ ' + missing.length + ' location' + (missing.length > 1 ? 's are' : ' is') +
+           ' not on the map — no saved map location, so ' + (missing.length > 1 ? 'they' : 'it') +
+           ' cannot be placed. Set the Address on the location in Rec.') : null,
         e('div', { className: 'cu-map-wrap', ref: mapRef }),
       );
     }
