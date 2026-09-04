@@ -1,5 +1,91 @@
 # Project notes for Claude
 
+## The base-table payment path: measured, proven, NOT pushed (2026-09-04)
+
+Dan: *"lets explore the bigger win for order item transactions"*. Explored and
+measured. It works, and the decision to spend another flip window is his.
+
+### THE COLUMN THAT BLOCKED IT IS `order_item.product_type`
+
+The earlier attempt died on `column oi.type does not exist` and I recorded the
+fallback as needing discovery. The discovery is one query: `order_item` has
+**`product_type`**, not `type`, and the customer key is
+**`order.customer_user_id`** — which equalling the item log's `customer_id` is
+now proven rather than assumed.
+
+### EQUIVALENCE: two orgs, whole history, ZERO diffs
+
+| | item log | base tables |
+|---|---|---|
+| **pawnee** `tx_oi` groups | 1,628 | 1,628 |
+| **pawnee** `tx_cust` groups | 311 | 311 |
+| **norman** `tx_oi` groups | **115,053** | **115,053** |
+| **norman** `tx_cust` groups | **41,947** | **41,947** |
+| norman paid | **$1,866,181.26** | **$1,866,181.26** |
+| norman refunded | **$55,550.65** | **$55,550.65** |
+
+0 presence diffs, 0 value diffs, identical to the cent. Plus a **row-by-row**
+gate over Pawnee's thirteen-month window: 100 rows, 0 paid diffs, 0 refund
+diffs.
+
+Note `order_item.deleted_at` is deliberately NOT filtered — it was left out and
+the diffs came back zero across 157k groups, so matching the item log means not
+filtering it. Settled empirically rather than guessed.
+
+### THE INDEX IS NOT ENOUGH ON ITS OWN — and this corrects what I told Dan
+
+I said the base tables would take this *"from seconds to milliseconds"*, on the
+strength of CLAUDE.md's card-20197 figure (464ms). **That measurement was one
+org-MONTH.** Unscoped over Norman's whole history the base path **TIMED OUT past
+60s** — 115,053 order items is a big aggregate however well indexed.
+
+**It is the COMBINATION.** Scoped to the window AND on the base tables, Norman's
+full thirteen-month payment aggregate is **2.3 s**, reading 20,535 transactions
+instead of the org's entire ledger. Against v6's 25.8s for the whole card, that
+is the remaining cost almost entirely gone.
+
+| | pawnee (Dan's window) | norman (heaviest) |
+|---|---|---|
+| v5 (deployed until today) | timeout past 300s | — |
+| **v6 (live now)** | **7.9 s** | **25.8 s** |
+| v7 candidate, payment aggregate alone | ~1 s | **2.3 s** |
+
+### THE FALLBACK SERVES TEN ROWS ON THE ENTIRE PLATFORM
+
+The measurement that reframes all of this. Of **130,886** membership/pass
+purchase rows platform-wide, the number with no `order_item_id` — the only rows
+`tx_cust` can ever serve — is **10**, across **2** orgs
+(`apex-park-and-recreation-district` and `apex-sandbox`), **all created on one
+day, 2025-12-16**, with product names including *"Test Membership"* and
+*"Renew Active"*.
+
+So a full scan of a 1230 MB single-index table, on every Memberships load for
+every org, existed to decorate **ten test-looking rows**. **v6 already fixed
+that** — its scoped pass pulls fallback rows only for orphan pairs, which is an
+empty set for 99.99% of org-windows.
+
+**The fallback is NOT deleted.** The card's own comment says it is for desk/admin
+sales, the shape could recur, and removing a correctness path because today's
+data does not exercise it is how a silent wrong number gets born. What changed is
+that its COST is now proportional to its use.
+
+### WHAT WOULD STILL NEED DOING BEFORE v7 SHIPS
+
+- **Exercise the fallback END-TO-END.** Every proof above tests it at the CTE
+  level (311/311 and 41,947/41,947 groups, zero diffs) but no *window row* used
+  it, because Pawnee's window has no orphans. The two apex orgs on 2025-12-16 are
+  the test case.
+- **Another tag flip and another outage window.** Same six-parameter dance.
+- **It reverses a recorded decision.** The `materialized`-schema section says
+  *"index the table, do NOT rebuild the cards on base tables"* — written for the
+  Tyler FINANCE export, where divergence would land in a document handed to a
+  finance office. The evidence above is much stronger than what was available
+  then, and this card's derivation is two SUM…FILTERs rather than finance logic —
+  but reversing it is Dan's call, not a drive-by.
+
+**And it does not retire the index ask.** v7 would take card 17301 off
+`item_log_report`; cards 17293, 20197 and 17295 are still on it.
+
 ## THE RETENTION TAB WAS REWRITING THE REPORT'S DATE RANGE (2026-09-04)
 
 Dan: *"The first few tabs, if they are scoped to the prior 30 days, is fast. But
