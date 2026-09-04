@@ -1,5 +1,161 @@
 # Project notes for Claude
 
+## Card 17301 v7 — PUSHED AND IT IS A REGRESSION (2026-09-04)
+
+**READ THIS BEFORE ANYTHING BELOW.** v7 is live on card 17301 and it TIMES OUT
+for every org tested except Pawnee. Measured after the tag flip, through the
+public endpoint, one probe at a time with nothing else touching the replica:
+
+| org | v6 (proven) | v7 (live) |
+|---|---|---|
+| pawnee, 13 months | 7.9s | 100 rows in 29.9s → 20.9s → 2.1s |
+| norman, no dates | 25.8s | **TIMEOUT past 200s** |
+| norman, 13 months | — | **TIMEOUT past 200s** |
+| norman, ONE MONTH | — | **TIMEOUT past 170s** |
+| clarksville | 3.9s | **TIMEOUT past 200s** |
+
+**THE ONE-MONTH NORMAN RESULT IS THE IMPORTANT ONE**: a one-month `win` is tiny,
+so the cost is not proportional to the window. Scoping is not what saves this
+shape and v6's win did not carry over.
+
+### HOW A CHANGE PROVEN THREE WAYS STILL SHIPPED BROKEN
+
+The equivalence work was sound — 157k groups, zero diffs, and it was deliberately
+re-run against the shipped OR shape. **The TIMING was not.** The 2.3s figure came
+from measuring `tx_oi` alone with a single `IN`; the shipped `tx` has an OR of two
+`IN` subqueries and was never timed. I proved the values of what shipped and the
+speed of something else, then wrote 2.3s into the card comment, the mirror, the PR
+and this file as though it described the deployed query. **Prove the speed of the
+exact text you are pushing, not of the fragment you developed.**
+
+Compounding it: the manifest's own norman row runs UNWINDOWED (no `--start`/`--end`
+sends no date parameters at all, so the `[[ ]]` blocks drop out), and I had already
+measured and written down that the unscoped base path times out past 60s. The
+regression was predicted in my own notes and I added a sign-off row for exactly
+that shape without connecting the two.
+
+### TWO PUBLISHED DIAGNOSES, BOTH WRONG
+
+Recorded because they cost time and will otherwise be re-derived:
+
+* **`orphan_items` scanning the org.** No — the plan drives off the tiny purchases
+  side and index-scans into `order` / `order_item`. Cost 20,709.
+* **The OR defeating the index.** No — Postgres hashes both subplans behind a
+  bitmap index scan on `order_item_transaction_organization_id_index`. Cost 97,210.
+
+**Every plan prices cheap while the real card times out**, so the mechanism is still
+unknown and EXPLAIN cost estimates are not going to find it. `EXPLAIN ANALYZE` on
+the full card text (not a `count(*)`, which lets the planner drop the joins) is the
+next step, and it needs a tool without a 60s ceiling.
+
+### WHERE IT STANDS
+
+Rollback to v6 was recommended and NOT executed — a push regenerates the date tags
+as Text and 400s the card for every org until a human flips them, so it must not be
+started while nobody is at the keyboard. The v7 fix belongs on a SCRATCH card,
+compared against 17301 through the public endpoint, so the next attempt costs no
+downtime.
+
+**Also worth knowing, found on the way:** `memberships` is in `NO_DATE_REPORTS`, so
+prewarm sends `org_id` alone and asks card 17301 for the org's whole history every
+morning. The page never does — `defaultDates()` is the current calendar month — and
+prewarm's dateless entry carries a different parameter string from anything the page
+requests, so that query has always been unreadable by the page. Under v6 it was a
+wasted 25s; under v7 it is a wasted 120s abort.
+
+## The base-table payment path, as originally written up (2026-09-04)
+
+Dan: *"lets explore the bigger win for order item transactions"* and then
+*"lets do it"*. Explored, measured, gated three ways, and pushed. **Card 17301
+no longer reads `materialized.item_log_report` at all.**
+
+### THE COLUMN THAT BLOCKED IT IS `order_item.product_type`
+
+The earlier attempt died on `column oi.type does not exist` and I recorded the
+fallback as needing discovery. The discovery is one query: `order_item` has
+**`product_type`**, not `type`, and the customer key is
+**`order.customer_user_id`** — which equalling the item log's `customer_id` is
+now proven rather than assumed.
+
+### EQUIVALENCE: two orgs, whole history, ZERO diffs
+
+| | item log | base tables |
+|---|---|---|
+| **pawnee** `tx_oi` groups | 1,628 | 1,628 |
+| **pawnee** `tx_cust` groups | 311 | 311 |
+| **norman** `tx_oi` groups | **115,053** | **115,053** |
+| **norman** `tx_cust` groups | **41,947** | **41,947** |
+| norman paid | **$1,866,181.26** | **$1,866,181.26** |
+| norman refunded | **$55,550.65** | **$55,550.65** |
+
+0 presence diffs, 0 value diffs, identical to the cent. Plus a **row-by-row**
+gate over Pawnee's thirteen-month window: 100 rows, 0 paid diffs, 0 refund
+diffs.
+
+Note `order_item.deleted_at` is deliberately NOT filtered — it was left out and
+the diffs came back zero across 157k groups, so matching the item log means not
+filtering it. Settled empirically rather than guessed.
+
+### THE INDEX IS NOT ENOUGH ON ITS OWN — and this corrects what I told Dan
+
+I said the base tables would take this *"from seconds to milliseconds"*, on the
+strength of CLAUDE.md's card-20197 figure (464ms). **That measurement was one
+org-MONTH.** Unscoped over Norman's whole history the base path **TIMED OUT past
+60s** — 115,053 order items is a big aggregate however well indexed.
+
+**It is the COMBINATION.** Scoped to the window AND on the base tables, Norman's
+full thirteen-month payment aggregate is **2.3 s**, reading 20,535 transactions
+instead of the org's entire ledger. Against v6's 25.8s for the whole card, that
+is the remaining cost almost entirely gone.
+
+| | pawnee (Dan's window) | norman (heaviest) |
+|---|---|---|
+| v5 (deployed until today) | timeout past 300s | — |
+| **v6 (live now)** | **7.9 s** | **25.8 s** |
+| v7 candidate, payment aggregate alone | ~1 s | **2.3 s** |
+
+### THE FALLBACK SERVES TEN ROWS ON THE ENTIRE PLATFORM
+
+The measurement that reframes all of this. Of **130,886** membership/pass
+purchase rows platform-wide, the number with no `order_item_id` — the only rows
+`tx_cust` can ever serve — is **10**, across **2** orgs
+(`apex-park-and-recreation-district` and `apex-sandbox`), **all created on one
+day, 2025-12-16**, with product names including *"Test Membership"* and
+*"Renew Active"*.
+
+So a full scan of a 1230 MB single-index table, on every Memberships load for
+every org, existed to decorate **ten test-looking rows**. **v6 already fixed
+that** — its scoped pass pulls fallback rows only for orphan pairs, which is an
+empty set for 99.99% of org-windows.
+
+**The fallback is NOT deleted.** The card's own comment says it is for desk/admin
+sales, the shape could recur, and removing a correctness path because today's
+data does not exercise it is how a silent wrong number gets born. What changed is
+that its COST is now proportional to its use.
+
+### THE FALLBACK GATE, closed before the push
+
+The one gate left open was the fallback exercised END-TO-END by a real window
+row — every other proof tested it at the CTE level. **Closed:** for all ten
+orphan rows on the platform, the base path finds **zero** matching order items
+AND the item log finds **zero** rows, so both return $0 and agree. The fallback
+contributes nothing to any number anywhere today, and the two paths agree that
+it does.
+
+### IT REVERSES A RECORDED DECISION, deliberately and narrowly
+
+The `materialized`-schema section says *"index the table, do NOT rebuild the
+cards on base tables"*. **That decision stands for the Tyler FINANCE export**,
+where divergence would land in a document handed to a finance office and where
+the derivation is a per-method CASE ladder. It does **not** survive here, and
+the difference is worth stating: this card's derivation is two `SUM…FILTER`
+expressions, and the equivalence is measured over two orgs' entire histories at
+157k groups with zero diffs rather than argued. Dan made the call
+(*"lets do it"*); the earlier decision is not silently overwritten.
+
+**And it does not retire the index ask.** v7 would take card 17301 off
+`item_log_report`; cards 17293, 20197 and 17295 are still on it.
+
 ## THE RETENTION TAB WAS REWRITING THE REPORT'S DATE RANGE (2026-09-04)
 
 Dan: *"The first few tabs, if they are scoped to the prior 30 days, is fast. But
