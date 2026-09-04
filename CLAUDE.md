@@ -1,6 +1,69 @@
 # Project notes for Claude
 
-## Card 17301 v7 — the base-table payment path, PUSHED (2026-09-04)
+## Card 17301 v7 — PUSHED AND IT IS A REGRESSION (2026-09-04)
+
+**READ THIS BEFORE ANYTHING BELOW.** v7 is live on card 17301 and it TIMES OUT
+for every org tested except Pawnee. Measured after the tag flip, through the
+public endpoint, one probe at a time with nothing else touching the replica:
+
+| org | v6 (proven) | v7 (live) |
+|---|---|---|
+| pawnee, 13 months | 7.9s | 100 rows in 29.9s → 20.9s → 2.1s |
+| norman, no dates | 25.8s | **TIMEOUT past 200s** |
+| norman, 13 months | — | **TIMEOUT past 200s** |
+| norman, ONE MONTH | — | **TIMEOUT past 170s** |
+| clarksville | 3.9s | **TIMEOUT past 200s** |
+
+**THE ONE-MONTH NORMAN RESULT IS THE IMPORTANT ONE**: a one-month `win` is tiny,
+so the cost is not proportional to the window. Scoping is not what saves this
+shape and v6's win did not carry over.
+
+### HOW A CHANGE PROVEN THREE WAYS STILL SHIPPED BROKEN
+
+The equivalence work was sound — 157k groups, zero diffs, and it was deliberately
+re-run against the shipped OR shape. **The TIMING was not.** The 2.3s figure came
+from measuring `tx_oi` alone with a single `IN`; the shipped `tx` has an OR of two
+`IN` subqueries and was never timed. I proved the values of what shipped and the
+speed of something else, then wrote 2.3s into the card comment, the mirror, the PR
+and this file as though it described the deployed query. **Prove the speed of the
+exact text you are pushing, not of the fragment you developed.**
+
+Compounding it: the manifest's own norman row runs UNWINDOWED (no `--start`/`--end`
+sends no date parameters at all, so the `[[ ]]` blocks drop out), and I had already
+measured and written down that the unscoped base path times out past 60s. The
+regression was predicted in my own notes and I added a sign-off row for exactly
+that shape without connecting the two.
+
+### TWO PUBLISHED DIAGNOSES, BOTH WRONG
+
+Recorded because they cost time and will otherwise be re-derived:
+
+* **`orphan_items` scanning the org.** No — the plan drives off the tiny purchases
+  side and index-scans into `order` / `order_item`. Cost 20,709.
+* **The OR defeating the index.** No — Postgres hashes both subplans behind a
+  bitmap index scan on `order_item_transaction_organization_id_index`. Cost 97,210.
+
+**Every plan prices cheap while the real card times out**, so the mechanism is still
+unknown and EXPLAIN cost estimates are not going to find it. `EXPLAIN ANALYZE` on
+the full card text (not a `count(*)`, which lets the planner drop the joins) is the
+next step, and it needs a tool without a 60s ceiling.
+
+### WHERE IT STANDS
+
+Rollback to v6 was recommended and NOT executed — a push regenerates the date tags
+as Text and 400s the card for every org until a human flips them, so it must not be
+started while nobody is at the keyboard. The v7 fix belongs on a SCRATCH card,
+compared against 17301 through the public endpoint, so the next attempt costs no
+downtime.
+
+**Also worth knowing, found on the way:** `memberships` is in `NO_DATE_REPORTS`, so
+prewarm sends `org_id` alone and asks card 17301 for the org's whole history every
+morning. The page never does — `defaultDates()` is the current calendar month — and
+prewarm's dateless entry carries a different parameter string from anything the page
+requests, so that query has always been unreadable by the page. Under v6 it was a
+wasted 25s; under v7 it is a wasted 120s abort.
+
+## The base-table payment path, as originally written up (2026-09-04)
 
 Dan: *"lets explore the bigger win for order item transactions"* and then
 *"lets do it"*. Explored, measured, gated three ways, and pushed. **Card 17301
