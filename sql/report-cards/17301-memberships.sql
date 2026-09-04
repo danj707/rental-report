@@ -7,216 +7,52 @@
      Join: order_item_id when present; fall back to customer+product
      for orphaned rows (null order_item_id, e.g. desk/admin sales).
 
-   ── v7 (2026-09-04) — PERFORMANCE ONLY, not one value moves ─
-   The payment aggregates come off the INDEXED BASE TABLES
-   (order_item_transaction) instead of materialized.item_log_report, still
-   scoped to the window by `win`. v6 removed one of two full scans of a 1230 MB
-   single-index table; v7 removes the remaining one.
+   ── ROLLED BACK TO v6 (2026-09-04) ──────────────────────────
+   This is v6's executable SQL restored byte for byte. v7 moved the payment
+   aggregates onto public.order_item_transaction and TIMED OUT for every org
+   tested except Pawnee — norman past 200s unwindowed, past 200s over thirteen
+   months and past 170s over ONE MONTH; clarksville past 200s. v6 does those
+   in 25.8s and 3.9s. The one-month norman result is the one that matters: a
+   one-month `win` is tiny, so v7's cost is not proportional to the window and
+   v6's scoping win did not carry over to the base tables.
 
-   IT IS THE COMBINATION, and the base tables alone are NOT enough: unscoped
-   over City of Norman's whole history the base path TIMED OUT past 60s —
-   115,053 order items is a big aggregate however well indexed. Scoped AND on
-   the base tables, Norman's full thirteen-month payment aggregate is 2.3s,
-   reading 20,535 transactions instead of the org's entire ledger, against v6's
-   25.8s for the whole card.
+   HOW v7 SHIPPED BROKEN, so it is not repeated: its equivalence proof was
+   sound (157k groups, zero diffs, re-run against the shipped OR shape), but
+   the 2.3s TIMING was measured on tx_oi alone with a single IN, while the
+   shipped tx filtered on an OR of two IN subqueries and was never timed.
+   Prove the speed of the exact text being pushed, not of the fragment it was
+   developed from. The v7 mechanism is still UNKNOWN — orphan_items (cost
+   20,709) and the OR defeating the index (cost 97,210) were both checked and
+   both cleared, and every plan prices cheap while the card times out. The
+   next attempt belongs on a SCRATCH card compared through the public
+   endpoint, so it costs no downtime.
 
-   PROVEN VALUE-IDENTICAL THREE WAYS BEFORE THE PUSH:
-     * CTE level, TWO orgs, WHOLE history — pawnee 1,628/1,628 order-item groups
-       and 311/311 fallback groups; norman 115,053/115,053 and 41,947/41,947,
-       with $1,866,181.26 paid and $55,550.65 refunded identical to the cent.
-       0 presence diffs, 0 value diffs anywhere.
-     * ROW BY ROW over Pawnee's thirteen-month window: 100 rows, 0 paid diffs,
-       0 refund diffs.
-     * THE FALLBACK END TO END. Of 130,886 membership/pass purchase rows
-       platform-wide, exactly 10 have no order_item_id — the only rows tx_cust
-       can ever serve, across 2 orgs, all created on 2025-12-16 with names
-       including "Test Membership". Both paths return $0 for every one of them
-       and agree. The fallback is KEPT anyway: the shape could recur, and
-       deleting a correctness path because today's data does not exercise it is
-       how a silent wrong number gets born.
+   ── v6 (2026-09-04) — PERFORMANCE ONLY, not one value moves ─
+   The two payment CTEs are scoped to the window and share ONE pass over
+   materialized.item_log_report instead of scanning it twice, unwindowed.
 
-   THE CUSTOMER KEY IS order.customer_user_id and the type column is
-   order_item.PRODUCT_TYPE — not `type`, which does not exist. Both were
-   discovered rather than guessed, and the equivalence above is what proves the
-   customer key really does equal the item log's customer_id.
+   WHY, measured against prod on 2026-09-04 (Pawnee):
+     * everything in this card EXCEPT the two payment CTEs, over a
+       thirteen-month window, is 559ms for 100 output rows.
+     * ONE scan of materialized.item_log_report for that org is 39.9s. The
+       table has exactly one index — its primary key — over 2.26M rows and
+       1230 MB, so every read is a full parallel seq scan.
+     * the card did TWO of them, unwindowed, to decorate those 100 rows.
+   So 99.3% of the report was computing the org's entire payment history and
+   throwing nearly all of it away: a thirteen-month window TIMED OUT past 300s
+   and a one-month window with ZERO output rows still cost 55s.
+
+   PROVEN VALUE-IDENTICAL BEFORE THE PUSH, not assumed. Pawnee,
+   2025-09-04..2026-09-30, candidate vs deployed: 0 presence diffs, 0 value
+   diffs on paid/refund for every one of the window's order items, 0 diffs on
+   the customer fallback, and identical dollar totals.
 
    Every output column keeps its name, position and expression, so a warm
-   4-hour v5/v6 cache entry and a v7 response are indistinguishable to
+   4-hour v5/v6/v7 cache entry and this response are indistinguishable to
    public/memberships.html.
 
-   NOTE ON THIS MIRROR: the EXECUTABLE SQL is identical to the live card. The
-   live card's header condenses the v2/v3/v4 notes to keep it readable in the
-   Metabase editor; this file keeps them in full. That is the only difference,
-   and it is stated here rather than left to be discovered as drift.
-
-   ── v6 (2026-09-04) — superseded as to SOURCE, `win` unchanged ─
-   Lifted the card's own output filter into `win` and used it to scope ONE
-   MATERIALIZED pass over materialized.item_log_report instead of scanning it
-   twice, unwindowed. WHY, measured (Pawnee): everything in this card EXCEPT the
-   payment CTEs, over a thirteen-month window, is 559ms for 100 output rows; ONE
-   scan of materialized.item_log_report for that org is 39.9s (that table has
-   exactly one index, its primary key, over 2.26M rows and 1230 MB); and the
-   card did TWO. So 99.3% of the report was computing the org's entire payment
-   history and throwing nearly all of it away — a thirteen-month window TIMED
-   OUT past 300s and a one-month window with ZERO output rows still cost 55s.
-   Signed off after the tag flip at 100 rows in 7.9s (pawnee) and 25.8s
-   (norman). v7 changes only the SOURCE of those aggregates.
-
-   ── v5 (2026-08-31) ─────────────────────────────────────────
-   Adds ONE column, "Resident?", and changes nothing else. It is appended at
-   the END of the select list, so a warm 4-hour v4 cache entry and a v5
-   response are both readable by public/memberships.html, which gates on the
-   PRESENCE of the column (mbHasResidency) and never on its value.
-
-   RESIDENCY IS READ FROM THE GROUP'S OWN TOGGLE — group_type = 'residency' —
-   and deliberately NOT from a name match. Cards 17294 and 17788 currently use
-   `group_type ILIKE '%residen%' OR name ILIKE '%residen%'`, and that name
-   clause is wrong in both directions. Measured platform-wide:
-
-     * it sweeps in 96 groups across 35 orgs that are NOT residency groups —
-       4,099 live memberships, 1,446 households. Among them are products
-       ("El Segundo Resident ID Card - Adult", 1,088) and, worse, groups whose
-       names contain "Non-Resident" as a substring: 516 people currently on
-       "2026 Summer Pool Pass (Non-residents)" and "2026 Annual Pool Pass
-       (Non-residents)" are reported as RESIDENTS today.
-     * it gains nothing. Every residency-typed group is already matched by the
-       type half of that condition, because 'residency' ILIKE '%residen%'.
-
-   Switching to the toggle costs no org any coverage (measured: 0 orgs have a
-   residency-NAMED group without also having a residency-TYPED one) and needs
-   no negative guard, because "Non-Resident Groups" is typed special-group and
-   the toggle simply cannot match it.
-
-   THERE ARE THREE WAYS TO REACH A RESIDENT AND ALL THREE ARE REQUIRED. This
-   was measured, and the obvious two-path version was WRONG — it returned
-   'No' on all 3,132 El Segundo rows while 1,317 resident households existed:
-
-     1. the PURCHASED PRODUCT's household — membership_household_id /
-        pass_household_id on the view. These are NULL unless the product
-        itself is household-coverage: at El Segundo every one of the 3,132
-        rows is coverage='individual', so both columns are null on every row.
-        (Note the view splits this id in two and has no single
-        customer_household_id, unlike the facility card's booking view.)
-     2. the BUYER's own household — users.household_id, reached through
-        customer_user_id. THIS is the path that carries the answer for most
-        orgs; 2,610 of El Segundo's buyers have it populated, and the
-        residency group attaches at household level.
-     3. the buyer as an individual — membership_user. Zero rows at El Segundo,
-        because a household-coverage residency membership has no per-user
-        rows, but it is the path for orgs that enrol residents individually.
-
-   Each covers a real shape and none subsumes the others, so the test
-   COALESCEs 1 and 2 and then falls through to 3. Getting this wrong is
-   silent: every join is a LEFT JOIN and a miss renders a confident 'No'.
-
-   NULL, NEVER 'No', WHEN THE ORG HAS NO RESIDENCY GROUP AT ALL. An org that
-   does not run residency pricing must not be told every member is a
-   non-resident — that is a confident answer to a question its data cannot
-   address. Same rule as hasAbsent / ciHasStatus / mbHasProductKind.
-
-   WORTH KNOWING BEFORE RECONCILING A CLOSED FISCAL YEAR: this test is
-   evaluated at query time against CURRENT membership. It answers "is this
-   person a resident today", not "were they a resident when they bought".
-
-   ── v4 (2026-08-30) ─────────────────────────────────────────
-   Adds "Cancel Scheduled At" and "Cancel Reason". Both come off the
-   `membership` join v2 already made, so this adds no joins and cannot
-   move a row count.
-
-     "Cancel Scheduled At"  membership.cancel_scheduled_at. A cancellation
-                            already booked for the end of the current period —
-                            the membership is live, is counted in the book, and
-                            WILL NOT renew. It is the only forward-looking churn
-                            signal in this schema, and nothing else exposes it:
-                            City of Norman has 126. `canceled_at` is the past,
-                            this is the future.
-     "Cancel Reason"        membership.cancel_reason. Carried so the page can
-                            show it where it exists, but do not build a "why
-                            they left" panel on it — the vocabulary is only
-                            other/schedule/cost and 94.2% say "other".
-
-   WHAT IS *NOT* HERE, and why. There is no renewal-event history anywhere in
-   this database: `public.subscription` is a marketing opt-in table, and
-   `membership` keeps only the CURRENT period. Renewals are therefore DERIVED
-   on the page as (Period Start − Start Date) ÷ cycle. Verified sound against
-   prod rather than assumed — over City of Norman's auto-renewers the elapsed
-   time divides into whole cycles: weekly (58 memberships) is exact, monthly
-   (137) sits 0.06 off a whole number, which is calendar months of unequal
-   length against a fixed 31-day cycle. Note the derivation only works while a
-   membership is LIVE: next_renewal_at is cleared on cancellation, so a
-   cancelled membership has no cycle to divide by and contributes tenure
-   instead of a renewal count.
-
-   ── v3 (2026-08-30) ─────────────────────────────────────────
-   Adds "Product Kind" and joins pass_schema. WHY: v2 read the plan
-   term rule only from `group`, and A PASS HAS NO GROUP — its
-   group_id is NULL, so both plan columns came back NULL and the page
-   concluded "no season end, no term days, therefore an open-ended
-   subscription". Every day pass and gate fee on the platform was
-   classified as a subscription and offered as an auto-renew
-   conversion candidate. Norman alone: 16,940 of 20,341 rows are
-   passes and 10,669 of those carried neither term rule, including
-   4,518 "League Tournament Gate Adult $5" admissions at ~$6.
-
-   Absence of a group term rule is not evidence of a subscription.
-   "Product Kind" states what the row IS instead of inferring it, and
-   the pass_schema join gives a pass its own term rule rather than
-   leaving it to look like an absent one.
-
-   Additive, verified against prod before this push: City of Norman,
-   20,341 rows with and without the pass_schema join. It is on that
-   table's primary key, so it cannot fan out.
-
-   ── v2 (2026-08-29) ─────────────────────────────────────────
-   Adds FIVE columns and changes nothing else. Every pre-existing
-   column keeps its name, position and expression, so a warm 4-hour
-   cache entry from v1 and a fresh v2 response are both readable by
-   public/memberships.html (see mbHasEconomics / mbIsAutoRenew there).
-
-     "Coverage"          household | individual | group — already on the
-                         materialized view; decides whether a membership's
-                         people hang off household_id or membership_user.
-     "Plan Season End"   the plan's fixed end date — group.end_date for a
-                         membership, pass_schema.end_date for a pass.
-                         Non-null ⇒ a SEASON plan: every member's term ends
-                         on the same calendar date, so expiry is the season
-                         closing, NOT churn.
-     "Plan Term Days"    the plan's ends_after_seconds in days, from the same
-                         two sources. Non-null ⇒ a rolling fixed term
-                         (365d annual, 28d, …).
-                         Both null on a MEMBERSHIP ⇒ open-ended / subscription.
-                         Both null on a PASS means nothing — see "Product
-                         Kind" below, and do not read it as open-ended.
-     "Auto Renew"        membership.stripe_subscription_id IS NOT NULL.
-                         This is the TRUTH about auto-renew. The existing
-                         "Renewal Type" column infers it from
-                         membership_next_renewal_at and is kept unchanged
-                         for compatibility, but it is not the same test:
-                         over ACTIVE memberships, 1,760 carry both, 88
-                         carry a subscription with no renewal date, and
-                         none carry a renewal date without a subscription.
-     "Product Kind"      'membership' | 'pass'. Already on the view and
-                         previously read only in the WHERE clause. A PASS
-                         CANNOT AUTO-RENEW AT ALL — the `pass` table has no
-                         stripe_subscription_id and no next_renewal_at — so
-                         this is what keeps 13,802 active paid passes out of
-                         the auto-renew denominator and out of the
-                         conversion list.
-     "Period Start"      membership.current_period_start_at. With
-                         "Next Renewal" this gives the billing CYCLE
-                         length, which is the only way to turn a per-cycle
-                         charge into a monthly figure.
-
-   All three added joins are on primary keys (membership.id, group.id,
-   pass_schema.id), so none can fan out a row. Verified against prod:
-   City of Norman, 20,341 rows with and without them, and an identical
-   md5 over (epsio_id, customer_user_id, product_name, created_at) —
-   the row identity — in both directions.
-
-   WHY the extra joins are to base tables: the materialized purchases
-   view carries `coverage` and `group_id` but NOT the plan's term rule
-   or the subscription id, and those are what separate "a season ended"
-   from "a member left". See CLAUDE.md, "Memberships: the paid book".
+   NOTE: after any API update, re-set Start/End Date variable types to Date
+   in the UI, and re-save until the parameter list is THREE.
    ============================================================ */
 WITH res_group AS (   -- the org's residency groups, by the group's own toggle
   SELECT g.id
@@ -272,55 +108,43 @@ win AS (
     [[ AND (mp.created_at AT TIME ZONE 'America/Chicago')::date >= {{start_date}} ]]
     [[ AND (mp.created_at AT TIME ZONE 'America/Chicago')::date <= {{end_date}} ]]
 ),
-orphan_items AS (
-  /* Only for rows the FALLBACK can serve — mp.order_item_id IS NULL. Platform
-     wide that is 10 rows out of 130,886, so for virtually every org-window this
-     is an empty set and costs nothing. */
-  SELECT oi.id, o.customer_user_id, oi.name
-  FROM public.order_item oi
-  JOIN public."order" o ON o.id = oi.order_id
-  WHERE oi.organization_id = {{org_id}}::uuid
-    AND oi.product_type = 'product'
-    AND (o.customer_user_id, oi.name) IN
-        (SELECT w.customer_user_id, w.product_name FROM win w WHERE w.order_item_id IS NULL)
-),
-tx AS MATERIALIZED (
-  /* THE THREE FILTERS ARE NOT DECORATION. deleted_at IS NULL, confirmed_at IS
-     NOT NULL and credit_id IS NULL are what make this reproduce the item log
-     exactly, AND they are the predicate of
-     order_item_transaction_item_log_period_index (organization_id,
-     confirmed_at) INCLUDE (payment_id, refund_id, gl_code) — so the same three
-     conditions buy both correctness and the index.
+org_ilr AS MATERIALIZED (
+  /* ONE PASS, NOT TWO. tx_oi and tx_cust each used to scan this table; without
+     MATERIALIZED Postgres inlines the CTE and scans it once per reader again,
+     so the keyword is load-bearing rather than a hint.
 
-     order_item.deleted_at is deliberately NOT filtered: it was left out and the
-     diffs came back zero across 157k groups, so matching the item log means not
-     filtering it. Settled empirically rather than guessed. */
-  SELECT oit.order_item_id, oit.amount, oit.payment_id, oit.refund_id
-  FROM public.order_item_transaction oit
-  WHERE oit.organization_id = {{org_id}}::uuid
-    AND oit.deleted_at IS NULL
-    AND oit.confirmed_at IS NOT NULL
-    AND oit.credit_id IS NULL
+     The OR is the union of exactly what the two aggregates below can consume:
+     the window's order items, and — for rows with NO order_item_id, which are
+     the desk/admin sales the fallback exists for — every 'product' row for
+     those (customer, product name) pairs. A pair's rows are matched
+     irrespective of order_item_id, so the fallback still sees the whole group
+     it would have seen before. */
+  SELECT ilr.order_item_id, ilr.customer_id, ilr.order_item_name,
+         ilr.order_item_type, ilr.transaction_type, ilr.order_item_transaction_amount
+  FROM materialized.item_log_report ilr
+  WHERE ilr.organization_id = {{org_id}}::uuid
     AND (
-      oit.order_item_id IN (SELECT w.order_item_id FROM win w WHERE w.order_item_id IS NOT NULL)
-      OR oit.order_item_id IN (SELECT id FROM orphan_items)
+      ilr.order_item_id IN (SELECT w.order_item_id FROM win w WHERE w.order_item_id IS NOT NULL)
+      OR (ilr.order_item_type = 'product'
+          AND (ilr.customer_id, ilr.order_item_name) IN
+              (SELECT w.customer_user_id, w.product_name FROM win w WHERE w.order_item_id IS NULL))
     )
 ),
 tx_oi AS (   -- precise: payments keyed by order_item_id
-  SELECT tx.order_item_id,
-    COALESCE(SUM(tx.amount) FILTER (WHERE tx.payment_id IS NOT NULL),0) AS paid_cents,
-    COALESCE(SUM(tx.amount) FILTER (WHERE tx.refund_id  IS NOT NULL),0) AS refund_cents
-  FROM tx
-  WHERE tx.order_item_id IS NOT NULL
-  GROUP BY tx.order_item_id
+  SELECT ilr.order_item_id,
+    COALESCE(SUM(ilr.order_item_transaction_amount) FILTER (WHERE ilr.transaction_type='payment'),0) AS paid_cents,
+    COALESCE(SUM(ilr.order_item_transaction_amount) FILTER (WHERE ilr.transaction_type='refund'),0)  AS refund_cents
+  FROM org_ilr ilr
+  WHERE ilr.order_item_id IS NOT NULL
+  GROUP BY ilr.order_item_id
 ),
 tx_cust AS (      -- fallback: payments keyed by customer + product name
-  SELECT oi.customer_user_id AS customer_id, oi.name AS order_item_name,
-    COALESCE(SUM(tx.amount) FILTER (WHERE tx.payment_id IS NOT NULL),0) AS paid_cents,
-    COALESCE(SUM(tx.amount) FILTER (WHERE tx.refund_id  IS NOT NULL),0) AS refund_cents
-  FROM tx
-  JOIN orphan_items oi ON oi.id = tx.order_item_id
-  GROUP BY oi.customer_user_id, oi.name
+  SELECT ilr.customer_id, ilr.order_item_name,
+    COALESCE(SUM(ilr.order_item_transaction_amount) FILTER (WHERE ilr.transaction_type='payment'),0) AS paid_cents,
+    COALESCE(SUM(ilr.order_item_transaction_amount) FILTER (WHERE ilr.transaction_type='refund'),0)  AS refund_cents
+  FROM org_ilr ilr
+  WHERE ilr.order_item_type = 'product'
+  GROUP BY ilr.customer_id, ilr.order_item_name
 )
 
 SELECT
