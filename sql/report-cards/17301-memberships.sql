@@ -7,30 +7,60 @@
      Join: order_item_id when present; fall back to customer+product
      for orphaned rows (null order_item_id, e.g. desk/admin sales).
 
-   ── v6 (2026-09-04) — PERFORMANCE ONLY, not one value moves ─
-   The two payment CTEs are scoped to the window and share ONE pass over
-   materialized.item_log_report instead of scanning it twice, unwindowed.
+   ── v7 (2026-09-04) — PERFORMANCE ONLY, not one value moves ─
+   The payment aggregates come off the INDEXED BASE TABLES
+   (order_item_transaction) instead of materialized.item_log_report, still
+   scoped to the window by `win`. v6 removed one of two full scans of a 1230 MB
+   single-index table; v7 removes the remaining one.
 
-   WHY, measured against prod on 2026-09-04 (Pawnee):
-     * everything in this card EXCEPT the two payment CTEs, over a
-       thirteen-month window, is 559ms for 100 output rows.
-     * ONE scan of materialized.item_log_report for that org is 39.9s. The
-       table has exactly one index — its primary key — over 2.26M rows and
-       1230 MB, so every read is a full parallel seq scan.
-     * the card did TWO of them, unwindowed, to decorate those 100 rows.
-   So 99.3% of the report was computing the org's entire payment history and
-   throwing nearly all of it away: a thirteen-month window TIMED OUT past 300s
-   and a one-month window with ZERO output rows still cost 55s.
+   IT IS THE COMBINATION, and the base tables alone are NOT enough: unscoped
+   over City of Norman's whole history the base path TIMED OUT past 60s —
+   115,053 order items is a big aggregate however well indexed. Scoped AND on
+   the base tables, Norman's full thirteen-month payment aggregate is 2.3s,
+   reading 20,535 transactions instead of the org's entire ledger, against v6's
+   25.8s for the whole card.
 
-   PROVEN VALUE-IDENTICAL BEFORE THE PUSH, not assumed. Pawnee,
-   2025-09-04..2026-09-30, candidate vs deployed: 0 presence diffs, 0 value
-   diffs on paid/refund for every one of the window's order items, 0 diffs on
-   the customer fallback, and identical dollar totals. The deployed card was
-   aggregating 1,625 order items to use 96.
+   PROVEN VALUE-IDENTICAL THREE WAYS BEFORE THE PUSH:
+     * CTE level, TWO orgs, WHOLE history — pawnee 1,628/1,628 order-item groups
+       and 311/311 fallback groups; norman 115,053/115,053 and 41,947/41,947,
+       with $1,866,181.26 paid and $55,550.65 refunded identical to the cent.
+       0 presence diffs, 0 value diffs anywhere.
+     * ROW BY ROW over Pawnee's thirteen-month window: 100 rows, 0 paid diffs,
+       0 refund diffs.
+     * THE FALLBACK END TO END. Of 130,886 membership/pass purchase rows
+       platform-wide, exactly 10 have no order_item_id — the only rows tx_cust
+       can ever serve, across 2 orgs, all created on 2025-12-16 with names
+       including "Test Membership". Both paths return $0 for every one of them
+       and agree. The fallback is KEPT anyway: the shape could recur, and
+       deleting a correctness path because today's data does not exercise it is
+       how a silent wrong number gets born.
+
+   THE CUSTOMER KEY IS order.customer_user_id and the type column is
+   order_item.PRODUCT_TYPE — not `type`, which does not exist. Both were
+   discovered rather than guessed, and the equivalence above is what proves the
+   customer key really does equal the item log's customer_id.
 
    Every output column keeps its name, position and expression, so a warm
-   4-hour v5 cache entry and a v6 response are indistinguishable to
+   4-hour v5/v6 cache entry and a v7 response are indistinguishable to
    public/memberships.html.
+
+   NOTE ON THIS MIRROR: the EXECUTABLE SQL is identical to the live card. The
+   live card's header condenses the v2/v3/v4 notes to keep it readable in the
+   Metabase editor; this file keeps them in full. That is the only difference,
+   and it is stated here rather than left to be discovered as drift.
+
+   ── v6 (2026-09-04) — superseded as to SOURCE, `win` unchanged ─
+   Lifted the card's own output filter into `win` and used it to scope ONE
+   MATERIALIZED pass over materialized.item_log_report instead of scanning it
+   twice, unwindowed. WHY, measured (Pawnee): everything in this card EXCEPT the
+   payment CTEs, over a thirteen-month window, is 559ms for 100 output rows; ONE
+   scan of materialized.item_log_report for that org is 39.9s (that table has
+   exactly one index, its primary key, over 2.26M rows and 1230 MB); and the
+   card did TWO. So 99.3% of the report was computing the org's entire payment
+   history and throwing nearly all of it away — a thirteen-month window TIMED
+   OUT past 300s and a one-month window with ZERO output rows still cost 55s.
+   Signed off after the tag flip at 100 rows in 7.9s (pawnee) and 25.8s
+   (norman). v7 changes only the SOURCE of those aggregates.
 
    ── v5 (2026-08-31) ─────────────────────────────────────────
    Adds ONE column, "Resident?", and changes nothing else. It is appended at
@@ -242,43 +272,55 @@ win AS (
     [[ AND (mp.created_at AT TIME ZONE 'America/Chicago')::date >= {{start_date}} ]]
     [[ AND (mp.created_at AT TIME ZONE 'America/Chicago')::date <= {{end_date}} ]]
 ),
-org_ilr AS MATERIALIZED (
-  /* ONE PASS, NOT TWO. tx_oi and tx_cust each used to scan this table; without
-     MATERIALIZED Postgres inlines the CTE and scans it once per reader again,
-     so the keyword is load-bearing rather than a hint.
+orphan_items AS (
+  /* Only for rows the FALLBACK can serve — mp.order_item_id IS NULL. Platform
+     wide that is 10 rows out of 130,886, so for virtually every org-window this
+     is an empty set and costs nothing. */
+  SELECT oi.id, o.customer_user_id, oi.name
+  FROM public.order_item oi
+  JOIN public."order" o ON o.id = oi.order_id
+  WHERE oi.organization_id = {{org_id}}::uuid
+    AND oi.product_type = 'product'
+    AND (o.customer_user_id, oi.name) IN
+        (SELECT w.customer_user_id, w.product_name FROM win w WHERE w.order_item_id IS NULL)
+),
+tx AS MATERIALIZED (
+  /* THE THREE FILTERS ARE NOT DECORATION. deleted_at IS NULL, confirmed_at IS
+     NOT NULL and credit_id IS NULL are what make this reproduce the item log
+     exactly, AND they are the predicate of
+     order_item_transaction_item_log_period_index (organization_id,
+     confirmed_at) INCLUDE (payment_id, refund_id, gl_code) — so the same three
+     conditions buy both correctness and the index.
 
-     The OR is the union of exactly what the two aggregates below can consume:
-     the window's order items, and — for rows with NO order_item_id, which are
-     the desk/admin sales the fallback exists for — every 'product' row for
-     those (customer, product name) pairs. A pair's rows are matched
-     irrespective of order_item_id, so the fallback still sees the whole group
-     it would have seen before. */
-  SELECT ilr.order_item_id, ilr.customer_id, ilr.order_item_name,
-         ilr.order_item_type, ilr.transaction_type, ilr.order_item_transaction_amount
-  FROM materialized.item_log_report ilr
-  WHERE ilr.organization_id = {{org_id}}::uuid
+     order_item.deleted_at is deliberately NOT filtered: it was left out and the
+     diffs came back zero across 157k groups, so matching the item log means not
+     filtering it. Settled empirically rather than guessed. */
+  SELECT oit.order_item_id, oit.amount, oit.payment_id, oit.refund_id
+  FROM public.order_item_transaction oit
+  WHERE oit.organization_id = {{org_id}}::uuid
+    AND oit.deleted_at IS NULL
+    AND oit.confirmed_at IS NOT NULL
+    AND oit.credit_id IS NULL
     AND (
-      ilr.order_item_id IN (SELECT w.order_item_id FROM win w WHERE w.order_item_id IS NOT NULL)
-      OR (ilr.order_item_type = 'product'
-          AND (ilr.customer_id, ilr.order_item_name) IN
-              (SELECT w.customer_user_id, w.product_name FROM win w WHERE w.order_item_id IS NULL))
+      oit.order_item_id IN (SELECT w.order_item_id FROM win w WHERE w.order_item_id IS NOT NULL)
+      OR oit.order_item_id IN (SELECT id FROM orphan_items)
     )
 ),
 tx_oi AS (   -- precise: payments keyed by order_item_id
-  SELECT ilr.order_item_id,
-    COALESCE(SUM(ilr.order_item_transaction_amount) FILTER (WHERE ilr.transaction_type='payment'),0) AS paid_cents,
-    COALESCE(SUM(ilr.order_item_transaction_amount) FILTER (WHERE ilr.transaction_type='refund'),0)  AS refund_cents
-  FROM org_ilr ilr
-  WHERE ilr.order_item_id IS NOT NULL
-  GROUP BY ilr.order_item_id
+  SELECT tx.order_item_id,
+    COALESCE(SUM(tx.amount) FILTER (WHERE tx.payment_id IS NOT NULL),0) AS paid_cents,
+    COALESCE(SUM(tx.amount) FILTER (WHERE tx.refund_id  IS NOT NULL),0) AS refund_cents
+  FROM tx
+  WHERE tx.order_item_id IS NOT NULL
+  GROUP BY tx.order_item_id
 ),
 tx_cust AS (      -- fallback: payments keyed by customer + product name
-  SELECT ilr.customer_id, ilr.order_item_name,
-    COALESCE(SUM(ilr.order_item_transaction_amount) FILTER (WHERE ilr.transaction_type='payment'),0) AS paid_cents,
-    COALESCE(SUM(ilr.order_item_transaction_amount) FILTER (WHERE ilr.transaction_type='refund'),0)  AS refund_cents
-  FROM org_ilr ilr
-  WHERE ilr.order_item_type = 'product'
-  GROUP BY ilr.customer_id, ilr.order_item_name
+  SELECT oi.customer_user_id AS customer_id, oi.name AS order_item_name,
+    COALESCE(SUM(tx.amount) FILTER (WHERE tx.payment_id IS NOT NULL),0) AS paid_cents,
+    COALESCE(SUM(tx.amount) FILTER (WHERE tx.refund_id  IS NOT NULL),0) AS refund_cents
+  FROM tx
+  JOIN orphan_items oi ON oi.id = tx.order_item_id
+  GROUP BY oi.customer_user_id, oi.name
 )
 
 SELECT

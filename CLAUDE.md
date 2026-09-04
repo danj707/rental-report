@@ -1,9 +1,10 @@
 # Project notes for Claude
 
-## The base-table payment path: measured, proven, NOT pushed (2026-09-04)
+## Card 17301 v7 — the base-table payment path, PUSHED (2026-09-04)
 
-Dan: *"lets explore the bigger win for order item transactions"*. Explored and
-measured. It works, and the decision to spend another flip window is his.
+Dan: *"lets explore the bigger win for order item transactions"* and then
+*"lets do it"*. Explored, measured, gated three ways, and pushed. **Card 17301
+no longer reads `materialized.item_log_report` at all.**
 
 ### THE COLUMN THAT BLOCKED IT IS `order_item.product_type`
 
@@ -69,19 +70,25 @@ sales, the shape could recur, and removing a correctness path because today's
 data does not exercise it is how a silent wrong number gets born. What changed is
 that its COST is now proportional to its use.
 
-### WHAT WOULD STILL NEED DOING BEFORE v7 SHIPS
+### THE FALLBACK GATE, closed before the push
 
-- **Exercise the fallback END-TO-END.** Every proof above tests it at the CTE
-  level (311/311 and 41,947/41,947 groups, zero diffs) but no *window row* used
-  it, because Pawnee's window has no orphans. The two apex orgs on 2025-12-16 are
-  the test case.
-- **Another tag flip and another outage window.** Same six-parameter dance.
-- **It reverses a recorded decision.** The `materialized`-schema section says
-  *"index the table, do NOT rebuild the cards on base tables"* — written for the
-  Tyler FINANCE export, where divergence would land in a document handed to a
-  finance office. The evidence above is much stronger than what was available
-  then, and this card's derivation is two SUM…FILTERs rather than finance logic —
-  but reversing it is Dan's call, not a drive-by.
+The one gate left open was the fallback exercised END-TO-END by a real window
+row — every other proof tested it at the CTE level. **Closed:** for all ten
+orphan rows on the platform, the base path finds **zero** matching order items
+AND the item log finds **zero** rows, so both return $0 and agree. The fallback
+contributes nothing to any number anywhere today, and the two paths agree that
+it does.
+
+### IT REVERSES A RECORDED DECISION, deliberately and narrowly
+
+The `materialized`-schema section says *"index the table, do NOT rebuild the
+cards on base tables"*. **That decision stands for the Tyler FINANCE export**,
+where divergence would land in a document handed to a finance office and where
+the derivation is a per-method CASE ladder. It does **not** survive here, and
+the difference is worth stating: this card's derivation is two `SUM…FILTER`
+expressions, and the equivalence is measured over two orgs' entire histories at
+157k groups with zero diffs rather than argued. Dan made the call
+(*"lets do it"*); the earlier decision is not silently overwritten.
 
 **And it does not retire the index ask.** v7 would take card 17301 off
 `item_log_report`; cards 17293, 20197 and 17295 are still on it.
