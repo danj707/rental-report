@@ -1,5 +1,235 @@
 # Project notes for Claude
 
+## THE RETENTION TAB WAS REWRITING THE REPORT'S DATE RANGE (2026-09-04)
+
+Dan: *"The first few tabs, if they are scoped to the prior 30 days, is fast. But
+once you hit the retention report, the filters change to a year. Then the report
+tries to load an entire year's data, even if you flip back to the other tabs.
+that doesn't seem right."* And then the rule: *"switching back to another tab
+shouldn't change the date filter without me explicitly changing it."*
+
+**ONE LINE CAUSED THREE SEPARATELY-REPORTED BUGS.** Clicking Retention ran
+
+```js
+var w = mbRetentionWindow(startDate, endDate);
+if (w.changed) { setStartDate(w.start); setEndDate(w.end); setActiveRange(null); fetchData(w.start, w.end); }
+```
+
+— a tab-local view **silently redefining the whole report's window**, with
+nothing anywhere putting it back. What followed:
+
+1. **Every later tab switch re-queried thirteen months** — the *"not all data for
+   tabs is caching… it's super slow"* pin. Nothing was wrong with the cache:
+   `feedCacheKey` includes the parameter string, so the widened window is a
+   different key, and `ensureCheckins` correctly refetches for a window it has
+   not seen. **The cache was working; the window had moved underneath it.**
+2. **The header disagreed with its own date inputs.** Dan's screenshot reads
+   *"Sep 1 – Sep 30, 2026 · 152 memberships"* over Start/End boxes saying
+   **09/04/2025 – 09/30/2026** — because `data` was still September while the
+   inputs had been rewritten.
+3. **It is how a hand-typed thirteen-month window came to be asked for at all**,
+   which is what then hit the 504 recorded above. So the 504's *proximate* cause
+   was this, not the user.
+
+### THE FIX: the cohort chart gets its own window and its own rows
+
+`retRows` / `retWin` / `retLoading` / `retErr`, fetched by `fetchRetention()`
+through `ensureRetention()`. **`startDate` and `endDate` are never written.**
+
+- **The panel reading `data` is what FORCED the widening.** While the chart was
+  built from the report's rows, the only way to get twelve months into it was to
+  widen the report. `buildCohorts(retRows)` is what makes the decoupling
+  possible, so the two changes are one change.
+- **`mbRetentionWindow` is UNCHANGED**, and its existing assertions still hold —
+  it still derives the twelve months, it is just **read** from the report's dates
+  and never written back. Same rule as the Failed check-ins toggle, which scopes
+  its own panel and nothing above it: **a tab may show more than the window, it
+  may not change it.**
+- **Cached by window** (`retWin !== key`), like `ensureCheckins` — flipping onto
+  Retention twice must not re-run a twelve-month query.
+- **The panel NAMES its own window on screen** (`data-ret-window`), because it
+  deliberately covers more than the header and a cohort chart quietly
+  disagreeing with the dates above it is how a number stops being trusted.
+- **Absent, never an empty chart, when the feed fails** — a cohort chart drawn
+  from nothing reads as *"nobody retains"*. Loading / error / empty are three
+  distinct states now (`data-ret-state`), where before there was one message
+  telling the reader to click Run Report.
+- **Rec Insights reads `retRows`** too, or the model describes the toolbar's
+  window while the reader is looking at twelve months.
+
+**NOT PREFETCHED, deliberately.** Dan offered *"even if retention was loading in
+the background, that would work too"* — but a background fetch would fire a
+twelve-month query on **every** Memberships page load, for every org, on the
+slowest card on the platform (see the 504 section: ~40s per item-log scan). It
+fetches on click and caches by window instead. Worth revisiting if that card ever
+gets fast.
+
+### `mbRangeLabel`
+
+New, at module scope so a spec can RUN it. Two guards, both load-bearing:
+`'T12:00:00'` rather than a bare ISO date (`new Date("2026-09-01")` is UTC
+midnight and renders as Aug 31 west of UTC — **five** instances of that in this
+file now), and an `isNaN` check, because an unguarded formatter renders the
+literal **"Invalid Date NaN"** on screen between mount and the feed answering —
+the `winLabel` lesson from the Programs summary, one report over.
+
+### Guards
+
+`memberships-revenue.spec.js` 82 → **90 assertions**, lifting and RUNNING
+`mbRangeLabel`, and **slicing the Retention tab button's own handler** — a
+file-wide `setStartDate` test proves nothing, because the date inputs and the
+range presets legitimately call it. Mutation-tested: the button rewriting the
+dates again (the bug exactly as Dan hit it), the panel back on `data`, the
+per-window cache dropped, the label parsing a bare ISO date, and the `isNaN`
+guard removed.
+
+**Two of my own mutations were BENIGN and that is worth recording**: dropping the
+`if (!d) return ''` early return survives, because the `isNaN` check already
+covers null — so the early return is belt-and-braces and the `isNaN` is the real
+guard. Distinguishing the two is the point of mutation testing; reporting the
+first as "caught" would have been wrong.
+
+Plus two `ci-check-render.js` cases. **No source assertion can prove this one** —
+the handler can look correct and a downstream effect can still rewrite the
+inputs — so the case reads the date inputs' VALUES either side of the click and
+requires them identical. Verified to fail on the real bug. The second case
+requires the cohorts to still draw, because a case that only checked the dates
+would pass on a Retention tab that renders nothing at all.
+
+**AND THE ESCAPE GUARD CAUGHT MY OWN COPY.** I wrote `\u2014` and `\u2026`
+inside JSX **text**, which is not a string literal — they render as the literal
+characters. The global unrendered-escape assertion added hours earlier failed on
+it immediately. Same class as the `\uD83D\uDD01` that reached the Auto-Renew
+tab; the guard paid for itself the same day.
+
+### The third instance of the report-goes-last trap
+
+My new spec block was appended **after** `console.log(passed + " assertions
+passed.")`, so all eight assertions ran, incremented the count, and could never
+be reported — the count stayed at 82 and I nearly read that as "no new
+assertions needed". Third time in these two repos. **If a spec prints a summary,
+that print must be the last statement in the file.**
+
+## The Memberships summary 504 on Pawnee (2026-09-04)
+
+Dan: *"memberships report summary page is struggling"* — Pawnee, 09/04/2025 to
+09/30/2026, the KPI cards showing 49 active / 22 canceled / 78 expired / $7,965
+net collected while the panel under them read **"Server returned 504"**.
+
+**Both halves of that screen are explained, and they are different bugs.**
+
+### THE KPIs WERE THE PREVIOUS WINDOW, not a half-loaded one
+
+`fetchData` sets `error` and leaves `data` alone, so a failed re-run keeps the
+last successful window's numbers on screen under a fresh error banner. Nothing
+is wrong with that in itself — but it means **the figures a reader is looking at
+when they see the error are for a range they are no longer asking about**, and
+nothing on screen says so. Not changed here; worth knowing before diagnosing
+one of these from a screenshot.
+
+### THE CARD GENUINELY CANNOT ANSWER THAT WINDOW
+
+Measured cache-independently through the public endpoint (`verify-report-live`),
+card 17301, Pawnee:
+
+| window | result |
+|---|---|
+| 2025-09-04 → 2026-09-30 (Dan's) | **TIMEOUT past 300s** |
+| 2026-09-01 → 2026-09-30 | **55.0s — and ZERO rows** |
+
+**A one-month window with no output rows at all still costs 55 seconds**, which
+is where the cause is: the work is not proportional to the answer. Card 17301's
+`tx_oi` and `tx_cust` CTEs each scan `materialized.item_log_report` filtered on
+`organization_id` ALONE — the date window is applied only at the very bottom,
+against `mp.created_at`. That table has **exactly one index, its primary key**
+(2.26M rows, 1230 MB), so each is a full parallel seq scan, and the card does
+**two of them per load**. Timing one alone exceeded the 60s tool ceiling.
+
+So 55s is the FLOOR for any Pawnee memberships load, against a 120s budget —
+every org-month is one busy minute away from a 504. This is the fourth card with
+this exact shape (17293, 20197, 17295 and now 17301); see the
+`materialized`-schema section, whose measured conclusion — **index the table,
+do not rebuild the cards on base tables** — still stands.
+
+**AND THE STALE-CACHE SAFETY NET STRUCTURALLY CANNOT HELP HERE.** The timeout
+path tries `getStaleCached(...)` first, but `feedCacheKey` includes the encoded
+parameter string, so **every distinct date range is its own entry** — a window a
+person types by hand has never been warmed and has no stale entry to fall back
+on, ever. That is why Dan got a 504 instead of stale numbers.
+
+### WHAT WAS FIXED: the page was throwing the answer away
+
+The data route already sends back a sentence that says what to do:
+
+> `Metabase query timed out after 60s+120s retry — try a shorter date range or refresh`
+
+...and **eight report pages threw `new Error("Server returned " + r.status)`,
+dropping the body.** So the reader was told the transport and not the remedy, on
+a failure whose remedy is one control away — the dead-end pattern this file
+keeps writing down, and here the remedy is not a platitude: the same report over
+one month returns.
+
+`reportFetchError(r)` reads it, in **`public/open-pdf.js`** — the file every
+report page already loads, because eight copies of the recovery would drift the
+first time the route's wording changed.
+
+- **IT MUST NOT ASSUME JSON.** A 502/504 from Railway's edge never reaches the
+  app and comes back as an HTML page, so a bare `r.json()` on the error path
+  would throw INSIDE the error handler and replace a poor message with a
+  confusing one. Anything unparseable falls back to the status code — exactly
+  today's behaviour — so this can only ever improve a message.
+- **The status still travels with the sentence.** *"Which failure was it"* is the
+  first thing asked when one of these is reported, and a sentence alone loses it.
+- **A 504 with no readable body still says what to try**, because that is the
+  edge-timeout case and it is the one where the page has nothing else to go on.
+- **`metrics.html` is deliberately untouched** — it does not load `open-pdf.js`,
+  and a call to a function that is not on the page is worse than the old throw.
+- **`throw await` needs an ASYNC arrow.** Four of the seven call sites were
+  one-liners and three were blocks, and a non-async arrow makes this a
+  SyntaxError that takes the whole babel block with it — the blank-page class
+  this repo has shipped twice, and invisible to `node --check` because the code
+  is a string inside an HTML file. The spec walks back from every
+  `throw await` to its owning arrow.
+
+### NOT DONE, and why
+
+**Card 17301 is not pushed.** Collapsing the two scans into one pass
+(`WITH org_ilr AS MATERIALIZED (...)` feeding both aggregates) should roughly
+halve the dominant cost with identical values — same predicates, same
+aggregates, one read — but **it is unmeasured**, because no tool here can time a
+query past 60s. The clean way to measure it is a **scratch card** carrying the
+candidate SQL, compared to 17301 through the public endpoint: no risk, no
+downtime, and it needs a public link before it can be read.
+
+And a push would take the Memberships report **down for every org** until a
+human re-types the Start/End Date tags — the six-parameter trap recorded above.
+**This project is parked (see the push-to-main section), so this landed on a
+branch as a PR and nothing was merged.**
+
+### Guards
+
+`scripts/feed-error-message.spec.js` (**32 assertions, in CI**), which LIFTS AND
+RUNS `reportFetchError` over the four shapes a failing response really takes —
+the route's JSON, the edge's HTML, an unreadable body, and JSON with no `error`
+key. Mutation-tested: a page reverted to the bare status, an owning arrow no
+longer async, the 504 fallback dropped, the body parsed with no guard at all, and
+the ROUTE stopping sending the remedy (the page can only surface what the server
+puts in the body, so the pair is the guard).
+
+**Its first draft DIED instead of failing by name** on the unguarded-parse
+mutation — sixth instance of that lesson in this file. Every call is wrapped now,
+so a throwing implementation fails on the assertion that provoked it; and the
+fake response carries **both `text()` and `json()`**, or the mutation errors
+about a missing method rather than on the real failure.
+
+Plus two `ci-check-render.js` cases over a new **`timeout504`** stub mode, keyed
+on the remedy being ON SCREEN and the bare status NOT being the whole message —
+*"an error panel rendered"* passes just as happily on the version Dan was looking
+at. Verified to fail on the bug as he hit it. `ci-check-render.js` gained a
+per-case **`expectsConsoleError`**, because a case that drives a failing response
+expects the page to log it, and without that an error-path case can only ever
+fail.
+
 ## Working preferences (from Dan, dan@rec.us)
 
 - **Always share the Railway PR-preview URL** whenever I open a PR for this repo,
@@ -4440,6 +4670,65 @@ Why this was rejected: the two unknowns above are both places where a wrong
 guess is silent and wrong in a finance document, and the sign-off gate needed to
 retire that risk is most of the cost of the work. An index gets the same speed
 while the numbers keep coming from the definition finance already trusts.
+
+## PINNED: seamless deploys — it is the VOLUME, not the health check (2026-09-04)
+
+Dan: *"any way to get to a seamless style of deployment, where adding a new
+feature or deploying didn't take down the whole reporting project?"* Then:
+*"pin the seamless deploys, might tackle it this weekend."*
+
+**WHAT IS ALREADY FINE, so nobody re-does it:**
+
+- **`healthcheckPath` is already `/healthz`** on the rental-report service, and
+  `serverReady` flips the instant `app.listen` fires — so the gate goes green in
+  a second or two and Railway's cutover is already health-gated.
+- **The feed cache already SURVIVES a deploy.** `CACHE_DIR` is `DATA_DIR/cache`
+  on the volume and `hydrateCacheFromDisk()` runs at boot. A push does not empty
+  it — worth saying because the opposite was believed.
+- **Prewarm is already paced.** `prewarmPace()` gives 3s gaps when Metabase is
+  healthy, 12s when degraded, and **aborts the cycle** when unhealthy;
+  `PREWARM_STARTUP_SKIP_MS` is 6h, so a restart inside that window skips the
+  fan-out entirely.
+
+**THE ACTUAL CAUSE IS ONE REPLICA PLUS A VOLUME.** Service config reads
+`numReplicas: 1` and a volume at `/data`. **A Railway volume attaches to a single
+instance**, so the old and new containers cannot run at once — the deploy is
+stop-then-start by construction, and no health check can hide that gap.
+
+So the order is: move the feed cache and `events.jsonl` off the disk (Postgres or
+Redis), *then* raise replicas, *then* the deploy is seamless. Two traps on the
+way: `events.jsonl` is read by the admin dashboard, the Slack digest,
+`getReportActivity()` (which gates every watchdog alert) and
+`/api/admin/feedback`, so moving it changes all four readers; and with 2+
+replicas **prewarm would run once per replica** against production Metabase
+unless it is leader-elected or moved to a cron service — which would double the
+fan-out this is partly meant to avoid.
+
+## A PUSH TO `main` IS AN OPERATIONAL EVENT, not just a code change (Dan, 2026-09-04)
+
+Dan, after a **documentation-only** PR was merged into a project he had parked:
+*"I'd planned to let that system sit and reload the cache, not push a MD file
+out and disrupt everything."*
+
+**The rule: while this project is parked, nothing goes to `main` — including a
+CLAUDE.md-only change.** Park it on a branch and let it ride in with the next
+change that has a reason to deploy. "It's only a markdown file" describes the
+diff, not the deploy.
+
+What a deploy actually does, read out of the code rather than assumed:
+
+- The feed cache **survives** it. `CACHE_DIR` is `DATA_DIR/cache` on the Railway
+  volume and `hydrateCacheFromDisk()` runs at boot, so a restart does not by
+  itself empty it.
+- `PREWARM_STARTUP_SKIP_MS` is **6 hours**: if a full warm cycle finished inside
+  that window the restart serves the hydrated disk cache, and if it did not,
+  boot fans out across ~28 orgs against production Metabase. That fan-out is the
+  disruption — the same shape as the post-deploy prewarm storm that 502'd the
+  facility Summary and got v2 rolled back (see that section).
+- So the cost of a push is not "the cache is gone", it is **a restart that can
+  trigger a prewarm storm, plus whatever was mid-flight**. Either way it is not
+  free, and it is not the author's call to spend when someone has asked for the
+  system to be left alone.
 
 ## Railway deploys
 

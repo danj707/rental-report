@@ -2304,7 +2304,7 @@ function App() {
     if (ed) qs.set('end_date',   ed);
     if (params._nocache === '1' || params._refresh === '1') qs.set('_nocache', '1');
     fetch(withToken(`${basePath}/api/data?${qs}`))
-      .then(r => { if (!r.ok) throw new Error(`Server returned ${r.status}`); return r.json(); })
+      .then(async r => { if (!r.ok) throw await reportFetchError(r); return r.json(); })
       .then(json => {
         const raw = json.rows || [];
         const normalized = raw.map(normalizeRow);
@@ -3525,12 +3525,13 @@ function App() {
           var ciPctColor = function(p) { return p == null ? '#ccc' : p >= 85 ? '#16a34a' : p <= 25 ? '#dc2626' : '#333'; };
           return (
             <div style={{maxWidth:1100,margin:'0 auto'}}>
-              {/* THE FRONT DOOR, ABOVE EVERYTHING. Dan: "lets build the
-                  lightweight enrollment card right on the program summary
-                  page, at the top." It goes above the compare chip and the KPI
-                  row on purpose — the point of the feedback was that the
-                  answer to the daily question was three levels down. */}
-                : null}
+              {/* The Coffee Chart that used to open this tab lives on the org
+                  dashboard now (Dan: "live widgets ... need to live on the
+                  org-dashboard project"). Its conditional came out with it and
+                  left the tail of the ternary behind as a TEXT NODE — the
+                  literal ": null}" Dan found on Watertown's summary. Nothing
+                  goes here now; if something ever does, it goes above the
+                  compare chip, which is where the front door belonged. */}
               {/* ── Compare toggle — prior window mirrors the report's timeframe ── */}
               <div style={{display:'flex',justifyContent:'flex-end',margin:'12px 0 -6px'}}>
                 <span className={'compare-chip' + (compareOn ? ' on' : '')} onClick={toggleCompare}>

@@ -73,7 +73,7 @@ const NAMES = ["mbIsPaid", "mbProductShape", "mbIsAutoRenew", "mbCanAutoRenew",
                "mbChurnPerCycle", "mbRenewalsSoFar", "mbIsCanceled",
                "mbCancelPending", "mbHasCancelSchedule", "mbPlanKey", "mbHasProductKind",
                "mbHasResidency", "mbResidencyKey",
-               "mbHasEconomics", "mbDecompose", "mbEffectiveTab", "mbRetentionWindow",
+               "mbHasEconomics", "mbDecompose", "mbEffectiveTab", "mbRetentionWindow", "mbRangeLabel",
                "mbISODate"];
 const api = new Function(
   "var MB_URL_TABS = ['memberships','autorenew','salesmix','checkins','retention'];\n" +
@@ -83,7 +83,7 @@ const { mbIsPaid, mbProductShape, mbIsAutoRenew, mbCanAutoRenew, mbCycleDays,
         mbRenewalsSoFar, mbIsCanceled, mbCancelPending,
         mbHasCancelSchedule, mbPlanKey, mbHasProductKind, mbHasEconomics, mbDecompose,
         mbHasResidency, mbResidencyKey,
-        mbEffectiveTab, mbRetentionWindow, mbISODate } = api;
+        mbEffectiveTab, mbRetentionWindow, mbISODate, mbRangeLabel } = api;
 
 // The same membership, as the two feeds that are live at once describe it.
 // A 4-hour cache means a pre-v2 response and a v2 response are both in flight
@@ -1031,6 +1031,93 @@ test("the card reads the group's residency TOGGLE, never its name", () => {
     "the product-household columns are null");
   assert.match(sqlBody, /WHEN NOT \(SELECT val FROM has_res_group\) THEN NULL/,
     "an org with no residency group gets NULL, never 'No'");
+});
+
+
+/* ── THE RETENTION TAB MAY NOT REWRITE THE REPORT'S WINDOW ──────────────────
+   Dan, twice: "once you hit the retention report, the filters change to a
+   year. Then the report tries to load an entire year's data, even if you flip
+   back to the other tabs" and "switching back to another tab shouldn't change
+   the date filter without me explicitly changing it."
+
+   Clicking Retention used to call setStartDate/setEndDate and refetch, so a
+   tab-local view silently redefined the whole report's window and nothing put
+   it back. Three reported bugs came out of that one line: slow tab switches,
+   a header disagreeing with its own date inputs, and the thirteen-month
+   window that then 504'd.
+
+   `mbRetentionWindow` is UNCHANGED and still derives the twelve months — what
+   changed is that only the retention FETCH reads it. */
+const RET_BTN = (() => {
+  const i = page.indexOf("activeTab === 'retention' ? ' active' : ''");
+  if (i < 0) return '';
+  const start = page.lastIndexOf('<button', i);
+  return page.slice(start, page.indexOf('</button>', i));
+})();
+
+test("the Retention tab button exists and was found", () => {
+  assert.ok(RET_BTN.length > 40, 'could not slice the Retention tab button — the assertions below would be vacuous');
+  assert.ok(/ensureRetention\(\)/.test(RET_BTN), 'it asks for its own data');
+});
+
+test("clicking Retention does NOT touch the report's dates", () => {
+  // Scoped to the button's OWN handler: setStartDate is legitimate elsewhere
+  // (the date inputs, the range presets), so a file-wide test proves nothing.
+  assert.ok(!/setStartDate/.test(RET_BTN), 'the Retention tab still calls setStartDate — the bug as Dan hit it');
+  assert.ok(!/setEndDate/.test(RET_BTN),   'the Retention tab still calls setEndDate');
+  assert.ok(!/fetchData\(/.test(RET_BTN),  'the Retention tab still refetches the whole report');
+  assert.ok(!/setActiveRange/.test(RET_BTN), 'the Retention tab still clears the range preset');
+});
+
+test("the cohort panel reads its OWN rows, not the report's", () => {
+  // This is what MAKES the decoupling possible: while the panel read `data` it
+  // HAD to widen the report's window to get twelve months into it.
+  assert.ok(/buildCohorts\(retRows\)/.test(page),
+            'the cohort chart is still built from `data` — then the window has to be widened again');
+  assert.ok(/const \[retRows, setRetRows\]/.test(page), 'it has its own rows');
+  assert.ok(/function fetchRetention\(/.test(page),     'and its own fetch');
+});
+
+test("retention data is cached by its window, so a second visit is free", () => {
+  const fn = page.slice(page.indexOf('function ensureRetention()'));
+  const body = fn.slice(0, fn.indexOf('\n      }') + 8);
+  assert.ok(/mbRetentionWindow\(startDate, endDate\)/.test(body),
+            'the window is still DERIVED from the report dates — read, never written');
+  assert.ok(/retWin !== key/.test(body),
+            'flipping onto Retention twice would re-run a twelve-month query');
+});
+
+test("Rec Insights on the retention tab describes what is on screen", () => {
+  const i = page.indexOf("if (activeTab === 'retention') {");
+  const blob = page.slice(i, i + 500);
+  assert.ok(/retRows/.test(blob),
+            'the payload still counts the report window instead of the twelve months shown');
+});
+
+test("the panel says which window it covers", () => {
+  // It deliberately shows more than the header, and a cohort chart that
+  // quietly disagrees with the dates above it is how a number stops being
+  // trusted — the two-surfaces-disagree trap.
+  assert.ok(/data-ret-window=/.test(page), 'nothing on screen states the cohort window');
+  assert.ok(/twelve months, whatever dates are set above/.test(page),
+            '...and it does not say that it is independent of the toolbar');
+});
+
+test("mbRangeLabel never renders 'Invalid Date NaN'", () => {
+  // An unguarded formatter prints that literal on screen in the window between
+  // mount and the feed answering — the winLabel lesson, one report over.
+  assert.strictEqual(mbRangeLabel('2026-09-01', '2026-09-30'), 'Sep 1, 2026 – Sep 30, 2026');
+  assert.ok(!/Invalid|NaN/.test(mbRangeLabel(null, null)), 'nulls leak "Invalid Date NaN"');
+  assert.ok(!/Invalid|NaN/.test(mbRangeLabel('2026-09-01', null)), 'a half range leaks it');
+  assert.ok(!/Invalid|NaN/.test(mbRangeLabel('not-a-date', 'nope')), 'garbage leaks it');
+});
+
+test("the label is built from local parts, never a bare ISO date", () => {
+  // `new Date("2026-09-01")` is UTC midnight and renders as Aug 31 west of
+  // UTC — this repo has shipped that four times.
+  const i = page.indexOf('function mbRangeLabel(');
+  const body = page.slice(i, page.indexOf('\nfunction mbISODate', i));
+  assert.ok(/T12:00:00/.test(body), 'mbRangeLabel parses a bare ISO date — it will render the previous day');
 });
 
 console.log("\n" + passed + " assertions passed.");

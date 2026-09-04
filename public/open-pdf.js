@@ -307,3 +307,43 @@
     return rows.map(function (r) { return r.join("\t"); }).join("\n");
   }
 })();
+
+/* ── THE SERVER'S OWN ERROR MESSAGE ───────────────────────────────────────────
+   Every report page threw `new Error("Server returned " + r.status)` and
+   dropped the response BODY — while the data route sends back a sentence that
+   says what to do about it:
+
+     "Metabase query timed out after 60s+120s retry — try a shorter date range
+      or refresh"
+
+   So a Pawnee memberships load over thirteen months rendered *"Server returned
+   504"*, which names the transport and hides the instruction. That is the
+   dead-end pattern this codebase keeps writing down — a failure a reader cannot
+   act on — and the fix is to read what was already sent.
+
+   IT MUST NOT ASSUME JSON. A 502/504 from Railway's edge never reaches the app
+   at all and comes back as an HTML page, so a bare `r.json()` on the error path
+   would throw inside the error handler and replace a poor message with a
+   confusing one. Anything unparseable falls back to the status code, which is
+   exactly today's behaviour — so this can only ever improve the message.
+
+   One implementation, in the file every report page already loads: eight pages
+   carried the same throw, and eight copies of the recovery would drift the
+   first time the route's wording changed. */
+async function reportFetchError(r) {
+  const status = r && r.status ? r.status : 0;
+  let msg = '';
+  try {
+    const body = await r.text();
+    if (body && body.charAt(0) === '{') {
+      const j = JSON.parse(body);
+      if (j && typeof j.error === 'string') msg = j.error.trim();
+    }
+  } catch (e) { /* HTML from the edge, or a body already consumed */ }
+  // The status still travels, because "which failure was it" is the first thing
+  // asked when one of these is reported, and a sentence alone loses it.
+  if (msg) return new Error(msg + ' (HTTP ' + status + ')');
+  if (status === 504) return new Error('The report timed out — try a shorter date range (HTTP 504)');
+  return new Error('Server returned ' + status);
+}
+if (typeof window !== 'undefined') window.reportFetchError = reportFetchError;
