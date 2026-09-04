@@ -116,6 +116,14 @@
       "timeout": 120
     },
     {
+      "label": "memberships / pawnee, THIRTEEN MONTHS (the regression case — this exact window TIMED OUT past 300s on card 17301 v5 and returns 100 rows in 7.9s on v6, measured 2026-09-04 right after the tag flip. The other two memberships rows pass no dates, so they run the default 7-day window and structurally CANNOT catch the unwindowed-payment-CTE regression: a one-month window with zero output rows still cost 55s on v5. A long window is the only shape that discriminates)",
+      "card": "f4496307-d965-4637-b048-ecc703f2d37f",
+      "org": "9cc33597-701d-440f-a12f-f73643b7d229",
+      "start": "2025-09-04",
+      "end": "2026-09-30",
+      "timeout": 120
+    },
+    {
       "label": "programs / apex (heaviest programs feed — card 17295 v8: location + instructor, payment-plan collection method, and the Outstanding split)",
       "card": "e35f2b47-87c9-40e3-8507-3d9b56f9ce62",
       "org": "aeba47d0-c97f-49cb-a0e9-93c5af3a68fa",
