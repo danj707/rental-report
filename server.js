@@ -4885,7 +4885,7 @@ const PERMITS_UUID = process.env.MB_PERMITS_UUID || "6771e2fe-1d9c-41c1-a921-7d8
 // UNSET ENV ⇒ the map falls back to geocoding, which is the OLD behaviour made
 // safe (bounded, sanity-checked, and dropping what it cannot place) rather than
 // a blank map. Same contract as MB_GL_DETAIL_UUID and FORMS_UUID.
-const LOCATION_COORDS_UUID = process.env.MB_LOCATION_COORDS_UUID || "";
+const LOCATION_COORDS_UUID = process.env.MB_LOCATION_COORDS_UUID || "8f903de5-25ad-4952-a787-ea2879bf02bb";
 const LOCATION_COORDS_TTL = 6 * 60 * 60 * 1000;   // a park does not move
 const _locCoordsCache = new Map();
 let _locCoordsParamDefs = null;
