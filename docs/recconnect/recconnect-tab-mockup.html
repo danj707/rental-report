@@ -1,0 +1,468 @@
+<title>RecConnect Insights Tab</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<style>
+  /* Mirrors the live report chrome in public/memberships.html — Inter 12px,
+     #f5f4f1 ground, white .page, #2c2c2c toolbar and table headers.
+     Deliberately single-theme: this is a mockup of a light product surface,
+     so every colour is painted explicitly rather than inherited. */
+  :root{
+    --ground:#f5f4f1; --paper:#fff; --ink:#1a1a1a; --dark:#2c2c2c;
+    --line:#e5e5e5; --line-soft:#eee; --grey:#888; --grey-2:#999;
+    --green:#15803d; --red:#b91c1c; --blue:#2563eb; --purple:#7c3aed;
+    --amber:#d97706; --pink:#db2777;
+    --note-bg:#f0f9ff; --note-line:#bae6fd; --note-ink:#0c4a6e; --note-ink2:#3b6b8a;
+    --warn-bg:#fffbeb; --warn-line:#fde68a; --warn-ink:#92400e;
+  }
+  *{box-sizing:border-box}
+  body{
+    font-family:'Inter',system-ui,-apple-system,sans-serif;
+    font-size:12px; color:var(--ink); background:var(--ground); line-height:1.35;
+  }
+
+  /* ── toolbar ── */
+  .toolbar{
+    position:sticky; top:0; z-index:100; display:flex; align-items:center;
+    gap:10px; padding:8px 20px; background:var(--dark); color:#eee;
+    font-size:13px; flex-wrap:wrap;
+  }
+  .toolbar label{
+    font-size:9px; letter-spacing:.8px; text-transform:uppercase;
+    color:#aaa; display:flex; flex-direction:column; gap:3px; font-weight:600;
+  }
+  .toolbar .fld{
+    background:#3a3a3a; border:1px solid #4a4a4a; color:#eee;
+    padding:4px 8px; border-radius:4px; font-size:12px; font-family:inherit;
+    text-transform:none; letter-spacing:0; font-weight:400;
+  }
+  .toolbar .btn{
+    background:#4f8ef7; border:none; color:#fff; padding:6px 14px;
+    border-radius:4px; font-size:12px; font-weight:600; cursor:pointer; font-family:inherit;
+  }
+  .toolbar .btn.ghost{background:transparent; border:1px solid #555; color:#ccc; font-weight:500}
+  .toolbar .spacer{flex:1}
+  .toolbar .gear{background:none;border:none;color:#ccc;font-size:15px;cursor:pointer;padding:2px 4px}
+
+  /* ── tab strip ── */
+  .tabs{display:flex; gap:0; background:var(--dark); padding:0 20px; flex-wrap:wrap}
+  .tab{
+    padding:7px 14px; font-size:11.5px; color:#aaa; cursor:pointer;
+    border-bottom:2.5px solid transparent; white-space:nowrap;
+  }
+  .tab.active{color:#fff; border-bottom-color:#4f8ef7; font-weight:600}
+
+  /* ── page ── */
+  .page{
+    max-width:1400px; margin:16px auto; padding:24px 28px;
+    background:var(--paper); box-shadow:0 1px 4px rgba(0,0,0,.08);
+  }
+  .report-header{
+    display:flex; justify-content:space-between; align-items:flex-end;
+    border-bottom:2.5px solid #111; padding-bottom:10px; margin-bottom:16px; gap:16px; flex-wrap:wrap;
+  }
+  .report-header .org-label{
+    font-size:10px; letter-spacing:1.6px; text-transform:uppercase; color:#777; font-weight:600;
+  }
+  .report-header h1{font-size:20px; font-weight:700; margin:2px 0 0; letter-spacing:-.2px}
+  .report-header .range{font-size:11px; color:var(--grey); text-align:right}
+  .report-header .range b{color:var(--ink); font-weight:600}
+
+  /* ── scope note ── */
+  .scope-note{
+    background:var(--note-bg); border:1px solid var(--note-line); border-radius:6px;
+    padding:9px 13px; margin-bottom:14px; font-size:12.5px; color:var(--note-ink);
+  }
+  .scope-note strong{color:#075985}
+  .scope-note .sub{display:block; margin-top:3px; font-size:11px; color:var(--note-ink2); line-height:1.45}
+
+  /* ── KPI cards ── */
+  .summary-grid{display:flex; gap:10px; flex-wrap:wrap; margin-bottom:18px}
+  .summary-card{
+    flex:1; min-width:150px; background:var(--ground); border:1px solid #ddd;
+    border-radius:6px; padding:10px 14px;
+  }
+  .summary-card .card-label{
+    font-size:9.5px; text-transform:uppercase; letter-spacing:.8px;
+    color:var(--grey); font-weight:600; margin-bottom:4px;
+  }
+  .summary-card .card-value{
+    font-size:18px; font-weight:700; font-variant-numeric:tabular-nums; color:#111;
+  }
+  .card-value.green{color:var(--green)} .card-value.red{color:var(--red)}
+  .card-value.blue{color:var(--blue)} .card-value.purple{color:var(--purple)}
+  .card-value.amber{color:var(--amber)} .card-value.pink{color:var(--pink)}
+  .summary-card .card-sub{font-size:10px; color:var(--grey-2); margin-top:2px; line-height:1.35}
+
+  /* ── panels ── */
+  .panel{border:1px solid var(--line); border-radius:6px; margin-bottom:16px; background:var(--paper)}
+  .panel-head{
+    padding:9px 14px; border-bottom:1px solid var(--line-soft);
+    display:flex; align-items:baseline; justify-content:space-between; gap:12px; flex-wrap:wrap;
+  }
+  .panel-head h2{font-size:13px; font-weight:700; margin:0}
+  .panel-head .hint{font-size:10.5px; color:var(--grey-2)}
+  .panel-body{padding:12px 14px}
+  .row2{display:grid; grid-template-columns:1fr 1fr; gap:16px}
+  @media (max-width:900px){.row2{grid-template-columns:1fr}}
+
+  /* ── tables ── */
+  .tw{overflow-x:auto}
+  table.report{width:100%; border-collapse:collapse; background:var(--paper); border:1px solid var(--line); font-size:11px}
+  table.report th, table.report td{padding:6px 10px; text-align:left; border-bottom:1px solid var(--line-soft); vertical-align:middle}
+  table.report th{
+    background:var(--dark); color:#fff; font-weight:600; text-transform:uppercase;
+    letter-spacing:.4px; font-size:10px; white-space:nowrap;
+  }
+  table.report td.num, table.report th.num{text-align:right; font-variant-numeric:tabular-nums}
+  table.report tr:last-child td{border-bottom:none}
+  table.report tbody tr.hl{background:#f7fbff}
+  .idx{font-weight:700; font-variant-numeric:tabular-nums}
+  .idx.up{color:var(--green)} .idx.down{color:var(--red)} .idx.flat{color:var(--grey)}
+
+  /* ── pills ── */
+  .pill{display:inline-block; padding:2px 8px; border-radius:10px; font-size:10px; font-weight:600; white-space:nowrap}
+  .pill.tier{background:#ede9fe; color:#5b21b6}
+  .pill.ok{background:#dcfce7; color:#166534}
+  .pill.warn{background:#fef3c7; color:#92400e}
+  .pill.bad{background:#fee2e2; color:#991b1b}
+  .pill.grey{background:#eee; color:#555}
+
+  /* ── time-of-day comparison bars ── */
+  .tod{display:flex; flex-direction:column; gap:7px}
+  .tod-row{display:grid; grid-template-columns:58px 1fr 1fr; align-items:center; gap:10px}
+  .tod-lbl{font-size:10.5px; color:#666; text-align:right; font-variant-numeric:tabular-nums}
+  .tod-side{position:relative; height:16px; background:#f1f0ed; border-radius:2px}
+  .tod-fill{position:absolute; top:0; bottom:0; left:0; border-radius:2px}
+  .tod-fill.a{background:var(--purple)}
+  .tod-fill.b{background:#b9c0c8}
+  .tod-val{position:absolute; top:0; bottom:0; display:flex; align-items:center;
+           font-size:9.5px; font-weight:600; font-variant-numeric:tabular-nums; color:#444; padding-left:5px}
+  .tod-key{display:flex; gap:16px; font-size:10.5px; color:#666; margin-bottom:9px; flex-wrap:wrap}
+  .tod-key i{display:inline-block; width:9px; height:9px; border-radius:2px; margin-right:5px; vertical-align:-1px}
+  .tod-key i.a{background:var(--purple)} .tod-key i.b{background:#b9c0c8}
+  .tod-head{display:grid; grid-template-columns:58px 1fr 1fr; gap:10px; font-size:9.5px;
+            text-transform:uppercase; letter-spacing:.7px; color:var(--grey); font-weight:600; margin-bottom:6px}
+
+  .finding{
+    background:var(--warn-bg); border:1px solid var(--warn-line); border-radius:5px;
+    padding:8px 11px; margin-top:12px; font-size:11.5px; color:var(--warn-ink); line-height:1.5;
+  }
+  .finding b{font-weight:700}
+
+  /* ── action lists ── */
+  .act-list{display:flex; flex-direction:column; gap:0}
+  .act-item{display:flex; align-items:center; gap:10px; padding:7px 0; border-bottom:1px solid var(--line-soft); font-size:11.5px}
+  .act-item:last-child{border-bottom:none}
+  .act-item .nm{flex:1; font-weight:500}
+  .act-item .meta{color:var(--grey-2); font-size:10.5px; white-space:nowrap}
+  .csvbtn{
+    background:#fff; border:1px solid #ccc; border-radius:4px; padding:3px 9px;
+    font-size:10.5px; font-family:inherit; color:#333; cursor:pointer; font-weight:500;
+  }
+
+  /* ── build note ── */
+  .buildnote{
+    margin-top:22px; border-top:1px solid var(--line); padding-top:14px;
+    font-size:11px; color:#555; line-height:1.6;
+  }
+  .buildnote h3{font-size:11px; text-transform:uppercase; letter-spacing:.9px; color:var(--grey); margin:0 0 7px; font-weight:700}
+  .buildnote ul{margin:0 0 12px; padding-left:16px; display:flex; flex-direction:column; gap:5px}
+  .buildnote code{
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:10.5px;
+    background:#f2f1ee; padding:1px 4px; border-radius:3px; color:#333;
+  }
+  .buildnote .cols{display:grid; grid-template-columns:1fr 1fr; gap:0 26px}
+  @media (max-width:900px){.buildnote .cols{grid-template-columns:1fr}}
+  footer.rep{margin-top:14px; border-top:1px solid var(--line); padding-top:9px; font-size:10px; color:var(--grey-2); line-height:1.6}
+</style>
+
+<div class="toolbar">
+  <label>Start<input class="fld" type="text" value="03/09/2026" size="9"></label>
+  <label>End<input class="fld" type="text" value="09/05/2026" size="9"></label>
+  <label>Cohort<select class="fld"><option>RecConnect &mdash; all tiers</option><option>RecConnect &mdash; 80% only</option><option>Veterans</option></select></label>
+  <label>Compare to<select class="fld"><option>All other members</option><option>Paying members only</option></select></label>
+  <button class="btn">Run Report</button>
+  <span class="spacer"></span>
+  <button class="btn ghost">&#128202; Rec Insights</button>
+  <button class="btn ghost">&#8681; Excel</button>
+  <button class="gear" title="Report settings">&#9881;</button>
+</div>
+
+<div class="tabs">
+  <span class="tab">Summary</span>
+  <span class="tab">Auto-Renew</span>
+  <span class="tab">Sales &amp; Mix</span>
+  <span class="tab">Check-Ins</span>
+  <span class="tab">Retention</span>
+  <span class="tab active">RecConnect</span>
+</div>
+
+<div class="page">
+
+  <div class="report-header">
+    <div>
+      <div class="org-label">City of Norman &middot; Parks &amp; Recreation</div>
+      <h1>Memberships &mdash; Subsidised Access</h1>
+    </div>
+    <div class="range">
+      <b>Mar 9 &ndash; Sep 5, 2026</b><br>
+      180 days &middot; 188 enrolled &middot; 12,508 compared
+    </div>
+  </div>
+
+  <div class="scope-note">
+    <strong>This tab compares one eligibility group against everyone else.</strong> The cohort is every person on an active <strong>Free Lunch Program</strong> membership &mdash; Norman's income-qualified group, standing in for RecConnect while Reno is not yet live. Check-ins are attributed through the membership that was scanned, so a visit counts against the cohort only if the member used it.
+    <span class="sub"><strong>The comparison is every other active member, not a full-pay cohort:</strong> 6,371 of the 12,508 hold only $0 memberships (free residency), so this contrasts one subsidy against a mixed base rather than against people paying list price.<br>Cohort membership is resolved through <em>both</em> coverage shapes &mdash; household-coverage groups by household, individual-coverage groups by named member. Reno's own ladder mixes the two, and a household-only query returns zero for the individual tiers without erroring.</span>
+  </div>
+
+  <div class="summary-grid">
+    <div class="summary-card">
+      <div class="card-label">Enrolled</div>
+      <div class="card-value">188</div>
+      <div class="card-sub">people on an active subsidised membership</div>
+    </div>
+    <div class="summary-card">
+      <div class="card-label">Activated</div>
+      <div class="card-value green">97.9%</div>
+      <div class="card-sub">184 of 188 checked in at least once</div>
+    </div>
+    <div class="summary-card">
+      <div class="card-label">Visits per member</div>
+      <div class="card-value">8.1</div>
+      <div class="card-sub">1,523 visits over the window</div>
+    </div>
+    <div class="summary-card">
+      <div class="card-label">Activation index</div>
+      <div class="card-value purple">1.94&times;</div>
+      <div class="card-sub">vs 50.5% for all other members</div>
+    </div>
+    <div class="summary-card">
+      <div class="card-label">Intensity index</div>
+      <div class="card-value">0.98&times;</div>
+      <div class="card-sub">8.3 vs 8.5 visits per <em>active</em> member</div>
+    </div>
+    <div class="summary-card">
+      <div class="card-label">Never used</div>
+      <div class="card-value amber">4</div>
+      <div class="card-sub">enrolled, no check-in &mdash; list below</div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <h2>Do they use it?</h2>
+      <span class="hint">Index &gt; 1.00 means the subsidised cohort does more of it</span>
+    </div>
+    <div class="panel-body">
+      <div class="tw">
+        <table class="report">
+          <thead>
+            <tr>
+              <th>Measure</th>
+              <th class="num">Subsidised</th>
+              <th class="num">All others</th>
+              <th class="num">Index</th>
+              <th>Reads as</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr class="hl">
+              <td>Ever checked in</td>
+              <td class="num">97.9%</td>
+              <td class="num">50.5%</td>
+              <td class="num"><span class="idx up">1.94&times;</span></td>
+              <td>Nearly every subsidised member uses it. Half of all other members never came.</td>
+            </tr>
+            <tr>
+              <td>Visits per member</td>
+              <td class="num">8.1</td>
+              <td class="num">4.3</td>
+              <td class="num"><span class="idx up">1.89&times;</span></td>
+              <td>Driven entirely by activation, not intensity.</td>
+            </tr>
+            <tr class="hl">
+              <td>Visits per <em>active</em> member</td>
+              <td class="num">8.3</td>
+              <td class="num">8.5</td>
+              <td class="num"><span class="idx flat">0.98&times;</span></td>
+              <td><strong>Once through the door, behaviour is identical.</strong></td>
+            </tr>
+            <tr>
+              <td>Weekend share of visits</td>
+              <td class="num">35.5%</td>
+              <td class="num">22.5%</td>
+              <td class="num"><span class="idx up">1.58&times;</span></td>
+              <td>Weekend capacity is where this cohort lands.</td>
+            </tr>
+            <tr>
+              <td>Before noon</td>
+              <td class="num">7.2%</td>
+              <td class="num">26.9%</td>
+              <td class="num"><span class="idx down">0.27&times;</span></td>
+              <td>Morning programming barely reaches them.</td>
+            </tr>
+            <tr>
+              <td>Total visits</td>
+              <td class="num">1,523</td>
+              <td class="num">53,648</td>
+              <td class="num"><span class="idx flat">&mdash;</span></td>
+              <td>Cohort is 1.5% of members and 2.8% of visits.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="finding">
+        <b>The headline is the third row.</b> A subsidy sceptic assumes discounted members either don't show up or over-consume. Neither is true here: they activate at nearly twice the rate, and then use the facility at <b>the same intensity as the membership base as a whole</b>. That is the sentence for a council slide.
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <h2>When do they come?</h2>
+      <span class="hint">Share of each cohort's own visits &middot; local time</span>
+    </div>
+    <div class="panel-body">
+      <div class="tod-key">
+        <span><i class="a"></i>Subsidised (1,523 visits)</span>
+        <span><i class="b"></i>All other members (53,648 visits)</span>
+      </div>
+      <div class="tod-head"><span></span><span>Subsidised</span><span>All others</span></div>
+      <div class="tod">
+        <div class="tod-row">
+          <span class="tod-lbl">before 9a</span>
+          <span class="tod-side"><span class="tod-fill a" style="width:2.3%"></span><span class="tod-val" style="left:2.3%">1.1%</span></span>
+          <span class="tod-side"><span class="tod-fill b" style="width:30.3%"></span><span class="tod-val" style="left:30.3%">14.4%</span></span>
+        </div>
+        <div class="tod-row">
+          <span class="tod-lbl">9a &ndash; 12p</span>
+          <span class="tod-side"><span class="tod-fill a" style="width:13.1%"></span><span class="tod-val" style="left:13.1%">6.2%</span></span>
+          <span class="tod-side"><span class="tod-fill b" style="width:27.8%"></span><span class="tod-val" style="left:27.8%">13.2%</span></span>
+        </div>
+        <div class="tod-row">
+          <span class="tod-lbl">12 &ndash; 3p</span>
+          <span class="tod-side"><span class="tod-fill a" style="width:100%"></span><span class="tod-val" style="left:0;color:#fff">47.5%</span></span>
+          <span class="tod-side"><span class="tod-fill b" style="width:88%"></span><span class="tod-val" style="left:0;padding-left:6px">41.8%</span></span>
+        </div>
+        <div class="tod-row">
+          <span class="tod-lbl">3 &ndash; 6p</span>
+          <span class="tod-side"><span class="tod-fill a" style="width:72%"></span><span class="tod-val" style="left:0;color:#fff">34.2%</span></span>
+          <span class="tod-side"><span class="tod-fill b" style="width:49.5%"></span><span class="tod-val" style="left:0;padding-left:6px">23.5%</span></span>
+        </div>
+        <div class="tod-row">
+          <span class="tod-lbl">6 &ndash; 9p</span>
+          <span class="tod-side"><span class="tod-fill a" style="width:21.7%"></span><span class="tod-val" style="left:21.7%">10.3%</span></span>
+          <span class="tod-side"><span class="tod-fill b" style="width:14.7%"></span><span class="tod-val" style="left:14.7%">7.0%</span></span>
+        </div>
+        <div class="tod-row">
+          <span class="tod-lbl">after 9p</span>
+          <span class="tod-side"><span class="tod-fill a" style="width:1.5%"></span><span class="tod-val" style="left:1.5%">0.7%</span></span>
+          <span class="tod-side"><span class="tod-fill b" style="width:0.2%"></span><span class="tod-val" style="left:0.2%">0.1%</span></span>
+        </div>
+      </div>
+      <div class="finding">
+        <b>The early-morning block is 13&times; smaller for subsidised members &mdash; 1.1% against 14.4%.</b> They arrive after noon and into the 3&ndash;6p window, and on weekends. Anything scheduled, staffed or priced around the general morning pattern is built for the other cohort. This is the most directly actionable number on the page: it names a time, and times can be changed.
+      </div>
+    </div>
+  </div>
+
+  <div class="row2">
+    <div class="panel">
+      <div class="panel-head">
+        <h2>The tier ladder</h2>
+        <span class="hint">Reno's live configuration</span>
+      </div>
+      <div class="panel-body">
+        <div class="tw">
+          <table class="report">
+            <thead>
+              <tr><th>Tier</th><th>Coverage</th><th class="num">Enrolled</th><th class="num">Activated</th><th class="num">Visits/mbr</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><span class="pill tier">20% off</span></td><td>Household</td><td class="num">&mdash;</td><td class="num">&mdash;</td><td class="num">&mdash;</td></tr>
+              <tr><td><span class="pill tier">40% off</span></td><td><span class="pill bad">Individual</span></td><td class="num">&mdash;</td><td class="num">&mdash;</td><td class="num">&mdash;</td></tr>
+              <tr><td><span class="pill tier">60% off</span></td><td>Household</td><td class="num">&mdash;</td><td class="num">&mdash;</td><td class="num">&mdash;</td></tr>
+              <tr><td><span class="pill tier">80% off</span></td><td>Household</td><td class="num">2</td><td class="num">&mdash;</td><td class="num">&mdash;</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="finding">
+          <b>Config issue worth fixing before go-live.</b> Three tiers are household-coverage and the 40% tier is individual. Mixed units in one ladder means a tier comparison silently compares households against people &mdash; and a household-keyed query drops the 40% tier entirely. One line in Reno's setup, invisible afterwards.
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Act on it</h2>
+        <span class="hint">Every count opens a list</span>
+      </div>
+      <div class="panel-body">
+        <div class="act-list">
+          <div class="act-item">
+            <span class="pill bad">4</span>
+            <span class="nm">Enrolled, never checked in</span>
+            <span class="meta">avg 96 days since award</span>
+            <button class="csvbtn">&#8681; CSV</button>
+          </div>
+          <div class="act-item">
+            <span class="pill warn">31</span>
+            <span class="nm">Award expires in 60 days</span>
+            <span class="meta">re-up or lapse</span>
+            <button class="csvbtn">&#8681; CSV</button>
+          </div>
+          <div class="act-item">
+            <span class="pill warn">12</span>
+            <span class="nm">Active, but no visit in 90 days</span>
+            <span class="meta">lapsing</span>
+            <button class="csvbtn">&#8681; CSV</button>
+          </div>
+          <div class="act-item">
+            <span class="pill ok">63</span>
+            <span class="nm">Weekend-only attenders</span>
+            <span class="meta">target for weekday programming</span>
+            <button class="csvbtn">&#8681; CSV</button>
+          </div>
+          <div class="act-item">
+            <span class="pill grey">&mdash;</span>
+            <span class="nm">Eligible by residency, never enrolled</span>
+            <span class="meta">needs the eligibility rule mapped</span>
+            <button class="csvbtn" disabled style="opacity:.45">&#8681; CSV</button>
+          </div>
+        </div>
+        <div class="finding">
+          The first four are the ones a front-desk manager can work through this week. The fifth is the outreach question and needs Reno's own eligibility definition before it can be counted &mdash; it renders disabled rather than showing a made-up number.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="buildnote">
+    <div class="cols">
+      <div>
+        <h3>How it is built</h3>
+        <ul>
+          <li><strong>Cohort = a group.</strong> <code>membership.group_id</code> &rarr; <code>group.group_type = 'special-group'</code>. No new concept &mdash; RecConnect is already four groups in Reno's sandbox.</li>
+          <li><strong>Resolve the member both ways.</strong> <code>COALESCE(membership_user.user_id, users.id via household_id)</code>. Household-coverage rows carry <code>household_id</code>; individual-coverage rows carry <code>NULL</code> there and link through <code>membership_user</code>.</li>
+          <li><strong>Usage joins directly.</strong> <code>attendance_event.check_in_method_id</code> &rarr; <code>membership.id</code> &rarr; group. Measured at Norman: <strong>46,857 of 46,857</strong> membership-method check-ins resolve to their group. No inference.</li>
+          <li><strong>No card change for the cohort itself</strong> &mdash; but this is a new card, because card 17301 is purchase-grain and has nowhere to put a comparison cohort.</li>
+          <li><strong>Base tables, not <code>materialized</code>.</strong> Every query behind this page ran in 0.3&ndash;2.5s.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>What would make it wrong</h3>
+        <ul>
+          <li><strong>Selection, not causation.</strong> 97.9% activation is partly that people enrol in these programmes <em>at</em> a facility. The tab must say so, and the honest claim is the intensity index &mdash; 0.98&times; &mdash; which has no such bias.</li>
+          <li><strong>Household-only cohorting returns zero silently.</strong> All 188 Norman rows have <code>household_id NULL</code>. It looks like an unused programme, not a bug.</li>
+          <li><strong>Small cohorts.</strong> A tier with six members cut by hour and weekday describes identifiable families. Suppress percentages under a floor &mdash; the <code>RATE_MIN_VIEWS</code> rule.</li>
+          <li><strong>Presence-gate the tab.</strong> An org with no special-group shows nothing, never a confident zero.</li>
+          <li><strong>Reno is not live.</strong> Every figure here is Norman's, named as such. Nothing on this page is Reno data.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <footer class="rep">
+    Mock-up of a proposed tab &mdash; not shipped. Cohort and usage figures measured against production for city-of-norman, 9 Mar &ndash; 5 Sep 2026, on 5 Sep 2026. Tier ladder is Reno Sandbox's live group configuration. Comparison cohort is every other person holding an active membership at the same org over the same window.
+  </footer>
+
+</div>

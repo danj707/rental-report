@@ -1,0 +1,569 @@
+<title>The Denominator Problem</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&display=swap">
+<style>
+  :root{
+    --ground:#F3F5F5;
+    --surface:#FFFFFF;
+    --surface-2:#EAEFEF;
+    --ink:#101819;
+    --muted:#586A6C;
+    --faint:#7E8F90;
+    --accent:#0B5C57;
+    --accent-soft:#D7E8E5;
+    --warn:#A8481F;
+    --warn-soft:#F2E1D8;
+    --line:#D6DEDE;
+    --line-strong:#B9C6C6;
+
+    --serif:"Source Serif 4",Georgia,"Times New Roman",serif;
+    --sans:"IBM Plex Sans","Helvetica Neue",Arial,sans-serif;
+    --mono:"IBM Plex Mono","SF Mono",Menlo,Consolas,monospace;
+
+    --measure:68ch;
+    --s1:.35rem; --s2:.7rem; --s3:1.1rem; --s4:1.8rem; --s5:2.8rem; --s6:4.4rem;
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --ground:#0B1112;
+      --surface:#121A1B;
+      --surface-2:#182223;
+      --ink:#E7EDED;
+      --muted:#9AACAD;
+      --faint:#7A8C8D;
+      --accent:#57B7AC;
+      --accent-soft:#16302E;
+      --warn:#E18F63;
+      --warn-soft:#2E211A;
+      --line:#243030;
+      --line-strong:#354544;
+    }
+  }
+  :root[data-theme="dark"]{
+    --ground:#0B1112;
+    --surface:#121A1B;
+    --surface-2:#182223;
+    --ink:#E7EDED;
+    --muted:#9AACAD;
+    --faint:#7A8C8D;
+    --accent:#57B7AC;
+    --accent-soft:#16302E;
+    --warn:#E18F63;
+    --warn-soft:#2E211A;
+    --line:#243030;
+    --line-strong:#354544;
+  }
+
+  *{box-sizing:border-box}
+  body{
+    background:var(--ground);
+    color:var(--ink);
+    font-family:var(--sans);
+    font-size:16px;
+    line-height:1.6;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1080px;margin:0 auto;padding:var(--s5) var(--s3) var(--s6)}
+  .col{max-width:var(--measure)}
+
+  h1,h2,h3{font-family:var(--serif);text-wrap:balance;margin:0}
+  h1{font-size:clamp(2.2rem,5.2vw,3.4rem);line-height:1.06;font-weight:700;letter-spacing:-.015em}
+  h2{font-size:clamp(1.5rem,3vw,2rem);line-height:1.15;font-weight:600;letter-spacing:-.01em}
+  h3{font-size:1.14rem;line-height:1.3;font-weight:600}
+  p{margin:0}
+  a{color:var(--accent)}
+
+  .eyebrow{
+    font-family:var(--mono);font-size:.72rem;font-weight:500;
+    letter-spacing:.13em;text-transform:uppercase;color:var(--faint);
+  }
+
+  /* ---- masthead ---- */
+  .mast{display:flex;flex-direction:column;gap:var(--s3);padding-bottom:var(--s4);border-bottom:2px solid var(--ink)}
+  .mast .lede{font-family:var(--serif);font-size:clamp(1.1rem,2.2vw,1.32rem);line-height:1.45;color:var(--muted);max-width:60ch}
+  .mast-meta{display:flex;flex-wrap:wrap;gap:var(--s3);font-family:var(--mono);font-size:.74rem;color:var(--faint);letter-spacing:.04em}
+
+  /* ---- sections ---- */
+  section{padding-top:var(--s5);display:flex;flex-direction:column;gap:var(--s3)}
+  section > p, section > ul, section > ol{max-width:var(--measure)}
+  .sec-head{display:flex;flex-direction:column;gap:var(--s1)}
+
+  ul,ol{margin:0;padding-left:1.15rem;display:flex;flex-direction:column;gap:var(--s2)}
+  li::marker{color:var(--faint)}
+  strong{font-weight:600}
+  em{font-style:italic;color:var(--muted)}
+
+  /* ---- measurement chip: every figure here was measured, and says so ---- */
+  .m{
+    font-family:var(--mono);font-size:.86em;font-weight:500;
+    background:var(--accent-soft);color:var(--accent);
+    padding:.06em .38em;border-radius:2px;white-space:nowrap;
+    font-variant-numeric:tabular-nums;
+  }
+  .m.dead{background:var(--warn-soft);color:var(--warn)}
+
+  /* ---- coverage table ---- */
+  .scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  table{border-collapse:collapse;width:100%;min-width:640px;font-size:.9rem}
+  caption{text-align:left;font-family:var(--mono);font-size:.72rem;letter-spacing:.1em;
+          text-transform:uppercase;color:var(--faint);padding-bottom:var(--s2)}
+  th{
+    font-family:var(--mono);font-size:.7rem;font-weight:500;letter-spacing:.08em;
+    text-transform:uppercase;color:var(--faint);text-align:left;
+    padding:0 var(--s3) var(--s2) 0;border-bottom:1px solid var(--line-strong);vertical-align:bottom;
+  }
+  td{padding:.6rem var(--s3) .6rem 0;border-bottom:1px solid var(--line);vertical-align:middle}
+  td.field{font-family:var(--mono);font-size:.82rem;color:var(--ink);white-space:nowrap}
+  td.num{font-family:var(--mono);font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+  td.note{color:var(--muted);font-size:.86rem;min-width:20ch}
+  .bar{position:relative;height:7px;width:110px;background:var(--surface-2);border-radius:1px;overflow:hidden}
+  .bar span{position:absolute;inset:0 auto 0 0;background:var(--accent);border-radius:1px}
+  .bar.low span{background:var(--warn)}
+  tr.is-dead td.field{color:var(--warn)}
+
+  /* ---- callout ---- */
+  .callout{
+    background:var(--surface);border:1px solid var(--line);
+    border-left:3px solid var(--accent);
+    padding:var(--s3) var(--s4);display:flex;flex-direction:column;gap:var(--s2);
+    max-width:var(--measure);
+  }
+  .callout.warn{border-left-color:var(--warn)}
+  .callout h3{font-family:var(--sans);font-size:.98rem;font-weight:600}
+  .callout p{font-size:.94rem;color:var(--muted)}
+  .callout p strong{color:var(--ink)}
+
+  /* ---- the flip: worked example ---- */
+  .flip{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:1px;background:var(--line);border:1px solid var(--line)}
+  .flip > div{background:var(--surface);padding:var(--s3) var(--s4);display:flex;flex-direction:column;gap:var(--s1)}
+  .flip .k{font-family:var(--mono);font-size:.68rem;letter-spacing:.1em;text-transform:uppercase;color:var(--faint)}
+  .flip .v{font-family:var(--serif);font-size:2rem;font-weight:600;line-height:1;font-variant-numeric:tabular-nums}
+  .flip .v.old{color:var(--faint)}
+  .flip .v.new{color:var(--accent)}
+  .flip .d{font-size:.86rem;color:var(--muted)}
+
+  /* ---- age ladder chart ---- */
+  .ladder{display:flex;flex-direction:column;gap:.4rem;max-width:var(--measure)}
+  .rung{display:grid;grid-template-columns:5.5rem 1fr 4.5rem;align-items:center;gap:var(--s3)}
+  .rung .lbl{font-family:var(--mono);font-size:.76rem;color:var(--muted);text-align:right}
+  .rung .track{height:18px;background:var(--surface-2);position:relative;border-radius:1px}
+  .rung .fill{position:absolute;inset:0 auto 0 0;background:var(--accent);border-radius:1px}
+  .rung.gap .fill{background:var(--warn)}
+  .rung .pct{font-family:var(--mono);font-size:.78rem;font-variant-numeric:tabular-nums;color:var(--muted)}
+  .rung.gap .pct,.rung.gap .lbl{color:var(--warn);font-weight:500}
+
+  /* ---- model diagram ---- */
+  .model{display:flex;gap:var(--s3);align-items:stretch;min-width:760px}
+  .stack{display:flex;flex-direction:column;gap:var(--s2);flex:1}
+  .node{
+    background:var(--surface);border:1px solid var(--line);padding:var(--s2) var(--s3);
+    display:flex;flex-direction:column;gap:.15rem;flex:1;justify-content:center;
+  }
+  .node .n{font-family:var(--mono);font-size:.78rem;font-weight:500}
+  .node .s{font-size:.76rem;color:var(--faint);line-height:1.35}
+  .node.core{border:1px solid var(--accent);background:var(--accent-soft)}
+  .node.core .n{color:var(--accent);font-weight:600}
+  .node.core .s{color:var(--accent)}
+  .node.ext{border-style:dashed}
+  .arrow{display:flex;align-items:center;justify-content:center;color:var(--line-strong);
+         font-family:var(--mono);font-size:1.1rem;flex:0 0 1.6rem}
+  .stack-lbl{font-family:var(--mono);font-size:.66rem;letter-spacing:.11em;text-transform:uppercase;color:var(--faint);padding-bottom:.1rem}
+
+  /* ---- surfaces list ---- */
+  .surfaces{display:flex;flex-direction:column;gap:1px;background:var(--line);border:1px solid var(--line)}
+  .surface{background:var(--surface);padding:var(--s3) var(--s4);display:grid;
+           grid-template-columns:minmax(0,1fr) minmax(0,.85fr);gap:var(--s3) var(--s4);align-items:start}
+  .surface .body{display:flex;flex-direction:column;gap:var(--s2)}
+  .surface p{font-size:.93rem;color:var(--muted)}
+  .surface .act{
+    background:var(--surface-2);padding:var(--s2) var(--s3);
+    display:flex;flex-direction:column;gap:.2rem;align-self:start;
+  }
+  .surface .act .k{font-family:var(--mono);font-size:.64rem;letter-spacing:.11em;text-transform:uppercase;color:var(--faint)}
+  .surface .act .t{font-size:.88rem;color:var(--ink);line-height:1.45}
+  @media (max-width:720px){.surface{grid-template-columns:1fr}}
+
+  /* ---- phases (a real sequence, so it is numbered) ---- */
+  .phases{display:flex;flex-direction:column;gap:0;counter-reset:ph}
+  .phase{display:grid;grid-template-columns:3.2rem 1fr;gap:var(--s3);
+         padding:var(--s3) 0;border-top:1px solid var(--line)}
+  .phase:last-child{border-bottom:1px solid var(--line)}
+  .phase .num{font-family:var(--mono);font-size:.8rem;color:var(--accent);font-weight:600;padding-top:.15rem}
+  .phase .body{display:flex;flex-direction:column;gap:var(--s2);max-width:60ch}
+  .phase p{font-size:.93rem;color:var(--muted)}
+  .phase .ship{font-family:var(--mono);font-size:.74rem;color:var(--faint)}
+
+  /* ---- open questions ---- */
+  .qs{display:flex;flex-direction:column;gap:var(--s3);max-width:var(--measure)}
+  .q{display:flex;flex-direction:column;gap:var(--s1);padding-left:var(--s3);border-left:2px solid var(--line-strong)}
+  .q .qq{font-family:var(--serif);font-size:1.05rem;font-weight:600}
+  .q .qa{font-size:.92rem;color:var(--muted)}
+
+  footer{margin-top:var(--s6);padding-top:var(--s3);border-top:1px solid var(--line);
+         font-family:var(--mono);font-size:.74rem;color:var(--faint);max-width:var(--measure);line-height:1.7}
+
+  @media (prefers-reduced-motion:no-preference){
+    .bar span,.rung .fill{transition:width .4s ease}
+  }
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+</style>
+
+<div class="wrap">
+
+  <header class="mast">
+    <div class="eyebrow">Rec Reporting &middot; Design Note</div>
+    <h1>The Denominator<br>Problem</h1>
+    <p class="lede">Every report we ship divides by our own customers. Reno is asking a question that can only be answered by dividing by the population &mdash; and the data to do it is already in the database.</p>
+    <div class="mast-meta">
+      <span>Prompted by Reno demo, 4 Sep 2026</span>
+      <span>Figures measured against prod, 5 Sep 2026</span>
+    </div>
+  </header>
+
+  <section>
+    <div class="sec-head">
+      <div class="eyebrow">The ask</div>
+      <h2>What Elena and Roabel actually wanted</h2>
+    </div>
+    <p>Roabel's framing on the call: <em>&ldquo;how many people who are on 80% scholarships are actually utilizing their memberships&hellip; and getting more granular insights on how he can present and communicate that up to city leadership.&rdquo;</em> Elena's answer was that Reno tracks none of it today &mdash; and that the reason is tooling, not appetite: <em>&ldquo;it could just be that we hadn't in the past because it wasn't something that was conveniently available to us.&rdquo;</em></p>
+    <p>That is not a request for a membership list with a scholarship column bolted on. It is a request for a claim a parks director can make to a city council: <strong>we serve this city in proportion to how this city actually looks &mdash; and here is where we don't.</strong> Nothing on the platform can produce that sentence today, because every denominator we own is our own customer base.</p>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <div class="eyebrow">Feasibility &middot; measured, not assumed</div>
+      <h2>What is really in the database</h2>
+    </div>
+    <p>This repo has an expensive history of features built on columns that turned out to be empty. So before any design, a schema sweep and a population count on the population that matters &mdash; households holding an active membership <span class="m">93,758</span>.</p>
+
+    <div class="scroll">
+      <table>
+        <caption>Field availability, production, 5 Sep 2026</caption>
+        <thead>
+          <tr><th>Field</th><th>Coverage</th><th></th><th>Rate</th><th>Verdict</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="field">users.zip_code <em>&mdash; any household member</em></td>
+            <td class="num">93,452 / 93,758</td>
+            <td><div class="bar"><span style="width:99.7%"></span></div></td>
+            <td class="num">99.7%</td>
+            <td class="note">Build on it. Only <strong>644</strong> distinct ZIPs platform-wide.</td>
+          </tr>
+          <tr>
+            <td class="field">users.formatted_address</td>
+            <td class="num">81,916 / 82,014</td>
+            <td><div class="bar"><span style="width:99.9%"></span></div></td>
+            <td class="num">99.9%</td>
+            <td class="note">Street-level available; not needed if ZIP suffices.</td>
+          </tr>
+          <tr>
+            <td class="field">household size <em>&mdash; derived</em></td>
+            <td class="num">93,758 / 93,758</td>
+            <td><div class="bar"><span style="width:100%"></span></div></td>
+            <td class="num">100%</td>
+            <td class="note">Every user carries a household_id. Free.</td>
+          </tr>
+          <tr>
+            <td class="field">profile.date_of_birth <em>&mdash; &ge;1 per household</em></td>
+            <td class="num">67,477 / 93,758</td>
+            <td><div class="bar"><span style="width:72%"></span></div></td>
+            <td class="num">72.0%</td>
+            <td class="note">Usable, presence-gated. Whole household: 43.1%.</td>
+          </tr>
+          <tr>
+            <td class="field">applied_pricing &rarr; default/final/group</td>
+            <td class="num">148,380 memberships</td>
+            <td><div class="bar"><span style="width:100%"></span></div></td>
+            <td class="num">100%</td>
+            <td class="note">List price, paid price and the group that set it &mdash; per record.</td>
+          </tr>
+          <tr>
+            <td class="field">profile.gender</td>
+            <td class="num">158,344 / 352,138</td>
+            <td><div class="bar low"><span style="width:45%"></span></div></td>
+            <td class="num">45.0%</td>
+            <td class="note">Too thin to report on alone; optional cross-cut at best.</td>
+          </tr>
+          <tr class="is-dead">
+            <td class="field">profile.grade</td>
+            <td class="num">25,153 / 352,138</td>
+            <td><div class="bar low"><span style="width:7.1%"></span></div></td>
+            <td class="num">7.1%</td>
+            <td class="note">Do not build on it.</td>
+          </tr>
+          <tr class="is-dead">
+            <td class="field">profile.school_id</td>
+            <td class="num">1,007 / 352,138</td>
+            <td><div class="bar low"><span style="width:2%"></span></div></td>
+            <td class="num">0.3%</td>
+            <td class="note">Dead, like <span class="m dead">last_used_at</span>.</td>
+          </tr>
+          <tr class="is-dead">
+            <td class="field">income &mdash; <em>any column, any table</em></td>
+            <td class="num">0</td>
+            <td><div class="bar low"><span style="width:0"></span></div></td>
+            <td class="num">&mdash;</td>
+            <td class="note">Does not exist. Must be inferred from geography.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout warn">
+      <h3>The trap that would have sunk this on first read</h3>
+      <p>Platform-wide, <span class="m">zip_code</span> is populated on only <strong>236,107 of 837,265 users &mdash; 28.2%</strong>. Read at that grain the whole idea looks unbuildable. The dilution is every account that never bought anything. And resolving a household's ZIP through <span class="m">household.owner_id</span> gets only <strong>87.4%</strong>, because <strong>11,744</strong> member households have no resolvable owner. Take the ZIP from <em>any</em> member of the household and it is <strong>99.7%</strong>. The grain of the question decides the answer.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <div class="eyebrow">The idea</div>
+      <h2>Flip the denominator</h2>
+    </div>
+    <p>There is no income field anywhere in the schema, and there should not be &mdash; asking a family their income at a rec-center front desk is not a product we want to build. But <strong>644 ZIP codes</strong> is a small enough dimension to attach the U.S. Census American Community Survey to: median household income, poverty rate, household count, age structure, all published per ZCTA.</p>
+    <p>That does two things. The lesser one is an income band per member household. The greater one is that Census hands us <strong>the count of households that exist</strong> in each ZIP &mdash; a denominator we have never had. Penetration becomes computable:</p>
+
+    <div class="flip">
+      <div>
+        <span class="k">What we report today</span>
+        <span class="v old">412</span>
+        <span class="d">member households in 89502. A number with no scale &mdash; is that good?</span>
+      </div>
+      <div>
+        <span class="k">What Census makes possible</span>
+        <span class="v new">3.1%</span>
+        <span class="d">of the households in 89502 &mdash; against 14.2% two ZIPs over, in the higher-income one.</span>
+      </div>
+      <div>
+        <span class="k">What the director says to council</span>
+        <span class="v new">4.6&times;</span>
+        <span class="d">the gap in reach between the wealthiest and poorest quartile of the city we serve.</span>
+      </div>
+    </div>
+    <p><em>Illustrative ZIPs and figures &mdash; the arithmetic is what is being shown, not Reno's real numbers, since Reno is not live yet.</em></p>
+    <p>Every existing report answers <em>&ldquo;how are our members doing?&rdquo;</em> This answers <em>&ldquo;who isn't a member, and is that pattern about money?&rdquo;</em> &mdash; which is the only version of the question a city council cares about, and the reason it is worth building rather than adding a column.</p>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <div class="eyebrow">Architecture</div>
+      <h2>One household model, many readers</h2>
+    </div>
+    <p>The unit is the <strong>household</strong>, not the person, because that is what the schema already commits to: <span class="m">membership</span> is keyed on <span class="m">household_id</span> and carries no user id at all. Address is a household fact. Family composition is a household fact. Participation is per-person and rolls up.</p>
+
+    <div class="scroll">
+      <div class="model">
+        <div class="stack">
+          <div class="stack-lbl">Base tables &middot; indexed, fast</div>
+          <div class="node"><span class="n">users + household</span><span class="s">ZIP, size, composition</span></div>
+          <div class="node"><span class="n">profile</span><span class="s">date_of_birth &rarr; age bands</span></div>
+          <div class="node"><span class="n">membership.applied_pricing</span><span class="s">list, paid, appliedGroupId</span></div>
+          <div class="node"><span class="n">scholarship + stored_value</span><span class="s">award, balance, expiry</span></div>
+          <div class="node"><span class="n">attendance_event</span><span class="s">check-ins &rarr; utilization</span></div>
+        </div>
+        <div class="arrow">&rarr;</div>
+        <div class="stack" style="flex:.9">
+          <div class="stack-lbl">Derived</div>
+          <div class="node core" style="flex:3">
+            <span class="n">household_profile</span>
+            <span class="s">one row per household per org &mdash; size, adults / children / seniors, age band, ZIP, income band, subsidy status, subsidy depth, tenure, visits per month</span>
+          </div>
+          <div class="node ext" style="flex:1"><span class="n">zip_reference.json</span><span class="s">644 rows, checked in, ACS 5-year</span></div>
+        </div>
+        <div class="arrow">&rarr;</div>
+        <div class="stack" style="flex:.75">
+          <div class="stack-lbl">Surfaces</div>
+          <div class="node"><span class="n">Access map</span></div>
+          <div class="node"><span class="n">Subsidy &rarr; utilization</span></div>
+          <div class="node"><span class="n">Life-stage gaps</span></div>
+          <div class="node"><span class="n">Pricing fit</span></div>
+          <div class="node"><span class="n">Outreach lists</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="callout">
+      <h3>Two decisions worth making now</h3>
+      <p><strong>Census data ships as a checked-in JSON file, not a database table.</strong> It is 644 rows, it changes once a year when ACS releases, and it needs no write access to a database we do not own &mdash; the same reasoning that keeps <span class="m">WIZARD_SOURCE_GRAIN</span> in server.js. Versioned in git means a number that moves is a diff someone can read.</p>
+      <p><strong>It reads base tables, not the <span class="m">materialized</span> schema.</strong> Every table there has exactly one index and every read is a full seq scan &mdash; the pinned platform problem. The queries behind every figure on this page ran against base tables in <strong>0.3&ndash;2.3 s platform-wide, unscoped</strong>. This layer does not inherit that ceiling, and should not be built where it would.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <div class="eyebrow">Already visible in the data</div>
+      <h2>The teen cliff</h2>
+    </div>
+    <p>Age band of the <span class="m">133,320</span> people in active-membership households who have a date of birth on file. This is one query against tables we already have, and it is the shape of the argument the whole layer exists to make.</p>
+
+    <div class="ladder">
+      <div class="rung"><span class="lbl">0&ndash;5</span><span class="track"><span class="fill" style="width:43%"></span></span><span class="pct">12.4%</span></div>
+      <div class="rung"><span class="lbl">6&ndash;12</span><span class="track"><span class="fill" style="width:100%"></span></span><span class="pct">28.9%</span></div>
+      <div class="rung gap"><span class="lbl">13&ndash;17</span><span class="track"><span class="fill" style="width:29%"></span></span><span class="pct">8.5%</span></div>
+      <div class="rung gap"><span class="lbl">18&ndash;34</span><span class="track"><span class="fill" style="width:31%"></span></span><span class="pct">8.8%</span></div>
+      <div class="rung"><span class="lbl">35&ndash;54</span><span class="track"><span class="fill" style="width:79%"></span></span><span class="pct">22.8%</span></div>
+      <div class="rung"><span class="lbl">55&ndash;64</span><span class="track"><span class="fill" style="width:18%"></span></span><span class="pct">5.2%</span></div>
+      <div class="rung"><span class="lbl">65+</span><span class="track"><span class="fill" style="width:46%"></span></span><span class="pct">13.2%</span></div>
+    </div>
+
+    <p>Participation falls <strong>70.6%</strong> between ages 12 and 13 &mdash; <span class="m">38,569</span> down to <span class="m">11,348</span> &mdash; and does not recover until people come back as parents. Some of that is real: teenagers leave for school sports. But no org can currently see the size of its own cliff, and none of them is pricing or programming against it. Set the Census age structure of the same ZIPs beside it and the sentence sharpens from <em>&ldquo;we have few teenagers&rdquo;</em> to <em>&ldquo;there are 14,000 teenagers in our service area and we reach 300 of them.&rdquo;</em></p>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <div class="eyebrow">The layer</div>
+      <h2>Six surfaces, each ending in something to do</h2>
+    </div>
+    <p>The rule that separates this from a dashboard: every panel resolves to an action or a list of named households, never a figure to admire. A count with nowhere to go is the dead end this codebase keeps writing down.</p>
+
+    <div class="surfaces">
+      <div class="surface">
+        <div class="body">
+          <h3>1 &middot; Access map</h3>
+          <p>Penetration and median household income per ZIP, on one choropleth. Sorted by the residual: where reach is furthest below what income and population predict.</p>
+        </div>
+        <div class="act"><span class="k">Action</span><span class="t">Where outreach, a satellite program or a subsidy allocation goes next quarter.</span></div>
+      </div>
+
+      <div class="surface">
+        <div class="body">
+          <h3>2 &middot; Subsidy &rarr; utilization</h3>
+          <p>Roabel's question, exactly. Of households on a discount or scholarship, what share ever checked in &mdash; and how their visit frequency compares with full-pay households on the same plan.</p>
+        </div>
+        <div class="act"><span class="k">Action</span><span class="t">The named list of awards that were issued and never used &mdash; a phone call, not a policy change.</span></div>
+      </div>
+
+      <div class="surface">
+        <div class="body">
+          <h3>3 &middot; Life-stage gaps</h3>
+          <p>Our age distribution against the Census age distribution of the same ZIPs. Surfaces the teen cliff, the young-adult hole, and senior reach as three separate findings rather than one chart.</p>
+        </div>
+        <div class="act"><span class="k">Action</span><span class="t">Which age band to program or price for &mdash; sized, so the business case writes itself.</span></div>
+      </div>
+
+      <div class="surface">
+        <div class="body">
+          <h3>4 &middot; Pricing fit</h3>
+          <p>Household size against the tiers actually sold. Measured today: <span class="m">49.1%</span> of member households are one person and the mean is <span class="m">1.99</span> &mdash; while orgs price &ldquo;family&rdquo; tiers for four.</p>
+        </div>
+        <div class="act"><span class="k">Action</span><span class="t">Retier. Pairs with the annual-vs-monthly finding already in the Memberships report.</span></div>
+      </div>
+
+      <div class="surface">
+        <div class="body">
+          <h3>5 &middot; Conversion gaps</h3>
+          <p>Households that register for programs but never buy a membership, and residency-group households that have never transacted &mdash; cut by income band, so the reason is legible.</p>
+        </div>
+        <div class="act"><span class="k">Action</span><span class="t">A segmented contact list, through the Community Intel export path that already exists.</span></div>
+      </div>
+
+      <div class="surface">
+        <div class="body">
+          <h3>6 &middot; Price sensitivity</h3>
+          <p>Conversion rate at each price point, banded by area income. Distinguishes a discount that unlocks new households from one that hands money to households who would have paid.</p>
+        </div>
+        <div class="act"><span class="k">Action</span><span class="t">Set the discount depth where it buys participation, and defend it with the elasticity.</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <div class="eyebrow">Integrity</div>
+      <h2>Four rules this cannot ship without</h2>
+    </div>
+
+    <div class="callout warn">
+      <h3>An area income is not a person's income</h3>
+      <p>ZIP&nbsp;+&nbsp;ACS is an <strong>area-level</strong> proxy. A low-income family in an affluent ZIP reads affluent, and the inference is invalid at the individual row &mdash; the ecological fallacy, and it is the kind of error that ends up in a council presentation. So: income bands are reported <strong>at ZIP grain only</strong>, never rendered as a field on a household or a person, never exported next to a name. The label on screen says <em>area median</em> every time it appears. Separately, USPS ZIPs are delivery routes and Census ZCTAs are areal approximations of them &mdash; a real but small mismatch that the reference file should carry a flag for rather than paper over.</p>
+    </div>
+
+    <div class="callout warn">
+      <h3>Suppress thin cells</h3>
+      <p>A ZIP with six member households, cut by age and subsidy status, is not a statistic &mdash; it is a description of identifiable families. Any cell under a floor (start at <strong>10 households</strong>) shows its count and refuses the percentage, the same rule already used for <span class="m">RATE_MIN_VIEWS</span> and <span class="m">WL_CONV_MIN_OFFERS</span>. A real 0% still shows; an unsafe one does not.</p>
+    </div>
+
+    <div class="callout">
+      <h3>&ldquo;Subsidized&rdquo; has four spellings and no single field</h3>
+      <p>Measured: <span class="m">614</span> scholarship stored-value accounts across 19 orgs; <span class="m">135,985</span> active memberships whose list price is already $0 (mostly residency records); <span class="m">4,674</span> genuinely discounted off a real list price, worth <span class="m">$495,857</span> foregone; and <span class="m">1,454</span> discount-code redemptions. One derived predicate has to unify them, and it must be presence-gated &mdash; an org that uses none of these mechanisms shows <em>nothing</em>, never a confident zero. Note also that where a group sets the price tier rather than discounting it, <span class="m">defaultCents</span> equals <span class="m">finalCents</span> and the true subsidy is understated; the group's own price ladder is the correction.</p>
+    </div>
+
+    <div class="callout">
+      <h3>Absent, not zero</h3>
+      <p>72% of member households have a date of birth, so 28% do not. Age panels report on the households that can answer and <strong>say how many those are</strong> &mdash; the <span class="m">hasAbsent</span> rule. A denominator that includes households that cannot answer produces the &ldquo;0.3 guests per booking&rdquo; defect one report over. And guard the dates: <span class="m">128</span> people in member households compute to an implausible age today.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <div class="eyebrow">Build</div>
+      <h2>How it lands</h2>
+    </div>
+    <p>Phased so each step is useful alone and nothing depends on Reno signing. It extends the <strong>Community Intel</strong> report rather than becoming a 23rd report type &mdash; that page is already the &ldquo;who are our people&rdquo; surface, and already carries the segmented-CSV and activity-beacon machinery this needs.</p>
+
+    <div class="phases">
+      <div class="phase">
+        <span class="num">01</span>
+        <div class="body">
+          <h3>The model and the reference file</h3>
+          <p>One card producing <span class="m">household_profile</span> at org grain, plus <span class="m">zip_reference.json</span> from ACS 5-year. No UI. Proven by an equivalence gate against the existing membership counts, so the new model cannot silently disagree with the report people already read.</p>
+          <span class="ship">Ships nothing visible. Everything after depends on it.</span>
+        </div>
+      </div>
+      <div class="phase">
+        <span class="num">02</span>
+        <div class="body">
+          <h3>Access tab &mdash; the map and the ladder</h3>
+          <p>Penetration by ZIP, income band, life-stage gaps. This is the council-slide surface and the one that demos.</p>
+          <span class="ship">Usable by every live org on day one &mdash; Apex, Norman, El Segundo.</span>
+        </div>
+      </div>
+      <div class="phase">
+        <span class="num">03</span>
+        <div class="body">
+          <h3>Subsidy &rarr; utilization</h3>
+          <p>Roabel's question, plus the never-activated award list. Wants an org running real subsidies at volume, which today means Reno &mdash; so this is the phase that follows the deal rather than leading it.</p>
+          <span class="ship">Gated on the unified subsidy predicate from phase 1.</span>
+        </div>
+      </div>
+      <div class="phase">
+        <span class="num">04</span>
+        <div class="body">
+          <h3>Opportunity engine</h3>
+          <p>Ranked, written findings &mdash; <em>&ldquo;89502 is 3.1% penetrated against 14.2% citywide; 1,100 households, median income $41k; nearest facility 4 miles&rdquo;</em> &mdash; each with its contact list attached. The AI writes the prose, the page writes the numbers, exactly as the wizard split already works.</p>
+          <span class="ship">The thing that makes this a product rather than a chart.</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-head">
+      <div class="eyebrow">Open</div>
+      <h2>Decisions I'd want from you</h2>
+    </div>
+    <div class="qs">
+      <div class="q">
+        <span class="qq">Who is allowed to see it?</span>
+        <span class="qa">Merging area income with age and address is a materially different product from a rental schedule, even aggregated. My instinct is the <span class="m">reportSettings</span> shape &mdash; super-admin gated behind a flag, per-org opt-in, and the export separately gated from the view.</span>
+      </div>
+      <div class="q">
+        <span class="qq">Does Rec model RecConnect as a group, a $0 membership, or a scholarship?</span>
+        <span class="qa">It decides whether the tier is queryable per household at all. Groups do not expire &mdash; the thing Elena asked about and the thing her annual re-up depends on &mdash; so the cohort would have no time dimension. This gets settled in configuration long before reporting sees it, and reporting should have a say.</span>
+      </div>
+      <div class="q">
+        <span class="qq">Is this a Rec product or a Reno deliverable?</span>
+        <span class="qa">Built generically it is a differentiator in every muni RFP that asks about equity &mdash; and most now do. Built for Reno it is faster and lands in one quarter. The measurements say generic costs little more, because the fields are populated platform-wide, not just for one org.</span>
+      </div>
+      <div class="q">
+        <span class="qq">How much Census do we take?</span>
+        <span class="qa">Income and household counts alone is a small, defensible file. Adding race, language and disability from the same tables makes the equity story far stronger and the privacy conversation far harder. I would start with income, population and age, and treat the rest as a separate decision with legal in the room.</span>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    Every figure on this page was measured against production on 5 Sep 2026 and is platform-wide unless stated. Nothing here has been built. Reno is not a live org &mdash; the illustrative ZIP figures are arithmetic, not their data.
+  </footer>
+
+</div>

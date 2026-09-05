@@ -11,8 +11,10 @@ Dan then set the shape: *"surface insights against memberships and users/HH's in
 that group. Do they use the memberships more often, less often, check in more or
 less, times of day, etc."*
 
-**Nothing is built.** Mock-up of the proposed tab lives in the scratchpad
-(`recconnect-tab.html`), in the real report chrome. What follows is the measurement
+**Nothing is built.** Mock-up of the proposed tab, in the real report chrome, is
+at `docs/recconnect/recconnect-tab-mockup.html` — open it in a browser. Its action-list
+counts (31 expiring, 12 lapsing, 63 weekend-only) are PLACEHOLDERS; every figure in its
+comparison table and time-of-day chart is measured and listed below. What follows is the measurement
 work, so it does not have to be redone.
 
 ### RECCONNECT IS A GROUP, AND THE GROUP IS THE PLAN
@@ -143,8 +145,8 @@ ACS keyed on those 644 ZIPs supplies the count of households that *exist*, so
 penetration by ZIP becomes computable — "3.1% of this ZIP against 14.2% two ZIPs
 over" — which is the only version of the equity question a city council cares about.
 An area income is **not** a person's income (ecological fallacy): report income at
-ZIP grain only, never as a field beside a name. Full design note in the scratchpad
-(`community-access-layer.html`).
+ZIP grain only, never as a field beside a name. Full design note at
+`docs/recconnect/community-access-layer-design-note.html`.
 
 **Subsidy has four spellings and no single field**, measured platform-wide: 614
 scholarship stored-value accounts (19 orgs), 135,985 active memberships whose list
