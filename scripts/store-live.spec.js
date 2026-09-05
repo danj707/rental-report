@@ -141,8 +141,24 @@ async function q(sql, args) {
     const dir = freshDir();
     const s = await boot(41101, dir);
     try {
+      // THE GATE FIRST. dashboardAuth returns next() for every path except "/",
+      // so route middleware here is decorative — the first version of these two
+      // routes answered 200 with no credentials on the PR preview while / was
+      // correctly 401'ing. The read leaks internal state and the POST next door
+      // kicks off a full import against the platform's config.
+      const open = await req(41101, "GET", "/api/admin/store");
+      eq(open.status, 401, "the store route refuses a caller with no password");
+      const openImport = await req(41101, "POST", "/api/admin/store/import", {}, {});
+      eq(openImport.status, 401, "...and so does the import");
+      const wrong = await req(41101, "GET", "/api/admin/store", {}, undefined);
+      eq(wrong.status, 401, "a request with no Authorization header is refused");
+      const badPw = await req(41101, "GET", "/api/admin/store?password=nope");
+      eq(badPw.status, 401, "a wrong password is refused");
+
       const st = await req(41101, "GET", "/api/admin/store", { Authorization: basic });
+      eq(st.status, 200, "the right password is accepted");
       eq(st.json && st.json.mode, "disk", "with no DATABASE_URL the server runs in disk mode");
+      ok(!/postgres:\/\//.test(JSON.stringify(st.json)), "and the response never carries a connection string");
       ok(!/\[store\] \{"mode":"d/.test(s.log()), "and never announces a database connection");
 
       // A flag write must land on the volume, exactly as before.
@@ -164,6 +180,26 @@ async function q(sql, args) {
       eq(b.status, 200, "the beacon route accepted the event");
       await sleep(400);
       eq(eventLines(dir), 1, "disk mode appends the event to events.jsonl");
+    } finally { await stop(s); fs.rmSync(dir, { recursive: true, force: true }); }
+  }
+
+  // ── no password configured means NOBODY, not everybody ───────────────────
+  //
+  // The asymmetry against dashboardAuth, which treats an unset password as open
+  // access — right for a root page in dev, wrong for a route that reports
+  // internal state and kicks off an import. And it is not hypothetical: a PR
+  // preview is a fresh environment, so an unset DASHBOARD_PASSWORD there is the
+  // normal case rather than the exotic one.
+  {
+    const dir = freshDir();
+    const s = await boot(41110, dir, { DASHBOARD_PASSWORD: "" });
+    try {
+      eq((await req(41110, "GET", "/api/admin/store")).status, 401,
+         "with no password configured the store route refuses everyone");
+      eq((await req(41110, "POST", "/api/admin/store/import", {}, {})).status, 401,
+         "...and so does the import");
+      eq((await req(41110, "GET", "/api/admin/store", { Authorization: basic })).status, 401,
+         "...including a caller presenting the password the spec normally uses");
     } finally { await stop(s); fs.rmSync(dir, { recursive: true, force: true }); }
   }
 

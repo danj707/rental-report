@@ -14450,13 +14450,41 @@ app.get("/api/admin/param-drift", (req, res) => {
 // says what actually happened. A muted preview and a store that silently fell
 // back to the volume look identical from the outside otherwise — the same
 // reasoning that put `environment` on the report-activity route.
-app.get("/api/admin/store", dashboardAuth, (req, res) => {
+//
+// THESE ARE PASSWORD-GATED BY HAND, and that is not belt-and-braces:
+// `dashboardAuth` returns next() for every path except "/", so passing it as
+// route middleware here would have been decorative — it protects nothing off
+// the root. Caught on the PR preview, where /api/admin/store answered 200 with
+// no credentials while / correctly 401'd.
+//
+// It FAILS CLOSED. No DASHBOARD_PASSWORD means nobody, which is the opposite of
+// dashboardAuth's "no password → open access" — right for a root page in dev,
+// wrong for a route that reports internal state and, next door, kicks off a
+// full import. Same call as reportSettingsAdminKey().
+function adminPasswordOk(req) {
+  if (!DASHBOARD_PASSWORD) return false;
+  const auth = req.headers["authorization"] || "";
+  if (auth.startsWith("Basic ")) {
+    const decoded = Buffer.from(auth.slice(6), "base64").toString("utf-8");
+    const pw = decoded.includes(":") ? decoded.split(":").slice(1).join(":") : decoded;
+    if (pw === DASHBOARD_PASSWORD) return true;
+  }
+  const body = (req.body && req.body.password) || req.query.password;
+  return !!body && body === DASHBOARD_PASSWORD;
+}
+
+app.get("/api/admin/store", (req, res) => {
+  if (!adminPasswordOk(req)) return res.status(401).json({ error: "Password required" });
   const st = stateStore.status();
   res.json({
     ...st,
+    // Redacted even here. A pg failure message can carry the host and user it
+    // failed to reach, and this response is the kind of thing that gets pasted
+    // into a chat while somebody is debugging a flip.
+    lastError: st.lastError ? st.lastError.replace(/postgres(ql)?:\/\/[^\s]*/gi, "postgres://<redacted>") : "",
     // What the env SAYS, next to what the store actually did. When these
     // disagree the answer is in the boot log, and knowing to look there is
-    // most of the diagnosis.
+    // most of the diagnosis. Never the URL itself.
     configured: { STORE_MODE: STORE_MODE || "(unset)", databaseUrl: STORE_DATABASE_URL ? "set" : "(unset)" },
     dataDir: DATA_DIR,
     environment: process.env.RAILWAY_ENVIRONMENT_NAME || "(not railway)"
@@ -14464,8 +14492,12 @@ app.get("/api/admin/store", dashboardAuth, (req, res) => {
 });
 
 // The import is idempotent, so a manual re-run is safe — it exists because a
-// flip that needs a redeploy to retry is a flip nobody wants to attempt.
-app.post("/api/admin/store/import", dashboardAuth, async (req, res) => {
+// flip that needs a redeploy to retry is a flip nobody wants to attempt. It is
+// still a state-changing action against the whole platform's config, so it is
+// gated harder than the read: password required, and refused outright when no
+// password is configured.
+app.post("/api/admin/store/import", express.json(), async (req, res) => {
+  if (!adminPasswordOk(req)) return res.status(401).json({ error: "Password required" });
   if (!stateStore.usingDb()) return res.status(400).json({ error: "not using a database" });
   try { res.json(await stateStore.importFromDisk()); }
   catch (e) { res.status(500).json({ error: e.message }); }

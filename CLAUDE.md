@@ -5003,6 +5003,36 @@ earns its place.
   start backing up a fraction of the platform's state — worse than a backup that
   is obviously broken.
 
+### `dashboardAuth` GUARDS ONLY `/` — passing it as route middleware is decorative
+
+Caught on the PR preview, not in review or by any spec: `/api/admin/store`
+answered **200 with no credentials** while `/` correctly 401'd. The reason is one
+line at the top of `dashboardAuth`:
+
+```js
+if (req.path !== '/') return next();
+```
+
+So it returns `next()` for every other path, and adding it to a route protects
+nothing. The read leaks internal state and the POST beside it kicks off a full
+import against the platform's config, so both are gated by hand now
+(`adminPasswordOk`), accepting either the Basic header or an explicit password.
+
+**IT FAILS CLOSED**, which is the opposite of `dashboardAuth`'s *"no password →
+open access"*. That default is right for a root page in dev and wrong for these
+two — and it is not hypothetical, because a PR preview is a fresh environment
+where an unset `DASHBOARD_PASSWORD` is the normal case. Same call as
+`reportSettingsAdminKey()`.
+
+`lastError` is redacted on the way out even for an authenticated caller: a pg
+failure message can carry the host and user it could not reach, and this response
+is exactly the sort of thing that gets pasted into a chat mid-flip.
+
+Generalise it: **check what a shared auth helper actually guards before reusing
+it.** Three assertions cover this now — no password, wrong password, and a server
+booted with no `DASHBOARD_PASSWORD` at all — and all three fail on the shipped
+bug.
+
 ### A POLLED CHANGE HAS TO REACH MODULE-LEVEL STATE, and the spec found that
 
 Most config is read on demand, so refreshing the mirror is enough. Four stores
@@ -5015,7 +5045,7 @@ Found by `store-live.spec.js`, not by review.
 ### Guards
 
 `scripts/store.spec.js` (**49 assertions, in CI**) lifts and RUNS the module
-against a real Postgres. `scripts/store-live.spec.js` (**31 assertions, in CI**)
+against a real Postgres. `scripts/store-live.spec.js` (**40 assertions, in CI**)
 boots `server.js` twice and drives the real routes — a different claim, and the
 one that decides whether the flip works: that server.js reads *through* the store
 rather than around it.
