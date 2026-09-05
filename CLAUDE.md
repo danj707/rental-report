@@ -1,5 +1,158 @@
 # Project notes for Claude
 
+## RecConnect / subsidised-cohort insights — MEASURED, NOT BUILT (2026-09-05)
+
+Reno demo 2026-09-04. Roabel: *"how many people who are on 80% scholarships are
+actually utilizing their memberships… getting more granular insights on how he can
+present and communicate that up to city leadership."* Elena confirmed Reno tracks
+none of it and that the reason is tooling, not appetite: *"it could just be that we
+hadn't in the past because it wasn't something that was conveniently available."*
+Dan then set the shape: *"surface insights against memberships and users/HH's in
+that group. Do they use the memberships more often, less often, check in more or
+less, times of day, etc."*
+
+**Nothing is built.** Mock-up of the proposed tab lives in the scratchpad
+(`recconnect-tab.html`), in the real report chrome. What follows is the measurement
+work, so it does not have to be redone.
+
+### RECCONNECT IS A GROUP, AND THE GROUP IS THE PLAN
+
+`membership.group_id` → `"group"`. There is **no `group_user` table** — a household
+or person is "in" a group by holding a `membership` row pointing at it. So a cohort
+needs no new concept and no new column.
+
+Reno Sandbox (`reno-sandbox`, unpublished) already carries the ladder, all
+`group_type = 'special-group'`:
+
+| tier | coverage |
+|---|---|
+| RecConnect - 20% Discount | household |
+| RecConnect - 40% Discount | **individual** |
+| RecConnect - 60% Discount | household |
+| RecConnect - 80% Discount | household |
+
+plus `Reno Residents` (residency) and `Veterans` (special-group).
+
+**THE MIXED COVERAGE IS A CONFIG BUG TO FIX BEFORE GO-LIVE.** Three tiers count
+households and one counts people, so any tier-vs-tier comparison silently compares
+different units — and see the next section for what it does to a query.
+
+### COVERAGE DECIDES THE KEY, AND THE WRONG ONE RETURNS ZERO SILENTLY
+
+The trap that cost the first run. For `coverage='individual'`, **`membership.household_id`
+is NULL** and the member is in `membership_user`. Measured at Norman's Free Lunch
+Program: **188 active memberships, 188 with NULL `household_id`, 0 with one**, and
+190 `membership_user` rows.
+
+A household-keyed cohort query does not error — it returns **no rows**, which reads
+as "nobody uses this programme". Resolve both shapes:
+
+```sql
+COALESCE(mu.user_id, hu.id)   -- membership_user, else users via household_id
+```
+
+### USAGE JOINS DIRECTLY TO THE COHORT — no inference needed
+
+`attendance_event.check_in_method_id` → `membership.id` → `membership.group_id`.
+Measured at Norman over 180 days: **46,857 of 46,857** membership-method check-ins
+resolve to a membership AND to its group, 100%. (Of 57,171 total check-ins, 46,857
+are `check_in_method_type='membership'`; the rest are passes and program check-ins.)
+
+So a visit is attributable to the cohort *through the credential that was scanned*,
+not by guessing from the household.
+
+### THE NORMAN PROOF-OF-CONCEPT — real figures, and the ones to quote
+
+`city-of-norman`, **Free Lunch Program** (the closest live analogue to RecConnect —
+income-qualified, 188 people) vs **every other person holding an active membership**
+(12,508), check-ins 2026-03-09 → 2026-09-05:
+
+| | subsidised | all others | index |
+|---|---|---|---|
+| ever checked in | **97.9%** (184/188) | 50.5% | 1.94x |
+| visits per member | 8.1 | 4.3 | 1.89x |
+| **visits per ACTIVE member** | **8.3** | **8.5** | **0.98x** |
+| weekend share | 35.5% | 22.5% | 1.58x |
+| before noon | 7.2% | 26.9% | 0.27x |
+| total visits | 1,523 | 53,648 | — |
+
+Time of day, share of each cohort's own visits:
+
+| band | subsidised | all others |
+|---|---|---|
+| before 9a | **1.1%** | **14.4%** |
+| 9a–12p | 6.2% | 13.2% |
+| 12–3p | 47.5% | 41.8% |
+| 3–6p | 34.2% | 23.5% |
+| 6–9p | 10.3% | 7.0% |
+| after 9p | 0.7% | 0.1% |
+
+**TWO FINDINGS WORTH THE BUILD.** First, **once through the door the two cohorts are
+identical** (0.98x) — the whole difference is activation, not consumption, which
+answers the "they don't show up / they over-use it" objection with one number.
+Second, **the early-morning block is 13x smaller for the subsidised cohort** (1.1%
+vs 14.4%); they arrive after noon, into 3–6p, and on weekends. That one names a
+time, and times can be changed — it is the most directly actionable figure here.
+
+### THREE CAVEATS THAT MUST TRAVEL WITH THOSE NUMBERS
+
+- **"All others" is NOT a full-pay cohort, and I mislabelled it once already.**
+  Measured: **6,371 of the 12,508 hold only $0 memberships** (free residency), so
+  this contrasts one subsidy against a mixed base. Do not write "full-pay" anywhere
+  near these figures; a genuine full-pay comparison needs the base filtered on
+  `applied_pricing->'result'->>'finalCents' > 0`.
+- **97.9% activation is partly SELECTION, not effect.** People enrol in these
+  programmes *at* a facility, so enrolment correlates with attending. The defensible
+  claim is the intensity index (0.98x), which carries no such bias. Any surface that
+  shows the activation figure has to say this.
+- **Small cohorts describe identifiable families.** A tier of six cut by hour and
+  weekday is not a statistic. Suppress percentages under a floor — the
+  `RATE_MIN_VIEWS` / `WL_CONV_MIN_OFFERS` rule — and presence-gate the whole tab so
+  an org with no special-group shows nothing rather than a confident zero.
+
+### COST — this does NOT inherit the `materialized` ceiling
+
+Every query above ran against **base tables** (`membership`, `membership_user`,
+`group`, `users`, `attendance_event`) in **0.3–2.5s**, org-scoped, unscoped by date
+in places. It needs a new card — card 17301 is purchase-grain and has nowhere to put
+a comparison cohort — but it is not the seq-scan problem the item-log cards have.
+
+### THE WIDER LAYER THIS CAME OUT OF
+
+Dan asked for demographics merged with membership data. Schema sweep, 2026-09-05:
+
+| field | coverage | verdict |
+|---|---|---|
+| `users.zip_code` via ANY household member | **93,452 / 93,758 = 99.7%** of active-member households, **644 distinct ZIPs** | build on it |
+| household size (derived) | 100% — avg 1.99, 49.1% single-person | free |
+| `profile.date_of_birth` | 65.4% of profiles; ≥1 per household on 72.0% of member households | usable, presence-gated |
+| `applied_pricing->'result'` | `defaultCents` / `finalCents` / `appliedGroupId` per membership | list, paid, and the group that set it |
+| `profile.gender` | 45.0% | too thin alone |
+| `profile.grade` | 7.1% | **dead** |
+| `profile.school_id` | 0.29% | **dead**, like `last_used_at` |
+| income — any column, any table | **does not exist** | must come from ZIP + Census ACS |
+
+**THE ZIP FIGURE HAS A TRAP.** Platform-wide `zip_code` is populated on only
+**236,107 of 837,265 users (28.2%)**, which makes the whole idea look unbuildable —
+that is diluted by every account that never transacted. And resolving via
+`household.owner_id` gets only **87.4%**, because **11,744** member households have
+no resolvable owner. Take the ZIP from *any* member of the household: 99.7%.
+
+**The bigger idea, not built:** every report divides by our own customers. Census
+ACS keyed on those 644 ZIPs supplies the count of households that *exist*, so
+penetration by ZIP becomes computable — "3.1% of this ZIP against 14.2% two ZIPs
+over" — which is the only version of the equity question a city council cares about.
+An area income is **not** a person's income (ecological fallacy): report income at
+ZIP grain only, never as a field beside a name. Full design note in the scratchpad
+(`community-access-layer.html`).
+
+**Subsidy has four spellings and no single field**, measured platform-wide: 614
+scholarship stored-value accounts (19 orgs), 135,985 active memberships whose list
+price is already $0, 4,674 genuinely discounted off a real list price ($495,857
+foregone), 1,454 discount-code redemptions. One derived predicate has to unify them.
+Note `defaultCents` equals `finalCents` where a group sets the price *tier* rather
+than discounting, so list−paid understates the subsidy.
+
 ## Card 17301 v7 — PUSHED AND IT IS A REGRESSION (2026-09-04)
 
 **READ THIS BEFORE ANYTHING BELOW.** v7 is live on card 17301 and it TIMES OUT
