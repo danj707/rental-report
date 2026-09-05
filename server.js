@@ -68,6 +68,18 @@ const { Resend } = require("resend");
 const crypto     = require("crypto");
 const munis      = require("./lib/munis");   // Tyler/Munis GL Account Detail export
 const permitLib  = require("./lib/permit");  // facility rental posting sheets
+const stateStore = require("./lib/store");   // durable state: the volume, or Postgres
+// NOT `store` — server.js already has two locals by that name (the game-scores
+// blob), and a shadowed module reference is the kind of readability trap that
+// only shows up as a bug months later.
+
+// ── STORE_MODE / DATABASE_URL ───────────────────────────────────────────────
+// Unset means `disk`, which is byte-identical to the behaviour before the store
+// existed — so every PR preview, every local run and production-before-the-flip
+// all take exactly the path they always took. See lib/store.js for what the
+// three modes mean and why there is no fourth.
+const STORE_MODE = (process.env.STORE_MODE || "").trim();
+const STORE_DATABASE_URL = process.env.STORE_DATABASE_URL || process.env.DATABASE_URL || "";
 
 // Catch anything that slips through
 process.on("uncaughtException", err => console.error("[uncaught]", err));
@@ -382,9 +394,16 @@ function cacheFileName(key) {
 
 async function getDiskCached(key, orgSlug, reportType) {
   try {
-    const fname = cacheFileName(key);
-    const raw = await fs.promises.readFile(path.join(CACHE_DIR, fname), 'utf8');
-    const entry = JSON.parse(raw);
+    // In db mode the L2 is a Postgres row rather than a file, so a replica that
+    // has never served this report still gets a warm answer. Everything below
+    // this line — the TTL, the stats, the warm-target residency policy — is
+    // untouched: the entry has the same shape whichever side it came from.
+    let entry = await stateStore.cacheGet(key);
+    if (!entry) {
+      if (stateStore.readsDb()) return null;
+      const fname = cacheFileName(key);
+      entry = JSON.parse(await fs.promises.readFile(path.join(CACHE_DIR, fname), 'utf8'));
+    }
     if (!entry || !entry.data || !entry.ts) return null;
     const ttl = ttlForKey(entry.key || key, entry.rt, entry.hist);
     if (Date.now() - entry.ts > ttl) return null; // too stale for a normal hit
@@ -399,6 +418,14 @@ async function getDiskCached(key, orgSlug, reportType) {
 
 // Persist / restore learned popularity so a hot report stays hot across
 // deploys (each PR preview / restart otherwise starts cold).
+//
+// DELIBERATELY STAYS ON DISK, and it is the one store that does. This is a
+// per-replica heuristic — which reports are worth holding resident in THIS
+// container's memory — not shared state. Two replicas writing a full snapshot
+// of their own recent access log into one row every five minutes would simply
+// overwrite each other, which is worse than each keeping its own view. The cost
+// is that the hint resets when a container is replaced; the feed cache itself
+// is shared, so what resets is a memory-residency preference, not warm data.
 function accessStateFile() { return path.join(DATA_DIR, "cache-access.json"); }
 function saveAccessStats() {
   if (!_accessDirty) return;
@@ -479,7 +506,9 @@ function setCacheUsers(orgSlug, data) {
   const entry = { data, ts: Date.now() };
   usersCache.set(orgSlug, entry);
   try {
-    fs.writeFile(path.join(CACHE_DIR, 'users_' + orgSlug + '.json'), JSON.stringify({ key: 'users:' + orgSlug, data: entry.data, ts: entry.ts, rt: 'users' }), 'utf8', () => {});
+    const rec = { key: 'users:' + orgSlug, data: entry.data, ts: entry.ts, rt: 'users' };
+    fs.writeFile(path.join(CACHE_DIR, 'users_' + orgSlug + '.json'), JSON.stringify(rec), 'utf8', () => {});
+    stateStore.cacheSet(rec.key, rec, USERS_CACHE_TTL);
   } catch {}
 }
 
@@ -511,9 +540,15 @@ function setCache(key, data, reportType, hist) {
   // Always persist to the disk cache (the durable L2 — disk is ~$0.60/mo).
   let serialized = null;
   try {
-    serialized = JSON.stringify({ key, data: entry.data, ts: entry.ts, rt: entry.rt, hist: entry.hist });
+    const record = { key, data: entry.data, ts: entry.ts, rt: entry.rt, hist: entry.hist };
+    serialized = JSON.stringify(record);
+    // The disk copy stays in every mode while the volume is mounted, so a
+    // rollback to `disk` finds a warm cache rather than a cold one.
     const fname = cacheFileName(key);
     fs.writeFile(path.join(CACHE_DIR, fname), serialized, 'utf8', () => {});
+    // expires_at is for the sweeper alone — the readers apply their own TTL,
+    // which varies by report, by org and by whether the entry is historical.
+    stateStore.cacheSet(key, record, ttlForKey(key, entry.rt, entry.hist));
   } catch {}
   // Memory policy: hold resident unless it's a big payload for a report that
   // isn't a warm target (those serve from disk instead). Then LRU-cap the set.
@@ -551,31 +586,58 @@ function getStaleCached(orgSlug, reportType, exactKey) {
 // into its own catch on every boot, so the disk cache never hydrated and
 // every restart started cold (which is what made the post-deploy pre-warm
 // hammer the read replica).
+// Takes the entries as an array so the SOURCE can be the volume or the store
+// without the residency policy below being written twice — two copies of "which
+// entries are worth holding in memory" would drift the first time either moved.
+function hydrateCacheEntries(entries, source) {
+  let loaded = 0, expired = 0, userLoaded = 0;
+  for (const entry of entries) {
+    try {
+      if (!entry || !entry.key || !entry.data || !entry.ts) continue;
+      const ttl = ttlForKey(entry.key, entry.rt, entry.hist);
+      if (Date.now() - entry.ts > ttl * 12) { expired++; continue; } // stale data beats 502
+      if (entry.key.startsWith('users:')) {
+        usersCache.set(entry.key.replace('users:', ''), { data: entry.data, ts: entry.ts });
+        userLoaded++;
+      } else {
+        dataCache.set(entry.key, { data: entry.data, ts: entry.ts, rt: entry.rt || '', hist: !!entry.hist });
+        loaded++;
+      }
+    } catch {}
+  }
+  console.log('[cache] Hydrated from ' + source + ': ' + loaded + ' report entries, ' +
+              userLoaded + ' users entries, ' + expired + ' expired/skipped');
+  return loaded + userLoaded;
+}
+
+// Called once storeBoot() has connected, so a replacement container starts with
+// the platform's warm cache rather than its own empty disk. Without it a rolling
+// deploy would put a cold instance into rotation and prewarm would fan out
+// across ~28 orgs against production Metabase — the storm shape that 502'd the
+// facility Summary once already.
+async function hydrateCacheFromStore() {
+  if (!stateStore.readsDb()) return 0;
+  try { return hydrateCacheEntries(await stateStore.cacheAll(), 'the store'); }
+  catch (e) { console.log('[cache] store hydrate failed: ' + e.message); return 0; }
+}
+
 function hydrateCacheFromDisk() {
   try {
     const files = fs.readdirSync(CACHE_DIR).filter(f => f.endsWith('.json'));
-    let loaded = 0, expired = 0, userLoaded = 0;
+    const entries = [];
     for (const file of files) {
       try {
-        const raw = fs.readFileSync(path.join(CACHE_DIR, file), 'utf8');
-        const entry = JSON.parse(raw);
+        const entry = JSON.parse(fs.readFileSync(path.join(CACHE_DIR, file), 'utf8'));
         if (!entry.key || !entry.data || !entry.ts) continue;
         const ttl = ttlForKey(entry.key, entry.rt, entry.hist);
-        if (Date.now() - entry.ts > ttl * 12) { // generous grace — stale data beats 502
+        if (Date.now() - entry.ts > ttl * 12) {
           fs.unlink(path.join(CACHE_DIR, file), () => {});
-          expired++;
           continue;
         }
-        if (entry.key.startsWith('users:')) {
-          usersCache.set(entry.key.replace('users:', ''), { data: entry.data, ts: entry.ts });
-          userLoaded++;
-        } else {
-          dataCache.set(entry.key, { data: entry.data, ts: entry.ts, rt: entry.rt || '', hist: !!entry.hist });
-          loaded++;
-        }
+        entries.push(entry);
       } catch {}
     }
-    console.log('[cache] Hydrated from disk: ' + loaded + ' report entries, ' + userLoaded + ' users entries, ' + expired + ' expired/removed');
+    hydrateCacheEntries(entries, 'disk');
   } catch (err) {
     console.log('[cache] No disk cache to hydrate: ' + err.message);
   }
@@ -604,6 +666,10 @@ function invalidateFacilitiesCacheOnUuidChange() {
         const fname = cacheFileName(key);
         fs.unlink(path.join(CACHE_DIR, fname), () => {});
       } catch {}
+      // ...and the shared row, or the next replica to hydrate serves the OLD
+      // card's rows for up to four hours — which is precisely the failure this
+      // invalidation exists to prevent, moved one layer down.
+      stateStore.cacheDel(key);
       dropped++;
     }
   }
@@ -2213,18 +2279,18 @@ const HOTDOG_CLAIMS_FILE = path.join(DATA_DIR, "hotdog_claims.json");
 // { slug: { siteId: { lat, lng } } } — set via the campmap editor (token-gated).
 const CAMPMAP_POS_FILE = path.join(DATA_DIR, "campmap_positions.json");
 let campmapPositions = {};
-try { campmapPositions = JSON.parse(fs.readFileSync(CAMPMAP_POS_FILE, "utf8")); } catch { campmapPositions = {}; }
+campmapPositions = readJSON(CAMPMAP_POS_FILE, {});
 function saveCampmapPositions() {
-  try { fs.writeFileSync(CAMPMAP_POS_FILE, JSON.stringify(campmapPositions, null, 2)); }
+  try { writeJSON(CAMPMAP_POS_FILE, campmapPositions); }
   catch (e) { console.error("[campmap] save positions failed:", e.message); }
 }
 // Admin-created custom map markers (Boat Ramp, etc.): { slug: [ {id,label,text,color,lat,lng} ] }
 // Edited via the Camping tab's map editor (POST /:org/facilities/api/campsite-markers).
 const CAMPMAP_MARKERS_FILE = path.join(DATA_DIR, "campmap_markers.json");
 let campmapMarkers = {};
-try { campmapMarkers = JSON.parse(fs.readFileSync(CAMPMAP_MARKERS_FILE, "utf8")); } catch { campmapMarkers = {}; }
+campmapMarkers = readJSON(CAMPMAP_MARKERS_FILE, {});
 function saveCampmapMarkers() {
-  try { fs.writeFileSync(CAMPMAP_MARKERS_FILE, JSON.stringify(campmapMarkers, null, 2)); }
+  try { writeJSON(CAMPMAP_MARKERS_FILE, campmapMarkers); }
   catch (e) { console.error("[campmap] save markers failed:", e.message); }
 }
 // Per-org campsite seed (center, location, landmarks, defaults, sites w/ coords).
@@ -2244,9 +2310,9 @@ catch (e) { console.warn("[rentalmap] seeds load failed:", e.message); }
 // { slug: { locationId: { lat, lng } } } — set by dragging a pin (token-gated).
 const RENTAL_MAP_POS_FILE = path.join(DATA_DIR, "rental_map_positions.json");
 let rentalMapPositions = {};
-try { rentalMapPositions = JSON.parse(fs.readFileSync(RENTAL_MAP_POS_FILE, "utf8")); } catch { rentalMapPositions = {}; }
+rentalMapPositions = readJSON(RENTAL_MAP_POS_FILE, {});
 function saveRentalMapPositions() {
-  try { fs.writeFileSync(RENTAL_MAP_POS_FILE, JSON.stringify(rentalMapPositions, null, 2)); }
+  try { writeJSON(RENTAL_MAP_POS_FILE, rentalMapPositions); }
   catch (e) { console.error("[rentalmap] save positions failed:", e.message); }
 }
 // Merge committed seed + admin overrides into { locationId: {lat,lng} } for one org.
@@ -2320,10 +2386,10 @@ const DEFAULT_REPORT_TIER = {
 };
 
 function loadHealthConfig() {
-  try { return JSON.parse(fs.readFileSync(HEALTH_CONFIG_FILE, "utf8")); } catch { return {}; }
+  return readJSON(HEALTH_CONFIG_FILE, {});
 }
 function saveHealthConfig(cfg) {
-  fs.writeFileSync(HEALTH_CONFIG_FILE, JSON.stringify(cfg, null, 2));
+  writeJSON(HEALTH_CONFIG_FILE, cfg);
 }
 
 // Resolve tier for a specific org/report.  Config can override at
@@ -2342,10 +2408,10 @@ function getTierMinutes(tier) {
 
 // ── Vote tracker ──────────────────────────────────────────────────────
 function loadVotes() {
-  try { return JSON.parse(fs.readFileSync(VOTES_FILE, "utf8")); } catch (_) { return {}; }
+  return readJSON(VOTES_FILE, {});
 }
 function saveVotes(votes) {
-  fs.writeFileSync(VOTES_FILE, JSON.stringify(votes, null, 2));
+  writeJSON(VOTES_FILE, votes);
 }
 function recordVote(org, report, sentiment) {
   const votes = loadVotes();
@@ -2365,14 +2431,14 @@ function recordVote(org, report, sentiment) {
 // org like it"; the per-org detail is in events.jsonl either way.
 const UPDATE_VOTES_FILE = path.join(DATA_DIR, "update-votes.json");
 function loadUpdateVotes() {
-  try { return JSON.parse(fs.readFileSync(UPDATE_VOTES_FILE, "utf8")); } catch { return {}; }
+  return readJSON(UPDATE_VOTES_FILE, {});
 }
 function recordUpdateVote(updateId, sentiment) {
   const votes = loadUpdateVotes();
   if (!votes[updateId]) votes[updateId] = { up: 0, down: 0 };
   if (sentiment === "up") votes[updateId].up++;
   else if (sentiment === "down") votes[updateId].down++;
-  try { fs.writeFileSync(UPDATE_VOTES_FILE, JSON.stringify(votes, null, 2)); } catch (e) {
+  try { writeJSON(UPDATE_VOTES_FILE, votes); } catch (e) {
     console.warn("[update-vote] could not persist:", e.message);
   }
   return votes[updateId];
@@ -2380,10 +2446,10 @@ function recordUpdateVote(updateId, sentiment) {
 
 // ── Health check system ──────────────────────────────────────────────
 function loadHealthResults() {
-  try { return JSON.parse(fs.readFileSync(HEALTH_FILE, "utf8")); } catch { return null; }
+  return readJSON(HEALTH_FILE, null);
 }
 function saveHealthResults(results) {
-  fs.writeFileSync(HEALTH_FILE, JSON.stringify(results, null, 2));
+  writeJSON(HEALTH_FILE, results);
 }
 
 let healthCheckRunning = false;
@@ -2800,19 +2866,32 @@ async function runHealthCheck(forceAll, failuresOnly) {
 // and the delete-org route below depends on knowing which is which.
 const ORG_SLUGS_IN_CODE = new Set(Object.keys(ORGS));
 
-// Merge any dynamically-added orgs from data/orgs.json into ORGS
-try {
-  const dynamic = JSON.parse(fs.readFileSync(ORGS_FILE, "utf8"));
+// Merge any dynamically-added orgs from data/orgs.json into ORGS.
+//
+// A FUNCTION rather than a one-off block, because it has to run TWICE: once
+// here at module scope (the store is not configured yet, so this reads the
+// volume) and again from storeBoot() once Postgres has answered. Without the
+// second call a replica that was never the one to add an org would not serve
+// it — and "unknown org" is what that looks like from outside.
+function loadDynamicOrgs(where) {
+  const dynamic = readJSON(ORGS_FILE, null);
+  if (!dynamic) return 0;
   Object.assign(ORGS, dynamic);
-  console.log(`[orgs] Loaded ${Object.keys(dynamic).length} dynamic org(s) from orgs.json`);
-} catch { /* no dynamic orgs yet */ }
+  console.log(`[orgs] Loaded ${Object.keys(dynamic).length} dynamic org(s) from orgs.json (${where})`);
+  return Object.keys(dynamic).length;
+}
+loadDynamicOrgs("boot");
 
-function readJSON(file, def) {
-  try { return JSON.parse(fs.readFileSync(file, "utf8")); } catch { return def; }
-}
-function writeJSON(file, data) {
-  fs.writeFileSync(file, JSON.stringify(data, null, 2));
-}
+// ── The one seam every durable JSON store goes through ─────────────────────
+// 46 reads and 35 writes already came through here, which is why moving off the
+// volume is a backend swap rather than a rewrite. In disk mode these are the
+// same two lines they always were.
+function readJSON(file, def) { return stateStore.readJSON(file, def); }
+function writeJSON(file, data) { stateStore.writeJSON(file, data); }
+function deleteJSON(file) { stateStore.deleteJSON(file); }
+// Directory listings have to answer from the store too, or a replica that never
+// wrote the file reports it missing (goals/, qbr/, deleted-orgs/).
+function listJSON(dir) { return stateStore.listJSON(dir); }
 
 // ── Arcade leaderboard (hidden banner mini-games) ────────────────────
 // Score-accumulation games only; the match games (pong/hockey) are excluded.
@@ -3447,8 +3526,8 @@ function dashboardPasswordBlocked(req, res) {
 async function migrateDynamicOrgs() {
   if (!process.env.GITHUB_TOKEN) return;
   let dynamic;
-  try { dynamic = JSON.parse(fs.readFileSync(ORGS_FILE, "utf8")); }
-  catch { return; }
+  dynamic = readJSON(ORGS_FILE, null);
+  if (!dynamic) return;
   const slugs = Object.keys(dynamic || {});
   if (!slugs.length) return;
 
@@ -3490,8 +3569,11 @@ function logEvent(org, report, event, reqOrIp, extra) {
       ref:    isReq ? (reqOrIp.headers["referer"] || null) : null,
     };
     if (extra && typeof extra === "object") Object.assign(rec, extra);
-    const line = JSON.stringify(rec) + "\n";
-    fs.appendFileSync(EVENTS_FILE, line);
+    // The store takes it in db mode and returns true; in disk mode it declines
+    // and the append is the one it always was. Never both — an event written to
+    // Postgres AND to the volume would be counted twice the day the volume is
+    // read back.
+    if (!stateStore.appendEvent(rec)) fs.appendFileSync(EVENTS_FILE, JSON.stringify(rec) + "\n");
     notifySlack(rec);
   } catch (err) {
     console.warn("[analytics] Failed to log event:", err.message);
@@ -3674,7 +3756,20 @@ async function checkCatalogDrift(opts) {
 
 // Hourly is pointless for a schema — nothing changes that fast, and a failed
 // read would retry 24 times a day. Once a morning, after the caches warm.
-cron.schedule("30 5 * * *", () => { checkCatalogDrift().catch(() => {}); });
+// ── Scheduled work runs on ONE replica ─────────────────────────────────────
+// With 2+ replicas every cron fires once per container. For most of these that
+// is merely wasteful; for prewarm it is ~28 orgs of card queries against
+// production Metabase, twice — the storm shape that 502'd the facility Summary
+// and got a card rolled back. leaderCron() takes a transaction-scoped advisory
+// lock so exactly one instance runs each job, and is a straight pass-through in
+// disk mode (one instance is always the leader) and when the database is
+// unreachable (see withLeaderLock: it fails OPEN, because a platform that has
+// quietly stopped checking itself is worse than a duplicated cycle).
+function leaderCron(name, fn) {
+  return () => { stateStore.withLeaderLock("cron:" + name, fn).catch(e => console.warn("[cron] " + name + ": " + e.message)); };
+}
+
+cron.schedule("30 5 * * *", leaderCron("catalog-drift", () => checkCatalogDrift().catch(() => {})));
 
 // And once shortly after boot. Two reasons, both learned today: a daily cron
 // means a newly-shipped watchdog sits unverified until tomorrow morning, and a
@@ -3863,7 +3958,7 @@ async function checkCardParamTypes(opts) {
 // Same cadence and the same reasoning as the catalog check — a few minutes
 // later so the two do not contend for Metabase, and once after boot because a
 // deploy is exactly when a card was most likely just edited.
-cron.schedule("40 5 * * *", () => { checkCardParamTypes().catch(() => {}); });
+cron.schedule("40 5 * * *", leaderCron("param-drift", () => checkCardParamTypes().catch(() => {})));
 setTimeout(() => { checkCardParamTypes().catch(() => {}); }, 150 * 1000).unref?.();
 
 // The two /api/admin/schema-break routes live with the other admin endpoints,
@@ -4502,6 +4597,16 @@ function appendEventCache(text) {
 }
 
 function loadEventCache() {
+  // In db mode the store owns the log and keeps it current by polling, so the
+  // byte-offset tail below has nothing to tail. readEvents() above is unchanged
+  // — it still slices and still binary-searches — which is the whole reason 18
+  // call sites did not have to move.
+  if (stateStore.eventsReady()) {
+    // The store tracks ts ordering the same way the file tail did, so the
+    // binary search in readEvents() stays valid — or correctly falls back.
+    eventCache.sorted = stateStore.eventsSorted();
+    return stateStore.allEvents();
+  }
   let st;
   try { st = fs.statSync(EVENTS_FILE); }
   catch { resetEventCache(); return eventCache.events; }        // no log yet
@@ -5540,9 +5645,9 @@ async function runSchedule(scheduleType) {
 }
 
 // ── Cron jobs ────────────────────────────────────────────────────────
-cron.schedule("0 7 * * *", () => runSchedule("daily"));
-cron.schedule("0 7 * * 1", () => runSchedule("weekly"));
-cron.schedule("0 7 1 * *", () => runSchedule("monthly"));
+cron.schedule("0 7 * * *", leaderCron("email-daily", () => runSchedule("daily")));
+cron.schedule("0 7 * * 1", leaderCron("email-weekly", () => runSchedule("weekly")));
+cron.schedule("0 7 1 * *", leaderCron("email-monthly", () => runSchedule("monthly")));
 
 // ── Daily pre-warm for users report (runs at 5am) ────────────────────
 async function prewarmUsersCache() {
@@ -5572,19 +5677,27 @@ async function prewarmUsersCache() {
   }
   console.log("[users-cache] Pre-warm complete");
 }
-cron.schedule("50 4 * * *", () => { console.log("[cache] 4:50am daily warm starting\u2026"); prewarmCache('cron'); }); // 4:50am comprehensive warm
-cron.schedule("0 5 * * *", prewarmUsersCache); // 5am daily
-cron.schedule("10 5 * * *", prewarmPulseCache); // 5:10am daily (after users cache is warm)
-cron.schedule("5 * * * *", () => runHealthCheck());  // every hour at :05, checks only what's due per tier
+cron.schedule("50 4 * * *", leaderCron("prewarm", () => { console.log("[cache] 4:50am daily warm starting\u2026"); return prewarmCache('cron'); })); // 4:50am comprehensive warm
+cron.schedule("0 5 * * *", leaderCron("prewarm-users", prewarmUsersCache)); // 5am daily
+cron.schedule("10 5 * * *", leaderCron("prewarm-pulse", prewarmPulseCache)); // 5:10am daily (after users cache is warm)
+cron.schedule("5 * * * *", leaderCron("health", () => runHealthCheck()));  // every hour at :05, checks only what's due per tier
 
 // ── Daily Backup to GitHub Gist ──────────────────────────────────────
 const BACKUP_PAT = process.env.GITHUB_PAT || "";
-const BACKUP_GIST_ID_FILE = path.join(DATA_DIR, "backup-gist-id.txt");
+const BACKUP_GIST_ID_FILE = path.join(DATA_DIR, "backup-gist-id.txt");   // legacy, read once
+const BACKUP_GIST_ID_KEY  = path.join(DATA_DIR, "backup-gist-id.json");
 let _lastBackup = { ts: null, status: "never", size: 0, files: 0, gistUrl: null, error: null };
 
 // Load saved gist ID if it exists
+// The id moved from a bare .txt to a store key so it survives the volume going
+// away. The old file is still read when the key is absent, so an existing gist
+// keeps being appended to rather than a second one appearing beside it.
 let _backupGistId = "";
-try { _backupGistId = fs.existsSync(BACKUP_GIST_ID_FILE) ? fs.readFileSync(BACKUP_GIST_ID_FILE, "utf8").trim() : ""; } catch (_) {}
+try {
+  const rec = readJSON(BACKUP_GIST_ID_KEY, null);
+  if (rec && rec.id) _backupGistId = String(rec.id).trim();
+  else if (fs.existsSync(BACKUP_GIST_ID_FILE)) _backupGistId = fs.readFileSync(BACKUP_GIST_ID_FILE, "utf8").trim();
+} catch (_) {}
 
 async function performBackup(manual = false) {
   if (!BACKUP_PAT) {
@@ -5597,19 +5710,33 @@ async function performBackup(manual = false) {
   const started = Date.now();
 
   try {
-    // Collect all data files
-    const dataFiles = fs.readdirSync(DATA_DIR).filter(f => f.endsWith(".json") || f.endsWith(".jsonl") || f.endsWith(".txt"));
     const gistFiles = {};
     let totalSize = 0;
 
-    for (const fname of dataFiles) {
-      if (fname === "backup-gist-id.txt") continue; // skip the gist ID file itself
-      try {
-        const content = fs.readFileSync(path.join(DATA_DIR, fname), "utf8");
+    // In db mode the container's own disk holds only what THIS replica happened
+    // to write, so walking the directory would quietly start backing up a
+    // fraction of the platform's state — and a backup that looks like it is
+    // working is worse than one that is obviously off. Ask the store instead.
+    if (stateStore.readsDb()) {
+      const all = stateStore.exportAll();
+      for (const [k, content] of Object.entries(all)) {
+        // Gist filenames cannot carry a path separator; the nested keys
+        // (goals/apex.json, qbr/<id>.json) are flattened rather than dropped.
+        const fname = k.replace(/\//g, "__");
         gistFiles[fname] = { content };
         totalSize += content.length;
-      } catch (e) {
-        console.warn(`[backup] Skipped ${fname}: ${e.message}`);
+      }
+    } else {
+      const dataFiles = fs.readdirSync(DATA_DIR).filter(f => f.endsWith(".json") || f.endsWith(".jsonl") || f.endsWith(".txt"));
+      for (const fname of dataFiles) {
+        if (fname === "backup-gist-id.txt") continue; // skip the gist ID file itself
+        try {
+          const content = fs.readFileSync(path.join(DATA_DIR, fname), "utf8");
+          gistFiles[fname] = { content };
+          totalSize += content.length;
+        } catch (e) {
+          console.warn(`[backup] Skipped ${fname}: ${e.message}`);
+        }
       }
     }
 
@@ -5670,7 +5797,7 @@ async function performBackup(manual = false) {
       const data = await resp.json();
       _backupGistId = data.id;
       gistUrl = data.html_url;
-      fs.writeFileSync(BACKUP_GIST_ID_FILE, _backupGistId, "utf8");
+      writeJSON(BACKUP_GIST_ID_KEY, { id: _backupGistId });
       console.log(`[backup] Created new gist: ${_backupGistId}`);
     }
 
@@ -5701,10 +5828,13 @@ async function performBackup(manual = false) {
 }
 
 // Daily backup at 2am
-cron.schedule("0 2 * * *", () => performBackup(false));
+cron.schedule("0 2 * * *", leaderCron("backup", () => performBackup(false)));
 
 // Daily activity digest — 12:05am local, summarising the day that just closed.
-cron.schedule("5 0 * * *", () => postDailyActivitySummary(), { timezone: SLACK_SUMMARY_TZ });
+// The digest reads the WHOLE platform's log, so two replicas posting it would
+// put the same numbers in Slack twice — the duplicate-digest bug this repo
+// already had once, from PR previews sharing the production webhook.
+cron.schedule("5 0 * * *", leaderCron("daily-digest", () => postDailyActivitySummary()), { timezone: SLACK_SUMMARY_TZ });
 // Backup on startup (after 45s)
 setTimeout(() => performBackup(false), 45000);
 
@@ -6078,10 +6208,10 @@ app.post("/api/admin/add-org", express.json(), (req, res) => {
     if (logoUrl) ORGS[slug].logoUrl = logoUrl;
     if (displayName) ORGS[slug].displayName = displayName;
     try {
-      const dynamic = JSON.parse(fs.readFileSync(ORGS_FILE, "utf8"));
-      if (dynamic[slug]) {
+      const dynamic = readJSON(ORGS_FILE, null);
+      if (dynamic && dynamic[slug]) {
         Object.assign(dynamic[slug], { token, ...(logoUrl && { logoUrl }), ...(displayName && { displayName }) });
-        fs.writeFileSync(ORGS_FILE, JSON.stringify(dynamic, null, 2));
+        writeJSON(ORGS_FILE, dynamic);
       }
     } catch {}
     return res.json({ ok: true, action: "updated", slug });
@@ -6096,10 +6226,9 @@ app.post("/api/admin/add-org", express.json(), (req, res) => {
   ORGS[slug] = org;
   // Persist to dynamic orgs file
   try {
-    let dynamic = {};
-    try { dynamic = JSON.parse(fs.readFileSync(ORGS_FILE, "utf8")); } catch {}
+    const dynamic = readJSON(ORGS_FILE, {}) || {};
     dynamic[slug] = org;
-    fs.writeFileSync(ORGS_FILE, JSON.stringify(dynamic, null, 2));
+    writeJSON(ORGS_FILE, dynamic);
   } catch (e) {
     console.error("[orgs] Failed to persist dynamic org:", e.message);
   }
@@ -6278,9 +6407,12 @@ function archiveAndPurgeOrgData(slug) {
   // Goals live in their own file per org
   try {
     const gf = path.join(GOALS_DIR, slug + ".json");
-    if (fs.existsSync(gf)) {
-      snapshot.data.goals = readJSON(gf, null);
-      fs.unlinkSync(gf);
+    const g = readJSON(gf, null);
+    if (g) {
+      snapshot.data.goals = g;
+      // deleteJSON, not unlinkSync: removing only the file leaves the row, and
+      // the next poll on any replica restores what was just deleted.
+      deleteJSON(gf);
       removed.goals = 1;
     }
   } catch (e) { console.warn(`[delete-org] goals: ${e.message}`); }
@@ -6354,6 +6486,10 @@ function archiveAndPurgeOrgData(slug) {
     }
   } catch (e) { console.warn(`[delete-org] cache files: ${e.message}`); }
   if (cacheFiles) removed["cache-files"] = cacheFiles;
+  // ...and the shared rows. Sweeping only this container's disk would leave the
+  // deleted org's payloads for the next replica to hydrate.
+  stateStore.cacheDelPrefix(slug + ":");
+  stateStore.cacheDel("users:" + slug);
 
   // In-memory caches, so the org is gone before any restart
   let memKeys = 0;
@@ -6372,7 +6508,10 @@ function archiveAndPurgeOrgData(slug) {
     const name = `${slug}-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
     snapshotFile = path.join(DELETED_ORGS_DIR, name);
     snapshot.removedCounts = removed;
-    fs.writeFileSync(snapshotFile, JSON.stringify(snapshot, null, 2));
+    // Through the store: this snapshot IS the recovery path for a deleted org,
+    // so it must not live only on the container that happened to serve the
+    // delete.
+    writeJSON(snapshotFile, snapshot);
   } catch (e) {
     console.error(`[delete-org] SNAPSHOT FAILED for ${slug}: ${e.message}`);
     snapshotFile = null;
@@ -12090,7 +12229,7 @@ const QBR_CACHE_TTL = 30 * 60 * 1000;
 const QBR_DIR = path.join(DATA_DIR, "qbr");
 try { fs.mkdirSync(QBR_DIR, { recursive: true }); } catch (e) {}
 const QBR_INDEX = path.join(QBR_DIR, "_index.json");
-function qbrReadIndex() { try { return JSON.parse(fs.readFileSync(QBR_INDEX, "utf8")); } catch { return []; } }
+function qbrReadIndex() { return readJSON(QBR_INDEX, []) || []; }
 function qbrSaveSnapshot(result) {
   try {
     const slug = (result.org && result.org.slug) || "org";
@@ -12098,7 +12237,7 @@ function qbrSaveSnapshot(result) {
     const ts = Date.now();
     const id = slug + "-" + y + "-q" + qn + "-" + ts;
     const generatedAt = new Date(ts).toISOString();
-    fs.writeFileSync(path.join(QBR_DIR, id + ".json"), JSON.stringify({ id, generatedAt, data: result }));
+    writeJSON(path.join(QBR_DIR, id + ".json"), { id, generatedAt, data: result });
     const f = result.metrics && result.metrics.financial;
     const idx = qbrReadIndex();
     idx.unshift({ id, generatedAt, slug,
@@ -12106,13 +12245,13 @@ function qbrSaveSnapshot(result) {
       logoUrl: (result.org && result.org.logoUrl) || "",
       year: y, quarter: qn, periodLabel: (result.period && result.period.label) || ("Q" + qn + " " + y),
       net: f ? f.net : null, netDelta: f ? f.netDelta : null, transactions: f ? f.transactions : null });
-    try { fs.writeFileSync(QBR_INDEX, JSON.stringify(idx.slice(0, 500), null, 2)); } catch (e) {}
+    try { writeJSON(QBR_INDEX, idx.slice(0, 500)); } catch (e) {}
     return id;
   } catch (e) { console.warn("[qbr] snapshot save failed: " + e.message); return null; }
 }
 function qbrGetSnapshot(id) {
   if (!id || !/^[a-z0-9._\-]+$/i.test(id)) return null;
-  try { return JSON.parse(fs.readFileSync(path.join(QBR_DIR, id + ".json"), "utf8")); } catch { return null; }
+  return readJSON(path.join(QBR_DIR, id + ".json"), null);
 }
 
 // ── Shared QBR PDF renderer (used by /qbr/api/pdf and /qbr/api/email) ──
@@ -12163,7 +12302,7 @@ function qbrOrgMapFile(year, q) { return path.join(QBR_DIR, "orgmap-" + year + "
 function qbrReadOrgMap(year, q) {
   try { return JSON.parse(fs.readFileSync(qbrOrgMapFile(year, q), "utf8")); }
   catch {
-    if (Number(year) === 2026 && Number(q) === 1) { try { return JSON.parse(fs.readFileSync(QBR_ORGMAP_FILE, "utf8")); } catch {} }
+    if (Number(year) === 2026 && Number(q) === 1) { const m = readJSON(QBR_ORGMAP_FILE, null); if (m) return m; }
     return null;
   }
 }
@@ -14306,6 +14445,32 @@ app.get("/api/admin/param-drift", (req, res) => {
 
 // GET /api/admin/report-activity — what the watchdogs consider in use, and so
 // what can raise an alert. The first place to look when an alert did NOT fire.
+// ── Store status ───────────────────────────────────────────────────────────
+// The flip is a sequence of env changes, and each step needs one place that
+// says what actually happened. A muted preview and a store that silently fell
+// back to the volume look identical from the outside otherwise — the same
+// reasoning that put `environment` on the report-activity route.
+app.get("/api/admin/store", dashboardAuth, (req, res) => {
+  const st = stateStore.status();
+  res.json({
+    ...st,
+    // What the env SAYS, next to what the store actually did. When these
+    // disagree the answer is in the boot log, and knowing to look there is
+    // most of the diagnosis.
+    configured: { STORE_MODE: STORE_MODE || "(unset)", databaseUrl: STORE_DATABASE_URL ? "set" : "(unset)" },
+    dataDir: DATA_DIR,
+    environment: process.env.RAILWAY_ENVIRONMENT_NAME || "(not railway)"
+  });
+});
+
+// The import is idempotent, so a manual re-run is safe — it exists because a
+// flip that needs a redeploy to retry is a flip nobody wants to attempt.
+app.post("/api/admin/store/import", dashboardAuth, async (req, res) => {
+  if (!stateStore.usingDb()) return res.status(400).json({ error: "not using a database" });
+  try { res.json(await stateStore.importFromDisk()); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.get("/api/admin/report-activity", (req, res) => {
   const a = getReportActivity(req.query.refresh === "1");
   const perOrg = {};
@@ -14802,11 +14967,11 @@ app.post("/api/admin/new-org", dashboardAuth, async (req, res) => {
 
 // ── Showcase gallery API (server-persisted) ─────────────────────────
 function showcaseLoad() {
-  try { return JSON.parse(fs.readFileSync(SHOWCASE_FILE, "utf8")); }
+  try { return readJSON(SHOWCASE_FILE, undefined); }
   catch(e) { return []; }
 }
 function showcaseSave(imgs) {
-  fs.writeFileSync(SHOWCASE_FILE, JSON.stringify(imgs, null, 2));
+  writeJSON(SHOWCASE_FILE, imgs);
 }
 
 app.post("/api/admin/showcase", express.json({ limit: "50mb" }), (req, res) => {
@@ -19895,6 +20060,86 @@ app.get("/", (req, res) => {
 
 app.use(express.static(path.join(__dirname, "public"), { maxAge: "10m" }));
 
+// ── Boot: connect the store BEFORE listening ───────────────────────────────
+//
+// It has to happen before listen(), because module scope has already read every
+// config store off the volume by now — so anything Postgres holds has to be
+// pulled in and the module-scope reads redone before the first request is
+// served. The alternative (configure after listen) means a window where a
+// replica answers from whatever its own container happened to have.
+//
+// Bounded, and non-fatal on every path. A store that cannot be reached falls
+// back to the volume inside configure(); this timeout covers the case it does
+// not fail so much as hang, which no connection timeout catches.
+const STORE_BOOT_TIMEOUT_MS = 25000;
+
+async function storeBoot() {
+  if (!STORE_DATABASE_URL) {
+    console.log("[store] disk mode — no DATABASE_URL/STORE_DATABASE_URL set");
+    return;
+  }
+  const timeout = new Promise(r => setTimeout(() => r({ timedOut: true }), STORE_BOOT_TIMEOUT_MS));
+  const st = await Promise.race([
+    stateStore.configure({
+      dataDir: DATA_DIR,
+      databaseUrl: STORE_DATABASE_URL,
+      mode: STORE_MODE === "db" ? "db" : "dual"
+    }).catch(e => ({ error: e.message })),
+    timeout
+  ]);
+  if (st && st.timedOut) {
+    console.warn("[store] configure timed out after " + STORE_BOOT_TIMEOUT_MS + "ms — staying on the volume");
+    return;
+  }
+  console.log("[store] " + JSON.stringify(stateStore.status()));
+
+  // STORE_IMPORT=1 is the one-shot that copies the volume in. Idempotent, so a
+  // retried flip is safe, and it runs from the instance that still has the
+  // volume mounted — which is why it is an env var and not a migration script
+  // somebody has to remember to run from the right place.
+  if (process.env.STORE_IMPORT === "1" && stateStore.usingDb()) {
+    console.log("[store] STORE_IMPORT=1 — importing the volume…");
+    try { console.log("[store] import: " + JSON.stringify(await stateStore.importFromDisk())); }
+    catch (e) { console.warn("[store] import failed: " + e.message); }
+  }
+
+  // Module scope read these off the volume before the store existed. Redo them
+  // now, or this replica serves its own container's view of the config.
+  if (stateStore.readsDb()) {
+    refreshCachedStores(["orgs.json", "campmap_positions.json", "campmap_markers.json", "rental_map_positions.json"], "store");
+    await hydrateCacheFromStore();
+  }
+
+  // MOST config is read on demand, so a poll updating the mirror is enough.
+  // These four are not: they are folded into module-level objects at boot, and
+  // without this an org added on one replica is "Unknown org" on every other
+  // one until it restarts. That is the shape of a bug this repo has already
+  // shipped once, from a slug renamed in one place and not the other.
+  stateStore.onKeyChange(keys => refreshCachedStores(keys, "poll"));
+}
+
+function refreshCachedStores(keys, where) {
+  if (keys.includes("orgs.json")) loadDynamicOrgs(where);
+  if (keys.includes("campmap_positions.json"))   campmapPositions   = readJSON(CAMPMAP_POS_FILE, {});
+  if (keys.includes("campmap_markers.json"))     campmapMarkers     = readJSON(CAMPMAP_MARKERS_FILE, {});
+  if (keys.includes("rental_map_positions.json")) rentalMapPositions = readJSON(RENTAL_MAP_POS_FILE, {});
+}
+
+// A container told to stop has a queued write it has not sent yet. Draining it
+// is the difference between a rolling deploy and a rolling deploy that loses
+// the last few seconds of settings changes.
+let _shuttingDown = false;
+function shutdown(signal) {
+  if (_shuttingDown) return;
+  _shuttingDown = true;
+  console.log("[store] " + signal + " — draining");
+  stateStore.close().catch(() => {}).then(() => process.exit(0));
+  setTimeout(() => process.exit(0), 8000).unref();
+}
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT",  () => shutdown("SIGINT"));
+
+storeBoot().catch(e => console.warn("[store] boot: " + e.message)).then(() => {
 app.listen(PORT, () => {
   serverReady = true;
   console.log(`\n  🏛️  rec.us Report Server`);
@@ -19927,6 +20172,15 @@ app.listen(PORT, () => {
   // Promote any orgs from data/orgs.json into server.js on GitHub.
   // Runs after listen() so startup isn't blocked by GitHub latency.
   migrateDynamicOrgs();
+
+  // Sweep cache rows a long way past their TTL. Generous on purpose: the stale
+  // fallback reads expired entries when Metabase is down.
+  setInterval(() => {
+    stateStore.withLeaderLock("cron:cache-sweep", () => stateStore.cacheSweep())
+      .then(n => { if (n) console.log("[cache] swept " + n + " expired row(s)"); })
+      .catch(() => {});
+  }, 6 * 60 * 60 * 1000);
+});
 });
 
 
