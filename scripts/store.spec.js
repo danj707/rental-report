@@ -352,6 +352,52 @@ function loadStore() {
     ok((await s.cacheGet("apex:gl:v1:old")) !== null, "an expired entry is still readable for the stale fallback");
     eq(await s.cacheSweep(7 * 86400000), 0, "the sweeper leaves a recently-expired entry alone");
     eq(await s.cacheSweep(0), 1, "...and removes it once past the grace period");
+
+    // cacheFreshKeys — what prewarm asks so replica B does not re-fetch from
+    // Metabase what replica A already warmed. KEYS ONLY: a payload is up to
+    // 16.8 MB and prewarm only ever needs the yes/no.
+    s.cacheSet("apex:fresh:v1:", { key: "apex:fresh:v1:", data: [1], ts: Date.now() }, 60000);
+    s.cacheSet("apex:stale:v1:", { key: "apex:stale:v1:", data: [1], ts: 0 }, -1000);
+    await sleep(300);
+    const fresh = await s.cacheFreshKeys();
+    ok(fresh instanceof Set, "cacheFreshKeys returns a Set");
+    ok(fresh.has("apex:fresh:v1:"), "an unexpired key is reported warm");
+    ok(!fresh.has("apex:stale:v1:"), "an EXPIRED key is not — prewarm's whole job is to refresh it");
+    // The distinction the whole optimisation rests on: this must never carry
+    // payloads, or a poll of the platform's cache moves tens of megabytes to
+    // answer a question asked four times an hour.
+    for (const k of fresh) ok(typeof k === "string", "every entry is a bare key, never a row");
+    await s.close();
+  }
+
+  // ── cacheFreshKeys must fail to NULL, never to an empty Set ───────────────
+  {
+    await wipe();
+    const dir = freshDir();
+    const s = loadStore();
+    // Disk mode: there is no store to ask.
+    await s.configure({ dataDir: dir });
+    eq(await s.cacheFreshKeys(), null,
+       "disk mode returns null — 'we cannot tell', not 'nothing is warm'");
+    await s.close();
+  }
+
+  // ── ...and a FAILING query is the same fact, not "nothing is warm" ────────
+  // The distinction only bites on this path, which is why it needs its own
+  // case: an empty Set says "no other replica has warmed anything", so prewarm
+  // would re-fetch the platform's whole warm set from Metabase on every cycle
+  // — silently, because the fallback is exactly the old behaviour and nothing
+  // looks broken. Provoked by removing the table under a live pool.
+  {
+    await wipe();
+    const dir = freshDir();
+    const s = loadStore();
+    await s.configure({ dataDir: dir, databaseUrl: URL, mode: "db" });
+    s.cacheSet("apex:x:v1:", { key: "apex:x:v1:", data: [1], ts: Date.now() }, 60000);
+    await sleep(250);
+    ok((await s.cacheFreshKeys()).size > 0, "warm before the table goes");
+    await s._query("DROP TABLE feed_cache");
+    eq(await s.cacheFreshKeys(), null, "a failing query returns null, never an empty Set");
     await s.close();
   }
 
