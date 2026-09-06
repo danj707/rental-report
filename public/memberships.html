@@ -4014,7 +4014,7 @@ function normalizeRow(raw) {
                 /* ITS OWN ROWS, not the report's. The panel used to read `data`,
                    which is why it had to widen the report's window to get
                    twelve months into it — the thing that broke every other tab. */
-                if (retLoading || (!retRows && !retErr)) return <div style={{textAlign:'center',padding:40,color:'#999'}} data-ret-state="loading">Loading twelve months of cohorts…</div>;
+                if (retLoading || (!retRows && !retErr)) return <div data-ret-state="loading"><ReportLoader label="Loading twelve months of cohorts" /></div>;
                 /* ABSENT, NEVER AN EMPTY CHART, when the feed could not answer.
                    A cohort chart drawn from nothing reads as "nobody retains". */
                 if (retErr) return <div style={{textAlign:'center',padding:40,color:'#b45309'}} data-ret-state="error">Cohorts could not load — {retErr}</div>;

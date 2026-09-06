@@ -42,14 +42,30 @@
 (function () {
   var SHOW_DELAY_MS = 350;    // below this, a load is "instant" and shows nothing
   var TICK_MS       = 100;
-  var CAP_BEFORE    = 92;     // the most the bar will claim before data arrives
+  // THESE NUMBERS WERE WRONG ON FIRST SHIP, and Dan caught it: a report still
+  // running at 40s showed a bar at 98.4%, which is visually indistinguishable
+  // from finished. The old shape reached 92% AT the estimate and then spent the
+  // remaining 8% over the whole rest of the wait — but 92% and 99% look the
+  // same, so the entire over-estimate regime read as "done, and stuck".
+  //
+  // The fix is to reserve a lot more visible room for the overrun. The estimate
+  // is now four fifths of the way along, not eleven twelfths, and the tail
+  // decays over TWICE the estimate rather than once, so being 3x over reads as
+  // "most of the way, still going" instead of "finished".
+  var CAP_BEFORE    = 80;     // where the bar sits when the estimate is spent
   // A HARD CEILING BELOW 100, and it is load-bearing rather than tidy. The
   // asymptote is 1 - 0.5^over, which underflows to exactly 0 in float once
   // `over` passes ~1000 — so on a genuinely long wait the "never reaches 100"
   // curve reaches 100, fills the bar, and sits there: the precise lie this is
   // built to avoid. Caught by running the function, not by reading it.
-  var CAP_ABSOLUTE  = 99.5;
-  var DEFAULT_MS    = 12000;  // only when the server had nothing to say
+  var CAP_ABSOLUTE  = 95;
+  // The pacing used when the server has no history to offer. 12s was far too
+  // short: the real misses this recorded on its first afternoon ran 1.6s, 2.4s,
+  // 8.6s, 13.4s, 25.4s and 41.1s. A default under the common case makes every
+  // unknown report look stalled within seconds, and too-slow reads as "working"
+  // where too-fast reads as "lying" — the same asymmetry that picks the 80th
+  // percentile over the median. Keep in step with LOAD_TIMING_DEFAULT_MS.
+  var DEFAULT_MS    = 25000;
 
   if (!document.getElementById('report-loader-css')) {
     var s = document.createElement('style');
@@ -98,9 +114,12 @@
       var x = t / est;
       return CAP_BEFORE * (1 - Math.pow(1 - x, 2));
     }
+    // Halve the remaining gap every TWO estimate-lengths, not every one, and
+    // toward 95 rather than 100. At 3x the estimate that is ~88% — clearly
+    // unfinished — where the old curve was at 98%.
     var over = (t - est) / est;
     return Math.min(CAP_ABSOLUTE,
-      CAP_BEFORE + (100 - CAP_BEFORE) * (1 - Math.pow(0.5, over)));
+      CAP_BEFORE + (CAP_ABSOLUTE - CAP_BEFORE) * (1 - Math.pow(0.5, over / 2)));
   }
 
   function fmtSecs(ms) {
@@ -151,7 +170,7 @@
     if (elapsed < SHOW_DELAY_MS) return null;
 
     var pct = loaderProgress(elapsed, est.ms);
-    var over = elapsed > est.ms && est.basis !== 'default';
+    var over = elapsed > est.ms;
     var note = estimateNote(est.ms, est.basis);
 
     return R.createElement('div', {
@@ -171,7 +190,10 @@
       ),
       R.createElement('div', { className: 'rl-meta' + (over ? ' rl-over' : '') },
         over
-          ? fmtSecs(elapsed) + ' · longer than usual — still working'
+          // "longer than usual" is only true when there IS a usual. With no
+          // history the honest line says it is still working and claims nothing
+          // about how much longer.
+          ? fmtSecs(elapsed) + (note ? ' · longer than usual — still working' : ' · still working')
           : (note ? fmtSecs(elapsed) + ' · ' + note : fmtSecs(elapsed))
       )
     );

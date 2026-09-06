@@ -61,6 +61,18 @@ ok(forever.every(t => progress(t, EST) < 100),
 ok(progress(864e5, EST) < 99.9,
    "...including far past the point where the asymptote underflows in float");
 
+// THE BUG DAN CAUGHT ON THE FIRST SHIP, and the reason the numbers moved.
+// A report still running at 40s drew a bar at 98.4%, which is visually
+// indistinguishable from finished — so the whole over-estimate regime read as
+// "done and stuck", which is the complaint this replaces rather than fixes.
+// "Under 100" was never the real requirement: it has to LOOK unfinished.
+ok(progress(EST, EST) <= 85,
+   "at the estimate the bar is around four fifths, not nearly full — leaving visible room for an overrun");
+ok(progress(EST * 3, EST) < 90,
+   "3x over the estimate still reads as clearly unfinished (Dan's 40s case drew 98.4%)");
+ok(progress(EST * 100, EST) < 96,
+   "even an absurd overrun stays visibly short of the end");
+
 // It must keep MOVING while it is over, or it is a stalled bar with extra steps.
 ok(progress(EST * 3, EST) > progress(EST * 2, EST),
    "keeps advancing past the estimate, just more slowly");
@@ -106,8 +118,28 @@ ok(/LOAD_TIMING_MAX_MS/.test(rec), "a timeout is not a duration either");
 ok(/readJSON\(loadTimingFile\(\)/.test(server) && /writeJSON\(loadTimingFile\(\)/.test(server),
    "the history goes through the store, so it survives deploys and both replicas share it");
 
+// ...and the LAST MINUTE of it survives too. Samples are batched on a 60s
+// timer, so without an explicit flush on the way down a deploy discards up to
+// a minute of them, and a container that cycles often would keep none. It has
+// to run BEFORE stateStore.close(), because writeJSON only enqueues the upsert
+// and close() is what drains that queue.
+{
+  const sd = server.slice(server.indexOf("function shutdown("), server.indexOf('process.on("SIGTERM"'));
+  ok(/flushLoadTimings\(\)/.test(sd), "the timings are flushed on shutdown [source]");
+  ok(sd.indexOf("flushLoadTimings()") < sd.indexOf("stateStore.close("),
+     "...before the store drains, or the write never leaves the queue [source]");
+}
+
 const estFn = server.slice(server.indexOf("function loadEstimateFor"),
                            server.indexOf("// Every page's ORG_CONFIG"));
+// The pacing used when there is no history has to cover the reports people
+// actually wait on. 12s made every unknown report look stalled within seconds,
+// against real misses of 25.4s and 41.1s.
+ok(/LOAD_TIMING_DEFAULT_MS = 25000/.test(server),
+   "the no-history default is long enough for the reports this actually times");
+ok(/var DEFAULT_MS    = 25000/.test(src),
+   "...and the client's own fallback agrees with it");
+
 ok(/percentile\(own, 0\.8\)/.test(estFn),
    "the estimate is the 80th percentile, not the median — finishing early snaps to 100%, running out of estimate stalls");
 ok(/basis: "org"/.test(estFn) && /basis: "report"/.test(estFn) && /basis: "default"/.test(estFn),

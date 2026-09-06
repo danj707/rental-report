@@ -4710,7 +4710,7 @@ function App() {
 
             {!cohortAnalytics && demoLoading && (
               <div style={{textAlign:'center',padding:'30px 20px',color:'#888',fontSize:13}}>
-                <div className="spinner" style={{margin:'0 auto 12px'}} />Loading enrollment history for cohort analysis…
+                <ReportLoader label="Loading enrollment history for cohort analysis" />
               </div>
             )}
           </React.Fragment>
@@ -4848,7 +4848,7 @@ function App() {
               <div style={{fontSize:18,fontWeight:700,color:'#111827',marginBottom:4}}>{detailSection}</div>
               <div style={{fontSize:13,color:'#6b7280'}}>Registrant revenue detail — {startDate || 'all dates'} to {endDate || 'present'}</div>
             </div>
-            {detailLoading && <div style={{textAlign:'center',padding:40,color:'#6b7280'}}>Loading registrant data…</div>}
+            {detailLoading && <ReportLoader label="Loading registrant data" />}
             {detailError && <div style={{textAlign:'center',padding:40,color:'#b91c1c'}}>{detailError}</div>}
             {detailRows && detailRows.length === 0 && <div style={{textAlign:'center',padding:40,color:'#6b7280'}}>No registrations found for this section in the selected date range.</div>}
             {detailRows && detailRows.length > 0 && (() => {

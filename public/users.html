@@ -1400,7 +1400,7 @@ function App() {
 
   if(loading) return <React.Fragment>{headerBar}<ReportLoader /></React.Fragment>;
   if(error) return <React.Fragment>{headerBar}<div className="dash"><div className="error"><strong>Error:</strong> {error}</div></div></React.Fragment>;
-  if(!s) return <React.Fragment>{headerBar}<div className="loading"><div className="spinner"/><div style={{color:'#888',fontSize:13,marginTop:8}}>{computing?'Crunching '+((rows&&rows.length)||0).toLocaleString()+' records…':'No data returned.'}</div></div></React.Fragment>;
+  if(!s) return <React.Fragment>{headerBar}{computing ? <ReportLoader label={'Crunching ' + ((rows&&rows.length)||0).toLocaleString() + ' records'} /> : <div className="loading"><div style={{color:'#888',fontSize:13}}>No data returned.</div></div>}</React.Fragment>;
 
   var TEAL='#0d9488',AMBER='#f59e0b',ROSE='#f43f5e',EMERALD='#10b981',INDIGO='#6366f1',PURPLE='#8b5cf6',SKY='#0ea5e9';
   var GENDER_COLORS=[INDIGO,'#94a3b8',SKY,AMBER,PURPLE];

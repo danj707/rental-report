@@ -514,11 +514,12 @@ function recordLoadTiming(entry) {
 
 // Written on a timer, not per request: a report load is one write either way,
 // but a burst of tab switches should not be a burst of upserts.
-setInterval(() => {
+function flushLoadTimings() {
   if (!_loadTimingsDirty) return;
   _loadTimingsDirty = false;
   try { writeJSON(loadTimingFile(), loadTimings()); } catch {}
-}, 60 * 1000).unref?.();
+}
+setInterval(flushLoadTimings, 60 * 1000).unref?.();
 
 // THE ESTIMATE IS DELIBERATELY PESSIMISTIC — the 80th percentile, not the
 // median. The two failure modes are not symmetric: a bar that finishes early
@@ -537,7 +538,10 @@ function percentile(sorted, p) {
 // card is slow everywhere), then a flat default. Each step is a weaker claim
 // than the last, and `basis` says which one answered so the client is never
 // guessing about how much to trust it.
-const LOAD_TIMING_DEFAULT_MS = 12000;
+// Kept in step with DEFAULT_MS in public/report-loader.js. 12s was too short:
+// the real misses recorded on the first afternoon ran 1.6s, 2.4s, 8.6s, 13.4s,
+// 25.4s and 41.1s, so an unknown report looked stalled within seconds.
+const LOAD_TIMING_DEFAULT_MS = 25000;
 const LOAD_TIMING_MIN_SAMPLES = 3;
 
 function loadEstimateFor(orgSlug, reportType) {
@@ -554,7 +558,8 @@ function loadEstimateFor(orgSlug, reportType) {
   if (pooled.length >= LOAD_TIMING_MIN_SAMPLES) {
     return { ms: percentile(pooled, 0.8), basis: "report", samples: pooled.length };
   }
-  return { ms: LOAD_TIMING_DEFAULT_MS, basis: "default", samples: 0 };
+  return { ms: LOAD_TIMING_DEFAULT_MS, basis: "default",
+           samples: own.length, pooled: pooled.length, need: LOAD_TIMING_MIN_SAMPLES };
 }
 
 // Every page's ORG_CONFIG goes out through here, so the progress bar has its
@@ -20418,6 +20423,7 @@ function shutdown(signal) {
   if (_shuttingDown) return;
   _shuttingDown = true;
   console.log("[store] " + signal + " — draining");
+  flushLoadTimings();
   stateStore.close().catch(() => {}).then(() => process.exit(0));
   setTimeout(() => process.exit(0), 8000).unref();
 }
