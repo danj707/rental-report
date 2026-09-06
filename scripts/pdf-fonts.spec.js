@@ -74,9 +74,32 @@ const LIB_DIR = "/usr/share/fonts/truetype/liberation";
 let puppeteer = null;
 try { puppeteer = require("puppeteer"); } catch {}
 
+// THE MODULE BEING PRESENT IS NOT A BROWSER BEING PRESENT, and conflating the
+// two is what broke CI: the `validate` job installs dependencies with
+// PUPPETEER_SKIP_DOWNLOAD on purpose (the browser is ~150MB and server.js only
+// requires puppeteer lazily, inside the PDF route), so require() succeeds and
+// launch() then dies with "Could not find Chrome". This spec is meant to SKIP
+// when it cannot render, not to throw.
+function findBrowser() {
+  for (const p of [process.env.PUPPETEER_EXECUTABLE_PATH, process.env.CHROME_PATH,
+                   "/usr/bin/google-chrome", "/usr/bin/google-chrome-stable",
+                   "/usr/bin/chromium", "/usr/bin/chromium-browser",
+                   "/opt/pw-browsers/chromium"]) {
+    if (p && fs.existsSync(p)) return p;
+  }
+  // puppeteer's own download, if the postinstall actually fetched one.
+  try {
+    const p = puppeteer && puppeteer.executablePath();
+    if (p && fs.existsSync(p)) return p;
+  } catch {}
+  return null;
+}
+const BROWSER = puppeteer ? findBrowser() : null;
+
 (async () => {
-  if (!puppeteer || !EMOJI_TTF || !fs.existsSync(LIB_DIR)) {
-    console.log("SKIP the render half — needs puppeteer, a Liberation dir and an emoji TTF on this machine.");
+  if (!puppeteer || !BROWSER || !EMOJI_TTF || !fs.existsSync(LIB_DIR)) {
+    console.log("SKIP the render half — needs a browser, a Liberation dir and an emoji TTF on this machine."
+      + (puppeteer && !BROWSER ? " (puppeteer is installed but no Chrome binary was found.)" : ""));
   } else {
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "pdffonts-"));
     // "with" = the fonts the DOCKERFILE installs. "without" = the bug.
@@ -107,7 +130,7 @@ try { puppeteer = require("puppeteer"); } catch {}
       const puppeteer = require(${JSON.stringify(require.resolve("puppeteer"))});
       (async () => {
         const b = await puppeteer.launch({ headless: true,
-          executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
+          executablePath: process.env.PDF_FONTS_BROWSER || undefined,
           args: ['--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage','--disable-gpu'] });
         const p = await b.newPage();
         await p.setContent(require('fs').readFileSync(process.argv[2],'utf8'), { waitUntil: 'load' });
@@ -117,7 +140,7 @@ try { puppeteer = require("puppeteer"); } catch {}
 
     const render = (cfg, out) => execFileSync(process.execPath,
       [shot, path.join(tmp, "t.html"), out],
-      { env: { ...process.env, FONTCONFIG_FILE: cfg }, stdio: "pipe" });
+      { env: { ...process.env, FONTCONFIG_FILE: cfg, PDF_FONTS_BROWSER: BROWSER }, stdio: "pipe" });
 
     const a = path.join(tmp, "with.png"), b = path.join(tmp, "no.png");
     try {
