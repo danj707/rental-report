@@ -3569,10 +3569,15 @@ function logEvent(org, report, event, reqOrIp, extra) {
       ref:    isReq ? (reqOrIp.headers["referer"] || null) : null,
     };
     if (extra && typeof extra === "object") Object.assign(rec, extra);
-    // The store takes it in db mode and returns true; in disk mode it declines
-    // and the append is the one it always was. Never both — an event written to
-    // Postgres AND to the volume would be counted twice the day the volume is
-    // read back.
+    // The store takes it in DB MODE ONLY and returns true; in disk and dual it
+    // declines and the append is the one it always was. Never both — an event
+    // written to Postgres AND to the volume would be counted twice the day the
+    // volume is read back.
+    //
+    // Dual writes to the VOLUME, which is the authority there and what
+    // readEvents reads. The first version took the record in dual too, so
+    // events went to Postgres, nothing read them, and the volume's log silently
+    // stopped growing.
     if (!stateStore.appendEvent(rec)) fs.appendFileSync(EVENTS_FILE, JSON.stringify(rec) + "\n");
     notifySlack(rec);
   } catch (err) {
@@ -14499,7 +14504,12 @@ app.get("/api/admin/store", (req, res) => {
 app.post("/api/admin/store/import", express.json(), async (req, res) => {
   if (!adminPasswordOk(req)) return res.status(401).json({ error: "Password required" });
   if (!stateStore.usingDb()) return res.status(400).json({ error: "not using a database" });
-  try { res.json(await stateStore.importFromDisk()); }
+  // resetEvents truncates the events table first. Opt-in and never the default:
+  // the import resumes by counting rows against file lines, so stray rows make
+  // it skip that many of the file's OLDEST lines — but truncating a log by
+  // accident is unrecoverable, so it has to be asked for.
+  const resetEvents = !!(req.body && req.body.resetEvents);
+  try { res.json(await stateStore.importFromDisk({ resetEvents })); }
   catch (e) { res.status(500).json({ error: e.message }); }
 });
 

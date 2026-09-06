@@ -326,6 +326,65 @@ async function q(sql, args) {
     } finally { await stop(A); await stop(B); fs.rmSync(dirA, { recursive: true, force: true }); fs.rmSync(dirB, { recursive: true, force: true }); }
   }
 
+  // ── DUAL WRITES EVENTS TO THE VOLUME, NOT TO POSTGRES ────────────────────
+  //
+  // The case that was missing, and its absence shipped a real flaw to
+  // production. appendEvent took the record in dual as well as db, so events
+  // went to Postgres — while readEvents in dual still read the VOLUME. Every
+  // event logged in dual was written where nothing read it and left off the log
+  // that was still the authority; it also broke the import's resume, which
+  // counts existing rows against file lines and so skips that many of the
+  // file's OLDEST lines.
+  //
+  // The existing db-mode case ("nothing was appended to events.jsonl as well")
+  // is its mirror image and passed throughout, which is exactly why this one
+  // has to exist separately: the two modes make opposite claims.
+  {
+    await wipe();
+    const dir = freshDir();
+    const s = await boot(41113, dir, { STORE_DATABASE_URL: URL, STORE_MODE: "dual" });
+    try {
+      await addOrg(41113);
+      eq((await beacon(41113)).status, 200, "the beacon was accepted in dual mode");
+      await sleep(1200);
+
+      eq(eventLines(dir), 1, "dual appends the event to the volume, which is what readEvents reads there");
+      const ev = (await q("SELECT count(*)::int AS n FROM events")).rows[0].n;
+      eq(ev, 0, "...and writes nothing to Postgres, so the import's resume stays valid");
+    } finally { await stop(s); fs.rmSync(dir, { recursive: true, force: true }); }
+  }
+
+  // ── resetEvents clears stray rows before an import ───────────────────────
+  {
+    await wipe();
+    const dir = freshDir();
+    fs.writeFileSync(path.join(dir, "events.jsonl"),
+      JSON.stringify({ ts: "2026-09-01T00:00:00Z", org: "apex", event: "view", n: 1 }) + "\n" +
+      JSON.stringify({ ts: "2026-09-02T00:00:00Z", org: "apex", event: "view", n: 2 }) + "\n" +
+      JSON.stringify({ ts: "2026-09-03T00:00:00Z", org: "apex", event: "view", n: 3 }) + "\n");
+
+    const s = await boot(41114, dir, { STORE_DATABASE_URL: URL, STORE_MODE: "dual" });
+    try {
+      // A stray row, exactly like the ones the old dual behaviour left behind.
+      await q("INSERT INTO events (ts, rec) VALUES ($1, $2::jsonb)",
+              ["2026-09-05T00:00:00Z", JSON.stringify({ ts: "2026-09-05T00:00:00Z", org: "x", event: "stray" })]);
+
+      // Without the reset the resume counts that row and skips the file's FIRST
+      // line — the oldest event silently disappears. That is the bug, in one
+      // assertion.
+      const plain = await req(41114, "POST", "/api/admin/store/import", {}, { password: PASSWORD });
+      eq(plain.json && plain.json.events, 2, "a plain import skips as many of the file's oldest lines as there are stray rows");
+      let ns = (await q("SELECT rec->>'n' AS n FROM events ORDER BY id")).rows.map(r => r.n);
+      eq(ns, [null, "2", "3"], "...so event 1 is missing and the stray row is still there");
+
+      const reset = await req(41114, "POST", "/api/admin/store/import", {}, { password: PASSWORD, resetEvents: true });
+      eq(reset.json && reset.json.eventsCleared, 3, "resetEvents reports what it truncated");
+      eq(reset.json && reset.json.events, 3, "...and re-imports the whole file");
+      ns = (await q("SELECT rec->>'n' AS n FROM events ORDER BY id")).rows.map(r => r.n);
+      eq(ns, ["1", "2", "3"], "every line is present exactly once, in order");
+    } finally { await stop(s); fs.rmSync(dir, { recursive: true, force: true }); }
+  }
+
   // ── THE IMPORT MUST NOT HOLD THE HEALTHCHECK ─────────────────────────────
   //
   // The case that was missing, and its absence took production down for five
