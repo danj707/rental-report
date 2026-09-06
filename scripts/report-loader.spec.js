@@ -189,6 +189,50 @@ ok(/basis: "org"/.test(estFn) && /basis: "report"/.test(estFn) && /basis: "defau
   eq(r.basis, "report", "one sample is below the floor, so it falls through rather than trusting it");
 }
 
+// ── Found by WARMING the history on production and reading it back ────────
+// Three things that made real samples fail to become real estimates.
+
+// 1. The per-replica memo was never refreshed. clarksville/facility graduated
+//    to `basis: org` while clarksville/gl — probed just as often — was still on
+//    the default: the samples had landed on whichever replica served that
+//    request, and the other kept answering from its empty boot snapshot.
+ok(/function mergeLoadTimings/.test(server),
+   "the local view is re-read from the store, not memoised at boot forever");
+{
+  const flush = server.slice(server.indexOf("function flushLoadTimings"),
+                             server.indexOf("setInterval(flushLoadTimings"));
+  ok(/mergeLoadTimings\(\)/.test(flush),
+     "the flush is a read-modify-write, so one replica's write cannot clobber the other's samples");
+}
+ok(/_loadNew\[key\]/.test(server),
+   "this replica's unflushed samples are tracked separately, or the merge has nothing to re-apply");
+
+// 2. The pooled fallback used the 80th percentile of a CROSS-ORG mixture, which
+//    is just the largest org's number: pooled `facility` p80 was 95.9s on
+//    production, which would tell Pawnee "usually about 96s" for a report that
+//    takes about 3s there.
+ok(/percentile\(pooled, 0\.5\)/.test(estFn),
+   "the pooled fallback is the MEDIAN — a cross-org p80 describes the biggest org, not this one");
+ok(/percentile\(own, 0\.8\)/.test(estFn),
+   "...while an org's OWN history still uses the pessimistic p80");
+
+// 3. Seven real report pages sent their HTML raw and injected no ORG_CONFIG at
+//    all, so the bar on them could never have an estimate. Derived from the
+//    routes rather than listed, so a new raw-send page fails this instead of
+//    being quietly missed.
+{
+  const routes = [...server.matchAll(/app\.get\("(\/:org\/[a-z-]+)"[^\n]*\n(?:.*\n){0,25}?\}\);/g)];
+  const SKIP = new Set(["admin", "metrics", "calendar", "rentalcalendar", "annual-report"]);
+  const missing = routes.filter(m => {
+    const b = m[0];
+    if (!b.includes("public") || !b.includes(".html")) return false;
+    if (SKIP.has(m[1].split("/").pop())) return false;
+    return !/orgConfigInject|loadEstimateInject/.test(b);
+  }).map(m => m[1]);
+  eq(missing, [], "every tokened report route injects a load estimate");
+  ok(routes.length > 10, "...and the route scan actually found routes, or the check above is vacuous");
+}
+
 // Injected on first paint. A separate endpoint would mean the bar draws before
 // it knows its own scale — the guessing this replaces.
 ok(/loadEstimate: loadEstimateFor\(slug, rt\)/.test(server),

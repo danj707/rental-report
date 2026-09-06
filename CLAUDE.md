@@ -4980,6 +4980,80 @@ save it. Already recorded twice in this file for `server.js` sweeps; now written
 into `docs/CONTEXT.md` as a working constraint, since that is where someone will
 look before starting.
 
+## THE PROGRESS BAR LOOKED FINISHED WHILE THE REPORT RAN (2026-09-06)
+
+Dan, on a Community Intelligence load still going at 40s: *"this one is pretty
+bad."* The bar was drawn at **98.4%** — indistinguishable from full. That is the
+failure the bar was built to prevent, shipped inside the thing built to prevent
+it. Reproduced by RUNNING the curve, not reading it.
+
+* **The default was 12s.** The real misses recorded that afternoon ran 1.6s,
+  2.4s, 8.6s, 13.4s, **25.4s** and **41.1s**, so an unknown report burned its
+  budget in seconds. Now **25s**, on both sides.
+* **The tail closed far too fast.** 92% AT the estimate, then the last 8% over
+  the whole rest of the wait — but **92% and 99% look the same**, so the entire
+  overrun regime read as "done and stuck". *"Under 100" was never the real
+  requirement: it has to LOOK unfinished.* Now 80% at the estimate, halving the
+  remaining gap every TWO estimate-lengths, ceiling 95.
+* **On the `default` basis it never said "still working"** — the case with the
+  least trustworthy estimate was the only one that said nothing while filling up.
+
+### THEN WARMING IT ON PRODUCTION FOUND THREE MORE
+
+Dan: *"do a pass through a few reports to build a historical record… don't nuke
+the db."* 24 read-only probes (8 org/report pairs × 3 windows, sequential,
+paced). All answered; `clarksville/facility` graduated to `basis: org`. Reading
+the results back is what exposed the rest:
+
+* **THE PER-REPLICA MEMO WAS NEVER REFRESHED.** `clarksville/gl`, probed just as
+  often as `facility`, was still on the default: samples landed on whichever
+  replica served each request, and the other kept answering from the empty
+  snapshot it memoised at boot. Neither reached the 3-sample floor, and roughly
+  half of all reads served a stale view. Worse, each flush wrote its WHOLE map,
+  so one replica clobbered the other's samples. The flush is a read-modify-write
+  now, with this replica's unflushed samples tracked separately in `_loadNew`.
+* **THE POOLED FALLBACK WAS THE BIGGEST ORG'S NUMBER.** It took the p80 of a
+  cross-org mixture: pooled `facility` p80 was **95.9s**, which told Pawnee
+  *"usually about 96s"* for a report that takes about 3s there. Pooled uses the
+  **median** now — the typical org, which is the most it can honestly claim
+  about one it has never timed. An org's OWN history still uses the p80.
+* **SEVEN REPORT PAGES INJECTED NO `ORG_CONFIG` AT ALL** — memberships,
+  fasttrack, waitlist, products, qoq, historic, ice-calendar — so the bar on
+  them could never have an estimate. `loadEstimateInject` adds ONLY
+  `loadEstimate`, merged onto whatever exists: a full config would hand those
+  pages fields they have never had. The spec derives the route list from
+  server.js, so a new raw-send page fails instead of being quietly missed.
+
+**And the last minute of history did not survive a deploy** (Dan: *"ensure these
+reports persist past a redeployment, otherwise that's stupid"*). Samples batch on
+a 60s timer, so SIGTERM discarded up to a minute and a container cycling often
+kept none. `shutdown()` flushes them BEFORE `stateStore.close()` — `writeJSON`
+only enqueues, and `close()` drains.
+
+**`samples: 0` WAS HARDCODED on the default branch**, so the field reported 0
+whatever was stored — which made *"is anything being recorded?"*, the first
+question ever asked of it, unanswerable. Generalise it: a diagnostic field that
+is constant on one branch is not a diagnostic.
+
+### The favicon was never declared, only guessed
+
+Dan: *"we seem to have lost our favicon?"* The ROUTES were fine — `/favicon.ico`
+and `/favicon.png` both serve the rec.us mark. **No report page had ever declared
+one**: the only `rel="icon"` in the app was on the maintenance page, so every tab
+relied on the browser guessing `/favicon.ico` at the root. It rides the one
+middleware every HTML response already passes through, and a page that declares
+its own icon keeps it.
+
+### Guards
+
+`report-loader.spec.js` 30 → **44 assertions**. The new ones are about how the
+bar LOOKS — at the estimate, at 3x, at an absurd overrun — not merely that it
+stays under 100; reverting to the exact shipped shape fails all three by name.
+Mutation-tested eight further ways, all caught: the memo frozen at boot, the
+pending samples untracked, the pooled fallback back to p80, a report route
+losing its injection, and the shutdown flush removed. Plus a render case for the
+favicon, mutation-tested by removing the injection.
+
 ## THE JUICE ANIMATION IS RETIRED, FOR A PROGRESS BAR (2026-09-06)
 
 Dan: *"I think it's time to retire it across all the reports, just seems not as

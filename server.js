@@ -487,9 +487,38 @@ const LOAD_TIMING_MAX_MS = 300000;    // a timeout is not a duration
 let _loadTimings = null;
 let _loadTimingsDirty = false;
 
+// THE MEMO WAS NEVER REFRESHED, and with two replicas that is most of the
+// problem. Measured on production after warming 8 org/report pairs three times
+// each: clarksville/facility graduated to `basis: org` while clarksville/gl —
+// probed just as often — was still on the default. The samples had landed on
+// whichever replica served that request, and the OTHER replica kept answering
+// from the empty snapshot it memoised at boot. Neither reached the 3-sample
+// floor, and roughly half of all reads served a stale view.
+//
+// `_loadNew` is this replica's samples since the last flush, kept separately so
+// the flush can be a read-modify-write. Without that, two replicas each writing
+// their whole map is last-writer-wins and one of them loses its samples
+// entirely — which is the other half of why the counts never climbed.
+let _loadNew = {};
+
 function loadTimings() {
   if (!_loadTimings) _loadTimings = readJSON(loadTimingFile(), {}) || {};
   return _loadTimings;
+}
+
+// Re-read from the store and fold in what this replica has seen since. Called
+// on the flush timer, so a replica's view is at most 60s stale rather than
+// permanently frozen at boot.
+function mergeLoadTimings() {
+  const stored = readJSON(loadTimingFile(), {}) || {};
+  for (const k of Object.keys(_loadNew)) {
+    const arr = (stored[k] || []).concat(_loadNew[k]);
+    if (arr.length > LOAD_TIMING_KEEP) arr.splice(0, arr.length - LOAD_TIMING_KEEP);
+    stored[k] = arr;
+  }
+  _loadNew = {};
+  _loadTimings = stored;
+  return stored;
 }
 
 function recordLoadTiming(entry) {
@@ -504,10 +533,14 @@ function recordLoadTiming(entry) {
     const ms = Number(entry.ms) || 0;
     if (ms < LOAD_TIMING_MIN_MS || ms > LOAD_TIMING_MAX_MS) return;
     const key = entry.org + "|" + entry.report;
+    const v = Math.round(ms);
+    // Both: the local view answers reads until the next merge, and the pending
+    // list is what survives another replica's flush landing in between.
     const all = loadTimings();
     const arr = all[key] = (all[key] || []);
-    arr.push(Math.round(ms));
+    arr.push(v);
     if (arr.length > LOAD_TIMING_KEEP) arr.splice(0, arr.length - LOAD_TIMING_KEEP);
+    (_loadNew[key] = _loadNew[key] || []).push(v);
     _loadTimingsDirty = true;
   } catch {}
 }
@@ -517,7 +550,7 @@ function recordLoadTiming(entry) {
 function flushLoadTimings() {
   if (!_loadTimingsDirty) return;
   _loadTimingsDirty = false;
-  try { writeJSON(loadTimingFile(), loadTimings()); } catch {}
+  try { writeJSON(loadTimingFile(), mergeLoadTimings()); } catch {}
 }
 setInterval(flushLoadTimings, 60 * 1000).unref?.();
 
@@ -556,7 +589,15 @@ function loadEstimateFor(orgSlug, reportType) {
   }
   pooled.sort((a, b) => a - b);
   if (pooled.length >= LOAD_TIMING_MIN_SAMPLES) {
-    return { ms: percentile(pooled, 0.8), basis: "report", samples: pooled.length };
+    // THE MEDIAN HERE, not the 80th percentile — and the difference is not
+    // pedantic. An org's OWN samples are one report's spread, where a high
+    // percentile is the right pessimism. The pooled set mixes orgs of wildly
+    // different sizes, so its p80 is simply the biggest org's number: measured
+    // on production, pooled `facility` p80 was 95.9s, which would have told
+    // Pawnee "usually about 96s" for a report that takes about 3s there. A
+    // median is the typical org, which is the most this fallback can honestly
+    // claim about an org it has never timed.
+    return { ms: percentile(pooled, 0.5), basis: "report", samples: pooled.length };
   }
   return { ms: LOAD_TIMING_DEFAULT_MS, basis: "default",
            samples: own.length, pooled: pooled.length, need: LOAD_TIMING_MIN_SAMPLES };
@@ -571,6 +612,27 @@ function loadEstimateFor(orgSlug, reportType) {
 // The org and report come from the REQUEST rather than being passed in: there
 // are thirteen injection sites, and threading two more arguments through each
 // one is thirteen chances to pass the wrong report type.
+// Seven real report pages send their HTML raw and inject no ORG_CONFIG at all
+// — memberships, fasttrack, waitlist, products, qoq, historic, ice-calendar —
+// so the progress bar on them could never have an estimate, only its own flat
+// fallback. Found by warming the history and noticing memberships alone never
+// reported one.
+//
+// This adds ONLY loadEstimate, merged onto whatever exists. A full orgConfig
+// would hand those pages fields they have never had, and they read
+// `window.ORG_CONFIG || {}` today — every other lookup stays undefined exactly
+// as it is now, so this cannot change their behaviour.
+function loadEstimateInject(html, req) {
+  const tag = `<script>window.ORG_CONFIG=Object.assign(window.ORG_CONFIG||{},`
+    + `{loadEstimate:${JSON.stringify(loadEstimateFor(
+        (req && ((req.params && req.params.org) || req.orgSlug)) || "",
+        (req && req.reportType) || String((req && req.path) || "").split("/").filter(Boolean)[1] || ""
+      ))}});</script>`;
+  // A function replacement: a string one expands $& and $1, and this payload is
+  // JSON. Same trap already fixed for orgConfigInject.
+  return html.includes("<head>") ? html.replace("<head>", () => "<head>" + tag) : tag + html;
+}
+
 function orgConfigInject(orgConfig, req) {
   let slug = "", rt = "";
   try {
@@ -6211,11 +6273,17 @@ const DEPLOY_WATCH_INJECT = `<script>
 })();
 </script>`;
 
+const FAVICON_INJECT = '<link rel="icon" type="image/png" href="/favicon.png">';
+
 app.use((req, res, next) => {
   const _send = res.send;
   res.send = function(body) {
     if (typeof body === "string" && body.includes("</head>")) {
-      body = body.replace("</head>", FONT_INJECT + DEPLOY_WATCH_INJECT + "\n</head>");
+      // A page that already declares its own icon keeps it.
+      const icon = /rel=["']icon["']/i.test(body) ? "" : FAVICON_INJECT;
+      // Function replacement: a string one expands $& and $1, and the injected
+      // payload includes JSON elsewhere in this chain.
+      body = body.replace("</head>", () => icon + FONT_INJECT + DEPLOY_WATCH_INJECT + "\n</head>");
     }
     return _send.call(this, body);
   };
@@ -10834,13 +10902,13 @@ app.get("/:org/qoq", (req, res) => {
   // QoQ requires GL data — check GL availability
   if (!ORGS[slug].gl?.mbUuid && !SHARED_UUIDS.gl) return res.status(404).send("QoQ comparison requires GL report data.");
   logEvent(slug, "qoq", "view", req);
-  res.type("html").send(require("fs").readFileSync(path.join(__dirname, "public", "qoq.html"), "utf8"));
+  res.type("html").send(loadEstimateInject(require("fs").readFileSync(path.join(__dirname, "public", "qoq.html"), "utf8"), req));
 });
 
 app.get("/:org/historic", (req, res) => {
   if (!ORGS[req.params.org]) return res.status(404).send("Unknown org");
   logEvent(req.params.org, "historic", "view", req);
-  res.type("html").send(require("fs").readFileSync(path.join(__dirname, "public", "historic.html"), "utf8"));
+  res.type("html").send(loadEstimateInject(require("fs").readFileSync(path.join(__dirname, "public", "historic.html"), "utf8"), req));
 });
 
 /* ── THE SEASON LIST, REMEMBERED PER ORG ─────────────────────────────────────
@@ -11681,7 +11749,7 @@ app.get("/:org/products", (req, res) => {
   if (!org) return res.status(404).send("Unknown org");
   if (!org.products?.mbUuid && !SHARED_UUIDS.products) return res.status(404).send("Products report not configured for this org.");
   logEvent(slug, "products", "view", req);
-  res.type("html").send(require("fs").readFileSync(path.join(__dirname, "public", "products.html"), "utf8"));
+  res.type("html").send(loadEstimateInject(require("fs").readFileSync(path.join(__dirname, "public", "products.html"), "utf8"), req));
 });
 
 app.get("/:org/memberships", (req, res) => {
@@ -11690,7 +11758,7 @@ app.get("/:org/memberships", (req, res) => {
   if (!org) return res.status(404).send("Unknown org");
   if (!org.memberships?.mbUuid && !SHARED_UUIDS.memberships) return res.status(404).send("Memberships report not configured for this org.");
   logEvent(slug, "memberships", "view", req);
-  res.type("html").send(require("fs").readFileSync(path.join(__dirname, "public", "memberships.html"), "utf8"));
+  res.type("html").send(loadEstimateInject(require("fs").readFileSync(path.join(__dirname, "public", "memberships.html"), "utf8"), req));
 });
 
 app.get("/:org/court-utilization", (req, res) => {
@@ -12838,7 +12906,7 @@ app.get("/:org/ice-calendar", (req, res) => {
   const fs = require("fs");
   const html = fs.readFileSync(path.join(__dirname, "public", "ice-calendar.html"), "utf-8");
   const inject = `<script>window.__ORG__=${JSON.stringify(meta)};</script>`;
-  res.type("html").send(html.replace("</head>", inject + "</head>"));
+  res.type("html").send(loadEstimateInject(html.replace("</head>", () => inject + "</head>"), req));
 });
 
 app.get("/:org/calendar", (req, res) => {
@@ -13822,7 +13890,7 @@ app.get("/:org/fasttrack", (req, res) => {
   if (!org) return res.status(404).send("Unknown org");
   if (!org.fasttrack?.mbUuid && !SHARED_UUIDS.fasttrack) return res.status(404).send("Fast Track report not configured for this org.");
   logEvent(slug, "fasttrack", "view", req);
-  res.type("html").send(require("fs").readFileSync(path.join(__dirname, "public", "fasttrack.html"), "utf8"));
+  res.type("html").send(loadEstimateInject(require("fs").readFileSync(path.join(__dirname, "public", "fasttrack.html"), "utf8"), req));
 });
 
 app.get("/:org/waitlist", (req, res) => {
@@ -13831,7 +13899,7 @@ app.get("/:org/waitlist", (req, res) => {
   if (!org) return res.status(404).send("Unknown org");
   if (!org.waitlist?.mbUuid && !SHARED_UUIDS.waitlist) return res.status(404).send("Waitlist report not configured for this org.");
   logEvent(slug, "waitlist", "view", req);
-  res.type("html").send(require("fs").readFileSync(path.join(__dirname, "public", "waitlist.html"), "utf8"));
+  res.type("html").send(loadEstimateInject(require("fs").readFileSync(path.join(__dirname, "public", "waitlist.html"), "utf8"), req));
 });
 
 app.get("/:org/instructor-payout", (req, res) => {
