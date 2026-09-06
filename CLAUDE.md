@@ -4925,6 +4925,259 @@ guess is silent and wrong in a finance document, and the sign-off gate needed to
 retire that risk is most of the cost of the work. An index gets the same speed
 while the numbers keep coming from the definition finance already trusts.
 
+## THE DOCS DESCRIBED A DIFFERENT PLATFORM (2026-09-06)
+
+Dan: *"update the 'how it works' doc and image files to reflect all our changes,
+they are substantial."*
+
+Three surfaces, and the **image file is an inline SVG** — the architecture
+diagram inside the admin dashboard's *How This Works* section. There are no
+`.png`/`.svg` files in the repo at all, which is worth knowing before going
+looking for them.
+
+### What was actually wrong
+
+* **The architecture diagram had no App State Store.** Its DATA LAYER row showed
+  Metabase, the rec.us database and external services — the app's own Postgres,
+  the thing that made today's flip possible, was simply absent. It also still
+  described a single instance. Now four boxes, with the store highlighted, and
+  the app row reads *"2 replicas, rolling deploys (no volume)"*. Stale counts
+  fixed from measurement, not memory: **41** report HTML files (said 15),
+  **13** shared cards (said 12), and *"96k events in Postgres"* where it said
+  `events.jsonl` — a file that no longer receives events in `db` mode.
+* **A FACTUAL ERROR IN THE SECURITY SECTION.** It claimed *"CSV exports are
+  disabled; data requests route through a Partner Support modal"* — reversed on
+  2026-09-03, and that modal is deleted. The page was telling readers the
+  opposite of what the platform does. It now says exports are enabled behind the
+  token and **every one is logged to Slack with its segment and row count**,
+  which is the thing that actually pays for them.
+* **The README described a different product**: one org, one card, *"stateless,
+  all data comes fresh from Metabase on each request"*. It is 29 orgs, 23 report
+  types, a 4-hour cache and a shared Postgres store. It also carried a **copy of
+  the Dockerfile without the emoji font**, i.e. an example that reproduces the
+  bug fixed hours earlier.
+* **`docs/CONTEXT.md` was a second doc claiming to hold current state**, and had
+  drifted furthest of all: `server.js` as *"~3043 lines"* (it is ~20,000), a June
+  2026 commit named as HEAD, and *"BLOCKS Railway + rec.metabaseapp.com → cannot
+  verify the live deployed site"* — **which is false**, and this file already
+  records that believing it meant skipping live verification more than once.
+
+### THE FIX FOR CONTEXT.md IS THE ONE WORTH GENERALISING
+
+It is a **signpost now, not a record**: it points at CLAUDE.md and keeps only
+what does not change week to week (where things live, the traps that recur, what
+each check is blind to). **Two documents both claiming to hold current state is
+how one of them starts lying** — the same argument as one reducer with N
+readers, applied to prose. It says at the top that it used to be the other kind,
+and why.
+
+### The `pkill` trap, third instance
+
+`pkill -f "[c]i-check-render"` to stop a stale render run **killed this session's
+own harness** — every later command exited 144 with no output, which reads
+exactly like the thing being killed having crashed. The bracket trick did not
+save it. Already recorded twice in this file for `server.js` sweeps; now written
+into `docs/CONTEXT.md` as a working constraint, since that is where someone will
+look before starting.
+
+## THE JUICE ANIMATION IS RETIRED, FOR A PROGRESS BAR (2026-09-06)
+
+Dan: *"I think it's time to retire it across all the reports, just seems not as
+professional now that we're pretty robust… With the juicing animation, I was
+getting feedback that it was taking forever and no one had any idea how long it
+would actually take. Someone is more willing to wait for a progress bar than a
+forever spinner."*
+
+`public/report-loader.js` replaces `public/juice-loader.js`, which is **deleted**.
+**18 pages** now share one loading state.
+
+### IT WAS NEVER ONE ANIMATION — twelve pages each had their own copy
+
+`juice-loader.js` existed and only **8 pages used it**. Twelve others carried a
+hand-pasted duplicate of the glass CSS and the five `<span>` phrases inline, and
+the big report pages — facility, gl, memberships, roster, users — had **no body
+loader at all**, just a button spinner. So "make it consistent" was most of the
+work, and it is the copy-paste drift this file keeps recording.
+
+Two things fell out of doing it:
+
+* **`.juice-loader` had no CSS anywhere.** Fast Track's three tab loaders
+  rendered an **empty div** above their caption — a spinner nobody has ever
+  seen, on the tabs Dan looks at most.
+* **A few blocks smuggled a REAL phrase in among the jokes** — *"Counting
+  renewals…"*, *"Adding up the months…"*, *"Counting check-ins…"*. Those are now
+  the loader's `label`; they were the only part of the animation that told a
+  reader anything.
+
+### THE ESTIMATE IS MEASURED, and only cache MISSES count
+
+`recordLoadTiming` hangs off `logRequest`, the single funnel every feed already
+passes through. It keeps the last 20 durations per `org|report`.
+
+**Only misses.** A hit returns in ~200ms and a miss can take 60s+, so a median
+over both together describes neither — it just tracks the hit rate. Fold hits in
+and the bar finishes in two seconds and then sits at 99% for a minute, which is
+*exactly* the feeling being replaced.
+
+**IT HAD TO BE DURABLE AND SHARED, and that is new today.** `REQUEST_LOG` is in
+memory, so it empties on every deploy — and since `numReplicas` went to 2 each
+container sees only the half of the traffic that landed on it. Proven while
+building this: the production request log held **5 entries**. It goes through
+the store instead.
+
+**The estimate is the 80th percentile, NOT the median.** The two failure modes
+are not symmetric: a bar that finishes early snaps to 100% and reads as fast,
+while one that runs out of estimate stalls near the end and reads as broken. It
+would rather be too slow than too fast.
+
+**Three steps, each a weaker claim, and it says which answered.** This org's own
+history → everyone's history for this **report type** → a flat default.
+`basis` travels with the number so the client knows how much to trust it, and on
+`default` the loader **prints no estimate at all** — a guess dressed up as
+*"about 30s"* is a promise we cannot keep.
+
+**Three samples minimum.** One unlucky 90s run must not become every future
+reader's estimate.
+
+Injected into `ORG_CONFIG`, so the bar has its scale **on first paint** — a
+separate endpoint would mean drawing before it knew its own scale, i.e. the
+guessing this replaces. All **13** injection sites go through `orgConfigInject`
+now.
+
+### THE BAR MAY NEVER REACH 100%, and the float nearly broke that
+
+Under the estimate it eases toward 92%; past it, each further estimate-length
+halves the remaining gap. **A bar that fills and then sits there is worse than no
+bar** — it has told the reader something they can see is false.
+
+**`1 - 0.5^over` UNDERFLOWS TO EXACTLY 0** once `over` passes ~1000, so on a
+genuinely long wait the never-reaches-100 curve reached 100. Hence
+`CAP_ABSOLUTE = 99.5`. **Found by running the function over a sweep of elapsed
+times, not by reading it** — which is the whole argument for lifting these to
+module scope.
+
+### A FAST LOAD MUST SHOW NOTHING
+
+A warm cache answers in ~200ms. Flashing a bar for a fifth of a second reads as a
+glitch and makes a fast report *feel* slow, so nothing renders for the first
+**350ms**.
+
+### The traps this hit
+
+* **NINE PAGES WOULD HAVE SERVED A BLANK BODY.** They referenced
+  `<ReportLoader>` after the rename and did not load the script — a
+  ReferenceError, React unmounts, 200 with nothing in it. The blank-page class
+  this repo has shipped twice. The spec now fails if any page uses the component
+  without the script.
+* **`const LOAD_TIMING_FILE = path.join(DATA_DIR, …)` was a temporal dead
+  zone** — `DATA_DIR` is declared ~1,900 lines below it. `node --check` passed
+  and the server died at boot with *"Cannot access 'DATA_DIR' before
+  initialization"*. **The render check caught it**, which is exactly what it is
+  for. It is a function now.
+* **`html.replace("<head>", <string>)` expands `$&` and `$1`.** The injected
+  payload is JSON that can legitimately contain them (a display name, a token),
+  and one `"$&"` would have spliced the matched tag into the middle of the
+  script. Every replacement is a **function** now. Pre-existing; fixed while
+  touching the line.
+
+### Guards
+
+`scripts/report-loader.spec.js` (**30 assertions, in CI**), which LIFTS AND RUNS
+both the progress curve and the three-step fallback. Mutation-tested nine ways,
+all failing by name: the 100% cap removed (the float bug), the bar stalling
+instead of creeping, a default estimate worded as a promise, cache hits recorded,
+the estimate reverted to the median, the org branch disabled, the pooled fallback
+ignoring the report type, and the single-sample floor removed.
+
+**Two of those survived the first draft and were fixed in the SPEC, not the
+mutation** — and both for the same reason, which is worth generalising:
+
+* The org-vs-pooled assertion tested **text order** (`basis: "org"` appears
+  before `basis: "report"`), and a mutation that disabled the org branch
+  entirely left the order intact. *An assertion about where code sits is not an
+  assertion about what it does.*
+* The pooled fixture had 3 fast `gl` samples against 3 slow `programs` ones, so
+  a pool that ignored the report type still landed on a plausible number. It is
+  **20 against 3** now: the wrong answer has to be unmistakable, not merely
+  possible.
+
+Plus **four `ci-check-render.js` cases**, and the harness gained a per-case
+**`stubDelayMs`**: every stub answers instantly, so the 350ms threshold is never
+crossed and a "loader renders" case could only ever pass having never seen a
+loader.
+
+**THE FAST-LOAD CASE COULD NOT SEE A FLASH, which is the whole thing it tests.**
+By the time the data arrives the loader has unmounted, so `[data-rl]` is absent
+whether or not it appeared for 200ms on the way — and the first draft passed with
+the threshold deleted. It installs a poll **before navigation** and asserts the
+bar was *never present at any point*. (A `MutationObserver` cannot be used there:
+`evaluateOnNewDocument` runs before the document exists, so `documentElement` is
+null and `observe()` throws.) Both browser-only mutations — the threshold removed
+and a static bar — were then verified to fail by name.
+
+## EVERY EMOJI IN EVERY PDF WAS A TOFU BOX (2026-09-06)
+
+Dan, on Pawnee's rental schedule PDF: *"look at the last few columns, things
+aren't rendering properly"* — Forms, Paid?, Permit and Rec-link all drawing ▯,
+and the add-on note lines too.
+
+**The Dockerfile installed `fonts-liberation` and no emoji font.** Liberation
+covers Latin text and has **zero** emoji coverage, so Chromium had no glyph for
+any emoji and drew the missing-character box. One line:
+`fonts-noto-color-emoji`.
+
+### IT IS INVISIBLE EVERYWHERE EXCEPT THE PDF, which is why nothing caught it
+
+A laptop, this sandbox and GitHub's runners all ship an emoji font, so the page
+is correct in a browser and in all 268 render cases. **The Puppeteer PDFs are
+the one surface where the CONTAINER's own fonts are what render** — the report
+pages are drawn by the reader's browser, the PDFs by ours.
+
+**The blast radius was everything, not one report:** the rental schedule's four
+icon columns plus its 💡 lit and 📝 instruction note lines, the Director's Report
+flames, the QBR, the permit posting sheets. **60 distinct emoji** across the
+PDF-rendered files.
+
+### REPRODUCED BEFORE FIXING, because "it must be the font" is a guess
+
+Rendered the exact glyph set twice under `FONTCONFIG_FILE`: Liberation alone
+gives boxes, Liberation + Noto Color Emoji gives the icons, and the ASCII line
+beside them is identical in both — which is what rules out a markup or encoding
+fault.
+
+### THE BUILDER FIELD LIES, and it nearly sent me to the wrong file
+
+`get-service-config` reports `builder: RAILPACK`, which would mean the Dockerfile
+is not used at all and editing it does nothing. **The build log settles it:**
+`[internal] load build definition from Dockerfile`, followed by the exact
+`apt-get` line. Railway prefers a Dockerfile when one is present, whatever the
+configured builder says. **Read the build log, not the service config, before
+deciding which file builds the image.**
+
+### The guard, and why the obvious one is worthless
+
+A spec that renders emoji and checks they look right **passes on the broken
+build**, because the machine running CI has an emoji font. So
+`scripts/pdf-fonts.spec.js` (**5 assertions, in CI**) builds its font
+environment *from the Dockerfile*: it copies in Liberation, and copies the emoji
+font in **only if the Dockerfile asked for one**, then renders the glyph set both
+ways and requires the two images to **DIFFER**. Remove the package and both
+renders are tofu, the images match, and it fails.
+
+- **The glyphs are read out of the source**, not transcribed — a hardcoded list
+  goes stale the first time a column gains an icon, and the guard then silently
+  stops covering the thing that broke.
+- **It asserts the glyph set is non-empty**, or the font assertion is vacuous.
+- **It also requires the emoji render to carry MORE image data**, so a build that
+  rendered nothing at all in both cannot pass the difference test for the wrong
+  reason.
+- **It SKIPS with a message** without puppeteer or the font files, rather than
+  passing.
+
+Mutation-tested two ways, both failing by name: the emoji font removed (the bug
+exactly as it shipped) and swapped for `fonts-dejavu-core` — a plausible-looking
+font package with no emoji coverage.
+
 ## TWO REPLICAS EACH WARMED THE WHOLE PLATFORM (2026-09-06)
 
 Found in the systems check straight after the volume was deleted and

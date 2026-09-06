@@ -267,66 +267,13 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
-  <script src="/juice-loader.js"></script>
+  <script src="/report-loader.js"></script>
 
   <script type="text/babel">
     const { useState, useEffect, useRef, useCallback, useMemo } = React;
 
     const CFG = window.ORG_CONFIG || {};
 
-    // ── 50 wizard-themed juice phrases ──
-    var WIZARD_PHRASES = [
-      'Squeezing the data oranges\u2026',
-      'Juicing your metrics\u2026',
-      'Blending the numbers\u2026',
-      'Pressing fresh insights\u2026',
-      'Zesting the KPIs\u2026',
-      'Muddling the demographics\u2026',
-      'Straining out the noise\u2026',
-      'Adding a splash of charts\u2026',
-      'Peeling back the data layers\u2026',
-      'Crushing the pivot tables\u2026',
-      'Infusing with AI magic\u2026',
-      'Garnishing the dashboard\u2026',
-      'Shaking up the widgets\u2026',
-      'Pouring the first draft\u2026',
-      'Rimming the glass with insight\u2026',
-      'Macerating the metrics\u2026',
-      'Cold-pressing the trends\u2026',
-      'Double-straining for clarity\u2026',
-      'Topping off with foam\u2026',
-      'Extracting the good stuff\u2026',
-      'Centrifuging the spreadsheets\u2026',
-      'Slow-juicing the revenue\u2026',
-      'Pitting the data cherries\u2026',
-      'Simmering the stats\u2026',
-      'Flash-blending the filters\u2026',
-      'Whipping up your dashboard\u2026',
-      'Caramelizing the bar charts\u2026',
-      'Deglazing the GL codes\u2026',
-      'Folding in the enrollment data\u2026',
-      'Reducing the data to a glaze\u2026',
-      'Letting it steep\u2026',
-      'Churning the participation rates\u2026',
-      'Fermenting the fill rates\u2026',
-      'Decanting the demographics\u2026',
-      'Distilling the highlights\u2026',
-      'Plating the final report\u2026',
-      'Squeezing every last drop\u2026',
-      'Rolling the data limes\u2026',
-      'Muddling mint into metrics\u2026',
-      'Straining through the noise\u2026',
-      'Layering the flavor profile\u2026',
-      'Torching the cr\u00e8me br\u00fbl\u00e9e chart\u2026',
-      'Whisking the trendlines\u2026',
-      'Emulsifying the pie slices\u2026',
-      'Scoring the rind for aroma\u2026',
-      'Taste-testing the layout\u2026',
-      'Balancing sweet and tart data\u2026',
-      'Spritzing the finishing touch\u2026',
-      'Pouring over ice, almost done\u2026',
-      'One more squeeze\u2026',
-    ];
     const ORG_SLUG = CFG.slug || '';
     const TOKEN = CFG.token || '';
     const tokenQS = TOKEN ? '?token=' + encodeURIComponent(TOKEN) : '';
@@ -1203,7 +1150,7 @@
 
             {(phase === 'generating' || phase === 'loading-data') && (
               <div className="loading-panel">
-                <JuiceLoader messages={WIZARD_PHRASES.slice().sort(function() { return Math.random() - 0.5; }).slice(0, 5)} />
+                <ReportLoader label="Building your report" />
               </div>
             )}
 

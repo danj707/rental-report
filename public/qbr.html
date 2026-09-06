@@ -13,7 +13,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
-<script src="/juice-loader.js"></script>
+<script src="/report-loader.js"></script>
 <style>
   :root {
     --ink:    #0F1B2D;
@@ -685,7 +685,7 @@ function OrgMap() {
       {!loading && building && <div className="omap-cta">
         <h3>Building the {tfLabel} snapshot…</h3>
         <p>Pulling {tfLabel} revenue, transactions, and users for every org. This takes a couple of minutes{progress.total ? ' (' + progress.done + ' of ' + progress.total + ' orgs · ' + pc + '%)' : ''}.</p>
-        {window.JuiceLoader ? <JuiceLoader messages={['Sweeping the fleet\u2026', 'Counting users\u2026', 'Reconciling revenue\u2026', 'Mapping the country\u2026']} /> : null}
+        {window.ReportLoader ? <ReportLoader messages={['Sweeping the fleet\u2026', 'Counting users\u2026', 'Reconciling revenue\u2026', 'Mapping the country\u2026']} /> : null}
       </div>}
 
       {!loading && !building && !orgs.length && <div className="omap-cta">
@@ -826,8 +826,8 @@ function App() {
   if (printMode) {
     return (
       <div className="wrap">
-        {loading && (window.JuiceLoader
-          ? <div className="page"><JuiceLoader messages={['Pulling the GL\u2026','Charting the quarter\u2026']} /></div>
+        {loading && (window.ReportLoader
+          ? <div className="page"><ReportLoader messages={['Pulling the GL\u2026','Charting the quarter\u2026']} /></div>
           : <div className="page" style={{ padding: 48, textAlign: 'center', color: '#888' }}>Generating…</div>)}
         {!loading && data && <Report data={data} />}
         {ready && <div id="report-ready" style={{ display: 'none' }}></div>}
@@ -897,8 +897,8 @@ function App() {
         {!PREVIEW && data && <a className="pdf-btn" href={pdfUrl()} target="_blank" rel="noopener">Download PDF</a>}
       </div>
 
-      {loading && (window.JuiceLoader
-        ? <div className="page"><JuiceLoader messages={['Pulling the GL\u2026','Tallying enrollments\u2026','Counting reservations\u2026','Reconciling refunds\u2026','Charting the quarter\u2026']} /></div>
+      {loading && (window.ReportLoader
+        ? <div className="page"><ReportLoader messages={['Pulling the GL\u2026','Tallying enrollments\u2026','Counting reservations\u2026','Reconciling refunds\u2026','Charting the quarter\u2026']} /></div>
         : <div className="page" style={{ padding: 48, textAlign: 'center', color: '#888' }}>Generating…</div>)}
       {!loading && data && <Report data={data} />}
       {ready && <div id="report-ready" style={{ display: 'none' }}></div>}

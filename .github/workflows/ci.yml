@@ -121,6 +121,13 @@ jobs:
       - name: Store wiring spec (server.js reads through the store, not around it)
         run: node scripts/store-live.spec.js
 
+
+      # One loading state across every report, and a progress bar whose estimate
+      # is measured rather than invented. Lifts and RUNS both the curve and the
+      # three-step fallback — a regex passes on an inverted comparison.
+      - name: Report loader spec (the juice is gone; the bar cannot claim 100%)
+        run: node scripts/report-loader.spec.js
+
       - name: Fast Track conversion spec (measured against the spots open to FT, not all holds)
         run: node scripts/fasttrack-conv.spec.js
 
@@ -302,6 +309,19 @@ jobs:
 
       - name: Page render check (real browser; a blank page fails the build)
         run: node scripts/ci-check-render.js
+
+      # The Puppeteer PDFs are the one surface rendered with the CONTAINER's own
+      # fonts, so a missing emoji font is invisible in a browser and in every
+      # render case above — it shows up only in the exported file. This builds
+      # its font environment FROM THE DOCKERFILE and requires the two renders to
+      # differ, so it fails on a build with no emoji font rather than passing
+      # because the runner happens to have one.
+      #
+      # In the `render` job, not `validate`: that job installs with
+      # PUPPETEER_SKIP_DOWNLOAD, so there is no browser there and this could
+      # only ever skip its own discriminating half.
+      - name: PDF font spec (the container has glyphs for the emoji its PDFs print)
+        run: node scripts/pdf-fonts.spec.js
 
       # A failed load must never become a published layout of seed defaults. Runs
       # after the render check because it drives a real browser and reuses the

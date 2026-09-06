@@ -1,54 +1,78 @@
-# rec.us Rental-Report Platform — Working Context
+# rec.us Rental-Report Platform — orientation
 
-> Living handoff doc. Paste into a new chat to bootstrap. Update the **Current state** + **Open threads** sections as work ships. Last shipped: Public Apex Calendar (HEAD 7fb5107, 2026-06-04).
+> **This file is a signpost, not the record.** The record is
+> [`../CLAUDE.md`](../CLAUDE.md): what has been measured, what was tried and
+> rejected, and which traps have bitten more than once. Read that.
+>
+> This file used to be a "living handoff doc" duplicating current state, and it
+> drifted badly — it described `server.js` as ~3,043 lines (it is ~20,000), named
+> a June 2026 commit as HEAD, and claimed the sandbox cannot reach Railway or
+> Metabase, which is wrong and cost real time to disbelieve. Two docs both
+> claiming to hold current state is how one of them starts lying. This one now
+> holds only the things that do not change week to week.
 
 ## What this is
-Multi-tenant reporting dashboard for parks & rec orgs. Node/Express `server.js` + React-CDN HTML in `public/*.html`, Metabase public-card data, Railway auto-deploy from GitHub `main`. Repo: `danj707/rental-report`. Live: https://rental-report-production-a046.up.railway.app
 
-## Operating constraints (read first)
-- **Context bloat kills these chats.** NEVER load full `server.js` (~3043 lines) or full HTML files into context. NEVER render calendar/schedule HTML as an artifact (re-renders every turn). Edit on disk, `node --check`, push via git. Use tight `grep -n` / `sed -n 'X,Yp'` / `curl -sL` raw fetches.
-- **Sandbox network** allows github.com / raw.githubusercontent.com / api.github.com / npm / pypi / anthropic. BLOCKS Railway + rec.metabaseapp.com -> cannot verify the live deployed site or hit Metabase directly. Browser-direct calendar always falls back to sample data; live data only flows through the server proxy after deploy.
-- `/tmp/rrgit` = persistent local clone, PAT-authed (`x-access-token` in origin URL), git identity set (`dan@rec.us`). Survives sessions incl. uncommitted edits.
+Multi-tenant reporting for parks & rec orgs. Node/Express `server.js` plus
+React-via-CDN pages in `public/*.html`, reading Metabase public cards, deployed
+on Railway from GitHub `main`.
 
-## Current state (HEAD = 7fb5107)
-**Public Apex Calendar SHIPPED.** Live at `/apex/calendar?token=<APEX_TOKEN>`.
-- `public/calendar.html` — standalone Week+List calendar: color-by-activity, filter chips, Full/Waitlist badges, all-day lane (>=7h), cards deep-link to rec.us/sections/{id}. Fetch chain: `/{org}/calendar/api/data` -> MB public `8a3dac9b-6c34-45e1-a7d0-3a177477fe17` -> built-in sample.
-- server.js fully wired (ORGS entry, REPORT_TYPES, NON_ADDABLE, PII-strip proxy, explicit `/:org/calendar` route, reportMeta x2, How This Works, UPDATES). Calendar is PUBLIC — proxy strips reservee/email/phone/notes/name per-row.
-- `org.html` + `metrics.html` sync points done.
+- Repo: `danj707/rental-report`
+- Production: https://rental-report-production-a046.up.railway.app
+  (**there is no `reports.rec.us`** — it has never resolved; the `BASE_URL` in
+  older notes is a placeholder.)
+- PR previews: `https://rental-report-rental-report-pr-<N>.up.railway.app`
 
-## server.js structure map (~line numbers)
-111 apex ORGS · 159 REPORT_TYPES · ~161 NON_ADDABLE_REPORTS · 1164 `GET /:org/:report/api/data` (MB proxy) · explicit HTML routes end ~1397 · ~1550 `/:org` catch-all (calls `next()`) · 1587 `/:org` landing reportMeta · 1867 root `/` dashboard · 1899 root reportMeta (has `color`) · ~2315 How This Works · ~2826 `const UPDATES = [` (newest-first) · ~2962 `express.static("public")`.
+## Working constraints
 
-## New-report wiring checklist (proven)
-1. ORGS `mbUuid` per org · 2. REPORT_TYPES append · 3. NON_ADDABLE_REPORTS if not self-serve · 4. PII/transform in proxy · 5. explicit `app.get("/:org/<report>")` sendFile (404 guards + logEvent) · 6. reportMeta in BOTH landing (~1590) AND root (~1900, color) · 7. `org.html` REPORT_META · 8. How This Works `<li>` · 9. UPDATES top entry · 10. metrics.html 4 sync points (badge CSS, REPORT_META, REPORT_ORDER, REPORT_COLORS) · 11. `node --check` + commit + push · 12. note Railway backup limit.
+- **Never load a whole large file into context.** `server.js` is ~20k lines and
+  the report pages are thousands each. Use `grep -n`, `sed -n 'X,Yp'`, and edit
+  in place.
+- **The sandbox CAN reach Railway and Metabase.** An older version of this file
+  said it could not; that was wrong, and believing it meant skipping live
+  verification more than once.
+- **A push to `main` is an operational event**, not merely a code change — it
+  restarts production. Since the volume was removed deploys are rolling rather
+  than an outage, but they are still not free. See CLAUDE.md.
+- **Never `pkill -f` a pattern that could match this session's own harness.**
+  The symptom is every later command exiting 144 with no output, which reads
+  exactly like the thing you were running having crashed.
 
-## Standing instructions (every applicable change)
-- UPDATES log: new entry at TOP of `UPDATES` array.
-- metrics.html: REPORT_META, REPORT_ORDER (mirror REPORT_TYPES), REPORT_COLORS, `.badge-<type>` CSS.
-- Report card metadata (label/icon/color/desc/AI flag) in ALL THREE: root reportMeta (~1900), `/:org` landing reportMeta (~1590), `org.html` REPORT_META.
-- New org/report -> update How This Works Reports list.
+## Before you change a Metabase card
 
-## Open threads to iterate
-- **Calendar polish** (likely next): live-data verification once deployed; whether to surface more fields; mobile layout; wiring calendar into other orgs beyond Apex.
-- Littleton session-calendar SQL (Denver tz; needs `starts_at` confirmed `timestamptz` UTC; normalizeRow keys Program/Section/Activity/Status/Section URL; Begin Sort = sort-only).
-- programs.html: Reg Mode col (Section/Session-based) + Cancellations col + Cancel% (client-computed), gated on data presence. Existing Enrollments/Fill% include canceled bookings.
-- AI insights for Apex court-utilization (prototype `court-utilization-insights.jsx`; prod = cached Haiku behind Railway endpoint).
-- Danvers GL: query missing `Organization Credit Payments` + `Org Credit Refunds` -> Acct Credit card won't render until updated.
-- Org UUID pulldown (self-serve): blocked on public Rec REST search endpoint URL.
-- Smyrna: payment-channel segmentation (in-person vs online CC) in GL — pending follow-up.
-- Boot-time org guard quarantine loop: NOT confirmed live — verify before relying.
+Read the live card first — the `sql/` mirrors drift, and one has already been 53
+lines stale, where pushing the repo copy would have silently deleted a live
+feature. Then expect the tag flip: an API push regenerates every template tag as
+**Text**, the card then registers six parameters instead of three, and the report
+400s for every org until a human re-types them in the Metabase UI. Sign off with
+`scripts/verify-report-live.js` against the heaviest org, **run alone** — a
+concurrent query makes it invent timeouts on cards you never touched.
 
-## Key identifiers
-- Repo `danj707/rental-report`
-- Apex MB calendar UUID `8a3dac9b-6c34-45e1-a7d0-3a177477fe17` · Calendar: color `#ea580c`, icon calendar
-- `?token=` required on all `/:org/*` except `/`, `/api/*`, `/metrics`, `/hotdog`
-- Confirm HEAD: `curl -s api.github.com/repos/danj707/rental-report/commits/main`
-- (Secrets — PAT, per-org tokens, ORGS UUIDs — live in chat memory / env, NOT in this public file.)
+## Before you ship a page change
 
-## Gotchas
-- `applied_pricing->'result'->>'finalCents'` = correct Total (honors overrides); `order_item.price` = original only.
-- Strip `[[ AND ... ]]` optional-filter syntax before `preview_query`.
-- MB template var dates must be set to **Date** type in question editor (default Text -> 400).
-- Rec MCP `discover_schema`/`explore_table_details` 500 — use `preview_query` on `information_schema.columns`.
-- `program` table has no `organization_id` — scope via `section.organization_id`.
-- Timestamps stored local time per-org — no `AT TIME ZONE` except Denver/Littleton.
+`node scripts/ci-check-render.js`. It is the only check that RUNS the pages —
+`node --check`, the HTML parse check and the boot check all pass happily on a
+page that renders a blank white screen, which has reached production twice.
+
+## The checks, and what each one alone cannot see
+
+| check | catches | blind to |
+|---|---|---|
+| `npm test` | logic, in the specs' own terms | anything only a browser does |
+| `ci-check-render.js` | blank pages, wrong computed values | a card that stopped answering |
+| `ci-check-admin-js.js` | the admin dashboard's template-literal escaping | the report pages |
+| `verify-report-live.js` | a card that no longer answers | the pages themselves |
+| `pdf-fonts.spec.js` | a PDF with no glyphs for its icons | everything else |
+
+## Where things live
+
+| | |
+|---|---|
+| `server.js` | routes, org registry, Metabase proxy, cron, admin dashboard |
+| `public/*.html` | one file per report, React via CDN, Babel in-browser |
+| `public/report-loader.js` | the shared loading progress bar |
+| `public/open-pdf.js` | the one popup/export implementation every page uses |
+| `lib/store.js` | the Postgres-backed state store (config, events, feed cache) |
+| `sql/` | mirrors of the live Metabase cards — **not** the source of truth |
+| `scripts/*.spec.js` | the guards; most lift and RUN the function they pin |
+| `docs/DB-MIGRATION-RUNBOOK.md` | the store flip, step by step, with undos |

@@ -356,7 +356,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-  <script src="/juice-loader.js" defer></script>
+  <script src="/report-loader.js" defer></script>
 <script src="/report-refresh.js" defer></script>
 <script src="/open-pdf.js" defer></script>
 </head>
@@ -900,7 +900,7 @@
             </div>
 
             {/* Loading */}
-            {loading && <JuiceLoader />}
+            {loading && <ReportLoader />}
 
             {/* Error */}
             {error && <div className="error-msg">{error}</div>}
@@ -920,7 +920,7 @@
                         <span className="insights-sub">{labelA} vs {labelB} · {comparison.length} GL code{comparison.length !== 1 ? 's' : ''}</span>
                       )}
                     </div>
-                    {insightsLoading && <JuiceLoader style={{padding:'28px 16px'}} />}
+                    {insightsLoading && <ReportLoader style={{padding:'28px 16px'}} />}
                     {insightsError && !insightsLoading && (
                       <div className="error"><strong>Insights unavailable:</strong> {insightsError}</div>
                     )}

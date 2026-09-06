@@ -458,6 +458,125 @@ const REQUEST_LOG_MAX = 500;
 function logRequest(entry) {
   REQUEST_LOG.unshift(entry);
   if (REQUEST_LOG.length > REQUEST_LOG_MAX) REQUEST_LOG.length = REQUEST_LOG_MAX;
+  recordLoadTiming(entry);
+}
+
+// ── How long this org's report actually takes ──────────────────────────────
+//
+// Feeds the loading PROGRESS BAR. Dan, retiring the juice animation: "I was
+// getting feedback that it was taking forever and no one had any idea how long
+// it would actually take. Someone is more willing to wait for a progress bar
+// than a forever spinner." A bar is only worth more than a spinner if the
+// number under it is real, so this is measured per org and per report rather
+// than guessed.
+//
+// IT HAD TO BE DURABLE AND SHARED, and that is new. REQUEST_LOG is in memory,
+// so it empties on every deploy — and since numReplicas went to 2, each
+// container only ever sees the half of the traffic that landed on it. An
+// estimate built from that is wrong twice over. This goes through the store,
+// so it survives restarts and both replicas contribute to and read one history.
+//
+// ONLY CACHE MISSES ARE RECORDED. A hit returns in ~200ms and a miss can take
+// 60s+, so a median over the two together is a number that describes neither —
+// it just tracks the hit rate. The bar exists for the slow case; the fast case
+// never shows one at all (the client waits before drawing).
+const loadTimingFile = () => path.join(DATA_DIR, "report-load-timings.json");
+const LOAD_TIMING_KEEP = 20;          // samples per org+report
+const LOAD_TIMING_MIN_MS = 1500;      // below this it is not a real miss
+const LOAD_TIMING_MAX_MS = 300000;    // a timeout is not a duration
+let _loadTimings = null;
+let _loadTimingsDirty = false;
+
+function loadTimings() {
+  if (!_loadTimings) _loadTimings = readJSON(loadTimingFile(), {}) || {};
+  return _loadTimings;
+}
+
+function recordLoadTiming(entry) {
+  try {
+    if (!entry || !entry.org || !entry.report) return;
+    // A hit, a users-cache hit or a stale fallback did not do the work the bar
+    // is timing. Recording them would drag the estimate toward zero and the bar
+    // would then finish in two seconds and sit at 99% for a minute — which is
+    // the exact feeling this replaces.
+    if (entry.cache && entry.cache !== "miss") return;
+    if (entry.status && entry.status >= 400) return;
+    const ms = Number(entry.ms) || 0;
+    if (ms < LOAD_TIMING_MIN_MS || ms > LOAD_TIMING_MAX_MS) return;
+    const key = entry.org + "|" + entry.report;
+    const all = loadTimings();
+    const arr = all[key] = (all[key] || []);
+    arr.push(Math.round(ms));
+    if (arr.length > LOAD_TIMING_KEEP) arr.splice(0, arr.length - LOAD_TIMING_KEEP);
+    _loadTimingsDirty = true;
+  } catch {}
+}
+
+// Written on a timer, not per request: a report load is one write either way,
+// but a burst of tab switches should not be a burst of upserts.
+setInterval(() => {
+  if (!_loadTimingsDirty) return;
+  _loadTimingsDirty = false;
+  try { writeJSON(loadTimingFile(), loadTimings()); } catch {}
+}, 60 * 1000).unref?.();
+
+// THE ESTIMATE IS DELIBERATELY PESSIMISTIC — the 80th percentile, not the
+// median. The two failure modes are not symmetric: a bar that finishes early
+// snaps to 100% and reads as fast, while one that runs out of estimate stalls
+// near the end and reads as broken, which is the complaint being fixed. So it
+// would rather be too slow than too fast.
+function percentile(sorted, p) {
+  if (!sorted.length) return 0;
+  const i = Math.min(sorted.length - 1, Math.floor(sorted.length * p));
+  return sorted[i];
+}
+
+// Platform-wide fallback for an org+report with no history of its own — a new
+// org, or a report nobody here has run yet. Falls back in three steps: this
+// org's own history, then everyone's history for this REPORT TYPE (a facility
+// card is slow everywhere), then a flat default. Each step is a weaker claim
+// than the last, and `basis` says which one answered so the client is never
+// guessing about how much to trust it.
+const LOAD_TIMING_DEFAULT_MS = 12000;
+const LOAD_TIMING_MIN_SAMPLES = 3;
+
+function loadEstimateFor(orgSlug, reportType) {
+  const all = loadTimings();
+  const own = (all[orgSlug + "|" + reportType] || []).slice().sort((a, b) => a - b);
+  if (own.length >= LOAD_TIMING_MIN_SAMPLES) {
+    return { ms: percentile(own, 0.8), basis: "org", samples: own.length };
+  }
+  const pooled = [];
+  for (const k of Object.keys(all)) {
+    if (k.slice(k.indexOf("|") + 1) === reportType) pooled.push(...all[k]);
+  }
+  pooled.sort((a, b) => a - b);
+  if (pooled.length >= LOAD_TIMING_MIN_SAMPLES) {
+    return { ms: percentile(pooled, 0.8), basis: "report", samples: pooled.length };
+  }
+  return { ms: LOAD_TIMING_DEFAULT_MS, basis: "default", samples: 0 };
+}
+
+// Every page's ORG_CONFIG goes out through here, so the progress bar has its
+// estimate ON FIRST PAINT rather than after a round trip — which matters,
+// because the thing it is estimating starts the moment the page loads. A
+// separate endpoint would mean the bar had to draw before it knew its own
+// scale, i.e. exactly the guessing it replaces.
+//
+// The org and report come from the REQUEST rather than being passed in: there
+// are thirteen injection sites, and threading two more arguments through each
+// one is thirteen chances to pass the wrong report type.
+function orgConfigInject(orgConfig, req) {
+  let slug = "", rt = "";
+  try {
+    slug = (req && ((req.params && req.params.org) || req.orgSlug)) || "";
+    const parts = String((req && req.path) || "").split("/").filter(Boolean);
+    // /:org/:report/... — the second segment names the report. A bare /:org is
+    // the dashboard, which fetches no feed and shows no bar.
+    rt = (req && req.reportType) || parts[1] || "";
+  } catch {}
+  const cfg = Object.assign({}, orgConfig, { loadEstimate: loadEstimateFor(slug, rt) });
+  return `<script>window.ORG_CONFIG=${JSON.stringify(cfg)};</script>`;
 }
 
 const cacheStats = { hits: 0, misses: 0, prewarms: 0, prewarmSkips: 0, prewarmAborts: 0, healthCacheHits: 0, healthProbes: 0 };
@@ -8726,7 +8845,7 @@ app.get("/:org/lessons", (req, res) => {
     token: org.token || "",
   };
   const html = require("fs").readFileSync(path.join(__dirname, "public", "lessons.html"), "utf8");
-  res.type("html").send(html.replace("</head>", `<script>window.ORG_CONFIG=${JSON.stringify(orgConfig)};</script></head>`));
+  res.type("html").send(html.replace("</head>", () => orgConfigInject(orgConfig, req) + "</head>"));
 });
 
 const lnum = (v) => { const n = parseFloat(String(v ?? "").replace(/,/g, "")); return isNaN(n) ? 0 : n; };
@@ -10189,7 +10308,7 @@ app.get("/:org/facility", (req, res) => {
   logEvent(slug, "facility", "view", req);
   const orgConfig = { defaultDateRange: org.facility?.defaultDateRange || "month", defaultLocationFilter: org.facility?.defaultLocationFilter || null, emailEnabled: EMAIL_ENABLED_ORGS.has(slug) };
   const html = require("fs").readFileSync(path.join(__dirname, "public", "facility.html"), "utf8");
-  res.send(html.replace("<head>", `<head><script>window.ORG_CONFIG=${JSON.stringify(orgConfig)};</script>`));
+  res.send(html.replace("<head>", () => "<head>" + orgConfigInject(orgConfig, req)));
 });
 
 // Facilities hub (WIP stub) — Programs-style summary + vertical sub-tabs.
@@ -10227,7 +10346,7 @@ app.get("/:org/facilities", (req, res) => {
     },
   };
   const html = require("fs").readFileSync(path.join(__dirname, "public", "facilities.html"), "utf8");
-  res.send(html.replace("<head>", `<head><script>window.ORG_CONFIG=${JSON.stringify(orgConfig)};</script>`));
+  res.send(html.replace("<head>", () => "<head>" + orgConfigInject(orgConfig, req)));
 });
 
 // ── GET /:org/facilities/api/campsites — campsite geo for the Camping tab map ──
@@ -10484,7 +10603,7 @@ app.get("/:org/gl", (req, res) => {
   const orgConfig = { emailEnabled: EMAIL_ENABLED_ORGS.has(slug), tyler: getTylerConfig(slug), munis: munisExportEnabled(slug),
                       savedViewRanges: SAVED_VIEW_RELATIVE_OFFER.gl };
   const html = require("fs").readFileSync(path.join(__dirname, "public", "gl.html"), "utf8");
-  res.send(html.replace("<head>", `<head><script>window.ORG_CONFIG=${JSON.stringify(orgConfig)};</script>`));
+  res.send(html.replace("<head>", () => "<head>" + orgConfigInject(orgConfig, req)));
 });
 
 // ── GET /:org/facility/api/permits — which rows have an issued permit ───────
@@ -10777,7 +10896,7 @@ app.get("/:org/programs", (req, res) => {
     knownSeasons: (_orgSeasonList[slug] || {}).seasons || [],
   };
   const html = require("fs").readFileSync(path.join(__dirname, "public", "programs.html"), "utf8");
-  const inject = `<script>window.ORG_CONFIG=${JSON.stringify(orgConfig)};</script>`;
+  const inject = orgConfigInject(orgConfig, req);
   res.type("html").send(html.replace("</head>", inject + "</head>"));
 });
 
@@ -10832,7 +10951,7 @@ app.get("/:org/roster", (req, res) => {
     },
   };
   const html = require("fs").readFileSync(path.join(__dirname, "public", "roster.html"), "utf8");
-  res.type("html").send(html.replace("<head>", `<head><script>window.ORG_CONFIG=${JSON.stringify(orgConfig)};</script>`));
+  res.type("html").send(html.replace("<head>", () => "<head>" + orgConfigInject(orgConfig, req)));
 });
 
 app.get("/:org/directors-report", async (req, res) => {
@@ -10848,7 +10967,7 @@ app.get("/:org/directors-report", async (req, res) => {
     token: org.token || "",
   };
   const html = require("fs").readFileSync(path.join(__dirname, "public", "directors-report.html"), "utf8");
-  const inject = `<script>window.ORG_CONFIG=${JSON.stringify(orgConfig)};</script>`;
+  const inject = orgConfigInject(orgConfig, req);
   res.type("html").send(html.replace("</head>", inject + "</head>"));
 });
 
@@ -11583,7 +11702,7 @@ app.get("/:org/court-utilization", (req, res) => {
     coords: org.coords || null,
   };
   const html = require("fs").readFileSync(path.join(__dirname, "public", "court-utilization.html"), "utf8");
-  const inject = `<script>window.ORG_CONFIG=${JSON.stringify(orgConfig)};</script>`;
+  const inject = orgConfigInject(orgConfig, req);
   res.type("html").send(html.replace("</head>", inject + "</head>"));
 });
 
@@ -13719,7 +13838,7 @@ app.get("/:org/instructor-payout", (req, res) => {
   const slugTitle = slug.charAt(0).toUpperCase() + slug.slice(1);
   const orgConfig = { slug, displayName: org.displayName || `${slugTitle} Parks & Recreation`, logoUrl: org.logoUrl || "", token: org.token || "" };
   const html = require("fs").readFileSync(path.join(__dirname, "public", "instructor-payout.html"), "utf8");
-  const inject = `<script>window.ORG_CONFIG=${JSON.stringify(orgConfig)};</script>`;
+  const inject = orgConfigInject(orgConfig, req);
   res.type("html").send(html.replace("</head>", inject + "</head>"));
 });
 
@@ -13738,7 +13857,7 @@ app.get("/:org/users", (req, res) => {
     token: org.token || "",
   };
   const html = require("fs").readFileSync(path.join(__dirname, "public", "users.html"), "utf8");
-  const inject = `<script>window.ORG_CONFIG=${JSON.stringify(orgConfig)};</script>`;
+  const inject = orgConfigInject(orgConfig, req);
   res.type("html").send(html.replace("</head>", inject + "</head>"));
 });
 
@@ -13758,7 +13877,7 @@ app.get("/:org/chat", (req, res) => {
     token: org.token || "",
   };
   const html = require("fs").readFileSync(path.join(__dirname, "public", "chat.html"), "utf8");
-  const inject = `<script>window.ORG_CONFIG=${JSON.stringify(orgConfig)};</script>`;
+  const inject = orgConfigInject(orgConfig, req);
   res.type("html").send(html.replace("</head>", inject + "</head>"));
 });
 
@@ -13792,7 +13911,7 @@ app.get("/:org/report-wizard", (req, res) => {
     sourceGrain: WIZARD_SOURCE_GRAIN,
   };
   const html = require("fs").readFileSync(path.join(__dirname, "public", "report-wizard.html"), "utf8");
-  const inject = `<script>window.ORG_CONFIG=${JSON.stringify(orgConfig)};</script>`;
+  const inject = orgConfigInject(orgConfig, req);
   res.type("html").send(html.replace("</head>", inject + "</head>"));
 });
 
@@ -14164,7 +14283,7 @@ app.get("/:org", async (req, res, next) => {
   if (!orgConfig.pulse) refreshOrgPulse(slug).catch(() => {});
   orgConfig.goals = getGoals(slug);
   const html = require("fs").readFileSync(path.join(__dirname, "public", "org.html"), "utf8");
-  const inject = `<script>window.ORG_CONFIG=${JSON.stringify(orgConfig)};</script>`;
+  const inject = orgConfigInject(orgConfig, req);
   res.type("html").send(html.replace("</head>", inject + "</head>"));
 });
 
@@ -17323,12 +17442,12 @@ app.get("/", (req, res) => {
 
             <!-- Row 3: Server Box -->
             <rect x="28" y="198" width="762" height="140" rx="10" fill="#fff" stroke="#6366f1" stroke-width="2"/>
-            <text x="40" y="218" font-size="11" font-weight="700" fill="#4338ca">&#9881;&#65039; Railway Pro &#8212; Node.js / Express</text>
+            <text x="40" y="218" font-size="11" font-weight="700" fill="#4338ca">&#9881;&#65039; Railway Pro &#8212; Node.js / Express &#183; 2 replicas, rolling deploys (no volume)</text>
 
             <!-- Server modules -->
             <rect x="40" y="228" width="100" height="44" rx="6" fill="#eef2ff" stroke="#c7d2fe"/>
             <text x="90" y="246" text-anchor="middle" font-size="9" font-weight="600" fill="#4338ca">React/Babel CDN</text>
-            <text x="90" y="260" text-anchor="middle" font-size="8" fill="#6366f1">15 report HTML files</text>
+            <text x="90" y="260" text-anchor="middle" font-size="8" fill="#6366f1">41 report HTML files</text>
 
             <rect x="150" y="228" width="100" height="44" rx="6" fill="#eef2ff" stroke="#c7d2fe"/>
             <text x="200" y="246" text-anchor="middle" font-size="9" font-weight="600" fill="#4338ca">Metabase Proxy</text>
@@ -17365,7 +17484,7 @@ app.get("/", (req, res) => {
 
             <rect x="260" y="282" width="105" height="38" rx="6" fill="#ecfdf5" stroke="#6ee7b7"/>
             <text x="312" y="300" text-anchor="middle" font-size="9" font-weight="600" fill="#065f46">Usage Analytics</text>
-            <text x="312" y="312" text-anchor="middle" font-size="8" fill="#047857">events.jsonl + metrics</text>
+            <text x="312" y="312" text-anchor="middle" font-size="8" fill="#047857">96k events in Postgres</text>
 
             <rect x="375" y="282" width="95" height="38" rx="6" fill="#ecfdf5" stroke="#6ee7b7"/>
             <text x="422" y="300" text-anchor="middle" font-size="9" font-weight="600" fill="#065f46">Rec AI Chat</text>
@@ -17385,20 +17504,25 @@ app.get("/", (req, res) => {
 
             <!-- Row 4: Data Layer -->
             <text x="28" y="372" font-size="9" fill="#888" font-weight="600" letter-spacing="1">DATA LAYER</text>
-            <rect x="28" y="380" width="230" height="62" rx="8" fill="#fff" stroke="#e4e4e0" stroke-width="1.5"/>
-            <text x="143" y="400" text-anchor="middle" font-size="19">&#128202;</text>
-            <text x="143" y="416" text-anchor="middle" font-size="10.5" font-weight="600" fill="#2c2c2c">Metabase (Public Card API)</text>
-            <text x="143" y="428" text-anchor="middle" font-size="8.5" fill="#888">12 shared + per-org parameterized queries</text>
+            <rect x="28" y="380" width="182" height="62" rx="8" fill="#fff" stroke="#e4e4e0" stroke-width="1.5"/>
+            <text x="119" y="400" text-anchor="middle" font-size="19">&#128202;</text>
+            <text x="119" y="416" text-anchor="middle" font-size="10.5" font-weight="600" fill="#2c2c2c">Metabase (Public Card API)</text>
+            <text x="119" y="428" text-anchor="middle" font-size="8.5" fill="#888">13 shared + per-org queries</text>
 
-            <rect x="278" y="380" width="230" height="62" rx="8" fill="#fff" stroke="#e4e4e0" stroke-width="1.5"/>
-            <text x="393" y="400" text-anchor="middle" font-size="19">&#128024;</text>
-            <text x="393" y="416" text-anchor="middle" font-size="10.5" font-weight="600" fill="#2c2c2c">rec.us PostgreSQL</text>
-            <text x="393" y="428" text-anchor="middle" font-size="8.5" fill="#888">Platform database (all orgs)</text>
+            <rect x="218" y="380" width="182" height="62" rx="8" fill="#fff" stroke="#e4e4e0" stroke-width="1.5"/>
+            <text x="309" y="400" text-anchor="middle" font-size="19">&#128024;</text>
+            <text x="309" y="416" text-anchor="middle" font-size="10.5" font-weight="600" fill="#2c2c2c">rec.us PostgreSQL</text>
+            <text x="309" y="428" text-anchor="middle" font-size="8.5" fill="#888">Platform database (read replica)</text>
 
-            <rect x="528" y="380" width="262" height="62" rx="8" fill="#fff" stroke="#e4e4e0" stroke-width="1.5"/>
-            <text x="659" y="400" text-anchor="middle" font-size="19">&#9729;&#65039;</text>
-            <text x="659" y="416" text-anchor="middle" font-size="10.5" font-weight="600" fill="#2c2c2c">External Services</text>
-            <text x="659" y="428" text-anchor="middle" font-size="8.5" fill="#888">Anthropic API &#183; rec.us MCP &#183; GitHub &#183; Resend</text>
+            <rect x="408" y="380" width="182" height="62" rx="8" fill="#eff6ff" stroke="#3b82f6" stroke-width="2"/>
+            <text x="499" y="400" text-anchor="middle" font-size="19">&#128451;&#65039;</text>
+            <text x="499" y="416" text-anchor="middle" font-size="10.5" font-weight="600" fill="#1d4ed8">App State Store</text>
+            <text x="499" y="428" text-anchor="middle" font-size="8.5" fill="#2563eb">Config &#183; events &#183; feed cache, shared</text>
+
+            <rect x="598" y="380" width="192" height="62" rx="8" fill="#fff" stroke="#e4e4e0" stroke-width="1.5"/>
+            <text x="694" y="400" text-anchor="middle" font-size="19">&#9729;&#65039;</text>
+            <text x="694" y="416" text-anchor="middle" font-size="10.5" font-weight="600" fill="#2c2c2c">External Services</text>
+            <text x="694" y="428" text-anchor="middle" font-size="8.5" fill="#888">Anthropic &#183; MCP &#183; GitHub &#183; Resend</text>
 
             <!-- Row 5: Langfuse Observability -->
             <text x="28" y="462" font-size="9" fill="#888" font-weight="600" letter-spacing="1">AI OBSERVABILITY</text>
@@ -17432,12 +17556,32 @@ app.get("/", (req, res) => {
 
         <p>The server proxies all Metabase requests server-side &#8212; staff browsers never interact with Metabase directly. This eliminates CORS issues (Metabase OSS doesn&#x27;t send browser-friendly headers) and keeps database query UUIDs hidden from the client.</p>
 
+        <h4 style="margin-top:20px">&#128451;&#65039; State, replicas and deploys</h4>
+        <p>The app used to keep its own state &#8212; org config, the event log and the warm feed cache &#8212; on a Railway volume. <strong>A volume attaches to a single instance</strong>, so the service was pinned to one replica and every deploy was necessarily stop-then-start: the old container had to release the disk before the new one could take it, and no health check can hide that gap.</p>
+        <p>That state now lives in the app&#x27;s own Postgres, which both replicas read and write. The volume is gone, the service runs <strong>two replicas</strong>, and deploys are rolling &#8212; requests are served throughout.</p>
+        <ul>
+          <li><strong>The feed cache is shared.</strong> A replacement container starts with the platform&#x27;s warm cache instead of its own empty disk, and a request landing on either replica is answered from the same rows.</li>
+          <li><strong>Scheduled work runs once, not twice.</strong> Prewarm, the health check, the schema and card-drift watchdogs, the nightly backup and the daily Slack digest each take a Postgres advisory lock. The lock <em>fails open</em> on purpose: a duplicated cycle is a nuisance, a platform that silently stops watching itself is not.</li>
+          <li><strong>Config changes propagate in about four seconds.</strong> Each replica polls for rows newer than its cursor, so an org added or a flag flipped on one is live on the other without a restart.</li>
+          <li><strong>Two things deliberately stay on local disk:</strong> the memory-residency hint (a per-container heuristic, not shared state) and uploaded announcement images (binary, and they do not belong in a JSON column).</li>
+        </ul>
+        <p>Rollback is an environment variable rather than a deploy: <code>STORE_MODE</code> takes <code>disk</code>, <code>dual</code> (write both, read the volume) or <code>db</code>. With no database URL at all the app runs exactly as it did before any of this existed. See <code>docs/DB-MIGRATION-RUNBOOK.md</code>.</p>
+
+        <h4 style="margin-top:20px">&#9203; Waiting for a slow report</h4>
+        <p>Reports are backed by large Metabase queries, and a cold one can genuinely take half a minute. Every report now shows the same <strong>progress bar</strong>, and its estimate is measured rather than invented: the server keeps the last 20 cache-miss durations for each org and report and takes the 80th percentile, so the bar knows roughly how long <em>this</em> report has actually taken for <em>this</em> org.</p>
+        <ul>
+          <li><strong>It never reaches 100% on its own.</strong> Past the estimate it keeps advancing but asymptotically, and says &#x201C;longer than usual&#x201D;. A bar that fills and then sits there has told the reader something they can see is false.</li>
+          <li><strong>A fast load shows nothing at all.</strong> A warm cache answers in about 200ms; flashing a bar for a fifth of a second reads as a glitch and makes a quick report feel slow.</li>
+          <li><strong>With no history it prints no estimate</strong> &#8212; a default dressed up as &#x201C;about 30s&#x201D; is a promise that cannot be kept.</li>
+        </ul>
+
         <h4>Access &amp; Security</h4>
         <p>Multiple layers of access control protect this deployment:</p>
         <ul>
           <li><strong>Admin dashboard</strong> (this page, at <code>/</code>) is gated by HTTP Basic auth using the <code>DASHBOARD_PASSWORD</code> env var. Only authorized rec.us staff see the full org list, subscriber counts, and access tokens.</li>
           <li><strong>Per-org reports</strong> are protected by 16-character access tokens. Every <code>/:org/*</code> URL requires <code>?token=...</code> matching the org&#x27;s configured token; a mismatch returns a generic 404 (no info leak about which orgs exist). Tokens are embedded in the URLs each org receives, so staff can bookmark and share without re-authenticating.</li>
-          <li><strong>PII protection</strong> &#8212; API responses strip email addresses, phone numbers, and full names before reaching the browser. CSV exports are disabled; data requests route through a Partner Support modal.</li>
+          <li><strong>PII protection</strong> &#8212; the PUBLIC surfaces (the org calendar and the rental calendar, which carry no token) strip email addresses, phone numbers, names and notes per row before anything reaches the browser.</li>
+          <li><strong>Exports are enabled behind the token</strong>, and every one is logged. Contact lists, panel chart data, the multi-sheet workbook, the ePACT participant file and Fast Track&#x27;s per-section list all beacon to the Slack activity feed with the segment and the row count &#8212; so a list leaving the platform is a recorded event rather than an invisible one. (This reverses the earlier &#x201C;CSV exports are disabled&#x201D; posture and its Partner Support modal, which is deleted.)</li>
         </ul>
         <p>Tokens are visible in the &#129312; <strong>Access Token</strong> row on each org card &#8212; click <strong>Copy landing URL</strong> to grab a tokenized link ready to share. The <code>/api/*</code> admin endpoints, the cross-org <code>/metrics</code> view, and the public <code>/hotdog</code> page are whitelisted from the token gate.</p>
 
