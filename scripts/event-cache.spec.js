@@ -67,9 +67,15 @@ function build(file) {
     parse(t) { counter.parses++; return JSON.parse(t); },
     stringify: JSON.stringify,
   };
-  const api = new Function("fs", "EVENTS_FILE", "JSON",
+  // loadEventCache now asks the store first, so the slice needs one — a slice
+  // that reaches past its own inputs dies with a bare ReferenceError instead of
+  // failing by name, which is a trap this repo has recorded five times. The stub
+  // declines (disk mode), so what is exercised below is still the byte-offset
+  // tail this spec was written for.
+  const stateStore = { eventsReady: () => false, allEvents: () => [], eventsSorted: () => true };
+  const api = new Function("fs", "EVENTS_FILE", "JSON", "stateStore",
     body + "\nreturn { readEvents, eventCache, loadEventCache };"
-  )(fs, file, countingJSON);
+  )(fs, file, countingJSON, stateStore);
   api.counter = counter;
   return api;
 }

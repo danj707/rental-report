@@ -4904,11 +4904,241 @@ guess is silent and wrong in a finance document, and the sign-off gate needed to
 retire that risk is most of the cost of the work. An index gets the same speed
 while the numbers keep coming from the definition finance already trusts.
 
-## PINNED: seamless deploys — it is the VOLUME, not the health check (2026-09-04)
+## SEAMLESS DEPLOYS — BUILT AND QUEUED, INERT UNTIL THE ENV SAYS SO (2026-09-05)
+
+Dan: *"queue everything up so when I say 'engage' tomorrow AM, we flip to the new
+DB model"*, with *"we have some wiggle room, no one is using this on a sunday
+AM"*, and the longer arc: *"including the eventual flip to an API and semantic
+layer model."*
+
+**Runbook: `docs/DB-MIGRATION-RUNBOOK.md`.** Read that to perform the flip; this
+section is why it is shaped the way it is.
+
+### IT SHIPS DOING NOTHING, and that is the whole delivery strategy
+
+With no `DATABASE_URL`/`STORE_DATABASE_URL` the server runs in `disk` mode, which
+is byte-identical to the behaviour before `lib/store.js` existed. So this can
+merge and deploy on any day, and the flip is a sequence of **environment**
+changes — each one reversible without a code change:
+
+| mode | writes | reads | rollback |
+|---|---|---|---|
+| `disk` | the volume | the volume | — (this is today) |
+| `dual` | **both** | the volume | drop two env vars |
+| `db` | both | **Postgres** | `STORE_MODE=dual` |
+
+There is deliberately no fourth "Postgres only" mode. Dropping the disk write
+buys nothing while the volume is mounted, and once it is detached those writes
+land harmlessly on the container's own filesystem.
+
+### THE SEAMS ALREADY EXISTED, which is why this is a swap and not a rewrite
+
+| what was on the volume | the seam | call sites |
+|---|---|---|
+| ~30 config blobs | `readJSON` / `writeJSON` | 46 reads, 35 writes |
+| `events.jsonl` (23 MB, ~600 lines/day) | `readEvents(daysBack)` | 18 readers |
+| the feed cache | `getDiskCached` / `setCache` / `hydrate` | those three |
+| Metabase (the *next* project) | `fetchMBDirect` | 21 |
+
+**Both config seams are SYNCHRONOUS and Postgres is not**, and that constraint
+shapes the whole module: reads come from an in-memory mirror loaded at boot,
+writes update it synchronously and enqueue the upsert. The alternative was making
+81 call sites async to move a few kilobytes of JSON.
+
+About twenty raw `fs` sites bypassed `readJSON`/`writeJSON` and were routed
+through it (campmap and rental-map positions, votes, update-votes, health, health
+config, orgs, showcase, the QBR snapshots, the backup gist id). **Two stores
+deliberately do NOT move:**
+
+* **`cache-access.json` stays on disk** — a per-replica heuristic about which
+  reports are worth holding resident in *this* container's memory. Two replicas
+  each writing a full snapshot of their own access log into one row every five
+  minutes would simply overwrite each other. What resets on a container swap is a
+  residency preference, not warm data.
+* **`announce-images/` stays on disk**, being binary. **Consequence, named in the
+  runbook rather than discovered: images uploaded before the volume is detached
+  will 404 afterwards.** It is the one piece of real data this does not carry.
+
+### POSTGRES ONLY — reversing my own recommendation
+
+I argued for Redis for the feed cache, on TTL support and vacuum churn. Costed
+properly the churn is ~84 prewarmed keys rewritten six times a day, which is
+nothing for autovacuum, and TTL is one timestamp column the readers already
+compute. One service is one URL and one failure mode. Every cache read and write
+goes through `cacheGet`/`cacheSet`/`cacheAll`, so Redis drops in there if it ever
+earns its place.
+
+### The decisions that are load-bearing
+
+* **An unreachable database FALLS BACK to the volume** rather than failing the
+  boot. The flip must be able to be a no-op, never an outage.
+* **In `db` mode a key the mirror has never seen falls through to DISK**, not to
+  the default. *"Postgres has no row"* and *"this org has no settings"* are
+  different facts, and defaulting would silently reset every store the import
+  missed. Same rule as `hasAbsent` / `ciHasStatus`.
+* **`withLeaderLock` fails OPEN.** A duplicated prewarm is a wasted cycle; a
+  database blip that silently stops the health check, the schema watchdog and the
+  digest is a platform that has gone quiet with nobody told. Same asymmetry as
+  the Slack production gate, and pinned for the same reason.
+* **It takes a TRANSACTION-scoped advisory lock, not a session one.** `pg.Pool`
+  hands out a different connection each time, so a session lock would be taken on
+  one connection and unlocked on another — and the COMMIT is what releases it,
+  which is why a client returned to the pool without one leaks the lock.
+* **`appendEvent` does NOT push the record locally.** Pushing it and advancing
+  the cursor is only safe while every insert is the very next id, which two
+  replicas guarantee it is not — the next poll then hands the same record back
+  and the log double-counts. Every event arrives by exactly one path (the poll),
+  and the insert kicks that poll so the writer sees it in ~150 ms.
+* **The store tracks ts ordering**, so `readEvents`'s binary search stays valid.
+  Handing it an unsorted array would silently fall back to a linear filter over
+  82k records, which is exactly what the byte-offset tail was added to avoid.
+* **The import is idempotent** (`ON CONFLICT DO NOTHING`) because a flip gets
+  retried, and it copies the **warm cache** too — an empty cache on a Sunday
+  morning is ~28 orgs of cold card queries against production Metabase.
+* **The cache sweeper is deliberately generous** (a week past expiry).
+  `getStaleCached` serves expired entries when Metabase is down, so deleting at
+  the TTL removes the safety net exactly when it is needed.
+* **The daily gist backup follows the store.** In `db` mode the container's disk
+  holds only what *this* replica wrote, so walking the directory would quietly
+  start backing up a fraction of the platform's state — worse than a backup that
+  is obviously broken.
+
+### `dashboardAuth` GUARDS ONLY `/` — passing it as route middleware is decorative
+
+Caught on the PR preview, not in review or by any spec: `/api/admin/store`
+answered **200 with no credentials** while `/` correctly 401'd. The reason is one
+line at the top of `dashboardAuth`:
+
+```js
+if (req.path !== '/') return next();
+```
+
+So it returns `next()` for every other path, and adding it to a route protects
+nothing. The read leaks internal state and the POST beside it kicks off a full
+import against the platform's config, so both are gated by hand now
+(`adminPasswordOk`), accepting either the Basic header or an explicit password.
+
+**IT FAILS CLOSED**, which is the opposite of `dashboardAuth`'s *"no password →
+open access"*. That default is right for a root page in dev and wrong for these
+two — and it is not hypothetical, because a PR preview is a fresh environment
+where an unset `DASHBOARD_PASSWORD` is the normal case. Same call as
+`reportSettingsAdminKey()`.
+
+`lastError` is redacted on the way out even for an authenticated caller: a pg
+failure message can carry the host and user it could not reach, and this response
+is exactly the sort of thing that gets pasted into a chat mid-flip.
+
+Generalise it: **check what a shared auth helper actually guards before reusing
+it.** Three assertions cover this now — no password, wrong password, and a server
+booted with no `DASHBOARD_PASSWORD` at all — and all three fail on the shipped
+bug.
+
+### A POLLED CHANGE HAS TO REACH MODULE-LEVEL STATE, and the spec found that
+
+Most config is read on demand, so refreshing the mirror is enough. Four stores
+are not: `orgs.json` is folded into a module-level `ORGS` object at boot, and the
+three map-position blobs into `let`s. Without `onKeyChange` → `refreshCachedStores`
+**an org added on replica A is "Unknown org" on replica B until B restarts** —
+the same shape as the `town-of-shrewsbury` link that 404'd for five weeks.
+Found by `store-live.spec.js`, not by review.
+
+### Guards
+
+`scripts/store.spec.js` (**49 assertions, in CI**) lifts and RUNS the module
+against a real Postgres. `scripts/store-live.spec.js` (**40 assertions, in CI**)
+boots `server.js` twice and drives the real routes — a different claim, and the
+one that decides whether the flip works: that server.js reads *through* the store
+rather than around it.
+
+**Both SKIP their database half with a message when `STORE_TEST_URL` is unset,
+rather than passing.** A spec that reports success without having connected is
+the warm-cache sign-off this file already has a rule about. The disk half of
+`store-live` still runs, because *"disk mode is unchanged"* is the claim that
+matters on every PR.
+
+Mutation-tested twenty ways in total, all failing by name — including the flush
+clearing its queue before the upserts land, `flush()` not joining the run in
+progress, the poll ignoring in-flight writes, `appendEvent` pushing locally, no
+leader lock, the lock never released, `db` mode defaulting instead of falling
+through, `dual` mode reading the database, an unreachable database not falling
+back, the import walking `announce-images`, the import overwriting on a re-run, a
+cache grace of zero falling back to seven days, events written to BOTH backends,
+`readEvents` ignoring the store, a polled org never reaching `ORGS`, `storeBoot`
+not re-reading config, `STORE_MODE=db` ignored, and a new container not
+hydrating the shared cache.
+
+**Two bugs in code I had already convinced myself was right**, both found by
+writing the spec:
+
+* `graceMs || DEFAULT` turned a deliberate grace of **zero** back into seven days.
+* **`await flush()` returned immediately when a flush was already running** —
+  which is the normal case, since `writeJSON` kicks one without awaiting it — so
+  `close()` could end the pool mid-drain and lose whatever was queued when the
+  container was told to stop. That is precisely the window this project exists to
+  close.
+
+**And the race test took three drafts.** A single replica writing in a burst
+cannot discriminate: a replica's own upsert returns the rev it just wrote, so its
+poll never fetches its own row back. Two replicas writing freely repairs the
+divergence by accident on the next poll. It only reproduces when the poll's
+SELECT is **issued first** and is still in flight as the write queues — so the
+spec drives the poll by hand at that instant, with a pre-assertion that the other
+replica's row really is committed, because without it the whole case passes
+vacuously on a build that has the bug.
+
+**Two live mutations survive by construction and are labelled as such**, rather
+than dressed up: the cache WRITE path needs a Metabase stub this harness does not
+have, and the SIGTERM drain cannot be timed over an HTTP round trip. Both are
+pinned by the unit spec plus an explicitly-marked `[source]` assertion.
+
+### Two pre-existing specs had to be taught about the change
+
+* **`event-cache.spec.js` DIED instead of failing** — it slices `loadEventCache`
+  out of server.js and evals it, and that function now asks the store first, so
+  the slice threw a bare `ReferenceError: stateStore is not defined`. **Sixth
+  instance of a slice reaching past its own inputs**, and the fourth where a
+  guard dies instead of failing by name. It injects a declining stub now, so what
+  it tests — the byte-offset tail — is unchanged.
+* **`card-drift.spec.js` pinned the literal cron line**, so wrapping it in
+  `leaderCron` broke an assertion with nothing about drift having changed. It
+  matches on the two facts that matter (the time, and that it calls
+  `checkCardParamTypes`) rather than on the wrapper.
+
+### The import is named `stateStore`, not `store`
+
+server.js already has two locals called `store` (the game-scores blob). A
+shadowed module reference is the readability trap that only surfaces as a bug
+months later, when someone adds `store.readsDb()` inside one of those blocks and
+silently gets a leaderboard.
+
+### NOT DONE, and the sequencing is the point
+
+**Step 4 of the runbook — detaching the volume and raising `numReplicas` — is a
+Railway change, not a code one, and has not been made.** Until it is, this is all
+inert plumbing.
+
+**The API + semantic layer flip is deliberately AFTER this**, for two measured
+reasons rather than tidiness:
+
+* Every table in the `materialized` schema has exactly one index, its primary
+  key. Going direct today inherits the same seq scans **without** the 4-hour
+  cache hiding them — the finding that killed the Report Wizard.
+* A direct connection is only safe once the cache is SHARED. With two replicas
+  and a per-container cache, every miss doubles.
+
+Both are fixed by the steps above, which is what makes that flip cheaper
+afterwards than it would be now. It sits behind `fetchMBDirect` (21 call sites)
+and wants the same equivalence gate every card change here gets: FULL OUTER JOIN
+old against new, zero row-level and field-level diffs, totals to the cent.
+
+## The seamless-deploys diagnosis, as originally pinned (2026-09-04) — BUILT, see above
 
 Dan: *"any way to get to a seamless style of deployment, where adding a new
 feature or deploying didn't take down the whole reporting project?"* Then:
 *"pin the seamless deploys, might tackle it this weekend."*
+
+**Kept because what it RULED OUT is the useful part** — three things that look
+like the cause and are not. The build is the section above.
 
 **WHAT IS ALREADY FINE, so nobody re-does it:**
 

@@ -272,7 +272,12 @@ test("param-drift is wired into Slack with a debounce and a message", () => {
 });
 
 test("the check is scheduled daily and once after boot", () => {
-  assert.ok(/cron\.schedule\("40 5 \* \* \*", \(\) => \{ checkCardParamTypes\(\)/.test(src));
+  // Scheduled at 5:40 and — since the store landed — through leaderCron, so
+  // two replicas do not both run the drift check. Matched on the two facts
+  // that matter (the time, and that it calls checkCardParamTypes) rather than
+  // on the exact wrapper, which is what made this assertion break on a change
+  // that had nothing to do with drift.
+  assert.ok(/cron\.schedule\("40 5 \* \* \*",[^\n]*checkCardParamTypes\(\)/.test(src));
   assert.ok(/setTimeout\(\(\) => \{ checkCardParamTypes\(\)\.catch\(\(\) => \{\}\); \}, 150 \* 1000\)/.test(src));
 });
 

@@ -109,6 +109,18 @@ jobs:
       - name: Event log cache spec (fresh on append; never re-parses the whole log)
         run: node scripts/event-cache.spec.js
 
+      # The durable store. Both SKIP their database half without STORE_TEST_URL
+      # rather than passing — a spec that reports success without having
+      # connected is the warm-cache sign-off this repo has a rule about. The
+      # disk half of store-live still runs here, and "disk mode is unchanged" is
+      # the claim that matters on every PR: with no DATABASE_URL, production and
+      # every preview take exactly the path they always took.
+      - name: Store spec (config, events, feed cache and the leader lock)
+        run: node scripts/store.spec.js
+
+      - name: Store wiring spec (server.js reads through the store, not around it)
+        run: node scripts/store-live.spec.js
+
       - name: Fast Track conversion spec (measured against the spots open to FT, not all holds)
         run: node scripts/fasttrack-conv.spec.js
 
