@@ -89,8 +89,34 @@ exactly as it did — because it is still reading the volume.
 
 **Undo:** remove `STORE_MODE` and `STORE_DATABASE_URL`. Back to disk, instantly.
 
-**To re-run the import** (idempotent — it never overwrites a row that already
-exists): `POST /api/admin/store/import`. No redeploy needed.
+**Run the import from the LIVE server**, not from a boot flag:
+
+```
+curl -X POST '<production URL>/api/admin/store/import' \
+  -H 'Content-Type: application/json' \
+  -d '{"password":"<the admin dashboard password>"}'
+```
+
+It answers with the counts — `{"keys":N,"skipped":0,"events":M,"cache":C,"errors":[]}`
+— and logs `[store] import: {...}`. Idempotent for config and the cache: neither
+overwrites a row that already exists.
+
+**The event resume is count-based**, so it only works when `events` holds
+nothing but rows a previous import of this file put there. If the table has
+stray rows the import skips that many of the file's OLDEST lines. Add
+`"resetEvents": true` to truncate the table first and re-import the whole log —
+opt-in, never the default, because truncating an event log by accident is
+unrecoverable.
+
+**In `dual`, events are written to the VOLUME, not to Postgres.** The volume is
+the authority in this mode and it is what `readEvents` reads, so the log keeps
+growing where the readers look. Postgres gets the whole log once, when you run
+the import. (The first version of this took the record in dual too — events went
+to Postgres, nothing read them, and the volume's log silently stopped growing.)
+
+**A residual gap, named rather than discovered:** events logged between the
+import and the restart into `db` land on the volume only. Run the import as the
+last thing before flipping, and on a quiet morning that is a handful of rows.
 
 ---
 
