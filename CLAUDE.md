@@ -34,34 +34,75 @@ measured and written down that the unscoped base path times out past 60s. The
 regression was predicted in my own notes and I added a sign-off row for exactly
 that shape without connecting the two.
 
-### TWO PUBLISHED DIAGNOSES, BOTH WRONG
+### THE MECHANISM, FOUND 2026-09-06 — THE OR SPANNED THREE TABLES
 
-Recorded because they cost time and will otherwise be re-derived:
+**Full write-up with the plans and the numbers:
+`sql/report-cards/17301-v7-DIAGNOSIS.md`.** The short version:
 
-* **`orphan_items` scanning the org.** No — the plan drives off the tiny purchases
-  side and index-scans into `order` / `order_item`. Cost 20,709.
-* **The OR defeating the index.** No — Postgres hashes both subplans behind a
-  bitmap index scan on `order_item_transaction_organization_id_index`. Cost 97,210.
+v7's `tx` OR'd two predicates that **do not live on the same table** —
+`oit.order_item_id IN (win)` (on `order_item_transaction`, and separately
+indexed) OR `oi.product_type='product' AND (o.customer_user_id, oi.name) IN
+(win orphans)` (on two **joined** tables). Postgres cannot evaluate an OR until
+every column in it is available, so **both** index-usable predicates were
+demoted into a `Join Filter` on the outermost nested loop. The plan therefore
+bitmap-scans the org's **entire** `order_item_transaction` on `organization_id`,
+index-joins `order_item` and then `order` to every row, and only then filters.
 
-**Every plan prices cheap while the real card times out**, so the mechanism is still
-unknown and EXPLAIN cost estimates are not going to find it. `EXPLAIN ANALYZE` on
-the full card text (not a `count(*)`, which lets the planner drop the joins) is the
-next step, and it needs a tool without a 60s ceiling.
+**`win` appears solely as the two hashed SubPlans, evaluated LAST — so
+narrowing the window narrows nothing.** That is precisely the one-month-norman
+result, explained rather than merely recorded, and
+`order_item_transaction_order_item_id_index` is never touched.
+
+Measured at clarksville, unwindowed, 95,988 transactions and **zero orphans**
+(so arm 2 matched an empty set and it still timed out):
+
+| shape | |
+|---|---|
+| arm 1 alone, no joins | **2.7 s** |
+| arm 1 alone, with the two joins | **45.9 s** |
+| the shipped OR of both | **timeout past 200 s** |
+
+**THE TWO EARLIER DIAGNOSES WERE BOTH RIGHT ABOUT WHAT THEY LOOKED AT**, which
+is why they cleared it: `orphan_items` really does not scan the org, and the
+subplans really are hashed behind a bitmap index scan. What neither noticed is
+that the bitmap index scan is on `organization_id` **alone**, and that the
+selective predicate sits **above two nested-loop joins**. A cost estimate
+cannot show that; the plan SHAPE can. **Read `EXPLAIN (COSTS OFF)` for shape
+before reading any cost** — and prefer `BUFFERS` to wall clock on this replica,
+whose load varies enough that a bare `pg_indexes` catalog query timed out at
+60s in the middle of this session.
+
+**The fix is proven faster and is NOT built.** Never OR them: one CTE per arm,
+and drive `tx_oi` FROM the window INTO the `order_item_id` index rather than
+from the ledger — it needs **no joins at all**, since `order_item_id` and
+`amount` are both columns on `order_item_transaction`. Norman, the heaviest
+org, over the thirteen-month window: **3.5 s** against v6's 25.8 s for the
+whole card. The fallback is its own trivially cheap CTE — re-measured, there
+are still **10 orphan rows on the entire platform across 2 orgs, of 131,498**.
+A v7.1 still owes the full equivalence gate and a tag flip; **the shape is no
+longer the unknown, only the proof is.**
 
 ### WHERE IT STANDS
 
-Rollback to v6 was recommended and NOT executed — a push regenerates the date tags
-as Text and 400s the card for every org until a human flips them, so it must not be
-started while nobody is at the keyboard. The v7 fix belongs on a SCRATCH card,
-compared against 17301 through the public endpoint, so the next attempt costs no
-downtime.
+**The rollback WAS executed and card 17301 is v6 today** — re-read live
+2026-09-06: v6's SQL byte for byte, and the tag list is the correct THREE
+(`org_id` text, `start_date`/`end_date` date). This paragraph used to say the
+rollback had been recommended and not carried out, which was stale, and a note
+claiming outstanding work costs as much as one claiming work is done.
+
+The v7 mechanism is now known (above). A v7.1 is a real win and is NOT started:
+it owes the full equivalence gate over the new shape, and a push plus a date-tag
+flip that 400s the Memberships report for every org until a human re-types both
+tags. Develop it on a SCRATCH card compared against 17301 through the public
+endpoint, so the diagnosis half costs no downtime at all — as this pass did.
 
 **Also worth knowing, found on the way:** `memberships` is in `NO_DATE_REPORTS`, so
 prewarm sends `org_id` alone and asks card 17301 for the org's whole history every
 morning. The page never does — `defaultDates()` is the current calendar month — and
 prewarm's dateless entry carries a different parameter string from anything the page
-requests, so that query has always been unreadable by the page. Under v6 it was a
-wasted 25s; under v7 it is a wasted 120s abort.
+requests, so that query has always been unreadable by the page. Under v6 that is
+a wasted 25s every morning, on the heaviest card on the platform, for an answer
+nothing can read.
 
 ## The base-table payment path, as originally written up (2026-09-04)
 
