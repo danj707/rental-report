@@ -14509,7 +14509,15 @@ app.post("/api/admin/store/import", express.json(), async (req, res) => {
   // it skip that many of the file's OLDEST lines — but truncating a log by
   // accident is unrecoverable, so it has to be asked for.
   const resetEvents = !!(req.body && req.body.resetEvents);
-  try { res.json(await stateStore.importFromDisk({ resetEvents })); }
+  // The cache is re-sent in full on every call — it is the slow part by far
+  // (300s+ against production, where the config and event passes are seconds),
+  // because every cached payload goes over the wire again even though the
+  // upsert then does nothing. A top-up run does not need it, so it can be
+  // skipped: {"cache": false}. Kept ON by default, because the first import
+  // wants it — a container that starts on an empty cache is ~28 orgs of cold
+  // card queries against production Metabase.
+  const cache = !(req.body && req.body.cache === false);
+  try { res.json(await stateStore.importFromDisk({ resetEvents, cache })); }
   catch (e) { res.status(500).json({ error: e.message }); }
 });
 

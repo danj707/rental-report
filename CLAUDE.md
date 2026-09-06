@@ -492,6 +492,27 @@ fail.
   context beats being literal.
 - **Readability over cleverness**, in code and in writing. Human-sounding.
 
+### Response style for code tasks (Dan, 2026-09-06)
+
+His own words, verbatim, because they are the standard this file keeps failing:
+
+- Be concise. No multi-page explanations or walls of text.
+- Lead with a 1-2 sentence summary of what the code does or what changed.
+- Use bullet points, not prose paragraphs, for any detail.
+- Assume I'm a PM with limited dev skills: explain *what* and *why* in plain
+  language, skip deep implementation theory unless I ask.
+- Don't explain basic syntax or narrate every line.
+- If you change code, give me: what changed, why, and what I need to do next
+  (if anything) — as bullets.
+- When I ask a yes/no or quick question, answer it directly first. Expand only
+  if I follow up.
+
+**This is about CHAT, not about the record.** The long-form reasoning still goes
+in this file, in the commit message and in the PR body — that is what they are
+for, and dropping it there to be brief in chat loses the thing that stops the
+next person re-deriving a measurement. Two different audiences, two different
+lengths.
+
 ## Lindsay's three questions on court utilization (2026-09-04)
 
 Lindsay Keare, after the backcheck: *"Is there away to add util_actual to the
@@ -4903,6 +4924,120 @@ Why this was rejected: the two unknowns above are both places where a wrong
 guess is silent and wrong in a finance document, and the sign-off gate needed to
 retire that risk is most of the cost of the work. An index gets the same speed
 while the numbers keep coming from the definition finance already trusts.
+
+## THE FLIP, AS IT ACTUALLY WENT (2026-09-06)
+
+Dan: *"ENGAGE"*. Production is on **`db` mode** — config, the event log and the
+feed cache all served from Postgres. **Step 4 (delete the volume, `numReplicas:
+2`) is NOT done**; it is one click in the Railway dashboard and everything is
+verified ready for it.
+
+| | |
+|---|---|
+| Postgres service | `83964e9e-19bc-48e3-ac23-f5d0cf6c8065`, `postgres-ssl:18`, own volume |
+| config keys | **83** |
+| events | **96,779** (CLAUDE.md's old "82k" figure was stale; it grows ~600/day) |
+| feed cache | **1,725 report + 8 users** entries hydrated from the store |
+| `failsafe` | **false**, 34 active report types, 0 inactive |
+
+### IT COST A FIVE-MINUTE OUTAGE, and the defect was mine
+
+Setting `dual` + `STORE_IMPORT=1` restarted the service. `storeBoot()` **awaited
+`importFromDisk()` before `app.listen`**, so nothing listened while the import
+copied 82k events one row at a time. The healthcheck (300s) never went green,
+Railway killed the container — and because a volume forces stop-then-start, the
+old one was already gone.
+
+```
+11:23:55  [store] STORE_IMPORT=1 — importing the volume…
+11:30:33  [store] SIGTERM — draining          (deploy FAILED)
+```
+
+**I wrote `STORE_BOOT_TIMEOUT_MS` to stop boot hanging, raced `configure()` with
+it, and then awaited a far slower operation OUTSIDE that race.** A guard that
+covers the fast path and not the slow one is not a guard. Fixed four ways (PR
+#198): the import runs after `listen`, it is refused in `db` mode, the event
+insert batches 500 at a time, and the timeout now wraps the whole of `storeBoot`.
+
+**That last one immediately earned its keep.** The `db`-mode boot logged
+`boot exceeded 25000ms — listening anyway` while the cache hydrate took 85
+seconds for 2,934 entries. Without the wrapping timeout that deploy would have
+failed the healthcheck exactly like the first one.
+
+### DUAL WAS NOT DUAL FOR EVENTS (PR #199)
+
+Found in the boot log of the very next deploy: `appendEvent` returned
+`usingDb()`, true for **both** dual and db — so in dual every event went to
+Postgres and **not** to `events.jsonl`, while `readEvents` in dual still read
+the VOLUME. Events were written where nothing read them and the authoritative
+log silently stopped growing. It also broke the import's count-based resume,
+which would have skipped the file's OLDEST 21 lines.
+
+`appendEvent` takes the record in **db mode only** now. The db-mode mirror of
+that case already existed and passed throughout — **the two modes make opposite
+claims and only one was being checked**, which is why the dual case had to exist
+separately.
+
+### `dashboardAuth` GUARDS ONLY `/`
+
+Caught on the PR preview: `/api/admin/store` answered **200 with no
+credentials** while `/` correctly 401'd, because `dashboardAuth` opens with
+`if (req.path !== '/') return next();`. Passing it as route middleware protects
+nothing. Both store routes check the password by hand now and FAIL CLOSED.
+**Generalise it: check what a shared auth helper actually guards before reusing
+it.**
+
+### HOW "NOTHING WAS LOST" WAS PROVEN, not asserted
+
+In `db` mode a key Postgres lacks **falls through to disk** — so anything the
+import missed works today and breaks the moment the volume goes. The test is a
+full re-import in db mode watching the key count: **`keys` stayed at 83 for six
+minutes**, so the volume holds nothing Postgres does not.
+
+Events were cross-checked a second way: the 45-day count read from the FILE in
+dual (56,304) against POSTGRES in db (56,294) agree within ~10 over 20 minutes
+of window slide — not 2x (no duplication), not a fraction (no truncation).
+
+**The six announcement images were downloaded before anything was deleted.**
+They are the one thing the migration does not carry, and they would have been
+gone for good.
+
+### THE IMPORT'S SLOW PART IS THE CACHE
+
+Both import calls timed out at Railway's edge (153s, then 300s) — the work
+continued server-side and the counts prove it, but the response never arrived.
+The config and event passes are seconds; the **cache** re-sends every payload
+over the wire on every call even though the upsert then does nothing. A top-up
+run can now pass `{"cache": false}`. Kept ON by default, because the first
+import wants it.
+
+### Traps worth keeping
+
+- **`A || B && C && D` groups as `((A || B) && C) && D`.** A `git rebase ... ||
+  git stash && git reset --hard` chain ran the reset unconditionally and
+  discarded a working tree. Write the branches out.
+- **Railway redacts variable values for an OAuth caller** — `DASHBOARD_PASSWORD`
+  cannot be read, so admin-route calls have to come from Dan. Worth knowing
+  before planning a verification that needs it.
+- **"WAITING FOR CI" is not a wedged builder.** A deploy sat 35 minutes with no
+  build logs and I called it wedged twice; Railway was correctly holding it
+  behind the `render` check, which genuinely takes ~13 minutes. Read the deploy
+  card's own status before diagnosing.
+- **A merged PR's branch cannot take follow-up commits.** #198 squashed, so the
+  branch still carried the pre-squash commit and #199 failed to merge on a
+  conflict. Restart the branch from `main` and replay.
+
+### WHAT IS LEFT
+
+1. **Delete `rental-report-volume`** (Railway offers no detach — deletion is
+   irreversible) and set **`numReplicas: 2`**. Scaling is not exposed by the
+   Railway MCP tools, so both are dashboard actions.
+2. **Rollback to disk mode ends at that click.** Today `dual` would fall back to
+   a populated volume; afterwards `/data` is an empty container filesystem.
+   Postgres is the system of record from then on, with the daily gist as the
+   off-platform copy.
+3. **Rotate `DASHBOARD_PASSWORD`** — it passed through the session transcript.
+4. Re-upload the announcement images.
 
 ## SEAMLESS DEPLOYS — BUILT AND QUEUED, INERT UNTIL THE ENV SAYS SO (2026-09-05)
 

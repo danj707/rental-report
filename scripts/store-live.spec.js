@@ -377,6 +377,12 @@ async function q(sql, args) {
       let ns = (await q("SELECT rec->>'n' AS n FROM events ORDER BY id")).rows.map(r => r.n);
       eq(ns, [null, "2", "3"], "...so event 1 is missing and the stray row is still there");
 
+      // {"cache": false} skips the cache pass — the slow one, and the reason a
+      // top-up import against production took 300s+ and timed out at the edge
+      // while the config and event passes were seconds.
+      const noCache = await req(41114, "POST", "/api/admin/store/import", {}, { password: PASSWORD, cache: false });
+      eq(noCache.json && noCache.json.cache, 0, "cache:false skips the cache pass");
+
       const reset = await req(41114, "POST", "/api/admin/store/import", {}, { password: PASSWORD, resetEvents: true });
       eq(reset.json && reset.json.eventsCleared, 3, "resetEvents reports what it truncated");
       eq(reset.json && reset.json.events, 3, "...and re-imports the whole file");
