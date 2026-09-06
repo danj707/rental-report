@@ -159,9 +159,6 @@
       .ft-pulse, .ft-blaze, .ft-ember, .ft-flame { animation: none; }
       .ft-flames.blazing::before { animation: none; opacity: .5; }
     }
-    .juice-msg { font-size: 12px; color: #999; }
-    .juice-msg span { display: none; }
-    .juice-msg span:first-child { display: inline; }
     .error { padding: 20px; color: #dc2626; font-size: 13px; text-align: center; }
 
     /* ── Summary cards ── */
@@ -2325,7 +2322,7 @@ function App() {
       ),
 
       loading && React.createElement('div', { style: { textAlign: 'center', padding: '20px 0' } },
-        React.createElement(JuiceLoader, null),
+        React.createElement(ReportLoader, null),
         React.createElement('div', { style: { color: '#999', fontSize: 13, marginTop: 12 } }, 'Loading Fast Track data\u2026')
       ),
       error && !loading && React.createElement('div', { className: 'error' }, 'Could not load report: ', error),
@@ -2639,7 +2636,7 @@ function App() {
               'Generated from ', programs.length, ' program', programs.length !== 1 ? 's' : ''
             )
           ),
-          insightsLoading && React.createElement(JuiceLoader, null),
+          insightsLoading && React.createElement(ReportLoader, null),
           insightsError && !insightsLoading && React.createElement('div', { className: 'error' }, React.createElement('strong', null, 'Insights unavailable: '), insightsError),
           activeInsights && !insightsLoading && React.createElement('div', { className: 'insights-grid' },
             activeInsights.map(function(ins, i) {
@@ -2801,10 +2798,7 @@ function App() {
         ), /* end overview tab */
 
         activeTab === 'revenue' && React.createElement(React.Fragment, null,
-          (tabLoading && activeTab === 'revenue') && React.createElement('div', { style: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '60px 0' } },
-            React.createElement('div', { className: 'juice-loader' }),
-            React.createElement('div', { style: { fontSize: 13, color: '#999', marginTop: 12 } }, 'Crunching the numbers...')
-          ),
+          (tabLoading && activeTab === 'revenue') && React.createElement(ReportLoader, { label: 'Crunching the numbers' }),
 
           /* FT Revenue explanation */
           React.createElement('div', { style: { background: '#fff', border: '1px solid #e0ddd8', borderRadius: 10, padding: '14px 20px', marginBottom: 20 } },
@@ -2847,7 +2841,7 @@ function App() {
           })(),
 
           ciLoading && React.createElement('div', { style: { textAlign: 'center', padding: '60px 20px' } },
-            React.createElement(JuiceLoader, null)
+            React.createElement(ReportLoader, null)
           ),
           ciError && !ciLoading && React.createElement('div', { style: { textAlign: 'center', padding: '40px 20px', color: '#b91c1c' } },
             'Could not load revenue data: ', ciError
@@ -2856,7 +2850,7 @@ function App() {
             'No revenue matches found. This tab cross-references Fast Track users with household spending data.'
           ),
           !ciLoading && !ciError && !ciData && React.createElement('div', { style: { textAlign: 'center', padding: '60px 20px' } },
-            React.createElement(JuiceLoader, null)
+            React.createElement(ReportLoader, null)
           ),
           ftAnalytics && ftAnalytics.demo.hasData && React.createElement(React.Fragment, null,
 
@@ -2919,10 +2913,7 @@ function App() {
 
 
                 activeTab === 'conversions' && React.createElement(React.Fragment, null,
-          (tabLoading && activeTab === 'conversions') && React.createElement('div', { style: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '60px 0' } },
-            React.createElement('div', { className: 'juice-loader' }),
-            React.createElement('div', { style: { fontSize: 13, color: '#999', marginTop: 12 } }, 'Crunching the numbers...')
-          ),
+          (tabLoading && activeTab === 'conversions') && React.createElement(ReportLoader, { label: 'Crunching the numbers' }),
 
           /* Conversions KPI strip + post-launch flow board */
           (function() {
@@ -3231,13 +3222,10 @@ function App() {
         ),
 
                 activeTab === 'demographics' && React.createElement(React.Fragment, null,
-          (tabLoading && activeTab === 'demographics') && React.createElement('div', { style: { display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '60px 0' } },
-            React.createElement('div', { className: 'juice-loader' }),
-            React.createElement('div', { style: { fontSize: 13, color: '#999', marginTop: 12 } }, 'Crunching the numbers...')
-          ),
+          (tabLoading && activeTab === 'demographics') && React.createElement(ReportLoader, { label: 'Crunching the numbers' }),
 
           ciLoading && React.createElement('div', { style: { textAlign: 'center', padding: '60px 20px' } },
-            React.createElement(JuiceLoader, null)
+            React.createElement(ReportLoader, null)
           ),
           ciError && !ciLoading && React.createElement('div', { style: { textAlign: 'center', padding: '40px 20px', color: '#b91c1c' } },
             'Could not load community data: ', ciError
@@ -3361,7 +3349,7 @@ function SummaryCard(props) {
 ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
 </script>
     <script src="/nav-breadcrumb.js" defer></script>
-    <script src="/juice-loader.js" defer></script>
+    <script src="/report-loader.js" defer></script>
   <script src="/feedback-widget.js" defer></script>
 </body>
 </html>

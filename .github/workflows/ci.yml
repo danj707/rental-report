@@ -128,6 +128,12 @@ jobs:
       - name: PDF font spec (the container has glyphs for the emoji its PDFs print)
         run: node scripts/pdf-fonts.spec.js
 
+      # One loading state across every report, and a progress bar whose estimate
+      # is measured rather than invented. Lifts and RUNS both the curve and the
+      # three-step fallback — a regex passes on an inverted comparison.
+      - name: Report loader spec (the juice is gone; the bar cannot claim 100%)
+        run: node scripts/report-loader.spec.js
+
       - name: Fast Track conversion spec (measured against the spots open to FT, not all holds)
         run: node scripts/fasttrack-conv.spec.js
 

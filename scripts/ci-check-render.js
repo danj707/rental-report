@@ -1072,6 +1072,9 @@ function intelRows() {
 // stubs see the API request URL, not the page's, so a query flag on the page
 // cannot reach them.
 let STUB_MODE = "";
+// Per-case: hold every /api/ stub open this long, so a loading state is
+// reachable at all. See the interception handler for why.
+let CURRENT_STUB_DELAY_MS = 0;
 
 const STUBS = [
   { match: /\/facilities\/api\/campsites/, body: () => campsitesGeo },
@@ -1439,6 +1442,68 @@ const openPickableLoc = async page => {
 
 const CASES = [
   { name: "facilities · camping",  path: "/{org}/facilities?tab=camping", needs: ".camp-cal .cc-hd" },
+
+  // ── The shared loading progress bar ──────────────────────────────────────
+  // Dan retired the juice animation because "no one had any idea how long it
+  // would actually take". None of this is checkable in source: a bar wired to a
+  // broken estimate renders identically to a working one, so every case here
+  // keys on the COMPUTED percentage or on the bar's absence.
+  //
+  // stubDelayMs holds the feed open. Without it the stubs answer instantly, the
+  // loader's 350ms threshold is never crossed, and a "loader renders" case
+  // passes having never seen a loader.
+  { name: "loader · a slow report shows a progress bar", path: "/{org}/programs",
+    stubDelayMs: 4000, needs: "[data-rl] .rl-bar" },
+
+  // The bar must be MOVING, and moving with real numbers. "A bar rendered"
+  // passes just as happily on one stuck at 0% or pinned at 100%.
+  { name: "loader · the bar advances, and never claims 100%", path: "/{org}/programs",
+    stubDelayMs: 6000, needs: "[data-rl-adv='1']",
+    act: async (page) => {
+      await page.waitForSelector("[data-rl]", { timeout: 8000 });
+      const read = () => page.$eval("[data-rl]", el => Number(el.getAttribute("data-rl-pct")));
+      const a = await read();
+      await new Promise(r => setTimeout(r, 1500));
+      const b = await read();
+      // Stamped onto <body> so a `needs` selector can assert it — the same
+      // trick the season-menu cases use for computed styles.
+      await page.evaluate((a, b) => {
+        if (b > a && b < 100) document.body.setAttribute("data-rl-adv", "1");
+      }, a, b);
+    } },
+
+  // A warm cache answers in ~200ms. Flashing a bar for a fifth of a second
+  // reads as a glitch and makes a fast report FEEL slow, so a fast load must
+  // render nothing at all. No delay here — the stubs answer instantly, which is
+  // exactly the cache-hit case.
+  // A FLASH IS INVISIBLE TO A PLAIN `absent` CHECK, and that is the whole
+  // difficulty. By the time the data has arrived the loader has unmounted, so
+  // `[data-rl]` is absent whether or not it appeared for 200ms on the way — and
+  // a first draft of this case passed happily with the 350ms threshold deleted.
+  // A MutationObserver installed BEFORE navigation records whether the bar ever
+  // existed at all, which is the thing being asserted.
+  { name: "loader · a fast report never flashes a bar", path: "/{org}/programs",
+    pre: async (page) => {
+      await page.evaluateOnNewDocument(() => {
+        window.__rlEverSeen = false;
+        setInterval(() => {
+          if (document.querySelector && document.querySelector("[data-rl]")) window.__rlEverSeen = true;
+        }, 20);
+      });
+    },
+    // data-prog-count is the summary's own computed figure, so it exists only
+    // once the feed has ARRIVED — which is what makes the assertion meaningful.
+    act: async (page) => {
+      await page.waitForSelector("[data-prog-count]", { timeout: 20000 });
+      await page.evaluate(() => {
+        if (!window.__rlEverSeen) document.body.setAttribute("data-rl-never", "1");
+      });
+    },
+    needs: "[data-rl-never]", absent: "[data-rl]" },
+
+  // The juice glass is gone from the DOM, not merely unreferenced in source.
+  { name: "loader · no juice glass anywhere", path: "/{org}/programs",
+    stubDelayMs: 3000, needs: "[data-rl]", absent: ".juice-msg, .juice-spinner, .juice-loading" },
 
   // ── The rental schedule: add-ons in the note line, Forms in the column ────
   // This page had NO render case at all, and it is the one most orgs open.
@@ -3761,14 +3826,22 @@ function waitForServer(started) {
         // STUB_MODE has to be evaluated per request or every case gets whatever
         // mode happened to be set when the file was required.
         const st = stub && stub.status;
-        return req.respond({ status: (typeof st === "function" ? st() : st) || 200, contentType: "application/json",
+        const send = () => req.respond({ status: (typeof st === "function" ? st() : st) || 200, contentType: "application/json",
                              body: JSON.stringify(stub ? stub.body(u, org) : { ok: true }) });
+        // A case may HOLD a feed open. Every stub answers instantly otherwise,
+        // which makes the loading state unreachable: the progress bar
+        // deliberately renders nothing for its first 350ms so a warm cache does
+        // not flash a bar. Without a delay a "loader renders" case can only
+        // ever pass vacuously, having never seen a loader.
+        if (CURRENT_STUB_DELAY_MS > 0) return setTimeout(send, CURRENT_STUB_DELAY_MS);
+        return send();
       }
       if (!u.startsWith(`http://127.0.0.1:${PORT}`)) return serveVendored(req);
       req.continue();
     });
 
     STUB_MODE = c.stubMode || "";
+    CURRENT_STUB_DELAY_MS = c.stubDelayMs || 0;
     // Optional: set up the BROWSER before the first navigation. A cookie set in
     // `act` is set too late — the page it decides has already been served.
     // Hooks get the resolved org: a case that writes SERVER state (a settings

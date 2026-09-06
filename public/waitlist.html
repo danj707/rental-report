@@ -716,7 +716,7 @@ function App() {
 
       {bodyState === 'loading' && (
         <div className="loading-wrap">
-          <JuiceLoader />
+          <ReportLoader />
         </div>
       )}
       {bodyState === 'error' && (
@@ -751,7 +751,7 @@ function App() {
             <span className="insights-sub">Generated from {insightsMeta ? insightsMeta.sectionCount : tableRows.length} section{(insightsMeta ? insightsMeta.sectionCount : tableRows.length) !== 1 ? 's' : ''} with waitlist history</span>
           )}
         </div>
-        {insightsLoading && <JuiceLoader style={{ padding: '20px 16px' }} />}
+        {insightsLoading && <ReportLoader style={{ padding: '20px 16px' }} />}
         {insightsError && !insightsLoading && (
           <div className="err"><strong>Insights unavailable:</strong> {insightsError}</div>
         )}
@@ -999,7 +999,7 @@ function App() {
 
 ReactDOM.createRoot(document.getElementById('root')).render(<App />);
 </script>
-<script src="/juice-loader.js" defer></script>
+<script src="/report-loader.js" defer></script>
 <script src="/feedback-widget.js" defer></script>
 </body>
 </html>

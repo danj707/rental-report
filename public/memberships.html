@@ -346,24 +346,13 @@
     .loading .spinner::before {
       content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 60%;
       background: linear-gradient(180deg, #ffb24d 0%, #ff8c1f 55%, #f2710a 100%);
-      box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.45); animation: juice-fill 2s ease-in-out infinite;
+      box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.45);
     }
     .loading .spinner::after {
       content: ''; position: absolute; left: 50%; bottom: 6px; width: 3px; height: 3px; margin-left: -1.5px;
       border-radius: 50%; background: rgba(255, 255, 255, 0.85);
       box-shadow: -5px 7px 0 0 rgba(255, 255, 255, 0.65), 5px 12px 0 -0.5px rgba(255, 255, 255, 0.5);
-      animation: juice-bubbles 2.2s ease-out infinite;
     }
-    @keyframes juice-fill { 0% { height: 42%; } 50% { height: 80%; } 100% { height: 42%; } }
-    @keyframes juice-bubbles { 0% { transform: translateY(2px) scale(0.5); opacity: 0; } 30% { opacity: 0.9; } 70% { opacity: 0.6; } 100% { transform: translateY(-22px) scale(1); opacity: 0; } }
-    .juice-msg { position: relative; height: 1.4em; line-height: 1.4em; min-width: 190px; }
-    .juice-msg span { position: absolute; left: 0; right: 0; text-align: center; opacity: 0; animation: juice-phrase 10s infinite; }
-    .juice-msg span:nth-child(1) { animation-delay: 0s; }
-    .juice-msg span:nth-child(2) { animation-delay: 2s; }
-    .juice-msg span:nth-child(3) { animation-delay: 4s; }
-    .juice-msg span:nth-child(4) { animation-delay: 6s; }
-    .juice-msg span:nth-child(5) { animation-delay: 8s; }
-    @keyframes juice-phrase { 0% { opacity:0; transform:translateY(5px); } 2% { opacity:1; transform:translateY(0); } 18% { opacity:1; transform:translateY(0); } 20% { opacity:0; transform:translateY(-5px); } 100% { opacity:0; } }
 
     /* ── Chart container ── */
     .chart-card {
@@ -596,6 +585,7 @@
   </script>
 <script src="/report-refresh.js" defer></script>
 <script src="/open-pdf.js" defer></script>
+  <script src="/report-loader.js"></script>
 </head>
 <body>
   <div id="root"></div>
@@ -2782,7 +2772,7 @@ function normalizeRow(raw) {
       }
 
       function renderView() {
-        if (loading) return <div className="loading"><div className="spinner" /><div className="juice-msg"><span>Squeezing the oranges…</span><span>Juicing!</span><span>Adding the pulp…</span><span>Chilling the glass…</span><span>Pouring it out…</span></div></div>;
+        if (loading) return <ReportLoader />;
         if (error)   return <div className="empty-state error-state" style={{textAlign:'center',padding:'3rem 1rem'}}><span style={{fontSize:'2.5rem'}}>😔</span><br/><span style={{fontSize:'1.1rem',color:'#666'}}>Looks like reporting has encountered an issue — try loading this report again later.</span><br/><span style={{fontSize:'0.8rem',color:'#b91c1c',marginTop:'0.5rem',fontFamily:'monospace',background:'#fef2f2',padding:'8px 14px',borderRadius:6,display:'inline-block',maxWidth:500,wordBreak:'break-word'}}>{error}</span></div>;
         if (filtered.length === 0) return <div className="empty-state">No memberships match the current filters.</div>;
 
@@ -3101,7 +3091,7 @@ function normalizeRow(raw) {
 
           {activeTab === 'autorenew' && (
             <div style={{maxWidth:1100, margin:'0 auto'}}>
-              {loading && <div className="loading"><div className="spinner" /><div className="juice-msg"><span>Squeezing the oranges…</span><span>Counting renewals…</span><span>Pouring it out…</span></div></div>}
+              {loading && <ReportLoader label="Counting renewals" />}
               {!loading && (
                 <React.Fragment>
                   {(function() {
@@ -3454,7 +3444,7 @@ function normalizeRow(raw) {
 
           {activeTab === 'salesmix' && (
             <div style={{maxWidth:1100, margin:'0 auto'}}>
-              {loading && <div className="loading"><div className="spinner" /><div className="juice-msg"><span>Squeezing the oranges…</span><span>Adding up the months…</span><span>Pouring it out…</span></div></div>}
+              {loading && <ReportLoader label="Adding up the months" />}
               {!loading && salesMonths.length === 0 && <div className="empty-state">No paid memberships or passes sold in this window.</div>}
               {!loading && salesMonths.length > 0 && (() => {
                 var maxRev = Math.max.apply(null, salesMonths.map(function(m){ return m.revenue; })) || 1;
@@ -3599,7 +3589,7 @@ function normalizeRow(raw) {
 
           {activeTab === 'checkins' && (
             <div style={{maxWidth:1100,margin:'0 auto',padding:'0'}}>
-              {ciLoading && <div className="loading"><div className="spinner" /><div className="juice-msg"><span>Squeezing the oranges…</span><span>Counting check-ins…</span><span>Sorting the data…</span><span>Almost there…</span><span>Pouring it out…</span></div></div>}
+              {ciLoading && <ReportLoader label="Counting check-ins" />}
               {/* Two different empty states. Before failures joined this feed,
                   ciView could only be empty when a desk was picked — with 'all'
                   selected it WAS the whole feed. Now a window can hold nothing

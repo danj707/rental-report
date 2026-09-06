@@ -210,24 +210,12 @@
     content:''; position:absolute; left:0; right:0; bottom:0; height:60%;
     background:linear-gradient(180deg,#ffb24d 0%,#ff8c1f 55%,#f2710a 100%);
     box-shadow:inset 0 2px 0 rgba(255,255,255,0.45);
-    animation:juice-fill 2s ease-in-out infinite;
   }
   .loading .spinner::after {
     content:''; position:absolute; left:50%; bottom:6px; width:3px; height:3px; margin-left:-1.5px;
     border-radius:50%; background:rgba(255,255,255,0.85);
     box-shadow:-5px 7px 0 0 rgba(255,255,255,0.65), 5px 12px 0 -0.5px rgba(255,255,255,0.5);
-    animation:juice-bubbles 2.2s ease-out infinite;
   }
-  @keyframes juice-fill { 0%{height:42%} 50%{height:80%} 100%{height:42%} }
-  @keyframes juice-bubbles { 0%{transform:translateY(2px) scale(0.5);opacity:0} 30%{opacity:0.9} 70%{opacity:0.6} 100%{transform:translateY(-22px) scale(1);opacity:0} }
-  .juice-msg { position:relative; height:1.4em; line-height:1.4em; min-width:200px; margin:0 auto; }
-  .juice-msg span { position:absolute; left:0; right:0; text-align:center; opacity:0; animation:juice-phrase 10s infinite; }
-  .juice-msg span:nth-child(1) { animation-delay:0s; }
-  .juice-msg span:nth-child(2) { animation-delay:2s; }
-  .juice-msg span:nth-child(3) { animation-delay:4s; }
-  .juice-msg span:nth-child(4) { animation-delay:6s; }
-  .juice-msg span:nth-child(5) { animation-delay:8s; }
-  @keyframes juice-phrase { 0%{opacity:0;transform:translateY(5px)} 2%{opacity:1;transform:translateY(0)} 18%{opacity:1;transform:translateY(0)} 20%{opacity:0;transform:translateY(-5px)} 100%{opacity:0} }
   .error { padding:14px; background:#fef2f2; color:#991b1b; border-radius:8px; margin:10px 0; font-size:13px; }
   .empty { padding:30px; text-align:center; color:#9ca3af; font-size:13px; }
 
@@ -253,6 +241,7 @@
 </style>
 <script src="/report-refresh.js" defer></script>
 <script src="/open-pdf.js" defer></script>
+  <script src="/report-loader.js"></script>
 </head>
 <body>
 <div id="root"></div>
@@ -525,7 +514,7 @@ function GeoMap({ zipData, mode }) {
     map.fitBounds(bounds, { padding: [30, 30], maxZoom: 12 });
   }, [loading, coords, mode, zipData]);
 
-  if (loading) return <div className="loading" style={{height:420}}><div className="spinner"/><div className="juice-msg"><span>Squeezing the oranges…</span><span>Juicing!</span><span>Adding the pulp…</span><span>Chilling the glass…</span><span>Pouring it out…</span></div></div>;
+  if (loading) return <ReportLoader style={{height:420}} />;
   return <div ref={mapRef} className="map-wrap"></div>;
 }
 
@@ -1409,7 +1398,7 @@ function App() {
     </div>
   );
 
-  if(loading) return <React.Fragment>{headerBar}<div className="loading"><div className="spinner"/><div className="juice-msg"><span>Squeezing the oranges…</span><span>Juicing!</span><span>Adding the pulp…</span><span>Chilling the glass…</span><span>Pouring it out…</span></div></div></React.Fragment>;
+  if(loading) return <React.Fragment>{headerBar}<ReportLoader /></React.Fragment>;
   if(error) return <React.Fragment>{headerBar}<div className="dash"><div className="error"><strong>Error:</strong> {error}</div></div></React.Fragment>;
   if(!s) return <React.Fragment>{headerBar}<div className="loading"><div className="spinner"/><div style={{color:'#888',fontSize:13,marginTop:8}}>{computing?'Crunching '+((rows&&rows.length)||0).toLocaleString()+' records…':'No data returned.'}</div></div></React.Fragment>;
 
@@ -1426,7 +1415,7 @@ function App() {
           </button>
           {insights&&!insightsLoading&&<span style={{fontSize:11,color:'#9ca3af'}}>Analyzed {s.hhCount} households, {s.total} people</span>}
         </div>
-        {insightsLoading&&<div className="loading"><div className="spinner"/><div className="juice-msg"><span>Squeezing the oranges…</span><span>Juicing!</span><span>Adding the pulp…</span><span>Chilling the glass…</span><span>Pouring it out…</span></div></div>}
+        {insightsLoading&&<ReportLoader />}
         {insightsError&&!insightsLoading&&<div style={{padding:'8px 20px 16px'}}><div className="error">{insightsError}</div></div>}
         {insights&&!insightsLoading&&(
           <div className="insights-grid">

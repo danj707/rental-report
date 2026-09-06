@@ -1,124 +1,142 @@
-# Rental Report Server
+# rec.us Reports
 
-Pretty, print-friendly rental schedule reports powered by Metabase data.
+Multi-tenant reporting for parks & recreation departments. Node/Express +
+React-via-CDN, reading Metabase public cards, deployed on Railway.
+
+**Production:** https://rental-report-production-a046.up.railway.app
+(there is no `reports.rec.us` — it has never resolved.)
+
+Serving **29 orgs** across **23 report types**, from **13 shared Metabase cards**
+plus per-org ones.
 
 ## How It Works
 
 ```
-┌──────────────────┐     click link      ┌──────────────────┐
-│     Metabase      │ ──────────────────> │  Report Server   │
-│  (user sets       │                     │                  │
-│   date range,     │     ┌───────────────│  GET /           │ ← renders report UI
-│   location, etc.) │     │  fetch data   │  GET /api/data   │ ← proxies Metabase
-│                   │     │               │  GET /api/pdf    │ ← Puppeteer → PDF
-└──────────────────┘     │               └──────────────────┘
-                          │
-                          ▼
-                ┌──────────────────┐
-                │ Metabase Public  │
-                │ Card API (JSON)  │
-                └──────────────────┘
+  ENTRY                    rec.us admin portal  ·  tokenized links  ·  public calendars
+                                         │
+                                         ▼
+  GATE                     token middleware — 16 chars, fail-closed (generic 404)
+                                         │
+                                         ▼
+  APP        ┌──────────────────────────────────────────────────────────────┐
+  (Railway)  │  Node / Express  ×2 replicas, rolling deploys, no volume     │
+             │                                                              │
+             │  report pages   Metabase proxy   AI insights   Puppeteer PDF │
+             │  PII stripper   email digests    watchdogs     Slack feed    │
+             └──────────────────────────────────────────────────────────────┘
+                    │                     │                      │
+                    ▼                     ▼                      ▼
+        ┌───────────────────┐  ┌────────────────────┐  ┌──────────────────┐
+        │ Metabase          │  │ App State Store    │  │ External         │
+        │ public card API   │  │ (Postgres, SHARED) │  │ Anthropic · MCP  │
+        │ → rec.us read     │  │ config · events    │  │ GitHub · Resend  │
+        │   replica         │  │ feed cache         │  │                  │
+        └───────────────────┘  └────────────────────┘  └──────────────────┘
 ```
 
-## Setup
+A staff browser never talks to Metabase. Every query is proxied server-side,
+which removes the CORS problem (Metabase OSS sends no browser-friendly headers)
+and keeps the card UUIDs off the client.
 
-### 1. Enable public sharing on your Metabase question
+### State, replicas and deploys
 
-1. Open your rental schedule SQL question in Metabase
-2. Click the **Sharing** icon (top right) → **Create a public link**
-3. Copy the UUID from the generated URL
-   - URL looks like: `https://metabase.rec.us/public/question/cf347ce0-90bb-...`
-   - The UUID is: `cf347ce0-90bb-...`
+State — org config, the event log, the warm feed cache — used to live on a
+Railway volume. **A volume attaches to one instance**, so the service was pinned
+to a single replica and every deploy was stop-then-start by construction: no
+health check can hide a gap the disk itself is forcing.
 
-### 2. Configure the server
+That state is in Postgres now, shared by both replicas. The volume is gone,
+`numReplicas` is 2, and deploys are rolling.
 
-```bash
-cp .env.example .env
-```
+- **The feed cache is shared** — a new container starts warm, and either replica
+  answers from the same rows.
+- **Scheduled work runs once.** Prewarm, the health check, the watchdogs, the
+  nightly backup and the daily digest each take a Postgres advisory lock. It
+  **fails open** deliberately: a duplicated cycle is a nuisance; a platform that
+  silently stops watching itself is not.
+- **Config propagates in ~4s** via a rev-cursor poll, so an org added on one
+  replica resolves on the other without a restart.
+- **Two things stay on local disk on purpose** — the memory-residency hint (a
+  per-container heuristic) and uploaded announcement images (binary).
 
-Edit `.env`:
-```
-METABASE_URL=https://metabase.rec.us
-METABASE_PUBLIC_UUID=cf347ce0-90bb-4669-b73b-56c73edd10cb
-PORT=3100
-BASE_URL=https://reports.rec.us    # or whatever domain you deploy to
-ORG_NAME=Clarksville Parks and Recreation
-```
+Rollback is an env var, not a deploy: `STORE_MODE` = `disk` | `dual` | `db`.
+With no database URL the app behaves exactly as it did before the store existed.
+Full procedure in [`docs/DB-MIGRATION-RUNBOOK.md`](docs/DB-MIGRATION-RUNBOOK.md).
 
-### 3. Install and run
+### Caching, and why reports can still be slow
+
+Feeds cache for ~4 hours, keyed by org + report + **the encoded parameter
+string** — so every distinct date window is its own entry, and a window someone
+types by hand is a guaranteed cold run.
+
+Cold runs are genuinely slow: several Metabase cards sit at 30–100s, because
+every table in the `materialized` schema has exactly one index (its primary
+key), so an org-scoped read is a full scan. Prewarm keeps the common windows
+warm; the reports show a **progress bar** whose estimate is the 80th percentile
+of that org+report's own recent cache misses.
+
+## Running it
 
 ```bash
 npm install
-npm start
+npm start          # http://localhost:3100
 ```
 
-Server starts at `http://localhost:3100`.
+With no `STORE_DATABASE_URL` it runs in disk mode against `data/`, which needs
+no external services beyond Metabase.
 
-### 4. Add the link in Metabase
+### Environment
 
-In your Metabase dashboard, add a **Text card** or **Link card** with a URL like:
+| Variable | Notes |
+|---|---|
+| `METABASE_URL` | e.g. `https://rec.metabaseapp.com` |
+| `DASHBOARD_PASSWORD` | gates `/` and the admin APIs; **absent = admin APIs fail closed** |
+| `STORE_DATABASE_URL` | engages the Postgres store. Absent ⇒ disk mode |
+| `STORE_MODE` | `disk` \| `dual` \| `db` |
+| `DATA_DIR` | local state root (default `./data`) |
+| `SLACK_WEBHOOK_URL` | activity feed — **muted outside production** on purpose |
+| `ANTHROPIC_API_KEY` | AI insights, chat, the report wizard |
+| `RESEND_API_KEY` | email subscriptions |
+| `MB_*_UUID` | per-feature public card UUIDs |
 
-```
-https://reports.rec.us/?start_date=2025-06-01&end_date=2025-06-30
-```
-
-Or to pass the dashboard's current filter values dynamically, use Metabase's
-**custom destination** on a dashboard card click action (if available), or
-build the link with your known date range.
-
-#### URL Parameters
-
-| Param           | Example                        | Notes                           |
-|-----------------|--------------------------------|---------------------------------|
-| `start_date`    | `2025-06-01`                   | ISO date, maps to `{{start_date}}` |
-| `end_date`      | `2025-06-30`                   | ISO date, maps to `{{end_date}}`   |
-| `location_name` | `Lapping Park`                 | Comma-separate for multiple     |
-| `site_type`     | `court`                        | Optional filter                 |
-
-#### Direct PDF link (no UI, straight to download)
-
-```
-https://reports.rec.us/api/pdf?start_date=2025-06-01&end_date=2025-06-30
-```
-
-## Deployment Options
-
-### Docker (recommended)
-
-```dockerfile
-FROM node:20-slim
-
-# Puppeteer dependencies
-RUN apt-get update && apt-get install -y \
-    chromium fonts-liberation libatk-bridge2.0-0 libatk1.0-0 \
-    libcups2 libdrm2 libgbm1 libnss3 libxcomposite1 \
-    libxdamage1 libxrandr2 xdg-utils \
-    && rm -rf /var/lib/apt/lists/*
-
-ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
-
-WORKDIR /app
-COPY package.json ./
-RUN npm install --production
-COPY . .
-
-EXPOSE 3100
-CMD ["node", "server.js"]
-```
-
-### PM2 (on existing server)
+## Tests
 
 ```bash
-npm install -g pm2
-pm2 start server.js --name rental-report
-pm2 save
+npm test                            # the spec suite
+node scripts/ci-check-render.js     # drives every page in a real browser
+node scripts/verify-report-live.js --manifest scripts/report-cards.manifest.json
 ```
 
-## Architecture Notes
+Three of those matter more than they look:
 
-- **No CORS issues**: The Express server proxies Metabase API calls server-side
-- **No auth needed**: Uses Metabase's public sharing (UUID acts as access token)
-- **No build step**: Frontend is vanilla React via CDN (Babel in-browser)
-- **PDF via Puppeteer**: Server launches headless Chrome, loads the report page,
-  renders to PDF with proper pagination and page numbers
-- **Stateless**: All data comes fresh from Metabase on each request
+- **`ci-check-render.js` is the only check that runs the pages.** `node --check`,
+  the HTML parse check and the boot check all pass on a page that renders a
+  blank white screen — which has reached production twice. It boots the server,
+  drives Chromium at every page with stubbed feeds, and fails on an uncaught
+  error or an empty body.
+- **`verify-report-live.js` hits Metabase's public endpoint directly**, so no app
+  cache can hide a card that has stopped answering. Run it after every card
+  change, against the *heaviest* org. **Run it alone** — a concurrent query makes
+  it invent timeouts on cards you never touched.
+- **`ci-check-admin-js.js`** — the admin dashboard is one giant template literal
+  inside `server.js`, so a stray apostrophe silently discards the whole script
+  block and every button stops working. `node --check` cannot see it.
+
+## Deployment
+
+Railway builds from the **`Dockerfile`** (despite the service config reporting
+`RAILPACK` — the build log is the authority). `main` deploys to production
+automatically; opening a PR creates an isolated preview environment at
+`https://rental-report-rental-report-pr-<N>.up.railway.app`.
+
+`fonts-noto-color-emoji` in the Dockerfile is load-bearing, not decoration:
+`fonts-liberation` has zero emoji coverage, and without it every emoji in every
+server-rendered PDF is a tofu box. It is invisible in development because every
+dev machine has an emoji font.
+
+## Working on this
+
+Read [`CLAUDE.md`](CLAUDE.md) first. It is the long-form record of what has been
+measured, what was tried and rejected, and which traps have bitten more than
+once. Most of what looks like an obvious improvement here has a paragraph
+explaining why it is not.

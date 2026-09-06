@@ -362,7 +362,7 @@ function App() {
         </button>
       </div>
 
-      {state === "loading" && <div style={{ paddingTop: 80 }}><JuiceLoader /></div>}
+      {state === "loading" && <div style={{ paddingTop: 80 }}><ReportLoader /></div>}
       {state === "error" && (
         <div className="gen-wrapper">
           <div style={{ color: "#dc2626", marginBottom: 16 }}>Error: {errMsg}</div>
@@ -1044,7 +1044,7 @@ function App() {
 
 ReactDOM.createRoot(document.getElementById("root")).render(<App />);
   </script>
-  <script src="/juice-loader.js" defer></script>
+  <script src="/report-loader.js" defer></script>
   <script src="/nav-breadcrumb.js" defer></script>
   <script src="/feedback-widget.js" defer></script>
 </body>
