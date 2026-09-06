@@ -121,6 +121,13 @@ jobs:
       - name: Store wiring spec (server.js reads through the store, not around it)
         run: node scripts/store-live.spec.js
 
+      # The Puppeteer PDFs are the one surface rendered with the CONTAINER's own
+      # fonts, so a missing emoji font is invisible in a browser and in every
+      # render case, and shows up only in the exported file. This builds its font
+      # environment from the Dockerfile rather than trusting the runner.
+      - name: PDF font spec (the container has glyphs for the emoji its PDFs print)
+        run: node scripts/pdf-fonts.spec.js
+
       - name: Fast Track conversion spec (measured against the spots open to FT, not all holds)
         run: node scripts/fasttrack-conv.spec.js
 

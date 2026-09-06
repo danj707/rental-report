@@ -4925,6 +4925,69 @@ guess is silent and wrong in a finance document, and the sign-off gate needed to
 retire that risk is most of the cost of the work. An index gets the same speed
 while the numbers keep coming from the definition finance already trusts.
 
+## EVERY EMOJI IN EVERY PDF WAS A TOFU BOX (2026-09-06)
+
+Dan, on Pawnee's rental schedule PDF: *"look at the last few columns, things
+aren't rendering properly"* — Forms, Paid?, Permit and Rec-link all drawing ▯,
+and the add-on note lines too.
+
+**The Dockerfile installed `fonts-liberation` and no emoji font.** Liberation
+covers Latin text and has **zero** emoji coverage, so Chromium had no glyph for
+any emoji and drew the missing-character box. One line:
+`fonts-noto-color-emoji`.
+
+### IT IS INVISIBLE EVERYWHERE EXCEPT THE PDF, which is why nothing caught it
+
+A laptop, this sandbox and GitHub's runners all ship an emoji font, so the page
+is correct in a browser and in all 268 render cases. **The Puppeteer PDFs are
+the one surface where the CONTAINER's own fonts are what render** — the report
+pages are drawn by the reader's browser, the PDFs by ours.
+
+**The blast radius was everything, not one report:** the rental schedule's four
+icon columns plus its 💡 lit and 📝 instruction note lines, the Director's Report
+flames, the QBR, the permit posting sheets. **60 distinct emoji** across the
+PDF-rendered files.
+
+### REPRODUCED BEFORE FIXING, because "it must be the font" is a guess
+
+Rendered the exact glyph set twice under `FONTCONFIG_FILE`: Liberation alone
+gives boxes, Liberation + Noto Color Emoji gives the icons, and the ASCII line
+beside them is identical in both — which is what rules out a markup or encoding
+fault.
+
+### THE BUILDER FIELD LIES, and it nearly sent me to the wrong file
+
+`get-service-config` reports `builder: RAILPACK`, which would mean the Dockerfile
+is not used at all and editing it does nothing. **The build log settles it:**
+`[internal] load build definition from Dockerfile`, followed by the exact
+`apt-get` line. Railway prefers a Dockerfile when one is present, whatever the
+configured builder says. **Read the build log, not the service config, before
+deciding which file builds the image.**
+
+### The guard, and why the obvious one is worthless
+
+A spec that renders emoji and checks they look right **passes on the broken
+build**, because the machine running CI has an emoji font. So
+`scripts/pdf-fonts.spec.js` (**5 assertions, in CI**) builds its font
+environment *from the Dockerfile*: it copies in Liberation, and copies the emoji
+font in **only if the Dockerfile asked for one**, then renders the glyph set both
+ways and requires the two images to **DIFFER**. Remove the package and both
+renders are tofu, the images match, and it fails.
+
+- **The glyphs are read out of the source**, not transcribed — a hardcoded list
+  goes stale the first time a column gains an icon, and the guard then silently
+  stops covering the thing that broke.
+- **It asserts the glyph set is non-empty**, or the font assertion is vacuous.
+- **It also requires the emoji render to carry MORE image data**, so a build that
+  rendered nothing at all in both cannot pass the difference test for the wrong
+  reason.
+- **It SKIPS with a message** without puppeteer or the font files, rather than
+  passing.
+
+Mutation-tested two ways, both failing by name: the emoji font removed (the bug
+exactly as it shipped) and swapped for `fonts-dejavu-core` — a plausible-looking
+font package with no emoji coverage.
+
 ## TWO REPLICAS EACH WARMED THE WHOLE PLATFORM (2026-09-06)
 
 Found in the systems check straight after the volume was deleted and
