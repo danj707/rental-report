@@ -377,6 +377,12 @@ async function q(sql, args) {
       let ns = (await q("SELECT rec->>'n' AS n FROM events ORDER BY id")).rows.map(r => r.n);
       eq(ns, [null, "2", "3"], "...so event 1 is missing and the stray row is still there");
 
+      // {"cache": false} skips the cache pass — the slow one, and the reason a
+      // top-up import against production took 300s+ and timed out at the edge
+      // while the config and event passes were seconds.
+      const noCache = await req(41114, "POST", "/api/admin/store/import", {}, { password: PASSWORD, cache: false });
+      eq(noCache.json && noCache.json.cache, 0, "cache:false skips the cache pass");
+
       const reset = await req(41114, "POST", "/api/admin/store/import", {}, { password: PASSWORD, resetEvents: true });
       eq(reset.json && reset.json.eventsCleared, 3, "resetEvents reports what it truncated");
       eq(reset.json && reset.json.events, 3, "...and re-imports the whole file");
@@ -531,6 +537,59 @@ async function q(sql, args) {
     ok(/stateStore\.cacheSet\(/.test(setCacheBody), "setCache writes through to the store [source]");
     const getDiskBody = src.slice(src.indexOf("async function getDiskCached("), src.indexOf("// Persist / restore learned popularity"));
     ok(/stateStore\.cacheGet\(/.test(getDiskBody), "the L2 read asks the store [source]");
+
+    // ── The cross-replica cache reads, same caveat ─────────────────────────
+    //
+    // These are what stop TWO replicas each paying Metabase for the same rows.
+    // Proving them behaviourally needs a second container plus a Metabase stub;
+    // the unit spec proves cacheFreshKeys/cacheGet answer correctly, and these
+    // prove server.js actually asks. Scoped to the function that must do the
+    // asking, never file-wide — a file-wide match passes on any other caller.
+
+    // prewarm: the "already warm?" test has to consult the PLATFORM, not just
+    // this container's memory. With numReplicas: 2 and a memory-only test, each
+    // replica re-fetches every key the other one already warmed.
+    const prewarmBody = src.slice(src.indexOf("async function prewarmCache("),
+                                  src.indexOf("async function prewarmUsersCache("));
+    ok(/stateStore\.cacheFreshKeys\(/.test(prewarmBody),
+       "prewarm asks the store which keys are already warm platform-wide [source]");
+    // Four warm checks (prior month, base, default window, facilities). Every
+    // one has to go through the helper: the one left on getCached is the one
+    // that still double-fetches, and it would look correct in review.
+    ok(!/\bif \(!?getCached\(/.test(prewarmBody),
+       "...and NO prewarm warm-check still reads memory alone [source]");
+    ok(/const alreadyWarm = /.test(prewarmBody),
+       "...through one helper, so the memory and store tests cannot drift [source]");
+    eq((prewarmBody.match(/alreadyWarm\(/g) || []).length, 4,
+       "and all FOUR warm checks call it — prior month, base, default window, facilities [source]");
+
+    // The facilities hub route had no L2 at all — a memory miss went straight
+    // to a 60-120s card. On one instance that only happened after an eviction;
+    // with two it is routine.
+    const facRoute = src.slice(src.indexOf('app.get("/:org/facilities/api/summary"'),
+                               src.indexOf('app.get("/:org/gl"'));
+    ok(/getDiskCached\(cacheKey, slug, "facilities"\)/.test(facRoute),
+       "the facilities hub falls through to the shared L2 before Metabase [source]");
+
+    // The stale fallback runs when Metabase is DOWN, so the entry it needs is
+    // one nobody can re-fetch. Memory alone holds only what this replica warmed.
+    const staleBody = src.slice(src.indexOf("async function getStaleCached("),
+                                src.indexOf("function hydrateCacheEntries("));
+    ok(/stateStore\.cacheGet\(/.test(staleBody),
+       "the stale fallback also asks the store [source]");
+    // Async now. A missed await is silent and bad: `if (stale)` on a pending
+    // Promise is always true, so the route answers 200 with a Promise in place
+    // of the rows.
+    const staleCalls = src.match(/[^.\w]getStaleCached\(/g) || [];
+    const awaited = src.match(/await getStaleCached\(/g) || [];
+    eq(awaited.length, staleCalls.length - 1,
+       "every getStaleCached CALL is awaited (all but its own declaration) [source]");
+
+    // migrateDynamicOrgs pushes a commit to main, and a push to main is a
+    // deploy. Two replicas booting together would race to push the same entries.
+    const bootTail = src.slice(src.indexOf("// Promote any orgs from data/orgs.json"));
+    ok(/withLeaderLock\("boot:migrate-orgs"/.test(bootTail.slice(0, 1400)),
+       "the org migration takes the leader lock before pushing to GitHub [source]");
   }
 
   await wipe();

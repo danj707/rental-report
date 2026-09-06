@@ -492,6 +492,27 @@ fail.
   context beats being literal.
 - **Readability over cleverness**, in code and in writing. Human-sounding.
 
+### Response style for code tasks (Dan, 2026-09-06)
+
+His own words, verbatim, because they are the standard this file keeps failing:
+
+- Be concise. No multi-page explanations or walls of text.
+- Lead with a 1-2 sentence summary of what the code does or what changed.
+- Use bullet points, not prose paragraphs, for any detail.
+- Assume I'm a PM with limited dev skills: explain *what* and *why* in plain
+  language, skip deep implementation theory unless I ask.
+- Don't explain basic syntax or narrate every line.
+- If you change code, give me: what changed, why, and what I need to do next
+  (if anything) — as bullets.
+- When I ask a yes/no or quick question, answer it directly first. Expand only
+  if I follow up.
+
+**This is about CHAT, not about the record.** The long-form reasoning still goes
+in this file, in the commit message and in the PR body — that is what they are
+for, and dropping it there to be brief in chat loses the thing that stops the
+next person re-deriving a measurement. Two different audiences, two different
+lengths.
+
 ## Lindsay's three questions on court utilization (2026-09-04)
 
 Lindsay Keare, after the backcheck: *"Is there away to add util_actual to the
@@ -4903,6 +4924,278 @@ Why this was rejected: the two unknowns above are both places where a wrong
 guess is silent and wrong in a finance document, and the sign-off gate needed to
 retire that risk is most of the cost of the work. An index gets the same speed
 while the numbers keep coming from the definition finance already trusts.
+
+## TWO REPLICAS EACH WARMED THE WHOLE PLATFORM (2026-09-06)
+
+Found in the systems check straight after the volume was deleted and
+`numReplicas` went to 2, and it is the bill that arrived with the thing that
+removed the downtime: **the step that stopped deploys being an outage doubled
+the prewarm load on the read replica.**
+
+Dan, minutes later, on Pawnee's rental schedule: *"this facility rental report is
+struggling right now"* — every Forms / Permit cell showing the amber ⚠. That is
+the presence gate working (⚠ is *"the feed did not answer"*, deliberately not the
+blank that means *"no permit on this rental"*), and the cards behind it answered
+fine on a clean probe minutes later. **The load was mostly MINE** — I was running
+a feed sweep (apex/programs twice at 130s, watertown 50s, clarksville 25s)
+against production Metabase while he had the report open. That is the
+*run-the-sweep-alone* rule in this file, which I have now broken after writing it
+down twice. But the doubling below is real and was the other half.
+
+### THE USER-FACING HALF WAS ALREADY FINE, and I reported it wrong first
+
+I told Dan the cache hit rate would roughly halve. **It would not**, and the
+reason is worth keeping because it is the shape the rest of the fix copies:
+`getDiskCached` — the L2 on the data route's miss path — already asks
+`stateStore.cacheGet` before Metabase. So a request landing on the replica that
+did not warm a key gets it from Postgres, not from a cold card. That was built
+with the store and it works.
+
+**The gap was everything that asks "is this already warm?" SYNCHRONOUSLY**, which
+means it can only read this container's own memory.
+
+### `getCached` IS PER CONTAINER, AND PREWARM IS THE CALLER THAT MATTERS
+
+`prewarmCache` tests `if (getCached(cacheKey)) continue;` in four places (prior
+month, base, default window, facilities). With one instance that was the whole
+truth. With two, each replica warmed **every key independently** — the same ~84
+cards fetched twice, four times an hour.
+
+Note the 4:50am cron **is** leader-locked (`leaderCron("prewarm", …)`); the
+15-minute `setInterval` never was, and locking it would have been the wrong fix —
+it would leave the other replica permanently cold.
+
+**`stateStore.cacheFreshKeys()` is KEYS ONLY, and that is the design.** The
+obvious shape is to poll `feed_cache` for changed rows the way `pollKv` polls
+config — and it is wrong here, because a feed payload is not a config blob:
+**norman/memberships alone is 16.8 MB**. Speculatively moving that every few
+seconds to answer a question prewarm asks four times an hour is enormous traffic
+for nothing. The payload is still fetched lazily on a real miss, through
+`cacheGet`.
+
+- **One query per CYCLE, not per key.** 84 round trips to answer one question is
+  its own small stampede.
+- **It returns NULL, never an empty Set, when it cannot answer** — disk mode, or
+  a failed query. *"The store could not tell us"* and *"nothing is warm"* are
+  different facts, and the empty Set reads as the second: prewarm would re-fetch
+  the platform's entire warm set from Metabase on every cycle, silently, because
+  the fallback is exactly the old behaviour and nothing looks broken. Same rule
+  as `hasAbsent` / `ciHasStatus`. **That mutation SURVIVED the first draft** —
+  the spec had no case that provoked a live query failure, so it now drops
+  `feed_cache` out from under the store (`_query`, a test seam that exists for
+  this alone).
+- **Memory is tested first**, because it is free and it is the only one of the
+  two that reflects a write this container made since the snapshot.
+- `expires_at` is the sweeper's column and explicitly **not** the readers' TTL —
+  but it is the right test here, because prewarm's job is to refresh a key
+  *before* it expires, and it is what `setCache` wrote from `ttlForKey`.
+
+### THE FACILITIES HUB ROUTE HAD NO L2 AT ALL
+
+Pre-existing, and 2 replicas is what made it bite. Every other feed falls through
+to the shared store before Metabase; `/:org/facilities/api/summary` went from a
+memory miss **straight to a card that sits at 60-120s cold**. On one instance the
+only way to miss memory was an eviction. With two it is routine — whichever
+replica did not warm the key paid the full cold query for a payload already
+sitting in Postgres. It is the most-fetched card on the platform (~174 pulls/30d
+across 13 orgs), so it is the miss that matters most.
+
+### `getStaleCached` IS ASYNC NOW, and it is weakest exactly where it matters
+
+It is the *"Metabase is down"* net, and it read memory alone. So at the one
+moment its entry cannot be re-fetched by anybody, it could only see what **this**
+replica had warmed or served since boot — half the platform's warm entries were
+invisible to it.
+
+- **No TTL test on the store read**, deliberately: this function exists to return
+  something past its TTL, and applying one would reinstate the 502 it prevents.
+- **Every one of the four call sites is inside an async handler and awaits it.**
+  A missed `await` is silent and bad — `if (stale)` on a pending Promise is
+  always true, so the route answers **200 with a Promise where the rows should
+  be**. The spec counts `await getStaleCached(` against `getStaleCached(` rather
+  than testing for one of them, which is what fails when a fifth caller is added
+  without an await.
+
+### `migrateDynamicOrgs` PUSHES A COMMIT TO `main`, AND WAS NOT LOCKED
+
+The one boot task reaching outside the process that had no leader lock. Two
+replicas booting together race to push the same org entries — at best a duplicate
+commit, at worst **two deploys triggered by a restart**, since a push to `main`
+is a deploy. Locked now, failing open like every other lock here.
+
+Inert today for an unrelated reason worth knowing: it logs
+`[migrate] Failed: Could not locate ORGS map closing in server.js` on both
+replicas and fails safe (the 9 dynamic orgs load from `orgs.json` regardless).
+Pre-existing; not fixed here.
+
+### `/api/admin/store` NAMES THE REPLICA NOW
+
+With `numReplicas > 1` the load balancer picks one per request, so *"is this a
+cold-replica problem?"* was only answerable by inference — hitting the endpoint
+repeatedly and watching a count wobble, which is literally how two replicas were
+confirmed serving. `replica` (from `RAILWAY_REPLICA_ID`, pid as the fallback) and
+`memoryCacheEntries` say it outright: a large gap between this replica's memory
+and the platform's warm set is the shape of the bug this section exists to
+prevent.
+
+### On Datadog (Dan asked)
+
+**Overkill, and it would measure the wrong thing.** What breaks here is Metabase
+card latency, and the health check already classifies slow-vs-broken, alerts only
+after two consecutive rounds, and gates on whether anyone uses the report.
+Datadog says *"p99 is high"*; the health check says *"card 20626 cannot answer
+because a column is gone."* The genuinely missing piece was per-replica
+visibility, which is the `replica` field above and cost ten minutes. Revisit when
+there are several services and traces need to cross them.
+
+### Card 20626 does NOT scan every org — asked and answered
+
+Dan, on a spinning Metabase tab: *"what can we do to stop MB from scanning all
+forms across all orgs on that report load"*, and then *"would enabling [Always
+require a value] help?"*
+
+**It cannot scan all orgs.** The SQL is `fsl.organization_id = {{org_id}}::uuid`
+— a **bare tag, not inside `[[ ]]`** — so the filter can never drop out. A blank
+value substitutes `''::uuid` and errors immediately.
+
+**So "Always require a value" buys nothing and costs something.** Flipping it
+changes the card's registered parameters, and a *required* Metabase parameter is
+exactly what caused the hour-long outage on 2026-09-01 (`missing-required-parameter`
+400s for every org, because `_cardParamMeta` caches ids for an hour and a card
+save regenerates them). `mb-param-ids` retries that now, but it is real risk for
+zero gain. **Generalise it: check whether the SQL already makes a variable
+mandatory before reaching for the UI toggle that says it is.**
+
+### Guards
+
+`store.spec.js` 49 → **57 assertions**, `store-live.spec.js` 56 → **64**.
+Mutation-tested ten ways, all failing by name: expired keys reported warm,
+`cacheFreshKeys` failing to an empty Set (twice — disk mode and a live query
+failure), the function returning whole rows instead of keys, prewarm reverted to
+memory-only (the bug as it shipped), **one** of the four warm checks left on
+`getCached`, the facilities L2 removed, the stale fallback no longer asking the
+store, a `getStaleCached` call losing its `await`, and the org migration
+unlocked.
+
+The cross-replica assertions are **`[source]`-labelled rather than dressed up**:
+proving them behaviourally needs a second container plus a Metabase stub this
+harness does not have. The unit spec proves the store answers correctly; these
+prove server.js asks. Each is **scoped to the function that must do the asking** —
+a file-wide match passes on any other caller.
+
+## THE FLIP, AS IT ACTUALLY WENT (2026-09-06)
+
+Dan: *"ENGAGE"*. Production is on **`db` mode** — config, the event log and the
+feed cache all served from Postgres. **Step 4 (delete the volume, `numReplicas:
+2`) is NOT done**; it is one click in the Railway dashboard and everything is
+verified ready for it.
+
+| | |
+|---|---|
+| Postgres service | `83964e9e-19bc-48e3-ac23-f5d0cf6c8065`, `postgres-ssl:18`, own volume |
+| config keys | **83** |
+| events | **96,779** (CLAUDE.md's old "82k" figure was stale; it grows ~600/day) |
+| feed cache | **1,725 report + 8 users** entries hydrated from the store |
+| `failsafe` | **false**, 34 active report types, 0 inactive |
+
+### IT COST A FIVE-MINUTE OUTAGE, and the defect was mine
+
+Setting `dual` + `STORE_IMPORT=1` restarted the service. `storeBoot()` **awaited
+`importFromDisk()` before `app.listen`**, so nothing listened while the import
+copied 82k events one row at a time. The healthcheck (300s) never went green,
+Railway killed the container — and because a volume forces stop-then-start, the
+old one was already gone.
+
+```
+11:23:55  [store] STORE_IMPORT=1 — importing the volume…
+11:30:33  [store] SIGTERM — draining          (deploy FAILED)
+```
+
+**I wrote `STORE_BOOT_TIMEOUT_MS` to stop boot hanging, raced `configure()` with
+it, and then awaited a far slower operation OUTSIDE that race.** A guard that
+covers the fast path and not the slow one is not a guard. Fixed four ways (PR
+#198): the import runs after `listen`, it is refused in `db` mode, the event
+insert batches 500 at a time, and the timeout now wraps the whole of `storeBoot`.
+
+**That last one immediately earned its keep.** The `db`-mode boot logged
+`boot exceeded 25000ms — listening anyway` while the cache hydrate took 85
+seconds for 2,934 entries. Without the wrapping timeout that deploy would have
+failed the healthcheck exactly like the first one.
+
+### DUAL WAS NOT DUAL FOR EVENTS (PR #199)
+
+Found in the boot log of the very next deploy: `appendEvent` returned
+`usingDb()`, true for **both** dual and db — so in dual every event went to
+Postgres and **not** to `events.jsonl`, while `readEvents` in dual still read
+the VOLUME. Events were written where nothing read them and the authoritative
+log silently stopped growing. It also broke the import's count-based resume,
+which would have skipped the file's OLDEST 21 lines.
+
+`appendEvent` takes the record in **db mode only** now. The db-mode mirror of
+that case already existed and passed throughout — **the two modes make opposite
+claims and only one was being checked**, which is why the dual case had to exist
+separately.
+
+### `dashboardAuth` GUARDS ONLY `/`
+
+Caught on the PR preview: `/api/admin/store` answered **200 with no
+credentials** while `/` correctly 401'd, because `dashboardAuth` opens with
+`if (req.path !== '/') return next();`. Passing it as route middleware protects
+nothing. Both store routes check the password by hand now and FAIL CLOSED.
+**Generalise it: check what a shared auth helper actually guards before reusing
+it.**
+
+### HOW "NOTHING WAS LOST" WAS PROVEN, not asserted
+
+In `db` mode a key Postgres lacks **falls through to disk** — so anything the
+import missed works today and breaks the moment the volume goes. The test is a
+full re-import in db mode watching the key count: **`keys` stayed at 83 for six
+minutes**, so the volume holds nothing Postgres does not.
+
+Events were cross-checked a second way: the 45-day count read from the FILE in
+dual (56,304) against POSTGRES in db (56,294) agree within ~10 over 20 minutes
+of window slide — not 2x (no duplication), not a fraction (no truncation).
+
+**The six announcement images were downloaded before anything was deleted.**
+They are the one thing the migration does not carry, and they would have been
+gone for good.
+
+### THE IMPORT'S SLOW PART IS THE CACHE
+
+Both import calls timed out at Railway's edge (153s, then 300s) — the work
+continued server-side and the counts prove it, but the response never arrived.
+The config and event passes are seconds; the **cache** re-sends every payload
+over the wire on every call even though the upsert then does nothing. A top-up
+run can now pass `{"cache": false}`. Kept ON by default, because the first
+import wants it.
+
+### Traps worth keeping
+
+- **`A || B && C && D` groups as `((A || B) && C) && D`.** A `git rebase ... ||
+  git stash && git reset --hard` chain ran the reset unconditionally and
+  discarded a working tree. Write the branches out.
+- **Railway redacts variable values for an OAuth caller** — `DASHBOARD_PASSWORD`
+  cannot be read, so admin-route calls have to come from Dan. Worth knowing
+  before planning a verification that needs it.
+- **"WAITING FOR CI" is not a wedged builder.** A deploy sat 35 minutes with no
+  build logs and I called it wedged twice; Railway was correctly holding it
+  behind the `render` check, which genuinely takes ~13 minutes. Read the deploy
+  card's own status before diagnosing.
+- **A merged PR's branch cannot take follow-up commits.** #198 squashed, so the
+  branch still carried the pre-squash commit and #199 failed to merge on a
+  conflict. Restart the branch from `main` and replay.
+
+### WHAT IS LEFT
+
+1. **Delete `rental-report-volume`** (Railway offers no detach — deletion is
+   irreversible) and set **`numReplicas: 2`**. Scaling is not exposed by the
+   Railway MCP tools, so both are dashboard actions.
+2. **Rollback to disk mode ends at that click.** Today `dual` would fall back to
+   a populated volume; afterwards `/data` is an empty container filesystem.
+   Postgres is the system of record from then on, with the daily gist as the
+   off-platform copy.
+3. **Rotate `DASHBOARD_PASSWORD`** — it passed through the session transcript.
+4. Re-upload the announcement images.
 
 ## SEAMLESS DEPLOYS — BUILT AND QUEUED, INERT UNTIL THE ENV SAYS SO (2026-09-05)
 

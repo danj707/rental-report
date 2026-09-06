@@ -564,7 +564,21 @@ function setCache(key, data, reportType, hist) {
 
 // Return cached data even if TTL-expired (for fallback when Metabase is down).
 // Tries exact key first, then the base (prewarm) key for this org/report.
-function getStaleCached(orgSlug, reportType, exactKey) {
+// The safety net for "Metabase would not answer": serve something expired
+// rather than a 502. ASYNC since the shared store joined the search — it reads
+// memory first (free, and the only copy that reflects this container's own
+// most recent write) and asks Postgres only when memory has nothing.
+//
+// It matters most exactly where it used to be weakest. This runs when Metabase
+// is down, so the entry it needs is one nobody can re-fetch — and with two
+// replicas, memory holds only what THIS container warmed or served since boot.
+// Half the platform's warm entries were invisible to it at the moment it was
+// the last thing standing.
+//
+// Every caller is inside an async handler and awaits this. A missed `await`
+// would be silent and bad: `if (stale)` on a pending Promise is always true, so
+// the route would answer 200 with a Promise where the rows should be.
+async function getStaleCached(orgSlug, reportType, exactKey) {
   // Try exact key
   let entry = dataCache.get(exactKey);
   if (entry?.data) return { data: entry.data, ts: entry.ts };
@@ -576,6 +590,15 @@ function getStaleCached(orgSlug, reportType, exactKey) {
   if (reportType === "users") {
     const uc = usersCache.get(orgSlug);
     if (uc?.data) return { data: uc.data, ts: uc.ts };
+  }
+  // The other replica's copy. NO TTL TEST, deliberately: this function exists
+  // to return something past its TTL, and applying one here would reinstate the
+  // 502 it is here to avoid. The caller stamps `stale_cache: true` either way.
+  for (const k of [exactKey, baseKey]) {
+    try {
+      const row = await stateStore.cacheGet(k);
+      if (row?.data && row.ts) return { data: row.data, ts: row.ts };
+    } catch {}
   }
   return null;
 }
@@ -966,6 +989,31 @@ async function prewarmCache(reason = 'interval') {
   ];
   const DELTA_PREWARM_REPORTS = new Set(["programs", "gl", "selfservice"]);
 
+  // Which keys the PLATFORM has already warmed, not just this container.
+  //
+  // `getCached` reads this process's memory, which was the whole truth while a
+  // Railway volume pinned the service to one instance. With the volume gone and
+  // numReplicas: 2, each replica was warming every key independently — the same
+  // ~84 cards fetched twice from the read replica, four times an hour. That is
+  // the fan-out this project was partly meant to REDUCE, reintroduced by the
+  // step that removed the downtime.
+  //
+  // One query, keys only, taken once per cycle rather than per key: 84 round
+  // trips to answer one question would be its own small stampede. It is a
+  // snapshot on purpose — a key the other replica warms halfway through this
+  // cycle is simply warmed twice today, which is the pre-existing behaviour and
+  // not worth a second query to avoid.
+  //
+  // NULL (the store could not answer, or we are in disk mode) falls back to
+  // memory alone, i.e. exactly what this did before. An unreachable database
+  // must never turn prewarm off.
+  const platformWarm = await stateStore.cacheFreshKeys();
+  if (platformWarm) console.log(`[cache] ${platformWarm.size} key(s) already warm platform-wide`);
+  // Memory first: it is free, and it is the only one of the two that reflects
+  // a write this container made since the snapshot was taken.
+  const alreadyWarm = (key, slug, rt) =>
+    !!getCached(key, slug, rt) || !!(platformWarm && platformWarm.has(key));
+
   outer:
   for (const slug of Object.keys(ORGS)) {
     const org = ORGS[slug];
@@ -986,7 +1034,7 @@ async function prewarmCache(reason = 'interval') {
           pParams.push(...priorMonthParams);
           const pStr = `?parameters=${encodeURIComponent(JSON.stringify(pParams))}`;
           const priorKey = `${slug}:${rt}:${pStr}`;
-          if (!getCached(priorKey)) {
+          if (!alreadyWarm(priorKey, slug, rt)) {
             if (!await paceOk()) break outer;
             const resp = await timedWarmFetch(`${METABASE_URL}/api/public/card/${mbUuid}/query/json${pStr}`, org.healthTimeoutMs || 120000);
             if (resp.ok) {
@@ -1005,7 +1053,7 @@ async function prewarmCache(reason = 'interval') {
       if (HEALTH_SKIP_REPORTS.has(rt)) continue;
       // Only pre-warm reports with no required params (default = current month)
       const cacheKey = `${slug}:${rt}:`;
-      if (getCached(cacheKey)) continue; // already warm
+      if (alreadyWarm(cacheKey, slug, rt)) continue; // already warm HERE or on the other replica
       try {
         const timeoutMs = org.healthTimeoutMs || 120000;
         // Build params: org_id (shared) + this-month dates (avoid querying all-time data)
@@ -1076,7 +1124,7 @@ async function prewarmCache(reason = 'interval') {
                 const dp = buildMetabaseParams({ start_date: iso(start), end_date: iso(end) }, rt, org.orgId);
                 const dpStr = dp.length ? `?parameters=${encodeURIComponent(JSON.stringify(dp))}` : "";
                 const defKey = feedCacheKey(slug, rt, dpStr);
-                if (!getCached(defKey) && await paceOk()) {
+                if (!alreadyWarm(defKey, slug, rt) && await paceOk()) {
                   const r2 = await timedWarmFetch(`${METABASE_URL}/api/public/card/${mbUuid}/query/json${dpStr}`, timeoutMs);
                   if (r2.ok) {
                     const d2 = await r2.json();
@@ -1108,7 +1156,7 @@ async function prewarmCache(reason = 'interval') {
       ];
       const facStr = `?parameters=${encodeURIComponent(JSON.stringify(facParams))}`;
       const facKey = `${slug}:facilities:${facStr}`;
-      if (!getCached(facKey, slug, "facilities")) {
+      if (!alreadyWarm(facKey, slug, "facilities")) {
         try {
           if (!await paceOk()) break outer;
           const resp = await timedWarmFetch(`${METABASE_URL}/api/public/card/${FACILITIES_SUMMARY_UUID}/query/json${facStr}`, org.healthTimeoutMs || 180000);
@@ -8888,7 +8936,7 @@ app.get("/:org/:report/api/data", resolveOrg, async (req, res) => {
       const body = await response.text();
       console.error(`[proxy] Metabase returned ${response.status} after ${fetchMs}ms (attempt ${attempt}): ${body}`);
       logRequest({ ts: new Date().toISOString(), org: orgSlug, report: reportType, status: response.status, ms: fetchMs, rows: 0, cache: "miss", attempt, error: body.slice(0, 200) });
-      const stale = getStaleCached(orgSlug, reportType, cacheKey);
+      const stale = await getStaleCached(orgSlug, reportType, cacheKey);
       if (stale) {
         console.log(`[cache] STALE fallback for ${orgSlug}/${reportType} (cached ${new Date(stale.ts).toISOString()})`);
         const result = Object.assign({}, stale.data, {
@@ -8986,7 +9034,7 @@ app.get("/:org/:report/api/data", resolveOrg, async (req, res) => {
     console.error(`[proxy] Error${isTimeout ? " (timeout)" : ""}:`, err.message);
     // Fall back to stale cache if available
     const cacheKey = `${req.orgSlug}:${req.reportType}:${(() => { try { const p = buildMetabaseParams(req.query, req.reportType, req.orgConfig?.orgId); return p.length > 0 ? `?parameters=${encodeURIComponent(JSON.stringify(p))}` : ''; } catch { return ''; } })()}`;
-    const stale = getStaleCached(req.orgSlug, req.reportType, cacheKey);
+    const stale = await getStaleCached(req.orgSlug, req.reportType, cacheKey);
     if (stale) {
       console.log(`[cache] STALE fallback for ${req.orgSlug}/${req.reportType} (cached ${new Date(stale.ts).toISOString()})`);
       const result = Object.assign({}, stale.data, {
@@ -10367,6 +10415,20 @@ app.get("/:org/facilities/api/summary", async (req, res) => {
         console.log(`[cache] HIT ${slug}/facilities | ${cached.rows?.length || 0} rows`);
         return res.json(cached);
       }
+      // L2, which this route never had. Every other feed falls through to the
+      // shared store before Metabase; this one went from a memory miss straight
+      // to a card that sits at 60-120s cold. That was survivable on one
+      // instance, because the only way to miss memory was an eviction. With two
+      // replicas it is routine: whichever one did not warm this key had to pay
+      // the full cold query for a payload already sitting in Postgres.
+      //
+      // The hub is the most-fetched card on the platform (~174 pulls/30d across
+      // 13 orgs), so this is the miss that matters most.
+      const l2 = await getDiskCached(cacheKey, slug, "facilities");
+      if (l2) {
+        console.log(`[cache] L2 HIT ${slug}/facilities | ${l2.data.rows?.length || 0} rows`);
+        return res.json(l2.data);
+      }
     }
 
     const url = `${METABASE_URL}/api/public/card/${FACILITIES_SUMMARY_UUID}/query/json${paramStr}`;
@@ -10390,7 +10452,7 @@ app.get("/:org/facilities/api/summary", async (req, res) => {
     if (!response.ok) {
       const body = await response.text();
       console.error(`[proxy] Metabase returned ${response.status} for ${slug}/facilities after ${fetchMs}ms: ${body.slice(0, 200)}`);
-      const stale = getStaleCached(slug, "facilities", cacheKey);
+      const stale = await getStaleCached(slug, "facilities", cacheKey);
       if (stale) {
         console.log(`[cache] STALE fallback for ${slug}/facilities`);
         return res.json(Object.assign({}, stale.data, { meta: Object.assign({}, stale.data.meta, { stale_cache: true }) }));
@@ -10409,7 +10471,7 @@ app.get("/:org/facilities/api/summary", async (req, res) => {
     const isTimeout = err.name === "TimeoutError" || err.name === "AbortError";
     console.error(`[proxy] ${slug}/facilities error${isTimeout ? " (timeout)" : ""}: ${err.message}`);
     const cacheKey = (() => { try { const p = buildMetabaseParams(req.query, "facilities", org.orgId); return `${slug}:facilities:${p.length ? `?parameters=${encodeURIComponent(JSON.stringify(p))}` : ""}`; } catch { return `${slug}:facilities:`; } })();
-    const stale = getStaleCached(slug, "facilities", cacheKey);
+    const stale = await getStaleCached(slug, "facilities", cacheKey);
     if (stale) return res.json(Object.assign({}, stale.data, { meta: Object.assign({}, stale.data.meta, { stale_cache: true }) }));
     res.status(isTimeout ? 504 : 502).json({ error: isTimeout ? "Facility summary query timed out — try a shorter date range" : err.message });
   }
@@ -14492,7 +14554,21 @@ app.get("/api/admin/store", (req, res) => {
     // most of the diagnosis. Never the URL itself.
     configured: { STORE_MODE: STORE_MODE || "(unset)", databaseUrl: STORE_DATABASE_URL ? "set" : "(unset)" },
     dataDir: DATA_DIR,
-    environment: process.env.RAILWAY_ENVIRONMENT_NAME || "(not railway)"
+    environment: process.env.RAILWAY_ENVIRONMENT_NAME || "(not railway)",
+    // WHICH replica answered. With numReplicas > 1 the load balancer picks one
+    // per request, so "is this a cold-replica problem?" is otherwise only
+    // answerable by inference — hitting the endpoint repeatedly and watching a
+    // count wobble, which is how it was diagnosed the first time. Two curls now
+    // say it outright.
+    //
+    // Railway sets RAILWAY_REPLICA_ID; the pid is the fallback so this is still
+    // discriminating off Railway, where two local servers are two pids.
+    replica: process.env.RAILWAY_REPLICA_ID || ("pid-" + process.pid),
+    // What THIS replica holds, against what the platform holds. A large gap
+    // between the two is the shape of the bug this section exists to prevent:
+    // a container serving cold because its memory never learned what another
+    // container warmed.
+    memoryCacheEntries: dataCache.size
   });
 });
 
@@ -14509,7 +14585,15 @@ app.post("/api/admin/store/import", express.json(), async (req, res) => {
   // it skip that many of the file's OLDEST lines — but truncating a log by
   // accident is unrecoverable, so it has to be asked for.
   const resetEvents = !!(req.body && req.body.resetEvents);
-  try { res.json(await stateStore.importFromDisk({ resetEvents })); }
+  // The cache is re-sent in full on every call — it is the slow part by far
+  // (300s+ against production, where the config and event passes are seconds),
+  // because every cached payload goes over the wire again even though the
+  // upsert then does nothing. A top-up run does not need it, so it can be
+  // skipped: {"cache": false}. Kept ON by default, because the first import
+  // wants it — a container that starts on an empty cache is ~28 orgs of cold
+  // card queries against production Metabase.
+  const cache = !(req.body && req.body.cache === false);
+  try { res.json(await stateStore.importFromDisk({ resetEvents, cache })); }
   catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -20234,7 +20318,18 @@ app.listen(PORT, () => {
 
   // Promote any orgs from data/orgs.json into server.js on GitHub.
   // Runs after listen() so startup isn't blocked by GitHub latency.
-  migrateDynamicOrgs();
+  //
+  // LEADER-LOCKED, and this one is not bookkeeping: it PUSHES A COMMIT TO
+  // `main`, and a push to main is a deploy. Two replicas booting together would
+  // race to push the same org entries — at best a duplicate commit, at worst two
+  // deploys triggered by a restart. Everything else that reaches outside the
+  // process already takes this lock; this was the one that did not, and it only
+  // became dangerous when replicas went to 2.
+  //
+  // Fails OPEN like every other lock here (see withLeaderLock): a database blip
+  // must not silently stop an org being promoted.
+  stateStore.withLeaderLock("boot:migrate-orgs", migrateDynamicOrgs)
+    .catch(e => console.warn("[migrate] " + e.message));
 
   // AFTER listen, for the same reason migrateDynamicOrgs is: the healthcheck
   // has to go green on time whatever this costs.
