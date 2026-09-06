@@ -61,6 +61,18 @@ ok(forever.every(t => progress(t, EST) < 100),
 ok(progress(864e5, EST) < 99.9,
    "...including far past the point where the asymptote underflows in float");
 
+// THE BUG DAN CAUGHT ON THE FIRST SHIP, and the reason the numbers moved.
+// A report still running at 40s drew a bar at 98.4%, which is visually
+// indistinguishable from finished — so the whole over-estimate regime read as
+// "done and stuck", which is the complaint this replaces rather than fixes.
+// "Under 100" was never the real requirement: it has to LOOK unfinished.
+ok(progress(EST, EST) <= 85,
+   "at the estimate the bar is around four fifths, not nearly full — leaving visible room for an overrun");
+ok(progress(EST * 3, EST) < 90,
+   "3x over the estimate still reads as clearly unfinished (Dan's 40s case drew 98.4%)");
+ok(progress(EST * 100, EST) < 96,
+   "even an absurd overrun stays visibly short of the end");
+
 // It must keep MOVING while it is over, or it is a stalled bar with extra steps.
 ok(progress(EST * 3, EST) > progress(EST * 2, EST),
    "keeps advancing past the estimate, just more slowly");
@@ -106,8 +118,28 @@ ok(/LOAD_TIMING_MAX_MS/.test(rec), "a timeout is not a duration either");
 ok(/readJSON\(loadTimingFile\(\)/.test(server) && /writeJSON\(loadTimingFile\(\)/.test(server),
    "the history goes through the store, so it survives deploys and both replicas share it");
 
+// ...and the LAST MINUTE of it survives too. Samples are batched on a 60s
+// timer, so without an explicit flush on the way down a deploy discards up to
+// a minute of them, and a container that cycles often would keep none. It has
+// to run BEFORE stateStore.close(), because writeJSON only enqueues the upsert
+// and close() is what drains that queue.
+{
+  const sd = server.slice(server.indexOf("function shutdown("), server.indexOf('process.on("SIGTERM"'));
+  ok(/flushLoadTimings\(\)/.test(sd), "the timings are flushed on shutdown [source]");
+  ok(sd.indexOf("flushLoadTimings()") < sd.indexOf("stateStore.close("),
+     "...before the store drains, or the write never leaves the queue [source]");
+}
+
 const estFn = server.slice(server.indexOf("function loadEstimateFor"),
                            server.indexOf("// Every page's ORG_CONFIG"));
+// The pacing used when there is no history has to cover the reports people
+// actually wait on. 12s made every unknown report look stalled within seconds,
+// against real misses of 25.4s and 41.1s.
+ok(/LOAD_TIMING_DEFAULT_MS = 25000/.test(server),
+   "the no-history default is long enough for the reports this actually times");
+ok(/var DEFAULT_MS    = 25000/.test(src),
+   "...and the client's own fallback agrees with it");
+
 ok(/percentile\(own, 0\.8\)/.test(estFn),
    "the estimate is the 80th percentile, not the median — finishing early snaps to 100%, running out of estimate stalls");
 ok(/basis: "org"/.test(estFn) && /basis: "report"/.test(estFn) && /basis: "default"/.test(estFn),
@@ -155,6 +187,50 @@ ok(/basis: "org"/.test(estFn) && /basis: "report"/.test(estFn) && /basis: "defau
   box.history = { "apex|programs": [90000], "other|programs": [5000, 5100, 5200] };
   r = vm.runInContext('loadEstimateFor("apex","programs")', box);
   eq(r.basis, "report", "one sample is below the floor, so it falls through rather than trusting it");
+}
+
+// ── Found by WARMING the history on production and reading it back ────────
+// Three things that made real samples fail to become real estimates.
+
+// 1. The per-replica memo was never refreshed. clarksville/facility graduated
+//    to `basis: org` while clarksville/gl — probed just as often — was still on
+//    the default: the samples had landed on whichever replica served that
+//    request, and the other kept answering from its empty boot snapshot.
+ok(/function mergeLoadTimings/.test(server),
+   "the local view is re-read from the store, not memoised at boot forever");
+{
+  const flush = server.slice(server.indexOf("function flushLoadTimings"),
+                             server.indexOf("setInterval(flushLoadTimings"));
+  ok(/mergeLoadTimings\(\)/.test(flush),
+     "the flush is a read-modify-write, so one replica's write cannot clobber the other's samples");
+}
+ok(/_loadNew\[key\]/.test(server),
+   "this replica's unflushed samples are tracked separately, or the merge has nothing to re-apply");
+
+// 2. The pooled fallback used the 80th percentile of a CROSS-ORG mixture, which
+//    is just the largest org's number: pooled `facility` p80 was 95.9s on
+//    production, which would tell Pawnee "usually about 96s" for a report that
+//    takes about 3s there.
+ok(/percentile\(pooled, 0\.5\)/.test(estFn),
+   "the pooled fallback is the MEDIAN — a cross-org p80 describes the biggest org, not this one");
+ok(/percentile\(own, 0\.8\)/.test(estFn),
+   "...while an org's OWN history still uses the pessimistic p80");
+
+// 3. Seven real report pages sent their HTML raw and injected no ORG_CONFIG at
+//    all, so the bar on them could never have an estimate. Derived from the
+//    routes rather than listed, so a new raw-send page fails this instead of
+//    being quietly missed.
+{
+  const routes = [...server.matchAll(/app\.get\("(\/:org\/[a-z-]+)"[^\n]*\n(?:.*\n){0,25}?\}\);/g)];
+  const SKIP = new Set(["admin", "metrics", "calendar", "rentalcalendar", "annual-report"]);
+  const missing = routes.filter(m => {
+    const b = m[0];
+    if (!b.includes("public") || !b.includes(".html")) return false;
+    if (SKIP.has(m[1].split("/").pop())) return false;
+    return !/orgConfigInject|loadEstimateInject/.test(b);
+  }).map(m => m[1]);
+  eq(missing, [], "every tokened report route injects a load estimate");
+  ok(routes.length > 10, "...and the route scan actually found routes, or the check above is vacuous");
 }
 
 // Injected on first paint. A separate endpoint would mean the bar draws before

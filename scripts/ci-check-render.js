@@ -1505,6 +1505,13 @@ const CASES = [
   { name: "loader · no juice glass anywhere", path: "/{org}/programs",
     stubDelayMs: 3000, needs: "[data-rl]", absent: ".juice-msg, .juice-spinner, .juice-loading" },
 
+  // The favicon ROUTES always worked, but no report page ever declared one —
+  // the only rel="icon" in the app was on the maintenance page, so the tab
+  // relied on the browser guessing /favicon.ico. Keyed on the link being in the
+  // DOM, since that is the part that was missing.
+  { name: "every page declares a favicon", path: "/{org}/programs",
+    needs: 'link[rel="icon"]' },
+
   // ── The rental schedule: add-ons in the note line, Forms in the column ────
   // This page had NO render case at all, and it is the one most orgs open.
   { name: "facility · schedule",   path: "/{org}/facility",               needs: ".data-row" },

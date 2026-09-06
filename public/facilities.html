@@ -543,6 +543,7 @@
   </style>
 <script src="/report-refresh.js" defer></script>
 <script src="/open-pdf.js" defer></script>
+<script src="/report-loader.js"></script>
 </head>
 <body>
   <div id="root"></div>
@@ -2492,9 +2493,7 @@
         e('div', { className: 'em-icon' }, '⚠️'),
         e('div', { className: 'em-title' }, 'Could not load facility data'),
         e('div', { className: 'em-sub' }, String(err)));
-      if (rows === null) return e('div', { className: 'empty' },
-        e('div', { className: 'em-title', style: { color: '#9ca3af' } }, 'Loading facility data…'),
-        e('div', { className: 'fac-spin' }));
+      if (rows === null) return e(ReportLoader, { label: 'Loading facility data' });
       const a = aggregate(rows, statusSel, typeSel);
       if (!a.bookings) return e('div', { className: 'empty' },
         e('div', { className: 'em-icon' }, '🗓️'),
@@ -6265,7 +6264,7 @@
       }, [insTrace, fbComment, slug]);
 
       if (error) return e('div', { className: 'court-native' }, e('div', { className: 'cu-error' }, e('strong', null, 'Could not load court data: '), error));
-      if (loading && !grouped.length) return e('div', { className: 'court-native' }, e('div', { className: 'cu-loading' }, e('div', { className: 'fac-spin' }), 'Loading court utilization…'));
+      if (loading && !grouped.length) return e('div', { className: 'court-native' }, e(ReportLoader, { label: 'Loading court utilization' }));
       if (courtFilter && !loading && normalized.length === 0) return e('div', { className: 'court-native' }, e('div', { className: 'cu-empty' }, (theme && theme.emptyMsg) || 'No matching courts in this range.'));
 
       // KPI cards (hub sum-card style)
