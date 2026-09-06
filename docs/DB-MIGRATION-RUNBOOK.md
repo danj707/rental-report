@@ -56,10 +56,19 @@ STORE_MODE         = dual
 STORE_IMPORT       = 1
 ```
 
-The service restarts. On boot it creates its three tables, copies the volume in
-(config blobs, the event log, and the warm feed cache), and from then on writes
-to **both** while still **reading the volume**. The volume stays the authority,
-so nothing in this step can lose data.
+The service restarts. On boot it creates its three tables, then starts copying
+the volume in **in the background, after the server is already listening** —
+config blobs, the event log, and the warm feed cache. From then on it writes to
+**both** while still **reading the volume**, so the volume stays the authority
+and nothing in this step can lose data.
+
+> The import runs after `listen` on purpose. The first attempt at this flip
+> awaited it *before* `listen`, inserting 82k events one row at a time; the
+> healthcheck never went green, Railway killed the container, and because a
+> volume forces stop-then-start the old one was already gone. That was a five
+> minute production outage. It is batched now and never blocks the healthcheck —
+> and it is why `STORE_IMPORT=1` is honoured only in `dual`: importing while
+> reads already come from Postgres is the one ordering with no safe fallback.
 
 **Check** — `GET /api/admin/store`:
 
@@ -70,7 +79,9 @@ so nothing in this step can lose data.
 - `ready: true` — it connected. `"mode": "disk"` here means it fell back; the
   reason is in the boot log as `[store] configure: …`.
 - `keys` ≈ the number of `.json` files on the volume.
-- `events` ≈ the line count of `events.jsonl`.
+- `events` ≈ the line count of `events.jsonl`. **This climbs for a minute or two
+  after boot** — the import runs behind the live server. Let it settle;
+  `[store] import: {...}` in the logs is the completion line.
 - `errors: 0`.
 
 Then open two or three reports and the admin dashboard. Everything should look

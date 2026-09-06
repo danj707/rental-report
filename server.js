@@ -20125,16 +20125,6 @@ async function storeBoot() {
   }
   console.log("[store] " + JSON.stringify(stateStore.status()));
 
-  // STORE_IMPORT=1 is the one-shot that copies the volume in. Idempotent, so a
-  // retried flip is safe, and it runs from the instance that still has the
-  // volume mounted — which is why it is an env var and not a migration script
-  // somebody has to remember to run from the right place.
-  if (process.env.STORE_IMPORT === "1" && stateStore.usingDb()) {
-    console.log("[store] STORE_IMPORT=1 — importing the volume…");
-    try { console.log("[store] import: " + JSON.stringify(await stateStore.importFromDisk())); }
-    catch (e) { console.warn("[store] import failed: " + e.message); }
-  }
-
   // Module scope read these off the volume before the store existed. Redo them
   // now, or this replica serves its own container's view of the config.
   if (stateStore.readsDb()) {
@@ -20148,6 +20138,31 @@ async function storeBoot() {
   // one until it restarts. That is the shape of a bug this repo has already
   // shipped once, from a slug renamed in one place and not the other.
   stateStore.onKeyChange(keys => refreshCachedStores(keys, "poll"));
+}
+
+// THE IMPORT MUST NOT BLOCK LISTEN, and the first version of this took
+// production down for five minutes proving it. Awaited inside storeBoot() it
+// sat between boot and app.listen while copying 82k events, the healthcheck
+// never went green, Railway killed the container — and because a volume forces
+// stop-then-start, the old container was already gone. STORE_BOOT_TIMEOUT_MS
+// raced configure() and nothing else, which is exactly the gap.
+//
+// It is safe to run behind a live server: the flip only ever imports in `dual`
+// mode, where reads come from the volume, so a half-imported store cannot serve
+// anything. The one-shot is reported when it finishes, and /api/admin/store
+// shows the counts moving while it runs.
+function startImportIfAsked() {
+  if (process.env.STORE_IMPORT !== "1" || !stateStore.usingDb()) return;
+  if (stateStore.readsDb()) {
+    // Refusing rather than importing: in db mode the reads are already coming
+    // from a store this import has not filled yet. Import in `dual` first.
+    console.warn("[store] STORE_IMPORT=1 ignored in db mode — run it in dual, or POST /api/admin/store/import");
+    return;
+  }
+  console.log("[store] STORE_IMPORT=1 — importing the volume in the background…");
+  stateStore.importFromDisk()
+    .then(r => console.log("[store] import: " + JSON.stringify(r)))
+    .catch(e => console.warn("[store] import failed: " + e.message));
 }
 
 function refreshCachedStores(keys, where) {
@@ -20171,7 +20186,13 @@ function shutdown(signal) {
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 process.on("SIGINT",  () => shutdown("SIGINT"));
 
-storeBoot().catch(e => console.warn("[store] boot: " + e.message)).then(() => {
+// The timeout wraps the WHOLE of storeBoot now. Bounding only the connect left
+// everything after it — the cache hydrate, and previously the import — able to
+// hold the listen open indefinitely.
+Promise.race([
+  storeBoot().catch(e => console.warn("[store] boot: " + e.message)),
+  new Promise(r => setTimeout(() => { console.warn("[store] boot exceeded " + STORE_BOOT_TIMEOUT_MS + "ms — listening anyway"); r(); }, STORE_BOOT_TIMEOUT_MS))
+]).then(() => {
 app.listen(PORT, () => {
   serverReady = true;
   console.log(`\n  🏛️  rec.us Report Server`);
@@ -20204,6 +20225,10 @@ app.listen(PORT, () => {
   // Promote any orgs from data/orgs.json into server.js on GitHub.
   // Runs after listen() so startup isn't blocked by GitHub latency.
   migrateDynamicOrgs();
+
+  // AFTER listen, for the same reason migrateDynamicOrgs is: the healthcheck
+  // has to go green on time whatever this costs.
+  startImportIfAsked();
 
   // Sweep cache rows a long way past their TTL. Generous on purpose: the stale
   // fallback reads expired entries when Metabase is down.

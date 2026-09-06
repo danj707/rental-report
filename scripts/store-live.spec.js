@@ -219,19 +219,43 @@ async function q(sql, args) {
       JSON.stringify({ ts: "2026-09-01T00:00:00Z", org: "apex", report: "gl", event: "view" }) + "\n" +
       JSON.stringify({ ts: "2026-09-02T00:00:00Z", org: "apex", report: "gl", event: "pdf" }) + "\n");
 
+    // DUAL, not db: the import only runs in dual, where reads still come from
+    // the volume, so a half-imported store cannot serve anything.
     const s = await boot(41102, dir, {
-      STORE_DATABASE_URL: URL, STORE_MODE: "db", STORE_IMPORT: "1"
+      STORE_DATABASE_URL: URL, STORE_MODE: "dual", STORE_IMPORT: "1"
     });
     try {
       const st = await req(41102, "GET", "/api/admin/store", { Authorization: basic });
-      eq(st.json && st.json.mode, "db", "STORE_MODE=db is honoured through a real boot");
+      eq(st.json && st.json.mode, "dual", "STORE_MODE=dual is honoured through a real boot");
       ok(st.json && st.json.ready, "the store reports ready");
-      ok(/STORE_IMPORT=1/.test(s.log()), "the boot log records the import");
 
-      const kv = await q("SELECT count(*)::int AS n FROM kv_store");
-      ok(kv.rows[0].n >= 1, "the config blobs landed in kv_store (" + kv.rows[0].n + ")");
-      const ev = await q("SELECT count(*)::int AS n FROM events");
-      eq(ev.rows[0].n, 2, "the event log landed in events");
+      // The import runs AFTER listen now, so it has to be waited for rather
+      // than assumed done — which is the whole point of the change.
+      let kv = 0, ev = 0;
+      for (let i = 0; i < 40; i++) {
+        kv = (await q("SELECT count(*)::int AS n FROM kv_store")).rows[0].n;
+        ev = (await q("SELECT count(*)::int AS n FROM events")).rows[0].n;
+        if (kv >= 1 && ev >= 2) break;
+        await sleep(500);
+      }
+      ok(kv >= 1, "the config blobs landed in kv_store (" + kv + ")");
+      eq(ev, 2, "the event log landed in events");
+      ok(/STORE_IMPORT=1/.test(s.log()), "the boot log records the import");
+    } finally { await stop(s); fs.rmSync(dir, { recursive: true, force: true }); }
+  }
+
+  // ── db + import is refused, and says where to run it ─────────────────────
+  {
+    await wipe();
+    const dir = freshDir();
+    fs.writeFileSync(path.join(dir, "feature-flags.json"), JSON.stringify({ reportSettings: true }));
+    const s = await boot(41112, dir, { STORE_DATABASE_URL: URL, STORE_MODE: "db", STORE_IMPORT: "1" });
+    try {
+      await sleep(1500);
+      ok(/ignored in db mode/.test(s.log()),
+         "STORE_IMPORT in db mode is refused rather than filling a store the reads already trust");
+      const kv = (await q("SELECT count(*)::int AS n FROM kv_store")).rows[0].n;
+      eq(kv, 0, "...and nothing was imported");
     } finally { await stop(s); fs.rmSync(dir, { recursive: true, force: true }); }
   }
 
@@ -300,6 +324,70 @@ async function q(sql, args) {
       ok(act.json && act.json.failsafe === false,
          "...so the watchdogs are not in fail-safe, which is what an empty log looks like");
     } finally { await stop(A); await stop(B); fs.rmSync(dirA, { recursive: true, force: true }); fs.rmSync(dirB, { recursive: true, force: true }); }
+  }
+
+  // ── THE IMPORT MUST NOT HOLD THE HEALTHCHECK ─────────────────────────────
+  //
+  // The case that was missing, and its absence took production down for five
+  // minutes. The import was awaited inside storeBoot, between boot and
+  // app.listen; the import case above passed because its fixture had TWO
+  // events. A real events.jsonl is ~82k lines, the insert was one row at a
+  // time, the healthcheck never went green, Railway killed the container — and
+  // because a volume forces stop-then-start the old one was already gone.
+  {
+    await wipe();
+    const dir = freshDir();
+    const N = 20000;
+    const lines = [];
+    for (let i = 0; i < N; i++) {
+      lines.push(JSON.stringify({ ts: new Date(Date.UTC(2026, 0, 1, 0, 0, i % 60)).toISOString(),
+                                  org: "apex", report: "gl", event: "view", n: i }));
+    }
+    fs.writeFileSync(path.join(dir, "events.jsonl"), lines.join("\n") + "\n");
+
+    const t0 = Date.now();
+    const s = await boot(41111, dir, { STORE_DATABASE_URL: URL, STORE_MODE: "dual", STORE_IMPORT: "1" });
+    const bootMs = Date.now() - t0;
+    try {
+      // BE CLEAR ABOUT WHAT THIS PROVES. It is a real end-to-end check that the
+      // server serves while an import runs — but it does NOT reproduce the
+      // outage locally, and that was verified by mutation: awaited-before-listen
+      // still passes here, because the production failure was driven by per-row
+      // NETWORK latency and a loopback Postgres does 20k round trips in
+      // seconds. A threshold tight enough to catch it here would be flaky on
+      // CI, which this repo has a rule against. The discriminating guards are
+      // the three [source] assertions below.
+      ok(bootMs < 45000, "the server answers /healthz while a 20k-event import runs (" + bootMs + "ms)");
+
+      let n = 0;
+      for (let i = 0; i < 60; i++) {
+        n = (await q("SELECT count(*)::int AS n FROM events")).rows[0].n;
+        if (n >= N) break;
+        await sleep(1000);
+      }
+      eq(n, N, "and every event lands");
+    } finally { await stop(s); fs.rmSync(dir, { recursive: true, force: true }); }
+
+    // The three facts the live harness cannot time, pinned where they live.
+    // Together they ARE the outage: the import was awaited between boot and
+    // app.listen, and it inserted 82k rows one at a time.
+    {
+      const src = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
+      // End at startImportIfAsked, not refreshCachedStores: the importer sits
+      // between them, so the wider slice reaches past its own subject and this
+      // fails on correct code. Same trap as every other slice in this repo that
+      // grew past its inputs.
+      const bootBody = src.slice(src.indexOf("async function storeBoot()"), src.indexOf("function startImportIfAsked("));
+      ok(!/importFromDisk/.test(bootBody),
+         "storeBoot does not import — that is what held the healthcheck open [source]");
+      ok(/startImportIfAsked\(\);/.test(src.slice(src.indexOf("app.listen(PORT"))),
+         "the import is kicked AFTER listen [source]");
+
+      const st = fs.readFileSync(path.join(__dirname, "..", "lib", "store.js"), "utf8");
+      const impl = st.slice(st.indexOf("async function importEvents()"), st.indexOf("// The cache is imported"));
+      ok(/VALUES " \+ values\.join\(","\)/.test(impl),
+         "the event import inserts in batches, not one row per query [source]");
+    }
   }
 
   // ── a new container starts on the PLATFORM's warm cache ──────────────────
