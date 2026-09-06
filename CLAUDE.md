@@ -79,8 +79,20 @@ from the ledger — it needs **no joins at all**, since `order_item_id` and
 org, over the thirteen-month window: **3.5 s** against v6's 25.8 s for the
 whole card. The fallback is its own trivially cheap CTE — re-measured, there
 are still **10 orphan rows on the entire platform across 2 orgs, of 131,498**.
-A v7.1 still owes the full equivalence gate and a tag flip; **the shape is no
-longer the unknown, only the proof is.**
+**And the new shape is value-identical where it has been tested**, proven rather
+than assumed, because v7 shipped broken by inheriting a proof of a different
+shape. `FULL OUTER JOIN` per order item over the thirteen-month window:
+clarksville **12,213 groups** and norman **20,448**, with **0 rows on either
+side alone, 0 paid diffs, 0 refund diffs** and totals identical to the cent
+($124,889.29 and $406,353.50 paid). The base side's
+`deleted_at IS NULL AND confirmed_at IS NOT NULL AND credit_id IS NULL` comes
+from the partial predicate on `order_item_transaction_item_log_period_index` —
+the item log's own notion of a countable transaction — and zero diffs over
+32,661 groups is what confirms that reading.
+
+**That covers `tx_oi` only** — the precise arm, two orgs, one window. The
+fallback on base tables, the unwindowed shape prewarm sends, and an end-to-end
+comparison of the card's own rows are all still owed, as is the tag flip.
 
 ### WHERE IT STANDS
 

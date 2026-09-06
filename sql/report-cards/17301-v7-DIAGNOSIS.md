@@ -97,6 +97,42 @@ The fallback belongs in its own CTE driven from the orphan pairs, and it is
 trivially cheap: re-measured 2026-09-06, **10 orphan rows on the entire
 platform across 2 orgs, out of 131,498**.
 
+## Same numbers, not just faster — the precise arm is PROVEN
+
+Speed was measured first and equivalence second, deliberately: v7 shipped broken
+because a proof of one shape was read as a proof of another, so this shape got
+its own proof rather than inheriting v7's.
+
+`FULL OUTER JOIN` per `order_item_id`, item-log side against base-table side,
+over the thirteen-month window:
+
+| | clarksville | norman (heaviest) |
+|---|---|---|
+| groups compared | **12,213** | **20,448** |
+| only in base tables | 0 | 0 |
+| only in the item log | 0 | 0 |
+| paid diffs | **0** | **0** |
+| refund diffs | **0** | **0** |
+| paid, item log / base | $124,889.29 / **$124,889.29** | $406,353.50 / **$406,353.50** |
+| refunded, item log / base | $95.00 / **$95.00** | $6,698.00 / **$6,698.00** |
+
+**The three filters are load-bearing and were confirmed, not guessed.** The base
+side applies `deleted_at IS NULL AND confirmed_at IS NOT NULL AND credit_id IS
+NULL`, taken from the partial predicate on
+`order_item_transaction_item_log_period_index` — i.e. the item log's own notion
+of a countable transaction. Zero diffs over 32,661 groups across two orgs is the
+evidence that reading is right. Drop any of the three and this stops being a
+proof of anything.
+
+**WHAT THIS DOES NOT PROVE**, and the list matters more than the table:
+
+* only `tx_oi`, the **precise** arm. The customer/product fallback rebuilt on
+  base tables is untested here.
+* two orgs and one window. Not the platform, and not the unwindowed shape
+  prewarm actually sends.
+* the aggregate, not the **card** — no end-to-end row-for-row comparison of
+  17301's own output has been run against this shape.
+
 ## What a v7.1 still owes
 
 - The full equivalence gate again — the value proof was sound for v7's text,
