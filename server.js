@@ -18924,6 +18924,94 @@ app.get("/", (req, res) => {
     })();
 
     const UPDATES = [
+  { date: '2026-09-06', title: '⏳ A progress bar that knows how long your report usually takes', items: [
+    'The spinning animation is gone. Every report now shows a progress bar with a time estimate, because the feedback was that a spinner gives you no idea whether to wait thirty seconds or give up.',
+    'The estimate is MEASURED, not guessed: we keep the last twenty real load times for each report at each organisation and use them. Where we have not timed a report for you yet we fall back to the typical time across all organisations, and where we have nothing at all the bar says so rather than promising a number we cannot keep.',
+    'It deliberately never fills all the way until your data actually arrives, and a load running past its estimate says so — longer than usual, still working. A bar that looks finished while the report is still running is worse than no bar, which is a mistake we shipped and fixed the same day.',
+    'A report that comes back quickly shows nothing at all. Under about a third of a second a flash of a progress bar just makes a fast report feel slow.',
+  ]},
+  { date: '2026-09-06', title: '🖨️ Every icon in every PDF was printing as a blank box', items: [
+    'The Forms, Paid, Permit and Rec-link columns on the rental schedule PDF, the add-on note lines, and the icons in the Director’s Report, the QBR and the permit posting sheets were all rendering as empty rectangles. Sixty different icons across the exports were affected.',
+    'The cause was a missing font on the machine that draws the PDFs. Nothing was wrong with your data or your settings.',
+    'It only ever affected the PDFs, which is why it went unreported for so long: the report pages themselves are drawn by YOUR browser, which has the font, while the PDFs are drawn by ours, which did not. Anything you exported that looked wrong is worth exporting again.',
+  ]},
+  { date: '2026-09-04', title: '🏃 The Memberships report was taking over two minutes; it is now under eight seconds', items: [
+    'A thirteen-month window that previously timed out past 300 seconds now returns in 7.9 seconds. The largest organisation we tested went to 25.8 seconds, and a smaller one to under four.',
+    'What it had been doing: computing your organisation’s ENTIRE payment history, back to your first ever transaction, in order to decorate the rows inside the dates you actually chose — and doing it twice on every load. That is why a one-month window that returned no rows at all still took 55 seconds.',
+    'NOT ONE FIGURE CHANGED. The new and old versions were compared row by row over two organisations’ complete histories before this shipped: identical to the cent.',
+    'If you saw Server returned 504 on the Memberships summary, this was why. The report also now tells you to try a shorter date range instead of just showing you an error code.',
+  ]},
+  { date: '2026-09-04', title: '📅 The Retention tab no longer rewrites your date range', items: [
+    'Clicking Retention silently widened the whole report’s dates to twelve months and left them that way. Every tab you opened afterwards then re-queried a year of data, and the header ended up disagreeing with its own Start and End boxes.',
+    'The cohort chart now fetches its own twelve months WITHOUT touching your toolbar, and names the window it covers on screen — because it deliberately shows more than the dates above it, and a chart quietly disagreeing with the dates on the page is how a number stops being trusted.',
+    'This is also the explanation for two other things people reported: tabs feeling slow and uncached after visiting Retention, and the report asking for a thirteen-month window nobody typed. Same single cause.',
+    'The rule from here: a tab may show more than your date range, it may never change it.',
+  ]},
+  { date: '2026-09-04', title: '🏟️ Facilities hub: a tab retired, and one renamed', items: [
+    'Court Utilization has been removed as a tab. The Racket Sports tab covers the same ground, and for many organisations the two were rendering identically.',
+    'Outdoor Events is now Outdoor Facilities.',
+    'WORTH KNOWING IF YOU RUN NON-RACKET COURTS. Racket Sports filters by sport name, so basketball, volleyball and multi-use courts no longer have a utilization view on the hub. That affects a real number of you and we would rather hear about it than guess — say the word and the filter comes off.',
+    'The Private Instructor Lessons panel has been removed from the Racket Sports tab.',
+  ]},
+  { date: '2026-09-03', title: '⬇️ The numbers behind every chart are now downloadable', items: [
+    'Charts are nice to look at and hard to get data out of. Every chart panel on the Aquatics and Programs tabs now has its own download, plus a single workbook containing every table on the tab.',
+    'That covers lane hours by lane, revenue by site, the day-part grid, bookings by month, programs by month, and the per-location and per-instructor breakdowns — none of which existed anywhere except as a picture before this.',
+    'The grids come out LONG rather than wide — one row per weekday per hour — so you can pivot them without unpicking a block first.',
+    'Revenue by site downloads EVERY site, not just the twelve the chart draws. The chart is capped so it stays readable; a file has no such reason.',
+    'A future month’s money comes out blank, never zero. Unsold inventory and earned-nothing are different facts.',
+  ]},
+  { date: '2026-09-03', title: '📇 Community Intelligence contact lists download again', items: [
+    'The seven Request CSV buttons opened a notice explaining that exports were unavailable. They now download the list.',
+    'Every download is recorded with the segment and the contact count, so there is a record of which lists left the platform and when. That record is what makes re-enabling these safe.',
+  ]},
+  { date: '2026-09-03', title: '🎯 Programs summary: cancelled sections out by default, and a season picker that is there immediately', items: [
+    'Sections you cancelled are now hidden by default, with a checkbox to bring them back that tells you how many there are. The complaint that prompted this: opening the report and seeing camps cancelled last summer that never ran.',
+    'The season picker used to be built from the rows, which meant that during a slow load the one control that would have narrowed that load did not exist yet. It is now seeded from the seasons your organisation ran last time, so it is on screen immediately — and picking a season sets the window for you.',
+    'Quick status pills over All Programs — Upcoming, In progress, Ran — scoping the table without moving the summary cards above it.',
+    'The toolbar is properly pinned now. It always had been, but it was sticking UNDERNEATH the banner, so the top of the date fields was cut off the moment you scrolled. Fixed on every report, not just this one.',
+    'Top Programs by Revenue was scaled to whichever row sorted first rather than the largest, so several bars pegged at full width and the chart barely moved when you filtered. Fixed, and it now sorts by the figure it actually draws.',
+  ]},
+  { date: '2026-09-03', title: '💵 Programs revenue: honest labels, and a Total Refunds card', items: [
+    'NET REVENUE was the ALL-TIME total for the programs running in your window, sitting next to a period figure, under a date header. Both numbers were right and the labels were not. Net Revenue in Period now leads, and Lifetime Net Revenue says lifetime.',
+    'Two tabs carried a card with the SAME NAME showing DIFFERENT numbers. There is now exactly one Collected in Period, and both tabs call the all-time figure the same thing.',
+    'New card: refunds in your date range, with the all-time figure beneath it and the share of payments received in the same window. An August refund of a June payment is ordinary, so that share is a cash-flow ratio rather than a per-registration refund rate.',
+    'No arithmetic changed anywhere in this. If you reconciled these figures before, they still reconcile.',
+  ]},
+  { date: '2026-09-02', title: '🏊 Aquatics: you choose which sites count', items: [
+    'Some organisations set up swim lanes as courts, because only courts can be made instant-bookable. That meant the Aquatics tab could miss most of the lanes that carry the traffic — at one organisation it showed 24 sites while 70 held the bookings.',
+    'There is now a setting on the Facilities report where you pick the locations and sites that count as aquatic, as a location and site tree with a live count of what the tab will show BEFORE you save.',
+    'Pools always count and are shown locked — leaving them out is what makes you wonder whether the pool is in the number. The setting only ever ADDS.',
+    'Also fixed on those tabs: sites named like North Lane 7 - A were being displayed as A, and two lanes at one location could merge into a single row with their bookings added together. And Average Party size was dividing by every booking including the ones that record no head count, which read as 0.3 guests per booking; it now says where recorded, and how many.',
+  ]},
+  { date: '2026-09-01', title: '⚠️ The Waitlist report’s claim rate was measuring expiry, not claiming', items: [
+    'Conversion on that report was reading roughly TWENTY POINTS HIGH. It inferred a claim from a timestamp pattern that in fact identifies the automatic expiry sweep rather than anybody accepting an invite.',
+    'The clinching evidence was an impossibility rather than a discrepancy: of the 5,371 invites the old test called claimed, every single one had already expired and NOT ONE was still open. A signal that never catches an invite inside its own window is not measuring claiming.',
+    'A claim is now a confirmed registration by that participant, for that section, inside the invite window. EXPECT THE NUMBERS ON THAT REPORT TO DROP — that is the fix landing, not a regression.',
+    'Average and Median Claim Hours, and all six claim-time buckets, were describing how LONG THE INVITE WINDOWS WERE rather than how quickly anybody responded. Those are corrected too.',
+    'The parts also add up now: claimed plus expired plus still-open equals invites sent, which it previously did not.',
+  ]},
+  { date: '2026-09-01', title: '💳 Programs: how your payment plan money is actually being collected', items: [
+    'A new figure on the Programs summary: the share of payment plan money on auto-pay versus collected by hand. Registrations paid in full are counted on neither side — somebody who paid up front is not on manual collection.',
+    'Both readings are printed, because they disagree sharply. At one organisation auto-pay is 10.5% of plan DOLLARS but only 0.4% of plan REGISTRATIONS: it is being used for the expensive plans, and either number alone tells you the wrong thing about the other.',
+    'Outstanding revenue is now split into PAST DUE, SCHEDULED, and SCHEDULED ON AUTO-PAY. At one organisation the single Outstanding figure was 96% money that is not due yet, with the genuinely late portion invisible inside it.',
+    'Past due is deliberately not split by collection method: a past-due auto-pay instalment is a declined card, and filing it under auto-pay would report it as collecting on schedule when it is the opposite.',
+    'The Programs Excel export was ignoring your filters and exporting your whole organisation. It now exports what you are looking at.',
+  ]},
+  { date: '2026-08-31', title: '👤 Programs: instructor, location, and a by-month view', items: [
+    'Section rows now carry the instructor and the location, with multi-select filters for both at the top, and both columns are in the Excel export. A program spanning several instructors shows the set rather than picking one and presenting it as the answer.',
+    'A by-month panel showing BOTH readings on one axis: how many sections are running each month, and how much money came in. These peak at different times — programming peaks when the classes run, money peaks when people register — so a single chart labelled by month gets read as whichever the reader assumed.',
+    'Future months are hatched rather than drawn as real zeroes, because unpublished programming and a collapse in demand should not look the same.',
+    'A multi-select SEASON filter as well, which narrows what is already in view rather than moving your dates. Season records carry a registration window rather than the period the programming runs, and at one organisation a season declaring six weeks actually ran five months — so setting your dates from it would clip exactly the sections the filter exists to gather.',
+    'Sections with no instructor on file are their own filter option rather than silently vanishing when you tick anybody.',
+  ]},
+  { date: '2026-08-30', title: '🔁 Memberships: the auto-renew book, and metrics that say what they mean', items: [
+    'The Auto-Renew tab now lists the plans that actually have somebody on auto-renew, rather than measuring a rate against everything you sell. Season passes, day passes and gate admissions cannot auto-renew at all, so including them measured against a base that could never move.',
+    'Churn is reported PER RENEWAL PERIOD, in each plan’s own cadence, rather than as a lifetime running total. Half of a four-year-old subscription book having eventually cancelled is unremarkable; the same number shown between two monthly figures reads like a fire.',
+    'Retention curves can be filtered to a single plan. A blended curve answers whether your organisation retains, which is a different question from whether THIS plan retains — at one organisation weekly childcare plans cancel at 100% while the monthlies sit near 42%, so the blend describes neither.',
+    'The Ending Soon count now opens to show WHO — member, email, last billing day and price, each linking through to their Rec account.',
+    'Auto-renew requires a card on file. Desk swipes, cash, cheque and organisation credit cannot auto-renew, which is why plans named Cash sit at zero — converting one means capturing a card, not changing a plan setting, and the report now says so.',
+    'A price and volume breakdown showing WHERE revenue moved: at one organisation units rose 10.4% while revenue fell 74.9%, which was neither churn nor discounting but a $224 family pass being replaced by $9 single passes.',
+  ]},
   { date: '2026-08-27', title: '\uD83D\uDCB8 Fast Track now shows the money you could not seat', items: [
     'Recently launched and upcoming sections carry a new figure: the revenue represented by Fast Track demand BEYOND the section\u2019s capacity. The Smyrna 154th Birthday Concert General Table has 273 families holding against 50 seats \u2014 $39,025 of demand with nowhere to sit, which the report did not previously mention anywhere.',
     'The Conversions tab gains FT Revenue and a Missed \u2014 No Room total, and is now ordered MOST RECENTLY LAUNCHED FIRST. It used to lead with the best-converting section, which buried one that opened an hour ago beneath one that opened three weeks ago \u2014 and the section that just opened is the only one whose outcome you can still change.',
