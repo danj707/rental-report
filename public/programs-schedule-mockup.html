@@ -443,12 +443,15 @@
       </ul>
     </div>
     <div>
-      <h3>The roster link: cheap, with one trap</h3>
+      <h3>The roster link: the UUID already exists</h3>
       <ul>
-        <li><span class="ok">The destination needs no work.</span> Card 17296 already filters on <code>org_id</code>, <code>start_date</code>, <code>end_date</code> and <code>section_name</code>, is already session grain, and <code>roster.html</code> already reads all four off the URL and auto-runs. A link lands on a filtered, loaded roster today.</li>
-        <li><span class="warn">But section names are not unique, and the filter is a substring match.</span> <code>section_name</code> is <code>ILIKE '%name%'</code> with no program filter. Measured over a live 37-day window: <b>3,160 of 21,944 section-dates (14.4%) would open a roster carrying other sections' participants</b> &mdash; 432 of them spanning two or more programs, across <b>41 orgs</b>, worst case <b>31 sections</b> collapsed onto one link. Platform-wide, 14,833 of 24,739 live sections share their name exactly with another section in the same org.</li>
-        <li><b>So link on the section ID.</b> That is one optional clause on 17296 (<code>[[ AND section.id = {{section_id}}::uuid ]]</code>, plus a tag flip) and three lines in <code>roster.html</code> to read and forward it. The name still rides along so the roster's own filter chip reads legibly.</li>
-        <li>The new session-grain card needs <code>Section ID</code> anyway for the &#8599; Rec link, so the programs side is free.</li>
+        <li><span class="ok">The programs side is already done.</span> Card 17295 emits <code>section_id</code> (<code>s.id AS section_id</code>) today, <code>programs.html</code> already maps it (<code>sectionId: raw['Section Id']</code>), and it already drives the section-detail drill-down. Card 17298 carries it too, inside <code>Section URL</code>. Nothing to add &mdash; the new session-grain card just carries it onto each session row.</li>
+        <li><span class="ok">The destination needs no work either.</span> Card 17296 already filters on <code>org_id</code>, <code>start_date</code>, <code>end_date</code>, <code>section_name</code>, is already session grain, and <code>roster.html</code> already reads all four off the URL and auto-runs.</li>
+        <li><span class="warn">The one gap is that the roster cannot RECEIVE an id.</span> Of card 17296's 22 output columns not one is an id (<code>Rec ID</code> is the participant's 6-character desk code), and it has no <code>section_id</code> template tag &mdash; so today the only key on offer is <code>section_name</code>, an <code>ILIKE '%name%'</code> with no program filter.</li>
+        <li><span class="warn">Which is why the name alone will not do.</span> Measured over a live 37-day window: <b>3,160 of 21,944 section-dates (14.4%) would open a roster carrying other sections' participants</b> &mdash; 432 spanning two or more programs, across <b>41 orgs</b>, worst case <b>31 sections</b> collapsed onto one link. Platform-wide, 14,833 of 24,739 live sections share their name exactly with another section in the same org.</li>
+        <li><b>So: one push to 17296, two additive changes.</b> The clause <code>[[ AND section.id = {{section_id}}::uuid ]]</code>, and <code>section.id AS "Section ID"</code> as an output column &mdash; same push, same date-tag flip, and the column makes the join checkable from the roster's own rows. Plus three lines in <code>roster.html</code> to read and forward <code>section_id</code>. The name still rides along, only so the roster's filter chip reads legibly.</li>
+        <li><b>Filter it server-side, not in the browser.</b> Emitting the id and cross-referencing client-side sounds equivalent and is not: apex's roster over a month is ~12,000 rows / 382 pages, so that pulls the whole window to throw nearly all of it away. The <code>[[ ]]</code> clause is what keeps the payload one section wide.</li>
+        <li><b>Section id plus date is exact for 98.7% of meetings.</b> The rest are sections that meet twice in one day: <b>290 of 21,945 section-dates (1.3%), 14 orgs, worst case 10 sessions</b> &mdash; there the link returns both of that day's meetings. Same enrolled people for a per-section run; genuinely different for a per-session drop-in. A <code>Session ID</code> on both cards closes it, and is worth doing only if one of those 14 orgs asks.</li>
       </ul>
     </div>
     <div>
@@ -706,8 +709,16 @@
   // 21,944 section-dates (14.4%, 41 orgs, worst case 31 sections) would
   // open a roster carrying OTHER sections' participants. So the link is
   // built on the section ID, with the name kept only so the roster's own
-  // filter chip reads legibly. section_id is one optional clause on
-  // 17296 and three lines in roster.html.
+  // filter chip reads legibly.
+  //
+  // The id itself costs nothing: card 17295 ALREADY emits section_id and
+  // programs.html already maps it. What is missing is on the roster side
+  // — 17296 emits no id column and has no section_id tag — so the work is
+  // one optional clause there plus three lines in roster.html.
+  //
+  // Date, not session: a (section, date) pair is one meeting for 98.7% of
+  // section-dates. The 1.3% that meet twice in a day (290 of 21,945, 14
+  // orgs) would open both of that day's rosters.
   function rosterUrl(r) {
     var qs = 'section_id=' + encodeURIComponent(r.sectionId)
            + '&section_name=' + encodeURIComponent(r.section)
