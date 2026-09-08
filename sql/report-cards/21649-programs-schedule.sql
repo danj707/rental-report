@@ -6,6 +6,11 @@
 --
 -- Variables: {{org_id}} Text, {{start_date}} Date, {{end_date}} Date
 --
+-- LIVE CARD: 21649 — https://rec.metabaseapp.com/question/21649
+-- THE LIVE CARD IS THE SOURCE OF TRUTH — read it before writing to it; this
+-- repo copy drifts (card 17294's mirror was 53 lines stale and pushing it
+-- would have deleted a whole feature).
+--
 -- WHY A NEW CARD RATHER THAN COLUMNS ON 17295
 -- 17295 is SECTION grain — one row per section for the whole window — so it has
 -- nowhere to put a per-date row, and it already runs 45-140s at apex and is
@@ -44,6 +49,11 @@
 -- `win` restricts inputs; the output filter is what governs the row set. That
 -- is the sec_win lesson from 17295 — delete either and the two predicates drift
 -- apart silently.
+--
+-- TO ACTIVATE: create a public link and paste its UUID into
+-- MB_PROGRAMS_SCHEDULE_UUID in the rental-report Railway env. After any API
+-- push, re-set the Start/End Date variable types to Date in this UI and
+-- re-save until the card registers THREE parameters, not six.
 
 WITH cfg AS (
     -- Metabase's report timezone is America/Los_Angeles, so an un-converted

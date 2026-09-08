@@ -1766,9 +1766,10 @@ const REPORT_DIRECTORY = {
 // Migrate report types here one at a time; per-org mbUuid is the fallback.
 const SHARED_UUIDS = {
   facility: "f6787f45-3a36-4501-8a5f-b0f647451a85",
-  // Metabase question "✅ Programs Schedule" — SESSION grain, the Programs
-  // equivalent of the facility rental schedule. Mirrored at
-  // sql/report-cards/programs-schedule.v1-PENDING.sql.
+  // Metabase question 21649 ("✅ Programs Schedule") — SESSION grain, the
+  // Programs equivalent of the facility rental schedule. Mirrored at
+  // sql/report-cards/21649-programs-schedule.sql; the LIVE CARD is the source
+  // of truth. https://rec.metabaseapp.com/question/21649
   //
   // ABSENT until someone creates the public link, and that is deliberate:
   // an omitted key 404s the data route, so the page renders its own error
