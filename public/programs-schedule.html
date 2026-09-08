@@ -654,26 +654,43 @@
      link to a date of "undefined". The lookback stays as that fallback and
      nothing else — same rule as colPresence elsewhere in this repo.
 
-     The lookback bound is generous rather than tight because THE WINDOW IS
-     FREE. Measured through the preview on the roster feed, same org, cold:
-     one day 54s, one month 49s, thirteen months 31s — the card's date test is
-     a non-sargable COALESCE(...)::date over a joined column, so it does the
-     same work whatever the window, and that spread is replica load. Three
-     years covers the run length by a wide margin: over 45,695 per-section
-     runs, p99 is 133 days and p99.9 is 361, with 8 spanning more than two
-     years. */
-  var ROSTER_SECTION_LOOKBACK_YEARS = 3;
+     THE FALLBACK IS 400 DAYS, NOT THREE YEARS, and the correction generalises.
+
+     I measured the roster feed once on a QUIET replica — one day 54s, one
+     month 49s, thirteen months 31s, the widest being the FASTEST — concluded
+     "the window is free", and set a three-year lookback on the strength of it.
+     That holds only while nothing else is running. The card's date test is a
+     non-sargable COALESCE(...)::date over a joined column, so a wider window
+     costs no extra INDEX work — but it still returns and ships every row in
+     it, and under load that is the whole cost. Dan hit it: 2m42s and still
+     going, with the roster falling back to stale cache. ONE QUIET MEASUREMENT
+     IS NOT EVIDENCE ABOUT COST — the same shape as "one org's clean data is
+     not evidence about what a column MEANS", already recorded in CLAUDE.md.
+
+     400 days is the measured bound rather than a round number: over 45,695
+     per-section runs, p99 is 133 days and p99.9 is 361. So it still contains
+     the run's first session for 99.9% of sections, at a fifth of the rows.
+     The 8 runs spanning more than two years lose the date precision and fall
+     back to the section-name match, which is what narrows the page anyway.
+
+     And this path is TRANSIENT: it runs only for a feed cached BEFORE card
+     21649 grew the column, i.e. at most one 4-hour TTL after a push. */
+  var ROSTER_SECTION_LOOKBACK_DAYS = 400;
 
   function rosterWindow(r) {
     if (r.regMode === 'per-session') return { start: r.date, end: r.date };
     // The exact answer, when the feed carries it.
     if (r.firstSession) return { start: r.firstSession, end: r.firstSession };
-    var p = String(r.date).split('-');
-    var y = Number(p[0]) - ROSTER_SECTION_LOOKBACK_YEARS;
-    // Built from PARTS, never new Date(ymd) — that is UTC midnight and lands
-    // on the previous day west of UTC, the trap this page already avoids in
-    // defaultRange().
-    return { start: y + '-' + p[1] + '-' + p[2], end: r.date };
+    // Date.UTC + getUTC* round-trips a bare YYYY-MM-DD without ever passing
+    // through LOCAL midnight, which is the trap this page avoids in
+    // defaultRange() by reading local parts. Both ends here are calendar dates
+    // the card compares as dates, so UTC arithmetic is exact and cannot shift
+    // a day — and unlike the old year subtraction it is right on a leap day.
+    var p = String(r.date).split('-').map(Number);
+    var d = new Date(Date.UTC(p[0], p[1] - 1, p[2]) - ROSTER_SECTION_LOOKBACK_DAYS * 86400000);
+    var pad = function (n) { return n < 10 ? '0' + n : String(n); };
+    return { start: d.getUTCFullYear() + '-' + pad(d.getUTCMonth() + 1) + '-' + pad(d.getUTCDate()),
+             end:   r.date };
   }
 
   function rosterUrl(r) {

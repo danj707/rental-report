@@ -1694,8 +1694,13 @@ const CASES = [
         const u = new URL(a.getAttribute("href"), location.origin);
         const st = u.searchParams.get("start_date"), en = u.searchParams.get("end_date");
         if (!st || !en || /undefined|NaN/.test(st + en)) return;
-        const days = (new Date(en + "T12:00:00") - new Date(st + "T12:00:00")) / 86400000;
-        if (days > 365) document.body.setAttribute("data-ps-fallback", "ok");
+        const days = Math.round((new Date(en + "T12:00:00") - new Date(st + "T12:00:00")) / 86400000);
+        // KEYED ON THE BOUND, not on "wide". `days > 365` passes on the THREE
+        // YEARS this shipped with as well as on the 400 days that replaced it,
+        // so it could not tell the fix from the bug it was fixing. 400 is the
+        // p99.9 run span; three years was a guess off one quiet measurement.
+        document.body.setAttribute("data-ps-fallback-days", String(days));
+        if (days === 400) document.body.setAttribute("data-ps-fallback", "ok");
       });
     } },
 
