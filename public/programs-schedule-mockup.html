@@ -200,6 +200,15 @@
 
   .empty { text-align: center; padding: 40px 0; color: #888; }
 
+  .roster-peek {
+    margin-top: 10px; padding: 7px 10px;
+    background: #f4f1fa; border-left: 3px solid #7c3aed;
+    font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: #4c1d95;
+    overflow-x: auto; white-space: nowrap;
+  }
+  .roster-peek[hidden] { display: none; }
+  @media print { .roster-peek { display: none !important; } }
+
   /* ── Column widths ── */
   .col-begin { width: 64px; flex: 0 0 64px; }
   .col-end   { width: 64px; flex: 0 0 64px; }
@@ -211,6 +220,7 @@
   .col-ages  { width: 82px; flex: 0 0 82px; }
   .col-price { width: 58px; flex: 0 0 58px; text-align: right; font-variant-numeric: tabular-nums; }
   .col-status{ width: 86px; flex: 0 0 86px; text-align: center; }
+  .col-roster{ width: 34px; flex: 0 0 34px; text-align: center; }
   .col-link  { width: 26px; flex: 0 0 26px; text-align: center; }
 
   /* ── Program cell ── */
@@ -260,6 +270,11 @@
   .row-canceled { opacity: .72; }
 
   .reclink { color: #2563eb; text-decoration: none; font-size: 13px; }
+  /* Violet, deliberately not the blue of the Rec link beside it: one opens a
+     report of ours, the other opens Rec. Two blues read as one control. */
+  .rosterlink { color: #7c3aed; text-decoration: none; font-size: 13px; cursor: pointer; }
+  .rosterlink:hover { filter: brightness(1.15); }
+  .rosterlink:focus-visible { outline: 2px solid #7c3aed; outline-offset: 1px; border-radius: 2px; }
 
   /* ── Build notes (annotation, not part of the report) ── */
   .notes {
@@ -356,6 +371,7 @@
     <label><input type="checkbox" data-col="ages" checked /> Ages</label>
     <label><input type="checkbox" data-col="price" /> Price</label>
     <label><input type="checkbox" data-col="status" checked /> Status</label>
+    <label><input type="checkbox" data-col="roster" checked /> Roster</label>
     <label><input type="checkbox" data-col="notes" checked /> Notes</label>
     <label><input type="checkbox" data-col="link" checked /> Rec link</label>
   </div>
@@ -384,9 +400,16 @@
     <span><b>18/24</b> = confirmed participants / capacity.</span>
     <span><span class="grain grain-session">Per-session</span> <b>counts that meeting's seats</b> &mdash; drop-ins and camps sold by the day.</span>
     <span><span class="grain grain-section">Per-section</span> <b>counts the whole run</b>, repeated on every date it meets.</span>
+    <span>A section meeting Mon/Wed/Fri gets <b>a row on each of those dates</b> &mdash; see Learn to Swim Level 3, below, on all three days.</span>
+    <span><span class="rosterlink">&#128203;</span> opens the <b>class roster for that date</b>.</span>
   </div>
 
   <div id="report"></div>
+
+  <!-- Mockup only: the real page navigates. This proves which URL each
+       clipboard would open, which is the thing a mockup can otherwise
+       only assert. -->
+  <div id="rosterPeek" class="roster-peek" hidden></div>
 
   <div class="report-footer">
     <span>City of El Segundo &middot; Recreation, Parks &amp; Library</span>
@@ -420,12 +443,28 @@
       </ul>
     </div>
     <div>
+      <h3>The roster link: cheap, with one trap</h3>
+      <ul>
+        <li><span class="ok">The destination needs no work.</span> Card 17296 already filters on <code>org_id</code>, <code>start_date</code>, <code>end_date</code> and <code>section_name</code>, is already session grain, and <code>roster.html</code> already reads all four off the URL and auto-runs. A link lands on a filtered, loaded roster today.</li>
+        <li><span class="warn">But section names are not unique, and the filter is a substring match.</span> <code>section_name</code> is <code>ILIKE '%name%'</code> with no program filter. Measured over a live 37-day window: <b>3,160 of 21,944 section-dates (14.4%) would open a roster carrying other sections' participants</b> &mdash; 432 of them spanning two or more programs, across <b>41 orgs</b>, worst case <b>31 sections</b> collapsed onto one link. Platform-wide, 14,833 of 24,739 live sections share their name exactly with another section in the same org.</li>
+        <li><b>So link on the section ID.</b> That is one optional clause on 17296 (<code>[[ AND section.id = {{section_id}}::uuid ]]</code>, plus a tag flip) and three lines in <code>roster.html</code> to read and forward it. The name still rides along so the roster's own filter chip reads legibly.</li>
+        <li>The new session-grain card needs <code>Section ID</code> anyway for the &#8599; Rec link, so the programs side is free.</li>
+      </ul>
+    </div>
+    <div>
       <h3>Choices worth arguing with</h3>
       <ul>
         <li><b>A blank instructor stays blank.</b> 155 of El Segundo's 286 live sections have nobody on file, holding 83% of enrolments &mdash; no nudge, no &ldquo;unassigned&rdquo;, per the earlier call. So the instructor filter needs its own <i>No instructor on file</i> option, or ticking any name silently drops half the schedule.</li>
         <li><b>Cancelled sessions stay on the page</b>, struck through. Someone reading a wall schedule needs to know the room is free.</li>
         <li><b>Location is the group, site is the column</b> &mdash; identical to the rental schedule, so the two reports print the same shape.</li>
         <li><b>A run's dates ride in the program cell</b> in amber, where the rental schedule puts its multi-day callout.</li>
+        <li><b>No clipboard where there is nobody to list.</b> Absent, not greyed &mdash; the
+            same rule as the rental schedule's Forms column, which renders nothing where no
+            form was ever requested. A link to an empty roster is the dead end this is
+            meant to remove.</li>
+        <li><b>The roster link is scoped to the single date</b>, so it answers "who is in
+            this session". For a per-section run that is the same names on every date; for a
+            per-session camp it is that day's list, which is the one worth printing.</li>
       </ul>
     </div>
   </div>
@@ -460,6 +499,12 @@
       instructor:'Dee Okafor', enrolled:9, capacity:30, wait:0, ages:'16+', price:12,
       status:'In Progress', grain:'session', seq:null, run:'',
       note:'Sold per class. The last four Mondays averaged 11.' },
+
+    { date:'2026-09-14', loc:'Wiseburn Aquatic Center', site:'Instructional Pool',
+      program:'Learn to Swim — Level 3', section:'Mon/Tue/Wed 5:45 PM', begin:'5:45 PM', end:'6:25 PM',
+      instructor:'Priya Raman', enrolled:7, capacity:10, wait:0, ages:'6–9 yrs', price:120,
+      status:'In Progress', grain:'section', seq:[13,36], run:'Sep 2 – Oct 21',
+      note:'Meets three days a week — one row per meeting date, same 7 enrolled on each.' },
 
     { date:'2026-09-14', loc:'Joslyn Center', site:'Dance Studio',
       program:'Cue the Tap Shoes with Jenna Lockwood', section:'Mon 5:30 PM — Beginner', begin:'5:30 PM', end:'6:30 PM',
@@ -508,6 +553,11 @@
       status:'Canceled', grain:'session', seq:null, run:'',
       note:'Session canceled Sep 12 — deck resurfacing. The space is free.' },
 
+    { date:'2026-09-15', loc:'Wiseburn Aquatic Center', site:'Instructional Pool',
+      program:'Learn to Swim — Level 3', section:'Mon/Tue/Wed 5:45 PM', begin:'5:45 PM', end:'6:25 PM',
+      instructor:'Priya Raman', enrolled:7, capacity:10, wait:0, ages:'6–9 yrs', price:120,
+      status:'In Progress', grain:'section', seq:[14,36], run:'Sep 2 – Oct 21', note:'' },
+
     { date:'2026-09-15', loc:'Recreation Park', site:'Field 2',
       program:'Adult Coed Kickball', section:'Tue 6:30 PM — Fall League', begin:'6:30 PM', end:'9:30 PM',
       instructor:'', enrolled:96, capacity:120, wait:0, ages:'18+', price:65,
@@ -547,6 +597,11 @@
       status:'Upcoming', grain:'section', seq:[1,6], run:'Sep 16 – Oct 21',
       note:'First meeting of the run.' },
 
+    { date:'2026-09-16', loc:'Wiseburn Aquatic Center', site:'Instructional Pool',
+      program:'Learn to Swim — Level 3', section:'Mon/Tue/Wed 5:45 PM', begin:'5:45 PM', end:'6:25 PM',
+      instructor:'Priya Raman', enrolled:7, capacity:10, wait:0, ages:'6–9 yrs', price:120,
+      status:'In Progress', grain:'section', seq:[15,36], run:'Sep 2 – Oct 21', note:'' },
+
     { date:'2026-09-16', loc:'Joslyn Center', site:'Dance Studio',
       program:'Cue the Tap Shoes with Jenna Lockwood', section:'Wed 5:30 PM — Intermediate', begin:'5:30 PM', end:'6:45 PM',
       instructor:'Jenna Lockwood', enrolled:11, capacity:18, wait:0, ages:'10–16 yrs', price:145,
@@ -559,6 +614,23 @@
       status:'In Progress', grain:'session', seq:null, run:'', note:'' }
   ];
 
+  // A section ID per distinct (program, section) pair, stable across the
+  // dates that pair repeats on — which is exactly what makes the roster
+  // link exact where an ILIKE on the name is not. The real card supplies
+  // the real uuid.
+  (function () {
+    var ids = {};
+    var n = 0;
+    ROWS.forEach(function (r) {
+      var k = r.program + '||' + r.section;
+      if (!ids[k]) {
+        n += 1;
+        ids[k] = 'sec-' + ('0000' + n).slice(-4) + '-a1b2-4c3d-8e9f-0123456789ab';
+      }
+      r.sectionId = ids[k];
+    });
+  })();
+
   // Its own filter option, never a dropped row. A sentinel rather than ''
   // so it can carry a label and sort last.
   var NO_INSTRUCTOR = '\u0000';
@@ -567,7 +639,7 @@
     locs: null,
     instrs: null,
     grain: 'all',
-    cols: { instr:true, wait:true, ages:true, price:false, status:true, notes:true, link:true }
+    cols: { instr:true, wait:true, ages:true, price:false, status:true, roster:true, notes:true, link:true }
   };
 
   function esc(s) {
@@ -624,6 +696,40 @@
          + '</span>';
   }
 
+  // ── The roster link ────────────────────────────────────────────
+  // Card 17296 already filters on org_id / start_date / end_date /
+  // section_name, and public/roster.html already reads all four off the
+  // URL and auto-runs — so the destination needs no new report.
+  //
+  // BUT section_name is an ILIKE '%name%' with no program filter, and
+  // section names are not unique: over a live 37-day window, 3,160 of
+  // 21,944 section-dates (14.4%, 41 orgs, worst case 31 sections) would
+  // open a roster carrying OTHER sections' participants. So the link is
+  // built on the section ID, with the name kept only so the roster's own
+  // filter chip reads legibly. section_id is one optional clause on
+  // 17296 and three lines in roster.html.
+  function rosterUrl(r) {
+    var qs = 'section_id=' + encodeURIComponent(r.sectionId)
+           + '&section_name=' + encodeURIComponent(r.section)
+           + '&start_date=' + r.date + '&end_date=' + r.date
+           + '&status=enrolled';
+    return '/el-segundo-recreation/roster?' + qs;
+  }
+
+  function rosterCell(r) {
+    // Nothing to open: a session with nobody enrolled has no roster, and a
+    // link to an empty one is the dead end this report is meant to avoid.
+    // Absent, not disabled — the same rule as the rental schedule's Forms
+    // column, which renders nothing where no form was ever requested.
+    if (!r.enrolled || !r.sectionId) return '';
+    var when = fmtDate(r.date);
+    return '<a class="rosterlink" href="#" data-roster="' + esc(rosterUrl(r)) + '"'
+         + ' title="' + esc('Class roster for this session \u2014 ' + when
+             + ' \u00b7 ' + r.enrolled + ' enrolled\n' + rosterUrl(r)) + '"'
+         + ' aria-label="' + esc('Class roster for ' + r.program + ' on ' + when) + '"'
+         + '>&#128203;</a>';
+  }
+
   function statusPill(s) {
     var map = { 'In Progress':'pill-inprog', 'Upcoming':'pill-upcoming', 'Canceled':'pill-cancel', 'Ran':'pill-ran' };
     return '<span class="pill ' + (map[s] || 'pill-ran') + '">' + esc(s) + '</span>';
@@ -650,6 +756,7 @@
     if (c.ages)   h.push('<span class="col-ages">Ages</span>');
     if (c.price)  h.push('<span class="col-price">Price</span>');
     if (c.status) h.push('<span class="col-status">Status</span>');
+    if (c.roster) h.push('<span class="col-roster" title="Class roster">&#128203;</span>');
     if (c.link)   h.push('<span class="col-link">&#8599;</span>');
     return '<div class="col-header-row">' + h.join('') + '</div>';
   }
@@ -683,6 +790,7 @@
     if (c.ages)   cells.push('<span class="cell col-ages">' + esc(r.ages) + '</span>');
     if (c.price)  cells.push('<span class="cell col-price">' + (r.price ? '$' + r.price.toFixed(2) : '—') + '</span>');
     if (c.status) cells.push('<span class="cell col-status">' + statusPill(r.status) + '</span>');
+    if (c.roster) cells.push('<span class="cell col-roster">' + rosterCell(r) + '</span>');
     if (c.link)   cells.push('<span class="cell col-link"><a class="reclink" href="#" title="Open section in Rec">&#8599;</a></span>');
 
     var html = '<div class="row-wrap' + (r.status === 'Canceled' ? ' row-canceled' : '') + '">'
@@ -819,6 +927,16 @@
     });
   });
 
+  // ── Roster link (mockup: shows the URL rather than navigating) ──
+  document.getElementById('report').addEventListener('click', function (e) {
+    var a = e.target.closest && e.target.closest('[data-roster]');
+    if (!a) return;
+    e.preventDefault();
+    var box = document.getElementById('rosterPeek');
+    box.textContent = a.getAttribute('data-roster');
+    box.hidden = false;
+  });
+
   // ── Range presets (visual only in the mockup) ───────────────────
   document.querySelectorAll('.btn-preset').forEach(function (b) {
     b.addEventListener('click', function () {
@@ -829,5 +947,6 @@
 
   render();
 </script>
+
 </body>
 </html>
