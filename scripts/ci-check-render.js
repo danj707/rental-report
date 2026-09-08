@@ -578,14 +578,17 @@ function progSchedRows() {
     Price: "$40.00", Status: "Scheduled", Published: true,
   }, o);
   return [
+    /* PER-SESSION, and that is load-bearing: only a per-session row may be
+       scoped to its own single date, because only its bookings belong to the
+       meeting. The two rows are the same section on two dates. */
     row({ Date: d(0), Begin: "9:00 AM",  End: "10:00 AM", Location: "Urho Saari Swim Stadium",
           Site: "Gym A, Gym Annex", "Site Count": 2, Program: "Tot Lessons", Section: "Tot Lessons AM",
           "Section ID": "sec-tot", "Session ID": "ses-tot-1", Instructor: "Penny Finders",
-          Enrolled: 22, Capacity: 30 }),
+          "Registration Mode": "per-session", Enrolled: 22, Capacity: 30 }),
     row({ Date: d(2), Begin: "9:00 AM",  End: "10:00 AM", Location: "Urho Saari Swim Stadium",
           Site: "Gym A, Gym Annex", "Site Count": 2, Program: "Tot Lessons", Section: "Tot Lessons AM",
           "Section ID": "sec-tot", "Session ID": "ses-tot-2", Instructor: "Penny Finders",
-          Enrolled: 22, Capacity: 30 }),
+          "Registration Mode": "per-session", Enrolled: 22, Capacity: 30 }),
     row({ Date: d(1), Begin: "6:00 PM",  End: "8:00 PM",  Location: "Recreation Park",
           Site: "", Program: "Adult Pottery", Section: "Pottery Eve",
           "Section ID": "sec-pot", "Session ID": "ses-pot-1", Instructor: "Eric Stenberg",
@@ -1566,9 +1569,12 @@ const CASES = [
      works. Linking by section NAME would open the wrong roster for one
      date-row in seven (60% of sections share a name platform-wide), and a link
      carrying the RUN's dates rather than this meeting's would open a week.
-     So this reads the two hrefs of the one section that meets twice and
-     requires they differ only in the date, and that each date is its own. */
-  { name: "programs-schedule · each roster link carries its own date",
+
+     A PER-SESSION row is the one kind that may be scoped to a single date —
+     its bookings belong to that meeting. This reads the two hrefs of the one
+     per-session section that meets twice and requires start == end on each,
+     and the two dates to DIFFER. */
+  { name: "programs-schedule · a per-session roster link carries its own date",
     path: "/{org}/programs-schedule",
     needs: "[data-ps-roster='ok']",
     act: async (page) => {
@@ -1585,6 +1591,59 @@ const CASES = [
               u.searchParams.get("start_date") === u.searchParams.get("end_date"))
           && links[0].searchParams.get("start_date") !== links[1].searchParams.get("start_date");
         if (ok) document.body.setAttribute("data-ps-roster", "ok");
+      });
+    } },
+
+  /* THE HEADER MUST MATCH EVERY OTHER REPORT. .report-header-logo was used on
+     the img and had no CSS rule at all, so the org logo rendered at its
+     natural size and dwarfed the page. A source assertion cannot see that —
+     the class is present either way — so this measures the rendered box.
+     Also pins that the roster column is NAMED rather than a bare glyph. */
+  { name: "programs-schedule · the header logo is report-sized, and Roster is named",
+    path: "/{org}/programs-schedule",
+    needs: "[data-ps-chrome='ok']",
+    act: async (page) => {
+      await page.waitForSelector("[data-ready='true']", { timeout: 20000 });
+      await page.evaluate(() => {
+        const img = document.getElementById("orgLogo");
+        // COMPUTED style, not the rendered box: this harness serves nothing
+        // off-origin, so the logo never loads and its box is 0 tall whether
+        // or not the rule exists. The rule is the thing under test.
+        const cs = img ? getComputedStyle(img) : null;
+        const h = cs ? parseFloat(cs.height) : 0;
+        const mw = cs ? parseFloat(cs.maxWidth) : 0;
+        const hdr = document.querySelector(".col-header-row .col-roster");
+        const named = hdr && /roster/i.test(hdr.textContent || "");
+        document.body.setAttribute("data-ps-logo-h", String(h));
+        if (h > 0 && h <= 42 && mw > 0 && mw <= 140 && named)
+          document.body.setAttribute("data-ps-chrome", "ok");
+      });
+    } },
+
+  /* A PER-SECTION ROW MUST NOT BE SCOPED TO ITS OWN DATE — the bug Dan hit,
+     a roster reading "No participants found" over a class with six people.
+     Card 17296 dates a section booking by the RUN'S FIRST SESSION, so a
+     single date asks for one none of them carry.
+
+     THE OLD CASE PINNED THE BUG: every fixture row was per-section and the
+     assertion demanded start == end, so it passed on the broken link and
+     would have failed on the fix. Keyed on the window ending on this row's
+     own date while reaching far enough back to contain the run. */
+  { name: "programs-schedule · a per-section roster link opens the whole run",
+    path: "/{org}/programs-schedule",
+    needs: "[data-ps-secroster='ok']",
+    act: async (page) => {
+      await page.waitForSelector("[data-ready='true']", { timeout: 20000 });
+      await page.evaluate(() => {
+        const a = document.querySelector('a.rosterlink[data-roster-section="Pottery Eve"]');
+        if (!a) return;
+        const u = new URL(a.getAttribute("href"), location.origin);
+        const st = u.searchParams.get("start_date"), en = u.searchParams.get("end_date");
+        const days = (new Date(en + "T12:00:00") - new Date(st + "T12:00:00")) / 86400000;
+        const row = Array.from(document.querySelectorAll(".row-wrap"))
+          .find(x => /Pottery Eve/.test(x.textContent));
+        if (row && days > 365 && u.searchParams.get("section_id") === "sec-pot")
+          document.body.setAttribute("data-ps-secroster", "ok");
       });
     } },
 

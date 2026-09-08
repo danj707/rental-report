@@ -136,6 +136,10 @@
     border-bottom: 2.5px solid #111; padding-bottom: 10px; margin-bottom: 14px; gap: 16px;
   }
   .report-header-left { display: flex; align-items: center; gap: 14px; }
+  /* THE CLASS WAS USED AND NEVER STYLED, so the org logo rendered at its
+     natural size and dwarfed the header. Same values as facility.html — the
+     header is meant to match every other report, not to be its own thing. */
+  .report-header-logo { height: 42px; max-width: 140px; object-fit: contain; object-position: left center; }
   .report-header .org-label {
     font-size: 10px; letter-spacing: 1.6px; text-transform: uppercase; color: #777; font-weight: 600;
   }
@@ -216,7 +220,7 @@
   .col-ages  { width: 82px; flex: 0 0 82px; }
   .col-price { width: 58px; flex: 0 0 58px; text-align: right; font-variant-numeric: tabular-nums; }
   .col-status{ width: 86px; flex: 0 0 86px; text-align: center; }
-  .col-roster{ width: 34px; flex: 0 0 34px; text-align: center; }
+  .col-roster{ width: 54px; flex: 0 0 54px; text-align: center; }
   .col-link  { width: 26px; flex: 0 0 26px; text-align: center; }
 
   /* ── Program cell ── */
@@ -604,10 +608,48 @@
      buildMetabaseParams rather than erroring — so this link is exact the
      day that clause lands and name+date-scoped until then.
      ── */
+  /* A PER-SECTION ROW CANNOT BE SCOPED TO ITS OWN DATE, and shipping it that
+     way is what made this link return "No participants found" over a class
+     with six people in it.
+
+     Card 17296 dates a booking by COALESCE(the session's own date, THE RUN'S
+     FIRST SESSION). A per-section registration has no session_id — the six
+     people are enrolled in the run, not in a meeting — so all six are dated
+     by the first session. Clarksville's "09.September Code: 9974" runs 30
+     sessions from Sep 1 to Sep 30 with 6 section bookings and 0 session
+     bookings, so a link scoped to Sep 10 asked for a date none of them carry.
+
+     A per-SESSION row is different and keeps the single date: its bookings
+     really do belong to that meeting.
+
+     THE WINDOW IS FREE, so the lookback is generous rather than tight.
+     Measured through the preview on the roster feed, same org, cold: one day
+     54s, one month 49s, thirteen months 31s — the card's date test is a
+     non-sargable COALESCE(...)::date over a joined column, so it does the
+     same work whatever the window, and that spread is replica load.
+
+     Three years covers the run length by a wide margin: over 45,695
+     per-section runs, p99 is 133 days and p99.9 is 361, with 8 spanning more
+     than two years. The exact fix is the run's own first-session date as a
+     column on card 21649, which would let this be a single date again — it
+     is a card push and a date-tag flip, so it is not done here. */
+  var ROSTER_SECTION_LOOKBACK_YEARS = 3;
+
+  function rosterWindow(r) {
+    if (r.regMode === 'per-session') return { start: r.date, end: r.date };
+    var p = String(r.date).split('-');
+    var y = Number(p[0]) - ROSTER_SECTION_LOOKBACK_YEARS;
+    // Built from PARTS, never new Date(ymd) — that is UTC midnight and lands
+    // on the previous day west of UTC, the trap this page already avoids in
+    // defaultRange().
+    return { start: y + '-' + p[1] + '-' + p[2], end: r.date };
+  }
+
   function rosterUrl(r) {
+    var w = rosterWindow(r);
     var qs = 'section_id=' + encodeURIComponent(r.sectionId) +
              '&section_name=' + encodeURIComponent(r.section) +
-             '&start_date=' + r.date + '&end_date=' + r.date +
+             '&start_date=' + w.start + '&end_date=' + w.end +
              '&status=enrolled';
     return withToken('/' + SLUG + '/roster?' + qs);
   }
@@ -635,7 +677,7 @@
     if (c.ages)   h.push('<span class="col-ages">Ages</span>');
     if (c.price)  h.push('<span class="col-price">Price</span>');
     if (c.status) h.push('<span class="col-status">Status</span>');
-    if (c.roster) h.push('<span class="col-roster" title="Class roster">&#128203;</span>');
+    if (c.roster) h.push('<span class="col-roster" title="Class roster">Roster</span>');
     if (c.link)   h.push('<span class="col-link">&#8599;</span>');
     return '<div class="col-header-row">' + h.join('') + '</div>';
   }

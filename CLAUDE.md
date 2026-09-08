@@ -78,6 +78,76 @@ meeting's roster and not the run's.
   each class, not about one click — carrying the section and head count, both
   clamped server-side.
 
+### THE ROSTER LINK CANNOT SCOPE A PER-SECTION ROW TO ITS OWN DATE (2026-09-08)
+
+Dan, on the preview: *"this section had a roster link, which gave me 'no
+results', but there are 6 people."* Reproduced and fixed — **my link, not the
+roster.**
+
+**Card 17296 dates a booking by `COALESCE(the session's own date, THE RUN'S
+FIRST SESSION)`.** A `type='section'` booking has no `session_id` — those
+people are enrolled in the *run*, not in a meeting — so every one of them is
+dated by the first session. Measured on the section Dan opened,
+`09.September Code: 9974` at Clarksville: `registration_mode = section`, **30
+sessions from Sep 1 to Sep 30, 6 section bookings and 0 session bookings.** My
+link asked for `start = end = Sep 10`, a date not one of them carries, so the
+roster correctly returned nothing.
+
+**A per-SESSION row keeps the single date** and is exactly right — its
+bookings really do belong to that meeting.
+
+**`section_name` NEVER REACHES METABASE.** `buildMetabaseParams` says so in a
+comment: roster section filtering is a **client-side substring match in the
+page**, and forwarding the parameter would make Metabase reject the query. So
+the *window* is the only thing that decides what the feed contains, and the
+name narrows it afterwards in the browser. That is why widening the window is
+safe here — it cannot pull another section onto the screen.
+
+**THE WINDOW IS FREE, and that is measured rather than assumed.** Same org,
+cold, through the preview: **one day 54s, one month 49s, thirteen months
+31s** — the widest was the *fastest*. The card's date test is a non-sargable
+`COALESCE(...)::date` over a joined column, so it does the same work whatever
+the window; that spread is replica load, the same tell as the apex numbers
+above.
+
+**Three years back, and it is a bound rather than a guess.** Over **45,695**
+per-section runs, p99 span is **133 days** and p99.9 is **361**, with **8**
+spanning more than two years (one artifact at 5,607 days). So no fixed
+lookback is provably complete — the exact fix is the run's own first-session
+date as a column on card 21649, which would make this a single date again.
+Not done here: it is a card push and a date-tag flip.
+
+**Sending only `end_date` would be exact and does NOT work**, which is worth
+recording because it is the tempting answer: the card's optional
+`[[ >= start_date ]]` block does drop out (verified — all six rows come back,
+17s), but `roster.html` seeds its own state with
+`p.get('start_date') || defaults.start`, so the PAGE fills the missing bound
+back in and re-narrows to its 14-day default. *An optional clause the API
+honours is not the same as a link the page honours.*
+
+**AND THE RENDER CASE PINNED THE BUG.** Every fixture row was `per-section`
+and the roster case asserted `start == end`, so it passed on the broken link
+and would have failed on the fix — the same shape as
+`report-settings.spec.js` requiring `disabled` on the gear. The fixture's
+two-meeting section is `per-session` now, and there is a second case for the
+per-section window.
+
+### THE HEADER LOGO WAS NEVER STYLED, only used
+
+Dan: *"the new programs report has a super-sized header/logo, should match the
+other reports."* `.report-header-logo` was on the `<img>` and had **no CSS rule
+anywhere in the file**, so the org mark rendered at its natural size.
+`facility.html` carries `height: 42px; max-width: 140px; object-fit: contain`
+— lifted verbatim, because the header is meant to match every other report.
+
+**No source assertion can see this**: the class is present either way. The
+render case reads the **computed** style rather than the rendered box, because
+this harness serves nothing off-origin so the logo never loads and its box is
+0 tall whether or not the rule exists.
+
+The roster column is **named** now too (Dan: *"And name that column: Roster"*)
+— a bare clipboard glyph in a header row is not a label.
+
 ### THE INSTRUCTOR IS A PER-DATE FACT
 
 `session_facilitator` is populated on **48%** of sessions, so the card prefers
