@@ -13,20 +13,26 @@
 -- date, time, program, section and location, but no instructor and no
 -- enrolment count.
 --
--- THERE IS NO SITE COLUMN, AND THAT IS THE PLATFORM, NOT AN OMISSION.
--- A facility rental attaches to courts through `reservation_court`, which is
--- what gives the rental schedule its "Facility / Site" column. A program
--- session has no equivalent: `session` carries exactly one location field
--- (`location_id`), there is no session_court join table, and `location` has no
--- parent column. Measured over a live 37-day window: of 24,579 sessions across
--- 90 orgs, **0 resolve to a court and all 24,579 resolve to a location.** So a
--- Site column would be blank for every row of every org — the dead-end this
--- repo keeps writing down. Programs are scheduled to a LOCATION; room-level
--- detail is a product gap, not a reporting one.
+-- THE SITE IS ON THE RESERVATION, NOT ON THE SESSION — and finding it took
+-- three wrong turns worth recording, because all three look conclusive.
+--   1. `session.location_id` is ALWAYS a location. Card 17298 and 17295 both
+--      carry a `court` branch for it; over a live 37-day window it resolves a
+--      court for 0 of 24,579 sessions. Their branch is dead code here.
+--   2. There is no session_court join table and `location` has no parent
+--      column, so nothing nests.
+--   3. `session.overrides` is a text[] of overridden FIELD NAMES (capacity,
+--      waitlistConfig...), not a place a court id hides.
+-- The answer is that **every program session gets a `reservation`** — 24,583 of
+-- 24,583 in a live window, 1:1 — and the site hangs off that reservation's
+-- COURTS. `reservation.court_id` is legacy-NULL on every one of them (already
+-- recorded in CLAUDE.md for SF's 557,367 facility reservations); the live link
+-- is the `reservation_court` join table, the same one the rental schedule
+-- reads.
 --
--- The court branch is therefore GONE from this card, deliberately, even though
--- 17295 and 17298 both carry one. Theirs is dead code for program sessions;
--- copying it here would have shipped a permanently empty column.
+-- Measured: **15,249 of 24,583 sessions (62%) across 75 orgs carry a site**,
+-- and the name is `court.court_number` (populated on all of them — "Bridge
+-- Room", "Ice - East Rink", "NHS -A Gym", "Outdoor Pickleball Court #5").
+-- That is exactly the shape Dan described: location required, site optional.
 --
 -- IT IS SCOPED BY CONSTRUCTION, WHICH IS THE WHOLE PERFORMANCE STORY.
 -- Every CTE below joins FROM `win`. Cards 17295 and 21286 both computed the
@@ -177,6 +183,35 @@ wl AS (
     GROUP BY COALESCE(w.section_id, se.section_id)
 ),
 
+-- ── Site (optional) ─────────────────────────────────────────────────────
+-- AGGREGATED, NEVER JOINED. 1,444 of the 15,249 sessions with a site occupy
+-- more than one, and one occupies SIXTEEN — so joining `reservation_court`
+-- straight onto the row set multiplies those sessions up to 16x and every
+-- enrolment figure on the page with them. `Site Count` ships beside the name
+-- for the same reason `location_count` does on 17295: "Gym A" alone would be a
+-- confident half-truth for a session that also holds the annex.
+--
+-- The reservation is NOT filtered on canceled_at: a cancelled session's
+-- reservation is how staff know which room just came free, which is the whole
+-- reason cancelled meetings stay on this report.
+site AS (
+    SELECT rv.session_id,
+           STRING_AGG(DISTINCT ct.court_number, ', ' ORDER BY ct.court_number) AS site_names,
+           COUNT(DISTINCT ct.id)::int                                          AS site_count
+    FROM cfg
+    JOIN win w ON TRUE
+    -- organization_id is carried as well as session_id so the planner has an
+    -- org-scoped path into `reservation` even where session_id is not indexed;
+    -- it cannot change the row set, since a session's reservation is always
+    -- its own org's.
+    JOIN reservation rv       ON rv.session_id = w.session_id
+                             AND rv.organization_id = cfg.org_id
+                             AND rv.deleted_at IS NULL
+    JOIN reservation_court rc ON rc.reservation_id = rv.id
+    JOIN court ct             ON ct.id = rc.court_id AND ct.deleted_at IS NULL
+    GROUP BY rv.session_id
+),
+
 -- Ages / grades, lifted verbatim from 17298 so the two schedules label
 -- eligibility the same way.
 elig AS (
@@ -218,6 +253,11 @@ SELECT
     TO_CHAR((w.starts_at AT TIME ZONE cfg.tz), 'HH24:MI')    AS "Begin Sort",
 
     COALESCE(loc.name, 'Unassigned')                         AS "Location",
+    -- Empty, not NULL, and there is no third state: either the session's
+    -- reservation holds courts or the session is booked to the whole location.
+    -- So a blank Site means "no site assigned", never "we could not tell".
+    COALESCE(site.site_names, '')                            AS "Site",
+    COALESCE(site.site_count, 0)                             AS "Site Count",
 
     prog.name                                                AS "Program",
     sec.name                                                 AS "Section",
@@ -274,11 +314,13 @@ LEFT JOIN sfac ON sfac.session_id = w.session_id
 LEFT JOIN fac  ON fac.section_id  = w.section_id
 LEFT JOIN wl   ON wl.section_id   = w.section_id
 LEFT JOIN elig ON elig.section_id = w.section_id
--- One join, because session.location_id is always a location for a program
--- session — see the header. 17298's `court site` branch is dead here.
+LEFT JOIN site ON site.session_id = w.session_id
+-- ONE location join, because session.location_id is always a location for a
+-- program session — see the header. 17298's `court site` branch is dead here,
+-- and the real site comes from the `site` CTE above instead.
 LEFT JOIN location loc            ON loc.id = w.location_id AND loc.deleted_at IS NULL
 WHERE TRUE
   -- The authority. `win` scopes the inputs; these govern the output.
   [[ AND (w.starts_at AT TIME ZONE cfg.tz)::date >= DATE({{start_date}}) ]]
   [[ AND (w.starts_at AT TIME ZONE cfg.tz)::date <= DATE({{end_date}}) ]]
-ORDER BY "Date", "Location", "Begin Sort", "Program", "Section"
+ORDER BY "Date", "Location", "Site", "Begin Sort", "Program", "Section"

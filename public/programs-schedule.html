@@ -1,0 +1,1070 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Program Schedule</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  /* ─────────────────────────────────────────────────────────────────
+     Design system copied from public/facility.html so this reads as
+     the SAME report, not a cousin of it. Only the program-specific
+     cells (fill count, grain chip, status pill) are new, and they are
+     scoped to their own class names.
+
+     Single light theme on purpose: this page is the print target for a
+     schedule that gets taped to an office wall, exactly like the rental
+     schedule. Ground and text are painted explicitly so it holds on any
+     host background.
+     ───────────────────────────────────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-size: 12px;
+    color: #1a1a1a;
+    background: #f5f4f1;
+    line-height: 1.35;
+  }
+
+  /* ── Toolbar ── */
+  .toolbar {
+    position: sticky; top: 0; z-index: 100;
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 20px;
+    background: #2c2c2c; color: #eee;
+    font-size: 13px; flex-wrap: wrap;
+  }
+  .toolbar-title { font-weight: 600; margin-right: 4px; }
+  .toolbar-spacer { flex: 1; }
+  .toolbar label {
+    font-size: 10px; text-transform: uppercase; letter-spacing: .5px;
+    color: #aaa; display: flex; flex-direction: column; gap: 2px;
+  }
+  .toolbar input[type="date"] {
+    padding: 4px 8px; border: 1px solid rgba(255,255,255,.2); border-radius: 4px;
+    background: rgba(255,255,255,.1); color: #fff;
+    font-size: 12px; font-family: inherit; outline: none;
+  }
+  .toolbar input[type="date"]:focus-visible { border-color: #3b82f6; outline: 2px solid #3b82f6; outline-offset: 1px; }
+  .toolbar input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); cursor: pointer; }
+  .toolbar button {
+    padding: 6px 14px; border: 1px solid rgba(255,255,255,.25); border-radius: 4px;
+    background: rgba(255,255,255,.08); color: #fff;
+    font-size: 12px; font-family: inherit; cursor: pointer;
+    transition: background .15s; white-space: nowrap;
+  }
+  .toolbar button:hover { background: rgba(255,255,255,.18); }
+  .toolbar button:focus-visible { outline: 2px solid #3b82f6; outline-offset: 1px; }
+  .toolbar .btn-run   { background: #16a34a; border-color: #16a34a; font-weight: 600; }
+  .toolbar .btn-run:hover { background: #15803d; }
+  .toolbar .btn-pdf   { background: #3b82f6; border-color: #3b82f6; font-weight: 600; }
+  .toolbar .btn-pdf:hover { background: #2563eb; }
+  .toolbar .btn-excel { background: #16803c; border-color: #16803c; font-weight: 600; }
+  .toolbar .btn-excel:hover { background: #15692f; }
+  .toolbar .btn-preset.active {
+    background: #f59e0b; border-color: #f59e0b; color: #1a1a1a; font-weight: 600;
+  }
+  .toolbar .row-count { font-size: 11px; color: #aaa; margin-left: 4px; }
+  .toolbar .divider { width: 1px; height: 28px; background: rgba(255,255,255,.15); margin: 0 4px; }
+  .sample-chip {
+    font-size: 9.5px; font-weight: 700; letter-spacing: .7px; text-transform: uppercase;
+    background: #f59e0b; color: #1a1a1a; border-radius: 3px; padding: 2px 6px;
+  }
+
+  /* ── Segmented control (registration grain) ── */
+  .seg { display: flex; border: 1px solid rgba(255,255,255,.25); border-radius: 4px; overflow: hidden; }
+  .seg button { border: none; border-radius: 0; padding: 5px 11px; font-size: 11px; font-weight: 500; }
+  .seg button + button { border-left: 1px solid rgba(255,255,255,.2); }
+  .seg button.active { background: #3b82f6; }
+
+  /* ── Multi-check dropdown ── */
+  .filter-wrap { position: relative; }
+  .btn-filter { display: flex; align-items: center; gap: 6px; }
+  .btn-filter .badge {
+    background: #f59e0b; color: #1a1a1a; border-radius: 10px;
+    font-size: 10px; font-weight: 700; padding: 1px 6px; line-height: 1.4;
+  }
+  .dropdown {
+    position: absolute; top: calc(100% + 6px); left: 0; z-index: 200;
+    background: #1e1e1e; border: 1px solid rgba(255,255,255,.15); border-radius: 6px;
+    min-width: 260px; max-height: 340px;
+    display: flex; flex-direction: column;
+    box-shadow: 0 8px 24px rgba(0,0,0,.5);
+  }
+  .dropdown[hidden] { display: none; }
+  .dropdown-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 8px 12px; border-bottom: 1px solid rgba(255,255,255,.1);
+    font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: #aaa;
+  }
+  .dropdown-header button {
+    padding: 2px 6px; font-size: 10px;
+    border-color: rgba(255,255,255,.15); background: rgba(255,255,255,.06);
+  }
+  .dropdown-header .hdr-actions { display: flex; gap: 8px; }
+  .dropdown-list { overflow-y: auto; padding: 4px 0; }
+  .dropdown-list::-webkit-scrollbar { width: 4px; }
+  .dropdown-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,.2); border-radius: 2px; }
+  .check-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 5px 12px; cursor: pointer; font-size: 12px; color: #ddd;
+  }
+  .check-item:hover { background: rgba(255,255,255,.07); }
+  .check-item input[type="checkbox"] { accent-color: #3b82f6; width: 13px; height: 13px; cursor: pointer; flex-shrink: 0; }
+  .check-item span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .check-item .cnt { flex: 0 0 auto; color: #777; font-size: 10px; font-family: 'IBM Plex Mono', monospace; }
+  .check-item.none-opt > span:first-of-type { font-style: italic; color: #b9b9b9; }
+
+  /* ── Column visibility ── */
+  .col-toggles { display: flex; align-items: center; gap: 10px; font-size: 11px; color: #ccc; flex-wrap: wrap; }
+  .col-toggles label {
+    display: flex; flex-direction: row; align-items: center; gap: 4px;
+    cursor: pointer; font-size: 11px; text-transform: none; letter-spacing: 0; color: #ccc;
+  }
+  .col-toggles input[type="checkbox"] { accent-color: #3b82f6; cursor: pointer; }
+
+  /* ── Report page ── */
+  .page {
+    max-width: 1400px; margin: 16px auto; padding: 24px 28px;
+    background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.08);
+  }
+
+  .report-header {
+    display: flex; justify-content: space-between; align-items: center;
+    border-bottom: 2.5px solid #111; padding-bottom: 10px; margin-bottom: 14px; gap: 16px;
+  }
+  .report-header-left { display: flex; align-items: center; gap: 14px; }
+  .report-header .org-label {
+    font-size: 10px; letter-spacing: 1.6px; text-transform: uppercase; color: #777; font-weight: 600;
+  }
+  .report-header .title { font-size: 17px; font-weight: 700; margin-top: 1px; color: #111827; }
+  .report-header-right { text-align: right; }
+  .report-header .rh-meta { font-size: 11px; color: #666; }
+
+  /* ── Legend: the one thing this report has to explain that the rental
+       schedule does not — "18/24" means a different thing on a
+       per-session row than on a per-section one. ── */
+  .legend {
+    display: flex; flex-wrap: wrap; gap: 8px 22px; align-items: baseline;
+    padding: 8px 10px; margin-bottom: 12px;
+    background: #f7f6f3; border-left: 3px solid #475569;
+    font-size: 10.5px; color: #555;
+  }
+  .legend b { color: #222; font-weight: 600; }
+
+  /* ── Column header row ── */
+  .col-header-row {
+    display: flex; gap: 6px; padding: 5px 8px;
+    background: #e4e4e4; border-top: 1px solid #bbb; border-bottom: 1px solid #bbb;
+    font-weight: 600; font-size: 10px; text-transform: uppercase; letter-spacing: .4px; color: #333;
+  }
+  .loc-section { break-inside: avoid; }
+  .section-header + .col-header-row { border-top: none; }
+
+  .section-header {
+    display: flex; align-items: baseline; gap: 10px;
+    padding: 7px 8px 4px; margin-top: 8px;
+    background: #edeae4; border-bottom: 1px solid #ccc;
+  }
+  .section-header .date-label { font-weight: 700; font-size: 12.5px; }
+  .section-header .loc-label { font-weight: 600; font-size: 11.5px; color: #444; }
+  .section-header .loc-meta {
+    margin-left: auto; font-size: 10px; color: #777;
+    font-family: 'IBM Plex Mono', monospace;
+  }
+
+  /* ── Data rows ── */
+  .data-row {
+    display: flex; gap: 6px; padding: 4px 8px;
+    border-bottom: 1px solid #eee; align-items: baseline; font-size: 11.5px;
+  }
+  .row-wrap:nth-child(even) .data-row { background: #fafaf8; }
+  .data-row .cell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .sub-row {
+    padding: 0 8px 3px; padding-left: 138px;
+    font-size: 10px; color: #888; font-family: 'IBM Plex Mono', monospace;
+  }
+
+  .report-footer {
+    display: flex; justify-content: space-between;
+    border-top: 2.5px solid #111; margin-top: 14px; padding-top: 6px;
+    font-size: 10px; color: #777;
+  }
+
+  .empty { text-align: center; padding: 40px 0; color: #888; }
+
+  .roster-peek {
+    margin-top: 10px; padding: 7px 10px;
+    background: #f4f1fa; border-left: 3px solid #7c3aed;
+    font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: #4c1d95;
+    overflow-x: auto; white-space: nowrap;
+  }
+  .roster-peek[hidden] { display: none; }
+  @media print { .roster-peek { display: none !important; } }
+
+  /* ── Column widths ── */
+  .col-begin { width: 64px; flex: 0 0 64px; }
+  .col-end   { width: 64px; flex: 0 0 64px; }
+  .col-site  { width: 152px; flex: 0 0 152px; font-weight: 500; white-space: normal !important; overflow: visible !important; line-height: 1.3; }
+  .col-prog  { flex: 1 1 220px; min-width: 200px; white-space: normal !important; overflow: visible !important; }
+  .col-instr { width: 132px; flex: 0 0 132px; white-space: normal !important; overflow: visible !important; line-height: 1.3; }
+  .col-cnt   { width: 82px; flex: 0 0 82px; text-align: center; }
+  .col-wait  { width: 46px; flex: 0 0 46px; text-align: center; }
+  .col-ages  { width: 82px; flex: 0 0 82px; }
+  .col-price { width: 58px; flex: 0 0 58px; text-align: right; font-variant-numeric: tabular-nums; }
+  .col-status{ width: 86px; flex: 0 0 86px; text-align: center; }
+  .col-roster{ width: 34px; flex: 0 0 34px; text-align: center; }
+  .col-link  { width: 26px; flex: 0 0 26px; text-align: center; }
+
+  /* ── Program cell ── */
+  .prog-name { font-weight: 600; color: #111827; }
+  .prog-sec  { display: block; font-size: 10.5px; color: #555; margin-top: 1px; }
+  /* The run callout mirrors the rental schedule's amber "Multi-Day Rental"
+     line — for a program the equivalent fact is which meeting of the run
+     this is, and what the run's dates are. */
+  .prog-run  { display: block; font-size: 10px; font-weight: 700; color: #d97706; margin-top: 2px; }
+  .prog-multi{ display: block; font-size: 10px; color: #7c3aed; margin-top: 1px; }
+
+  .instr-none { color: #c8ccd2; }
+
+  /* ── Enrolment count ── */
+  .fill { display: inline-flex; flex-direction: column; align-items: center; gap: 2px; width: 100%; }
+  .fill-num { font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .fill-bar { width: 52px; height: 4px; background: #e6e4df; border-radius: 2px; overflow: hidden; }
+  .fill-bar i { display: block; height: 100%; min-width: 2px; }
+  .fill-low  .fill-num { color: #9ca3af; } .fill-low  .fill-bar i { background: #b6bcc4; }
+  .fill-ok   .fill-num { color: #1f2937; } .fill-ok   .fill-bar i { background: #4b5563; }
+  .fill-full .fill-num { color: #b45309; } .fill-full .fill-bar i { background: #d97706; }
+  .fill-over .fill-num { color: #b91c1c; } .fill-over .fill-bar i { background: #dc2626; }
+  .fill-none .fill-num { color: #9ca3af; }
+
+  /* ── Grain chip: which unit the count is in ── */
+  .grain {
+    display: inline-block; font-size: 8.5px; font-weight: 700;
+    letter-spacing: .5px; text-transform: uppercase;
+    padding: 0 4px; border-radius: 2px; line-height: 1.5;
+  }
+  .grain-session { background: #e0f2f1; color: #0f766e; border: 1px solid #99cfc9; }
+  .grain-section { background: #eef1f5; color: #475569; border: 1px solid #c2cbd6; }
+
+  .wl { font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: #7c3aed; font-weight: 600; }
+  .wl-zero { color: #d6d3cd; }
+
+  /* ── Status pill ── */
+  .pill {
+    display: inline-block; font-size: 9.5px; font-weight: 600;
+    padding: 1px 6px; border-radius: 9px; letter-spacing: .2px; white-space: nowrap;
+  }
+  .pill-inprog { background: #dcfce7; color: #15803d; }
+  .pill-upcoming { background: #dbeafe; color: #1d4ed8; }
+  .pill-cancel { background: #fee2e2; color: #b91c1c; }
+  .pill-ran    { background: #eee; color: #6b7280; }
+  .row-canceled .prog-name, .row-canceled .col-site { text-decoration: line-through; color: #9ca3af; }
+  .row-canceled { opacity: .72; }
+
+  .reclink { color: #2563eb; text-decoration: none; font-size: 13px; }
+  /* Violet, deliberately not the blue of the Rec link beside it: one opens a
+     report of ours, the other opens Rec. Two blues read as one control. */
+  .rosterlink { color: #7c3aed; text-decoration: none; font-size: 13px; cursor: pointer; }
+  .rosterlink:hover { filter: brightness(1.15); }
+  .rosterlink:focus-visible { outline: 2px solid #7c3aed; outline-offset: 1px; border-radius: 2px; }
+
+  /* ── Build notes (annotation, not part of the report) ── */
+  .notes {
+    max-width: 1400px; margin: 18px auto 40px; padding: 18px 22px;
+    background: #22252b; color: #cfd4dc; border-radius: 6px; font-size: 11.5px; line-height: 1.5;
+  }
+  .notes h2 {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 1.2px;
+    color: #8b93a1; font-weight: 700; margin-bottom: 12px;
+  }
+  .notes-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 18px 26px; }
+  .notes h3 { font-size: 11.5px; color: #f0f2f5; margin-bottom: 6px; font-weight: 600; }
+  .notes ul { list-style: none; display: flex; flex-direction: column; gap: 5px; }
+  .notes li { padding-left: 12px; position: relative; }
+  .notes li::before { content: '—'; position: absolute; left: 0; color: #5c6472; }
+  .notes code {
+    font-family: 'IBM Plex Mono', monospace; font-size: 10.5px;
+    background: rgba(255,255,255,.07); padding: 1px 4px; border-radius: 3px; color: #e3e7ed;
+  }
+  .notes .warn { color: #fbbf24; font-weight: 600; }
+  .notes .ok { color: #6ee7a8; font-weight: 600; }
+
+  @media print {
+    .toolbar, .notes { display: none !important; }
+    body { background: #fff; }
+    .page { margin: 0; padding: 0; box-shadow: none; max-width: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+  }
+
+  /* ── Live-report additions ─────────────────────────────────────────── */
+
+  /* .toolbar label sets text-transform:uppercase, a grey colour and
+     flex-direction:column for the date captions. Any other <label> inside
+     the toolbar needs RESETS, not decoration — an inline style only wins
+     for the properties it names, which is the season-menu bug in CLAUDE.md
+     and it has been reintroduced twice since. */
+  .toolbar .chk-inline {
+    display: flex; flex-direction: row; align-items: center; gap: 5px;
+    text-transform: none; letter-spacing: 0; color: #ccc; font-size: 11px;
+    cursor: pointer; white-space: nowrap;
+  }
+  .toolbar .chk-inline input { accent-color: #3b82f6; cursor: pointer; }
+
+  .site-more {
+    display: inline-block; margin-left: 4px; padding: 0 4px;
+    background: #eef1f5; color: #475569; border: 1px solid #c2cbd6;
+    border-radius: 2px; font-size: 8.5px; font-weight: 700; line-height: 1.5;
+  }
+  .prog-draft {
+    display: block; font-size: 10px; font-weight: 700; color: #7c3aed; margin-top: 2px;
+  }
+
+  /* ── Status pills over the table ── */
+  .status-pills { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+  .status-pills:empty { display: none; }
+  .spill {
+    font-family: inherit; font-size: 11px; padding: 3px 9px; cursor: pointer;
+    border: 1px solid #d5d2cb; border-radius: 12px; background: #fff; color: #444;
+  }
+  .spill span { color: #999; font-family: 'IBM Plex Mono', monospace; font-size: 10px; }
+  .spill:hover { border-color: #999; }
+  .spill.active { background: #2c2c2c; border-color: #2c2c2c; color: #fff; }
+  .spill.active span { color: #bbb; }
+  .spill-clear { color: #b91c1c; }
+  @media print { .status-pills { display: none !important; } }
+
+  /* ── Loading bar. The CURVE comes from report-loader.js
+       (window.loaderProgress); this is only its renderer. ── */
+  .loading-wrap { padding: 46px 0; }
+  .rl { max-width: 420px; margin: 0 auto; text-align: center; }
+  .rl-track {
+    height: 6px; background: #e6e4df; border-radius: 3px; overflow: hidden;
+  }
+  .rl-fill {
+    height: 100%; width: 0; background: #e07b1a; border-radius: 3px;
+    transition: width .2s linear;
+  }
+  .rl-note { margin-top: 10px; font-size: 12px; color: #888; }
+  .rl-note span { color: #aaa; }
+  @media (prefers-reduced-motion: reduce) { .rl-fill { transition: none; } }
+</style>
+</head>
+<body>
+  <div class="toolbar" id="toolbar"></div>
+
+  <div class="page">
+    <div class="report-header">
+      <div class="report-header-left">
+        <img id="orgLogo" class="report-header-logo" alt="" hidden />
+        <div>
+          <div class="org-label" id="orgLabel"></div>
+          <div class="title">Program Schedule</div>
+        </div>
+      </div>
+      <div class="report-header-right">
+        <div class="rh-meta" id="rangeLabel" style="font-weight:600"></div>
+      </div>
+    </div>
+
+    <div class="legend">
+      <span><b>18/24</b> = confirmed participants / capacity.</span>
+      <span><span class="grain grain-session">Per-session</span> <b>counts that meeting&rsquo;s seats</b>.</span>
+      <span><span class="grain grain-section">Per-section</span> <b>counts the whole run</b>, repeated on every date it meets.</span>
+      <span><span class="rosterlink">&#128203;</span> opens the <b>class roster for that date</b>.</span>
+    </div>
+
+    <div class="status-pills" id="statusPills"></div>
+    <div id="report"></div>
+
+    <div class="report-footer">
+      <span id="footOrg"></span>
+      <span id="runStamp"></span>
+    </div>
+    <div id="report-ready" data-ready="false" style="display:none"></div>
+  </div>
+
+  <script src="/open-pdf.js"></script>
+  <script src="/report-loader.js"></script>
+  <script>
+/* ═══════════════════════════════════════════════════════════════════════
+   Programs Schedule — the Programs equivalent of the facility rental
+   schedule. One row per MEETING, grouped date → location.
+
+   VANILLA JS, NOT REACT+BABEL, and that is deliberate. Every other report
+   page here compiles JSX in the browser, which turns a `const` read before
+   its declaration into `undefined` two lines later instead of a throw —
+   the blank-page class this repo has shipped twice (see CLAUDE.md). There
+   is no JSX on this page, so that whole class cannot happen. The loading
+   curve is still the shared one: `window.loaderProgress` from
+   report-loader.js is a plain function, so the bar this page draws and the
+   bar every React report draws are the same arithmetic.
+   ═══════════════════════════════════════════════════════════════════════ */
+(function () {
+  'use strict';
+
+  var CFG  = window.ORG_CONFIG || {};
+  var SLUG = CFG.slug || (location.pathname.split('/').filter(Boolean)[0] || '');
+  var URL_Q = new URLSearchParams(location.search);
+  var TOKEN = URL_Q.get('token') || CFG.token || '';
+  var IS_PRINT = URL_Q.get('_print') === '1';
+
+  function withToken(u) {
+    if (!TOKEN) return u;
+    return u + (u.indexOf('?') >= 0 ? '&' : '?') + 'token=' + encodeURIComponent(TOKEN);
+  }
+
+  /* ── Dates. Built from LOCAL parts, never toISOString().
+     `new Date().toISOString().slice(0,10)` is the UTC date, so from 5pm
+     Pacific "today" is already tomorrow and the schedule opens having
+     dropped this evening's classes — the exact bug already recorded in
+     CLAUDE.md for fasttrack dates and the campmap window. ── */
+  function ymd(d) {
+    return d.getFullYear() + '-' +
+           String(d.getMonth() + 1).padStart(2, '0') + '-' +
+           String(d.getDate()).padStart(2, '0');
+  }
+  function addDays(d, n) { var x = new Date(d.getTime()); x.setDate(x.getDate() + n); return x; }
+
+  // Today + 7 days = a week total, inclusive. Dan's call, to keep the card fast.
+  var DEFAULT_DAYS = 7;
+  function defaultRange() {
+    var t = new Date();
+    return { start: ymd(t), end: ymd(addDays(t, DEFAULT_DAYS - 1)) };
+  }
+
+  function fmtDateHeader(key) {
+    var p = key.split('-');
+    var d = new Date(+p[0], +p[1] - 1, +p[2]);   // parts, not Date(string)
+    return d.toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric', year:'numeric' });
+  }
+  function fmtRangeLabel(s, e) {
+    if (!s || !e) return '';
+    var ps = s.split('-'), pe = e.split('-');
+    var ds = new Date(+ps[0], +ps[1]-1, +ps[2]), de = new Date(+pe[0], +pe[1]-1, +pe[2]);
+    if (isNaN(ds) || isNaN(de)) return '';   // never render "Invalid Date NaN"
+    var o = { month:'long', day:'numeric' };
+    return ds.toLocaleDateString('en-US', o) + ' – ' +
+           de.toLocaleDateString('en-US', o) + ', ' + de.getFullYear();
+  }
+
+  /* ── State ── */
+  var NONE = ' ';   // sentinel for "no instructor" / "no site" — an option, never a dropped row
+  var S = {
+    start: URL_Q.get('start_date') || defaultRange().start,
+    end:   URL_Q.get('end_date')   || defaultRange().end,
+    rows: null, err: null, loading: false,
+    loadedStart: null, loadedEnd: null, dataAt: null,
+    locs: null, sites: null, instrs: null,
+    grain: URL_Q.get('grain') || 'all',
+    statuses: new Set(),
+    showDraft: true,
+    cols: { site:true, instr:true, wait:true, ages:true, price:false, status:true, roster:true, link:true }
+  };
+
+  var COL_KEY = 'progsched.cols.' + SLUG;
+  try {
+    var saved = JSON.parse(localStorage.getItem(COL_KEY) || 'null');
+    if (saved) Object.keys(S.cols).forEach(function (k) {
+      if (typeof saved[k] === 'boolean') S.cols[k] = saved[k];
+    });
+  } catch (e) { /* a browser that refuses storage still gets the defaults */ }
+  function saveCols() { try { localStorage.setItem(COL_KEY, JSON.stringify(S.cols)); } catch (e) {} }
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+      return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c];
+    });
+  }
+
+  /* ── Row mapping. The card's column names are the contract; a rename
+       there must show up as a blank column here, never as a wrong one. ── */
+  function normalizeRow(r) {
+    return {
+      date:      String(r['Date'] || '').slice(0, 10),
+      day:       r['Day'] || '',
+      begin:     r['Begin'] || '',
+      end:       r['End'] || '',
+      beginSort: r['Begin Sort'] || '',
+      location:  r['Location'] || 'Unassigned',
+      site:      r['Site'] || '',
+      siteCount: Number(r['Site Count'] || 0),
+      program:   r['Program'] || '',
+      section:   r['Section'] || '',
+      sectionId: r['Section ID'] || '',
+      sessionId: r['Session ID'] || '',
+      instructor:  r['Instructor'] || '',
+      instrCount:  Number(r['Instructor Count'] || 0),
+      instrLevel:  r['Instructor Level'] || '',
+      enrolled:  Number(r['Enrolled'] || 0),
+      // NULL capacity is not zero capacity — "22 of nothing" is a statement
+      // about the section's configuration and 0 would read as "no room".
+      capacity:  (r['Capacity'] === null || r['Capacity'] === undefined || r['Capacity'] === '')
+                   ? null : Number(r['Capacity']),
+      regMode:   r['Registration Mode'] || '',
+      waitlist:  Number(r['Waitlist'] || 0),
+      ages:      r['Eligibility'] || '',
+      price:     r['Price'] || '',
+      status:    r['Status'] || '',
+      published: r['Published'] === true || r['Published'] === 'true'
+    };
+  }
+
+  function instrKey(r) { return r.instructor ? r.instructor : NONE; }
+  function siteKey(r)  { return r.site ? r.site : NONE; }
+  function uniq(a) { return Array.from(new Set(a)); }
+
+  /* ── Fetch ── */
+  function fetchData(start, end) {
+    S.loading = true; S.err = null; render();
+    var t0 = Date.now();
+    var url = withToken('/' + SLUG + '/programs-schedule/api/data?start_date=' +
+                        encodeURIComponent(start) + '&end_date=' + encodeURIComponent(end));
+    fetch(url)
+      .then(function (r) {
+        if (!r.ok) {
+          // The route sends the remedy in the body ("try a shorter date
+          // range"); dropping it tells the reader the transport and not the
+          // fix. reportFetchError is the shared reader in open-pdf.js.
+          if (window.reportFetchError) return window.reportFetchError(r).then(function (m) { throw new Error(m); });
+          throw new Error('Server returned ' + r.status);
+        }
+        return r.json();
+      })
+      .then(function (d) {
+        var raw = (d && d.rows) || [];
+        S.rows = raw.map(normalizeRow);
+        S.raw = raw;
+        S.loadedStart = start; S.loadedEnd = end;
+        S.dataAt = (d && d.meta && d.meta.dataAt) || null;
+        // Filters are seeded to EVERYTHING on a fresh feed, and only reset
+        // when the feed changes — a click must never widen a selection back.
+        S.locs   = new Set(uniq(S.rows.map(function (r) { return r.location; })));
+        S.sites  = new Set(uniq(S.rows.map(siteKey)));
+        S.instrs = new Set(uniq(S.rows.map(instrKey)));
+        S.statuses = new Set();
+        S.elapsed = Date.now() - t0;
+      })
+      .catch(function (e) { S.err = e.message || String(e); })
+      .finally(function () { S.loading = false; render(); });
+  }
+
+  /* ── Filtering ── */
+  function filtered() {
+    if (!S.rows) return [];
+    return S.rows.filter(function (r) {
+      if (S.locs   && !S.locs.has(r.location))  return false;
+      if (S.sites  && !S.sites.has(siteKey(r))) return false;
+      if (S.instrs && !S.instrs.has(instrKey(r))) return false;
+      if (S.grain !== 'all' && r.regMode !== S.grain) return false;
+      if (S.statuses.size && !S.statuses.has(r.status)) return false;
+      if (!S.showDraft && !r.published) return false;
+      return true;
+    });
+  }
+
+  /* ── Cells ── */
+  function fillClass(r) {
+    if (r.capacity == null) return 'fill-none';
+    if (r.enrolled > r.capacity) return 'fill-over';
+    if (r.enrolled >= r.capacity) return 'fill-full';
+    if (r.capacity > 0 && r.enrolled / r.capacity <= 0.40) return 'fill-low';
+    return 'fill-ok';
+  }
+  function fillCell(r) {
+    var num = r.capacity == null ? (r.enrolled + ' / —') : (r.enrolled + '/' + r.capacity);
+    var pct = r.capacity ? Math.min(100, Math.round(r.enrolled / r.capacity * 100)) : 0;
+    var bar = r.capacity == null ? '' : '<span class="fill-bar"><i style="width:' + pct + '%"></i></span>';
+    var per = r.regMode === 'per-session';
+    var chip = r.regMode
+      ? '<span class="grain grain-' + (per ? 'session' : 'section') + '">' +
+        (per ? 'Per-session' : 'Per-section') + '</span>'
+      : '';
+    return '<span class="fill ' + fillClass(r) + '">' +
+             '<span class="fill-num">' + num + '</span>' + bar + chip +
+           '</span>';
+  }
+  function statusPill(s) {
+    var map = { 'In Progress':'pill-inprog', 'Upcoming':'pill-upcoming',
+                'Canceled':'pill-cancel', 'Ran':'pill-ran' };
+    return '<span class="pill ' + (map[s] || 'pill-ran') + '">' + esc(s) + '</span>';
+  }
+
+  /* ── The roster link ───────────────────────────────────────────────
+     Card 17296 already filters on org_id / start_date / end_date /
+     section_name and roster.html already reads all four off the URL and
+     auto-runs, so the destination needs no new report. section_id rides
+     along too: the roster card cannot filter on it YET (one optional
+     clause there), and an unregistered parameter is simply dropped by
+     buildMetabaseParams rather than erroring — so this link is exact the
+     day that clause lands and name+date-scoped until then.
+     ── */
+  function rosterUrl(r) {
+    var qs = 'section_id=' + encodeURIComponent(r.sectionId) +
+             '&section_name=' + encodeURIComponent(r.section) +
+             '&start_date=' + r.date + '&end_date=' + r.date +
+             '&status=enrolled';
+    return withToken('/' + SLUG + '/roster?' + qs);
+  }
+  function rosterCell(r) {
+    // Nothing to open where nobody is enrolled. Absent, not disabled — the
+    // same rule as the rental schedule's Forms column.
+    if (!r.enrolled || !r.sectionId) return '';
+    return '<a class="rosterlink" href="' + esc(rosterUrl(r)) + '"' +
+           ' target="_blank" rel="noopener noreferrer"' +
+           ' data-roster-section="' + esc(r.section) + '" data-roster-count="' + r.enrolled + '"' +
+           ' title="' + esc('Class roster for this session — ' + r.enrolled + ' enrolled') + '"' +
+           ' aria-label="' + esc('Class roster for ' + r.program + ' on ' + r.date) + '"' +
+           '>&#128203;</a>';
+  }
+
+  function headerRow() {
+    var c = S.cols, h = [];
+    h.push('<span class="col-begin">Begin</span>');
+    h.push('<span class="col-end">End</span>');
+    if (c.site)   h.push('<span class="col-site">Site</span>');
+    h.push('<span class="col-prog">Program / Section</span>');
+    if (c.instr)  h.push('<span class="col-instr">Instructor</span>');
+    h.push('<span class="col-cnt">Enrolled</span>');
+    if (c.wait)   h.push('<span class="col-wait" title="Active waitlist">WL</span>');
+    if (c.ages)   h.push('<span class="col-ages">Ages</span>');
+    if (c.price)  h.push('<span class="col-price">Price</span>');
+    if (c.status) h.push('<span class="col-status">Status</span>');
+    if (c.roster) h.push('<span class="col-roster" title="Class roster">&#128203;</span>');
+    if (c.link)   h.push('<span class="col-link">&#8599;</span>');
+    return '<div class="col-header-row">' + h.join('') + '</div>';
+  }
+
+  function dataRow(r) {
+    var c = S.cols, cells = [];
+    cells.push('<span class="cell col-begin">' + esc(r.begin) + '</span>');
+    cells.push('<span class="cell col-end">' + esc(r.end) + '</span>');
+    if (c.site) {
+      // A session can hold more than one site (1,444 of 15,249 in a live
+      // window, up to 16), so the count rides along rather than printing
+      // one room as though it were the answer.
+      cells.push('<span class="cell col-site">' + (r.site ? esc(r.site) : '') +
+        (r.siteCount > 1 ? '<span class="site-more" title="' + esc(r.site) + '">' +
+           r.siteCount + ' sites</span>' : '') + '</span>');
+    }
+
+    var prog = '<span class="prog-name">' + esc(r.program) + '</span>' +
+               '<span class="prog-sec">' + esc(r.section) + '</span>';
+    if (r.regMode === 'per-session') {
+      prog += '<span class="prog-run">Registered per session</span>';
+    }
+    if (!r.published) prog += '<span class="prog-draft">Not published</span>';
+    cells.push('<span class="cell col-prog">' + prog + '</span>');
+
+    if (c.instr) {
+      cells.push('<span class="cell col-instr">' +
+        (r.instructor ? esc(r.instructor) : '<span class="instr-none">—</span>') +
+        (r.instrCount > 1 ? '<span class="site-more">' + r.instrCount + '</span>' : '') +
+        '</span>');
+    }
+    cells.push('<span class="cell col-cnt">' + fillCell(r) + '</span>');
+    if (c.wait) {
+      cells.push('<span class="cell col-wait"><span class="wl' + (r.waitlist ? '' : ' wl-zero') + '">' +
+        (r.waitlist ? r.waitlist : '·') + '</span></span>');
+    }
+    if (c.ages)   cells.push('<span class="cell col-ages">' + esc(r.ages) + '</span>');
+    if (c.price)  cells.push('<span class="cell col-price">' + esc(r.price) + '</span>');
+    if (c.status) cells.push('<span class="cell col-status">' + statusPill(r.status) + '</span>');
+    if (c.roster) cells.push('<span class="cell col-roster">' + rosterCell(r) + '</span>');
+    if (c.link) {
+      cells.push('<span class="cell col-link">' + (r.sectionId
+        ? '<a class="reclink" href="https://www.rec.us/sections/' + esc(r.sectionId) +
+          '" target="_blank" rel="noopener noreferrer" title="Open section in Rec">&#8599;</a>'
+        : '') + '</span>');
+    }
+    return '<div class="row-wrap' + (r.status === 'Canceled' ? ' row-canceled' : '') + '">' +
+             '<div class="data-row">' + cells.join('') + '</div>' +
+           '</div>';
+  }
+
+  function toMin(t) {
+    var m = /^(\d+):(\d+)\s*(AM|PM)$/i.exec(String(t).trim());
+    if (!m) return 0;
+    return ((+m[1] % 12) + (/pm/i.test(m[3]) ? 12 : 0)) * 60 + (+m[2]);
+  }
+
+  /* ── Render ── */
+  function render() {
+    var rows = filtered();
+    document.getElementById('rangeLabel').textContent =
+      fmtRangeLabel(S.loadedStart || S.start, S.loadedEnd || S.end);
+
+    renderToolbar(rows);
+
+    var body = document.getElementById('report');
+    if (S.loading) {
+      body.innerHTML = '<div class="loading-wrap" id="loaderMount"></div>';
+      startLoader();
+      return;
+    }
+    stopLoader();
+    if (S.err) {
+      body.innerHTML = '<div class="error">' + esc(S.err) + '</div>';
+      return;
+    }
+    if (!S.rows) {
+      body.innerHTML = '<div class="empty">Pick a date range and hit Run Report.</div>';
+      return;
+    }
+    if (!rows.length) {
+      body.innerHTML = '<div class="empty">' + (S.rows.length
+        ? 'No program sessions match the current filters.'
+        : 'No program sessions in this date range.') + '</div>';
+      return;
+    }
+
+    var byDate = {};
+    rows.forEach(function (r) {
+      byDate[r.date] = byDate[r.date] || {};
+      (byDate[r.date][r.location] = byDate[r.date][r.location] || []).push(r);
+    });
+
+    var out = [];
+    Object.keys(byDate).sort().forEach(function (d) {
+      Object.keys(byDate[d]).sort().forEach(function (loc) {
+        var g = byDate[d][loc].slice().sort(function (a, b) {
+          return (toMin(a.begin) - toMin(b.begin)) ||
+                 a.site.localeCompare(b.site) ||
+                 a.program.localeCompare(b.program);
+        });
+        var seats = g.reduce(function (s, r) { return s + r.enrolled; }, 0);
+        out.push('<div class="loc-section">' +
+          '<div class="section-header">' +
+            '<span class="date-label">' + esc(fmtDateHeader(d)) + '</span>' +
+            '<span class="loc-label">—&nbsp; ' + esc(loc) + '</span>' +
+            '<span class="loc-meta">' + g.length + ' session' + (g.length === 1 ? '' : 's') +
+              ' · ' + seats + ' confirmed</span>' +
+          '</div>' + headerRow() + g.map(dataRow).join('') + '</div>');
+      });
+    });
+    body.innerHTML = out.join('');
+  }
+
+  /* ── Loading bar. Same curve as every React report, via the shared
+       window.loaderProgress; a second implementation would drift. ── */
+  var loaderTimer = null, loaderT0 = 0;
+  function startLoader() {
+    if (loaderTimer) return;
+    loaderT0 = Date.now();
+    var mount = document.getElementById('loaderMount');
+    var est = (window.ORG_CONFIG && window.ORG_CONFIG.loadEstimate) || null;
+    var note = (window.loaderEstimateNote && window.loaderEstimateNote(est)) || '';
+    mount.innerHTML = '<div class="rl" data-rl="1">' +
+      '<div class="rl-track"><div class="rl-fill" id="rlFill"></div></div>' +
+      '<div class="rl-note">Counting enrolments…' + (note ? ' <span>' + esc(note) + '</span>' : '') +
+      '</div></div>';
+    loaderTimer = setInterval(function () {
+      var el = document.getElementById('rlFill');
+      if (!el) return;
+      var pct = window.loaderProgress
+        ? window.loaderProgress((Date.now() - loaderT0) / 1000, est)
+        : 50;
+      el.style.width = pct + '%';
+    }, 120);
+  }
+  function stopLoader() { if (loaderTimer) { clearInterval(loaderTimer); loaderTimer = null; } }
+
+  /* ── Toolbar ── */
+  function checkMenu(slug, label, all, sel, counts, noneLabel) {
+    var badge = sel && sel.size === all.length ? 'All' : (sel ? sel.size + ' of ' + all.length : 'All');
+    var items = all.map(function (v, i) {
+      var isNone = v === NONE;
+      return '<label class="check-item' + (isNone ? ' none-opt' : '') + '">' +
+        '<input type="checkbox" data-pick="' + slug + '" data-idx="' + i + '" ' +
+        (sel && sel.has(v) ? 'checked' : '') + ' />' +
+        '<span>' + (isNone ? esc(noneLabel) : esc(v)) + '</span>' +
+        '<span class="cnt">' + (counts[v] || 0) + '</span></label>';
+    }).join('');
+    return '<div class="filter-wrap" data-wrap="' + slug + '">' +
+      '<button class="btn-filter" data-menu="' + slug + '" aria-expanded="false">' + esc(label) +
+        ' <span class="badge">' + badge + '</span></button>' +
+      '<div class="dropdown" data-drop="' + slug + '" hidden>' +
+        '<div class="dropdown-header"><span>' + esc(label) + '</span>' +
+          '<span class="hdr-actions">' +
+            '<button data-all="' + slug + '">All</button>' +
+            '<button data-none="' + slug + '">None</button>' +
+          '</span></div>' +
+        '<div class="dropdown-list">' + items + '</div>' +
+      '</div></div>';
+  }
+
+  function countBy(rows, fn) {
+    var m = {};
+    rows.forEach(function (r) { var k = fn(r); m[k] = (m[k] || 0) + 1; });
+    return m;
+  }
+
+  var PICKS = {};   // slug -> { all, sel }
+
+  function renderToolbar(rows) {
+    if (IS_PRINT) { document.getElementById('toolbar').innerHTML = ''; return; }
+    var all = S.rows || [];
+    var h = [];
+    h.push('<span class="toolbar-title">Program Schedule</span>');
+    h.push('<label>Start<input type="date" id="dStart" value="' + esc(S.start) + '" /></label>');
+    h.push('<label>End<input type="date" id="dEnd" value="' + esc(S.end) + '" /></label>');
+    h.push('<button class="btn-preset" data-preset="week">This Week</button>');
+    h.push('<button class="btn-preset" data-preset="next">Next 7</button>');
+    h.push('<button class="btn-preset" data-preset="month">This Month</button>');
+    h.push('<button class="btn-run" id="btnRun"' + (S.loading ? ' disabled' : '') + '>' +
+           (S.loading ? 'Loading…' : '&#9654; Run Report') + '</button>');
+
+    if (all.length) {
+      var locsAll = uniq(all.map(function (r) { return r.location; })).sort();
+      PICKS.loc = { all: locsAll, sel: S.locs };
+      h.push('<div class="divider"></div>');
+      h.push(checkMenu('loc', 'Locations', locsAll, S.locs, countBy(all, function (r) { return r.location; })));
+
+      var sitesAll = uniq(all.map(siteKey)).sort(function (a, b) {
+        if (a === NONE) return 1; if (b === NONE) return -1; return a.localeCompare(b);
+      });
+      if (sitesAll.length > 1) {
+        PICKS.site = { all: sitesAll, sel: S.sites };
+        h.push('<div class="divider"></div>');
+        h.push(checkMenu('site', 'Sites', sitesAll, S.sites,
+                         countBy(all, siteKey), 'No site assigned'));
+      }
+
+      var insAll = uniq(all.map(instrKey)).sort(function (a, b) {
+        if (a === NONE) return 1; if (b === NONE) return -1; return a.localeCompare(b);
+      });
+      PICKS.ins = { all: insAll, sel: S.instrs };
+      h.push('<div class="divider"></div>');
+      h.push(checkMenu('ins', 'Instructors', insAll, S.instrs,
+                       countBy(all, instrKey), 'No instructor on file'));
+
+      var modes = uniq(all.map(function (r) { return r.regMode; })).filter(Boolean);
+      if (modes.length > 1) {
+        h.push('<div class="divider"></div>');
+        h.push('<div class="seg" role="group" aria-label="Registration type">' +
+          ['all','per-section','per-session'].map(function (g) {
+            return '<button data-grain="' + g + '"' + (S.grain === g ? ' class="active"' : '') + '>' +
+              (g === 'all' ? 'All' : g === 'per-section' ? 'Section-based' : 'Session-based') + '</button>';
+          }).join('') + '</div>');
+      }
+
+      var draftN = all.filter(function (r) { return !r.published; }).length;
+      if (draftN) {
+        h.push('<div class="divider"></div>');
+        h.push('<label class="chk-inline"><input type="checkbox" id="chkDraft"' +
+          (S.showDraft ? ' checked' : '') + ' /> Show ' + draftN + ' unpublished</label>');
+      }
+    }
+
+    h.push('<div class="toolbar-spacer"></div>');
+    if (S.rows) {
+      h.push('<span class="row-count">' + rows.length + ' session' + (rows.length === 1 ? '' : 's') +
+        (rows.length !== S.rows.length
+          ? ' <span style="color:#f59e0b">(' + S.rows.length + ' total)</span>' : '') + '</span>');
+    }
+    h.push('<div class="divider"></div>');
+    h.push('<div class="col-toggles">' +
+      [['site','Site'],['instr','Instructor'],['wait','WL'],['ages','Ages'],
+       ['price','Price'],['status','Status'],['roster','Roster'],['link','Rec']]
+      .map(function (p) {
+        return '<label><input type="checkbox" data-col="' + p[0] + '"' +
+          (S.cols[p[0]] ? ' checked' : '') + ' /> ' + p[1] + '</label>';
+      }).join('') + '</div>');
+    h.push('<div class="divider"></div>');
+    h.push('<button class="btn-excel" id="btnCsv"' + (rows.length ? '' : ' disabled') + '>&#8681; CSV</button>');
+    h.push('<button id="btnPrint">Print</button>');
+
+    document.getElementById('toolbar').innerHTML = h.join('');
+  }
+
+  /* ── Status pills over the table ── */
+  function renderStatusPills(rows) {
+    var host = document.getElementById('statusPills');
+    if (!S.rows || IS_PRINT) { host.innerHTML = ''; return; }
+    var counts = countBy(S.rows, function (r) { return r.status; });
+    var present = ['In Progress','Upcoming','Ran','Canceled'].filter(function (s) { return counts[s]; });
+    // One status is not a filter, and a lone pill that can only empty the
+    // table is a dead end.
+    if (present.length < 2) { host.innerHTML = ''; return; }
+    host.innerHTML = present.map(function (s) {
+      return '<button class="spill' + (S.statuses.has(s) ? ' active' : '') + '" data-status="' + esc(s) + '">' +
+        esc(s) + ' <span>' + counts[s] + '</span></button>';
+    }).join('') + (S.statuses.size
+      ? '<button class="spill spill-clear" data-status-clear="1">Clear</button>' : '');
+  }
+
+  /* ── CSV. Uses the shared writer + popup, because a download started
+       from a sandboxed iframe is silently dropped. ── */
+  function downloadCsv() {
+    var rows = filtered();
+    if (!rows.length) return;
+    var header = ['Date','Day','Begin','End','Location','Site','Program','Section',
+                  'Instructor','Enrolled','Capacity','Registration Mode','Waitlist',
+                  'Ages','Price','Status','Published','Section ID','Session ID'];
+    var body = rows.map(function (r) {
+      return [r.date, r.day, r.begin, r.end, r.location, r.site, r.program, r.section,
+              r.instructor, r.enrolled, r.capacity == null ? '' : r.capacity,
+              r.regMode, r.waitlist, r.ages, r.price, r.status,
+              r.published ? 'Yes' : 'No', r.sectionId, r.sessionId];
+    });
+    var csv = window.csvFromRows
+      ? window.csvFromRows([header].concat(body))
+      : [header].concat(body).map(function (l) { return l.join(','); }).join('\r\n');
+    var name = 'program-schedule-' + (S.loadedStart || S.start) + '.csv';
+    if (window.saveTextViaPopup) {
+      window.saveTextViaPopup(csv, { filename: name, bom: true, label: 'Program Schedule' });
+    }
+    beacon('excel', { rows: rows.length });
+  }
+
+  /* ── Activity beacons. The convention is ?event=<name> in the QUERY
+       STRING — a JSON body is read by nothing and comes back 400, and a
+       fire-and-forget beacon never complains. That has bitten this repo
+       four times (campmap, the Facilities hub, Memberships, Instructor
+       Payout). ── */
+  function beacon(event, extra) {
+    var qs = new URLSearchParams({ event: event });
+    Object.keys(extra || {}).forEach(function (k) {
+      if (extra[k] != null && extra[k] !== '') qs.set(k, String(extra[k]));
+    });
+    try {
+      fetch(withToken('/' + SLUG + '/programs-schedule/api/log?' + qs.toString()),
+            { method: 'POST', keepalive: true });
+    } catch (e) { /* never let a beacon break the page */ }
+  }
+
+  /* ── Events (delegated once, so re-rendering the toolbar cannot lose
+       a handler) ── */
+  document.addEventListener('click', function (e) {
+    var t = e.target;
+
+    var menuBtn = t.closest && t.closest('[data-menu]');
+    if (menuBtn) {
+      e.stopPropagation();
+      var slug = menuBtn.getAttribute('data-menu');
+      var drop = document.querySelector('[data-drop="' + slug + '"]');
+      var willOpen = drop.hidden;
+      closeMenus();
+      drop.hidden = !willOpen;
+      menuBtn.setAttribute('aria-expanded', String(willOpen));
+      return;
+    }
+    if (t.closest && t.closest('.dropdown')) { e.stopPropagation(); }
+
+    var allBtn = t.closest && t.closest('[data-all]');
+    var noneBtn = t.closest && t.closest('[data-none]');
+    if (allBtn || noneBtn) {
+      var sl = (allBtn || noneBtn).getAttribute(allBtn ? 'data-all' : 'data-none');
+      var p = PICKS[sl];
+      if (p && p.sel) {
+        p.sel.clear();
+        if (allBtn) p.all.forEach(function (v) { p.sel.add(v); });
+        render();
+      }
+      return;
+    }
+
+    var preset = t.closest && t.closest('[data-preset]');
+    if (preset) {
+      var k = preset.getAttribute('data-preset'), now = new Date(), s, en;
+      if (k === 'week') { s = now; en = addDays(now, 6); }
+      else if (k === 'next') { s = addDays(now, 7); en = addDays(now, 13); }
+      else { s = new Date(now.getFullYear(), now.getMonth(), 1);
+             en = new Date(now.getFullYear(), now.getMonth() + 1, 0); }
+      S.start = ymd(s); S.end = ymd(en);
+      fetchData(S.start, S.end);
+      return;
+    }
+
+    if (t.id === 'btnRun') {
+      var si = document.getElementById('dStart'), ei = document.getElementById('dEnd');
+      S.start = (si && si.value) || S.start; S.end = (ei && ei.value) || S.end;
+      fetchData(S.start, S.end);
+      return;
+    }
+    if (t.id === 'btnCsv')   { downloadCsv(); return; }
+    if (t.id === 'btnPrint') { beacon('print', {}); window.print(); return; }
+
+    var grain = t.closest && t.closest('[data-grain]');
+    if (grain) { S.grain = grain.getAttribute('data-grain'); render(); return; }
+
+    var sp = t.closest && t.closest('[data-status]');
+    if (sp) {
+      var st = sp.getAttribute('data-status');
+      if (S.statuses.has(st)) S.statuses.delete(st); else S.statuses.add(st);
+      render(); return;
+    }
+    if (t.closest && t.closest('[data-status-clear]')) { S.statuses.clear(); render(); return; }
+
+    var rl = t.closest && t.closest('[data-roster-section]');
+    if (rl) {
+      beacon('roster-open', { section: rl.getAttribute('data-roster-section'),
+                              enrolled: rl.getAttribute('data-roster-count') });
+      return;   // the anchor navigates on its own
+    }
+
+    closeMenus();
+  });
+
+  document.addEventListener('change', function (e) {
+    var t = e.target;
+    if (t.matches && t.matches('[data-pick]')) {
+      var p = PICKS[t.getAttribute('data-pick')];
+      if (p && p.sel) {
+        var v = p.all[+t.getAttribute('data-idx')];
+        if (t.checked) p.sel.add(v); else p.sel.delete(v);
+        render();
+      }
+      return;
+    }
+    if (t.matches && t.matches('[data-col]')) {
+      S.cols[t.getAttribute('data-col')] = t.checked;
+      saveCols(); render(); return;
+    }
+    if (t.id === 'chkDraft') { S.showDraft = t.checked; render(); return; }
+  });
+
+  function closeMenus() {
+    document.querySelectorAll('.dropdown').forEach(function (m) { m.hidden = true; });
+    document.querySelectorAll('.btn-filter').forEach(function (b) {
+      b.setAttribute('aria-expanded', 'false');
+    });
+  }
+
+  /* ── Wrap render so the pills and the footer travel with it ── */
+  var _render = render;
+  render = function () {
+    _render();
+    renderStatusPills(filtered());
+    var f = document.getElementById('runStamp');
+    if (f) f.textContent = 'Run Date/Time: ' + new Date().toLocaleString('en-US');
+    var rdy = document.getElementById('report-ready');
+    if (rdy) rdy.setAttribute('data-ready', (S.rows && !S.loading) ? 'true' : 'false');
+  };
+
+  /* ── Header chrome ── */
+  var orgLabel = document.getElementById('orgLabel');
+  if (orgLabel) orgLabel.textContent = CFG.displayName || SLUG;
+  if (CFG.logoUrl) {
+    var img = document.getElementById('orgLogo');
+    img.src = CFG.logoUrl; img.hidden = false;
+    img.onerror = function () { img.style.display = 'none'; };
+  }
+  var foot = document.getElementById('footOrg');
+  if (foot) foot.textContent = CFG.displayName || SLUG;
+
+  render();
+  fetchData(S.start, S.end);
+})();
+
+  </script>
+  <script src="/share-widget.js" defer></script>
+  <script src="/feedback-widget.js" defer></script>
+  <script src="/nav-breadcrumb.js" defer></script>
+</body>
+</html>

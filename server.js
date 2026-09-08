@@ -1730,7 +1730,7 @@ const ORGS = {
   },
 };
 
-const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "products", "memberships", "court-utilization", "calendar", "fasttrack", "waitlist", "users", "program-demographics", "instructor-payout", "retention", "annual-report", "section-detail", "ice-calendar", "qoq", "checkins", "program-checkins", "selfservice", "programs-monthly"];
+const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "products", "memberships", "court-utilization", "calendar", "fasttrack", "waitlist", "users", "program-demographics", "instructor-payout", "retention", "annual-report", "section-detail", "ice-calendar", "qoq", "checkins", "program-checkins", "selfservice", "programs-monthly", "programs-schedule"];
 
 // ── Friendly report directory — label + emoji per report type ──────────
 // Powers the smart Project-Update composer (auto-draft from the changelog):
@@ -1766,6 +1766,23 @@ const REPORT_DIRECTORY = {
 // Migrate report types here one at a time; per-org mbUuid is the fallback.
 const SHARED_UUIDS = {
   facility: "f6787f45-3a36-4501-8a5f-b0f647451a85",
+  // Metabase question "✅ Programs Schedule" — SESSION grain, the Programs
+  // equivalent of the facility rental schedule. Mirrored at
+  // sql/report-cards/programs-schedule.v1-PENDING.sql.
+  //
+  // ABSENT until someone creates the public link, and that is deliberate:
+  // an omitted key 404s the data route, so the page renders its own error
+  // with the remedy in it. A wired-but-erroring card would instead draw an
+  // empty schedule, which says "nothing is running this week" when the
+  // truth is that nothing answered — the hasAbsent rule.
+  //
+  // TO ACTIVATE: create a public link on the card and set
+  // MB_PROGRAMS_SCHEDULE_UUID. After any API push, re-set the Start/End
+  // Date variable types to Date in the UI and re-save until the card
+  // registers THREE parameters, not six.
+  ...(process.env.MB_PROGRAMS_SCHEDULE_UUID
+        ? { "programs-schedule": process.env.MB_PROGRAMS_SCHEDULE_UUID }
+        : {}),
   programs: "e35f2b47-87c9-40e3-8507-3d9b56f9ce62",
   calendar: "d77a2171-6cc8-4c11-b014-a6ad45491bf4",
   "court-utilization": "7b0fca20-8fe0-4720-9653-7e15c30176b2",
@@ -1948,6 +1965,27 @@ const REPORT_DEPENDENCIES = {
   programs: {
     tables: ["program","section","session","booking","order_item","users","profile","program_activity","activity","section_season","season","location","attendance_event","registration_window","waitlist"],
     columns: { program:["id","name","type","organization_id"], section:["id","name","program_id","capacity","default_capacity","canceled_at","registration_mode","organization_id","section_code","publish_at","gl_account_id","primary_location_id","archived_at","pricing_policy"], session:["id","section_id","location_id","starts_at","ends_at","canceled_at","capacity","organization_id"], booking:["id","type","status","section_id","session_id","customer_user_id","participant_user_id","canceled_at","is_fast_track","organization_id","participant_data","created_at"], order_item:["id","booking_id","applied_pricing","name","product_type","organization_id","fully_paid_at"], users:["id","first_name","last_name","email","phone","household_id"], profile:["user_id","date_of_birth","grade","gender"], activity:["id","name","organization_id","category_id"], attendance_event:["id","target_id","target_type","participant_user_id","type","check_in_method_type","organization_id","created_at"], waitlist:["id","section_id","session_id","participant_user_id","created_at","canceled_at","deleted_at","organization_id"] }
+  },
+  "programs-schedule": {
+    tables: ["program","section","session","booking","reservation","reservation_court","court","location","session_facilitator","section_facilitator","instructor","users","waitlist","eligibility_rule_group_lookup","eligibility_rule_group","eligibility_rule","organization"],
+    columns: {
+      program: ["id","name","organization_id"],
+      section: ["id","name","program_id","capacity","canceled_at","registration_mode","organization_id","section_code","publish_at","archived_at","pricing_policy"],
+      session: ["id","section_id","location_id","starts_at","ends_at","canceled_at","capacity","registration_mode","organization_id"],
+      booking: ["id","type","status","section_id","session_id","participant_user_id","canceled_at","organization_id"],
+      // The SITE lives here: every program session gets a reservation, and
+      // its courts are the site. reservation.court_id is legacy-NULL, so
+      // reservation_court is the live link.
+      reservation: ["id","session_id","organization_id","deleted_at"],
+      reservation_court: ["reservation_id","court_id"],
+      court: ["id","court_number","organization_id"],
+      location: ["id","name","organization_id","timezone"],
+      session_facilitator: ["session_id","facilitator_id","organization_id"],
+      section_facilitator: ["section_id","facilitator_id","organization_id"],
+      instructor: ["id","user_id","organization_id"],
+      users: ["id","first_name","last_name"],
+      waitlist: ["id","section_id","session_id","participant_user_id","canceled_at","organization_id"]
+    }
   },
   waitlist: {
     tables: ["waitlist","temporary_grant","section","program","session","booking","section_season","season","program_activity","activity","location","organization"],
@@ -4210,7 +4248,7 @@ setTimeout(() => { checkCardParamTypes().catch(() => {}); }, 150 * 1000).unref?.
 // Inert if the env var is unset. Fire-and-forget — never blocks or breaks logging.
 // To change what pings Slack, edit SLACK_NOTIFY. High-frequency events (view/fetch)
 // are debounced per org+report so Slack isn't a firehose.
-const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "campmap-filter", "campmap-amenity", "pdf", "excel", "print", "summary", "game", "map", "outdoor", "fields", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email", "checkin-loc", "checkin-member", "checkin-failed", "form-open", "epact", "settings-open", "settings-unlock", "settings-locked", "settings-save", "settings-reset", "deadlink", "generate", "wizard-save", "mb-autorenew", "mb-salesmix", "ft-export", "panel-csv", "intel-csv", "wizard-feedback"]);
+const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "campmap-filter", "campmap-amenity", "pdf", "excel", "print", "summary", "game", "map", "outdoor", "fields", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email", "checkin-loc", "checkin-member", "checkin-failed", "form-open", "epact", "settings-open", "settings-unlock", "settings-locked", "settings-save", "settings-reset", "deadlink", "generate", "wizard-save", "mb-autorenew", "mb-salesmix", "ft-export", "panel-csv", "intel-csv", "wizard-feedback", "roster-open"]);
 const SLACK_DEBOUNCE_MS = { view: 30 * 60 * 1000, fetch: 30 * 60 * 1000,
   // A broken report stays broken. The health check only reports NEW failures,
   // but a flapping card would otherwise post every hour.
@@ -4250,6 +4288,7 @@ const SLACK_EVENT_META = {
   "report-down": { emoji: "🔴", verb: "report is failing" },
   pdf:     { emoji: "📄", verb: "exported a PDF of" },
   excel:   { emoji: "📊", verb: "exported to Excel" },
+  "roster-open": { emoji: "📋", verb: "opened a class roster from the program schedule" },
   summary: { emoji: "🧾", verb: "exported a Summary of" },
   game:    { emoji: "🕹️", verb: "is playing a hidden game in" },
   map:     { emoji: "🗺️", verb: "is browsing the facility map for" },
@@ -4355,6 +4394,11 @@ function notifySlack(rec) {
     // two different contact lists leaving, and each one should be on the record.
     : rec.event === "intel-csv"
       ? `${rec.org}|${rec.report}|intel-csv|${rec.segment || ""}`
+    // Per SECTION: an admin working down a morning's classes is telling us
+    // about each class, not about one click, and the default org|report|event
+    // key would keep only the first roster they opened.
+    : rec.event === "roster-open"
+      ? `${rec.org}|${rec.report}|roster-open|${rec.section || ""}`
     // By SITE TYPE: rating the pavilion suggestion and then the picnic-table
     // one is two answers about two suggestions.
     : rec.event === "wizard-feedback"
@@ -6912,7 +6956,7 @@ function parseToISO(dateStr) {
 }
 
 // ── Build Metabase parameters array ─────────────────────────────────
-const FORWARD_REPORTS = new Set(["facility", "calendar", "roster", "historic"]);
+const FORWARD_REPORTS = new Set(["facility", "calendar", "roster", "historic", "programs-schedule"]);
 const NO_DATE_REPORTS = new Set(["program-demographics", "memberships", "users", "retention", "section-detail", "ice-calendar", "checkins", "fasttrack", "waitlist"]);
 const DEFAULT_WINDOW_DAYS = 7;
 
@@ -7214,7 +7258,7 @@ app.post("/:org/:report/api/log", resolveOrg, (req, res) => {
   const { event, game, location, view } = req.query;
   // view-apply is events.jsonl-only by design — it is not in SLACK_NOTIFY, so
   // logEvent records it without pinging the feed (see the saved-views block).
-  const ALLOWED = ["excel", "print", "summary", "game", "map", "view-apply", "checkin-loc", "checkin-member", "checkin-failed", "form-open", "epact", "settings-open", "mb-autorenew", "mb-salesmix", "ft-export", "panel-csv", "intel-csv"];
+  const ALLOWED = ["excel", "print", "summary", "game", "map", "view-apply", "checkin-loc", "checkin-member", "checkin-failed", "form-open", "epact", "settings-open", "mb-autorenew", "mb-salesmix", "ft-export", "panel-csv", "intel-csv", "roster-open"];
   if (!ALLOWED.includes(event)) return res.status(400).json({ ok: false, error: "Unknown event" });
   const ciN = Number(req.query.n);
   const extra = event === "game" && game ? { game: String(game).slice(0, 60) }
@@ -7223,6 +7267,14 @@ app.post("/:org/:report/api/log", resolveOrg, (req, res) => {
               : event === "panel-csv"
                 ? { panel: String(req.query.panel || "").slice(0, 60),
                     rows: Number.isFinite(ciN) && ciN >= 0 && ciN <= 9999999 ? Math.round(ciN) : undefined }
+              // WHICH class someone opened the roster for, and how many
+              // people were in it. "Somebody clicked a roster" says nothing;
+              // the section plus the head count says whether the schedule is
+              // being used to run the day. Clamped here, never echoed.
+              : event === "roster-open"
+                ? { section: String(req.query.section || "").slice(0, 120),
+                    enrolled: (() => { const n = Number(req.query.enrolled);
+                      return Number.isFinite(n) && n >= 0 && n <= 99999 ? Math.round(n) : undefined; })() }
               // A CONTACT LIST LEFT THE PLATFORM. These files carry resident
               // names, emails and phone numbers, so the segment and the head
               // count are the record of who took what — the thing that pays
@@ -13900,6 +13952,25 @@ app.get("/:org/waitlist", (req, res) => {
   if (!org.waitlist?.mbUuid && !SHARED_UUIDS.waitlist) return res.status(404).send("Waitlist report not configured for this org.");
   logEvent(slug, "waitlist", "view", req);
   res.type("html").send(loadEstimateInject(require("fs").readFileSync(path.join(__dirname, "public", "waitlist.html"), "utf8"), req));
+});
+
+app.get("/:org/programs-schedule", (req, res) => {
+  const slug = req.params.org;
+  const org  = ORGS[slug];
+  if (!org) return res.status(404).send("Unknown org");
+  if (!org["programs-schedule"]?.mbUuid && !SHARED_UUIDS["programs-schedule"]) {
+    return res.status(404).send("Program Schedule report not configured for this org.");
+  }
+  logEvent(slug, "programs-schedule", "view", req);
+  const slugTitle = slug.charAt(0).toUpperCase() + slug.slice(1);
+  const orgConfig = {
+    slug,
+    displayName: org.displayName || `${slugTitle} Parks & Recreation`,
+    logoUrl: org.logoUrl || "",
+    token: org.token || "",
+  };
+  const html = require("fs").readFileSync(path.join(__dirname, "public", "programs-schedule.html"), "utf8");
+  res.type("html").send(html.replace("</head>", () => orgConfigInject(orgConfig, req) + "</head>"));
 });
 
 app.get("/:org/instructor-payout", (req, res) => {
