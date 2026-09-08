@@ -110,12 +110,78 @@ cold, through the preview: **one day 54s, one month 49s, thirteen months
 the window; that spread is replica load, the same tell as the apex numbers
 above.
 
-**Three years back, and it is a bound rather than a guess.** Over **45,695**
-per-section runs, p99 span is **133 days** and p99.9 is **361**, with **8**
-spanning more than two years (one artifact at 5,607 days). So no fixed
-lookback is provably complete — the exact fix is the run's own first-session
-date as a column on card 21649, which would make this a single date again.
-Not done here: it is a card push and a date-tag flip.
+**Three years back was a bound rather than a guess, and it is now a FALLBACK
+only.** Over **45,695** per-section runs, p99 span is **133 days** and p99.9 is
+**361**, with **8** spanning more than two years (one artifact at 5,607 days) —
+so no fixed lookback is provably complete, which is why the exact fix was worth
+a card push.
+
+#### THE EXACT FIX SHIPPED — card 21649 emits `Section First Session` (2026-09-08)
+
+Dan: *"yes add that column to the card, i'll flip the tags."* `MIN(starts_at)`
+over the section's whole run, so a per-section row's roster link asks for ONE
+day again.
+
+**IT IS THE ONE COLUMN ON THAT CARD IN A DIFFERENT TIMEZONE, deliberately.**
+Card 17296 dates every booking by `org.config #>> '{general,primaryTimezone}'`;
+card 21649's own `cfg` CTE uses the **majority `location.timezone`**. Those are
+not interchangeable — measured, **they disagree for 22 of 168 orgs**, including
+live ones (pawnee `America/Chicago` vs `America/Los_Angeles`, niagara-falls
+`America/New_York` vs `America/Los_Angeles`, a three-hour gap). The column's
+consumer is 17296, so it is computed 17296's way; every other column keeps the
+card's own rule. **The practical cost of getting it wrong is small and real:
+over 25,339 sections the two rules land the first-session date on a different
+DAY for 6 of them** (niagara-falls, reno-sandbox).
+
+**And it corrected a false comment of mine in the card**, inherited from this
+file's Tyler-export section: *"organization.config holds no timezone key."* It
+does — `primaryTimezone` is populated on all 168 live orgs. A wrong statement in
+a card comment sends the next person looking in the wrong place.
+
+- **Reproduced from 17296 rather than approximated.** Its LATERAL filters on
+  `deleted_at IS NULL` **alone** — not `canceled_at`, and **not scoped by the
+  window**. Scope it by `win` and a run that began before the window reports its
+  first IN-WINDOW meeting, which is a different date and a link that finds
+  nobody. Verified: **0 rows disagree** with 17296's own LATERAL.
+- **ONE `GROUP BY`, not a per-section LATERAL** — the 17295 lesson, where the
+  LATERAL cost more than it saved and timed out at apex. It drives from the
+  already-windowed `sections` into `session_sectionid_index`.
+- **Cannot fan out** (one row per `section_id`, verified 14/14), and clarksville
+  still returns **45 rows / 45 distinct sessions** — the same figure as the
+  pre-push sign-off, which is the additive proof.
+- **PRESENCE-GATED ON THE PAGE.** Feeds cache four hours, so a pre-column
+  response and a post-column one are both live at once; the lookback survives as
+  that fallback and nothing else. A page that assumed the column would link to a
+  date of `undefined`.
+- **A single date per row is sound because NO SECTION MIXES BOOKING TYPES** —
+  measured, **0 of 23,880** sections carry both `type='section'` and
+  `type='session'` confirmed bookings.
+
+### THE SECTION-BASED FILTER EMPTIED THE TABLE FOR EVERY ORG (2026-09-08)
+
+Found while dry-running the column, from **a surprising zero**: a probe filtering
+`reg_mode = 'per-section'` returned *"0 of 0 per-section rows"* on a page full of
+them. Checked rather than reported — the rule this file already records — and the
+page was right while my probe was wrong, which then exposed a worse bug.
+
+**`registration_mode` holds `section` and `per-session`. There is no
+`per-section`.** Measured: **138,802 sessions `section`, 22,023 `per-session`.**
+`programs-schedule.html` built its grain buttons from a hardcoded
+`['all','per-section','per-session']`, so **the majority grain filtered on a
+string no row can ever match and emptied the table**, for every org, since the
+page shipped.
+
+**THE FIXTURE CARRIED THE SAME FICTION**, which is why eight render cases passed
+over it: `"Registration Mode": "per-section"`. The button matched the fixture and
+the fixture matched the button. *A test that supplies the value under test cannot
+say whether anything supplies it in production* — already recorded here for the
+Programs location filter, and reintroduced one page over.
+
+The options are built from the ROWS now, with `grainLabel()` as the single label
+definition read by both the row chip and the buttons — two copies is how a filter
+stops matching the word the reader can see (the `Past`/`Ran` lesson). The case
+keys on the row COUNT after the click: "a button rendered" and "a button that
+filters to nothing" look identical otherwise.
 
 **Sending only `end_date` would be exact and does NOT work**, which is worth
 recording because it is the tempting answer: the card's optional
@@ -352,13 +418,24 @@ sweep rather than as the only case that ran having failed. Fixed.
 the harness as `"programs-schedule ??"`, the middot mangled in transit, so the
 run matched nothing.
 
-**Mutation-tested eight ways, all caught, each naming its own case:** the
+**Mutation-tested twelve ways, all caught, each naming its own case:** the
 roster link keyed on the section NAME, the roster link carrying the run's dates
 instead of this meeting's, NULL capacity rendered as 0, the multi-site chip
 dropped, a roster icon offered where nobody is enrolled, the unpublished toggle
-made inert, the window default built from the UTC date, and the beacon never
-firing. A ninth was proven by accident — the stub moved back below the generic
-`/api/data` one, which is how the first run failed 7 of 8.
+made inert, the window default built from the UTC date, the beacon never
+firing, and — for the first-session column — the column ignored, the presence
+gate dropped (a pre-column feed linking to `undefined`), the column mapped but
+never read (the mapped-and-rendered-nowhere pattern, **fifth instance**), and
+the grain buttons hardcoded again. A thirteenth was proven by accident — the
+stub moved back below the generic `/api/data` one, which is how the first run
+failed 7 of 8.
+
+**Twelve cases now.** The three added with the column are the per-section link
+asking for the run's first session, a `prefirst` feed falling back to the
+lookback, and the section-based filter keeping its rows. **The per-section case
+keys on WHICH day, not on `start == end`** — equality alone passes on the
+ORIGINAL bug, where both ends were the row's own date — so `data-ps-date` was
+added to the row as the hook that lets it compare the two.
 
 Note `scripts/ci-check-html.js` cannot run in this sandbox
 (`@babel/standalone` is not installed locally); it runs in CI, and this page

@@ -511,6 +511,12 @@
       capacity:  (r['Capacity'] === null || r['Capacity'] === undefined || r['Capacity'] === '')
                    ? null : Number(r['Capacity']),
       regMode:   r['Registration Mode'] || '',
+      // Card 21649's "Section First Session". Absent on a pre-column cache
+      // entry, which rosterWindow treats as "cannot tell" rather than as a
+      // date. Metabase sends a bare YYYY-MM-DD and it is passed through
+      // UNPARSED — new Date(ymd) is UTC midnight and would land a day early
+      // west of UTC, which is the whole bug this column exists to fix.
+      firstSession: r['Section First Session'] || '',
       waitlist:  Number(r['Waitlist'] || 0),
       ages:      r['Eligibility'] || '',
       price:     r['Price'] || '',
@@ -573,6 +579,15 @@
   }
 
   /* ── Cells ── */
+  // ONE definition, read by the row chip and by the toolbar buttons. Two
+  // copies is how a filter stops matching the word the reader can see — the
+  // Past/Ran lesson from the programs summary. An unrecognised value prints
+  // itself rather than being guessed at.
+  function grainLabel(m) {
+    return m === 'per-session' ? 'Per-session'
+         : m === 'section'     ? 'Per-section'
+         : m;
+  }
   function fillClass(r) {
     if (r.capacity == null) return 'fill-none';
     if (r.enrolled > r.capacity) return 'fill-over';
@@ -587,7 +602,7 @@
     var per = r.regMode === 'per-session';
     var chip = r.regMode
       ? '<span class="grain grain-' + (per ? 'session' : 'section') + '">' +
-        (per ? 'Per-session' : 'Per-section') + '</span>'
+        esc(grainLabel(r.regMode)) + '</span>'
       : '';
     return '<span class="fill ' + fillClass(r) + '">' +
              '<span class="fill-num">' + num + '</span>' + bar + chip +
@@ -628,15 +643,31 @@
      non-sargable COALESCE(...)::date over a joined column, so it does the
      same work whatever the window, and that spread is replica load.
 
-     Three years covers the run length by a wide margin: over 45,695
-     per-section runs, p99 is 133 days and p99.9 is 361, with 8 spanning more
-     than two years. The exact fix is the run's own first-session date as a
-     column on card 21649, which would let this be a single date again — it
-     is a card push and a date-tag flip, so it is not done here. */
+     CARD 21649 NOW SHIPS THE ANSWER as "Section First Session" — MIN(starts_at)
+     over the section's whole run, computed under card 17296's OWN timezone
+     rule rather than this card's, because 17296 is what consumes it. So the
+     link is a single exact date again and the lookback is dead weight.
+
+     IT IS PRESENCE-GATED, NOT ASSUMED. Feeds cache for four hours, so a
+     pre-column response and a post-column one are both live at once; a page
+     that assumed the column would ask a warm cache entry for `undefined` and
+     link to a date of "undefined". The lookback stays as that fallback and
+     nothing else — same rule as colPresence elsewhere in this repo.
+
+     The lookback bound is generous rather than tight because THE WINDOW IS
+     FREE. Measured through the preview on the roster feed, same org, cold:
+     one day 54s, one month 49s, thirteen months 31s — the card's date test is
+     a non-sargable COALESCE(...)::date over a joined column, so it does the
+     same work whatever the window, and that spread is replica load. Three
+     years covers the run length by a wide margin: over 45,695 per-section
+     runs, p99 is 133 days and p99.9 is 361, with 8 spanning more than two
+     years. */
   var ROSTER_SECTION_LOOKBACK_YEARS = 3;
 
   function rosterWindow(r) {
     if (r.regMode === 'per-session') return { start: r.date, end: r.date };
+    // The exact answer, when the feed carries it.
+    if (r.firstSession) return { start: r.firstSession, end: r.firstSession };
     var p = String(r.date).split('-');
     var y = Number(p[0]) - ROSTER_SECTION_LOOKBACK_YEARS;
     // Built from PARTS, never new Date(ymd) — that is UTC midnight and lands
@@ -724,7 +755,12 @@
           '" target="_blank" rel="noopener noreferrer" title="Open section in Rec">&#8599;</a>'
         : '') + '</span>');
     }
-    return '<div class="row-wrap' + (r.status === 'Canceled' ? ' row-canceled' : '') + '">' +
+    // data-ps-date is a guard hook: it lets a render case compare the roster
+    // link's window against the row's OWN date, which is the only thing that
+    // separates the fixed link from the bug (both ends equal, on the wrong
+    // day) — an assertion that the two ends merely match passes on both.
+    return '<div class="row-wrap' + (r.status === 'Canceled' ? ' row-canceled' : '') + '"' +
+             ' data-ps-date="' + esc(r.date) + '">' +
              '<div class="data-row">' + cells.join('') + '</div>' +
            '</div>';
   }
@@ -885,13 +921,29 @@
       h.push(checkMenu('ins', 'Instructors', insAll, S.instrs,
                        countBy(all, instrKey), 'No instructor on file'));
 
-      var modes = uniq(all.map(function (r) { return r.regMode; })).filter(Boolean);
+      // THE OPTIONS COME FROM THE ROWS, and this shipped hardcoded as
+      // ['all','per-section','per-session'] — a list carrying a value the
+      // platform never emits. `registration_mode` holds 'section' and
+      // 'per-session', never 'per-section', so the Section-based button
+      // filtered on a string no row can match and EMPTIED THE TABLE for every
+      // org — on the majority grain: 138,802 of 160,825 live sessions are
+      // 'section', against 22,023 'per-session'.
+      //
+      // Nothing could catch it, and the reason generalises: the render
+      // fixture supplied `"Registration Mode": "per-section"` itself, so the
+      // button matched the fixture and no case could tell the two apart. A
+      // test that supplies the value under test cannot say whether anything
+      // supplies it in production. The fixture says 'section' now.
+      //
+      // Deriving from the data also means a third grain, if one is ever
+      // added, gets a button rather than being silently unfilterable.
+      var modes = uniq(all.map(function (r) { return r.regMode; })).filter(Boolean).sort();
       if (modes.length > 1) {
         h.push('<div class="divider"></div>');
         h.push('<div class="seg" role="group" aria-label="Registration type">' +
-          ['all','per-section','per-session'].map(function (g) {
-            return '<button data-grain="' + g + '"' + (S.grain === g ? ' class="active"' : '') + '>' +
-              (g === 'all' ? 'All' : g === 'per-section' ? 'Section-based' : 'Session-based') + '</button>';
+          ['all'].concat(modes).map(function (g) {
+            return '<button data-grain="' + esc(g) + '"' + (S.grain === g ? ' class="active"' : '') + '>' +
+              esc(g === 'all' ? 'All' : grainLabel(g)) + '</button>';
           }).join('') + '</div>');
       }
 

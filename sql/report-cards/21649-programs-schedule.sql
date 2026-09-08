@@ -50,16 +50,28 @@
 -- is the sec_win lesson from 17295 — delete either and the two predicates drift
 -- apart silently.
 --
--- TO ACTIVATE: create a public link and paste its UUID into
--- MB_PROGRAMS_SCHEDULE_UUID in the rental-report Railway env. After any API
--- push, re-set the Start/End Date variable types to Date in this UI and
--- re-save until the card registers THREE parameters, not six.
+-- LIVE AND WIRED. Public UUID 304df386-0d8a-4d44-8f3c-396da187001f, hardcoded
+-- into SHARED_UUIDS in the rental-report server.js — so it is on all 29 org
+-- dashboards. After ANY API push, re-set the Start/End Date variable types to
+-- Date in this UI and re-save until the card registers THREE parameters, not
+-- six; until that is done the app sends two values per variable and every org
+-- sees an error instead of a schedule.
 
 WITH cfg AS (
     -- Metabase's report timezone is America/Los_Angeles, so an un-converted
     -- timestamptz renders Pacific for every org. location.timezone is populated
-    -- on all 3,099 locations across all 151 orgs; organization.config holds no
-    -- timezone key. Majority location timezone, exactly as 17298 does.
+    -- on all 3,099 locations across all 151 orgs. Majority location timezone,
+    -- exactly as 17298 does.
+    --
+    -- CORRECTION TO AN EARLIER COMMENT HERE, which said organization.config
+    -- holds no timezone key: it does. `config #>> '{general,primaryTimezone}'`
+    -- is populated on all 168 live orgs, and it is the rule CARD 17296 (the
+    -- class roster) dates every booking by. THE TWO RULES ARE NOT THE SAME —
+    -- measured, they disagree for 22 of 168 orgs, including live ones
+    -- (city-of-pawnee America/Chicago vs America/Los_Angeles, and
+    -- city-of-niagara-falls America/New_York vs America/Los_Angeles, a
+    -- three-hour gap). So roster_tz is carried SEPARATELY below and is used
+    -- for exactly one column, Section First Session — see that CTE.
     SELECT o.id AS org_id,
            COALESCE(
              (SELECT l.timezone
@@ -71,7 +83,23 @@ WITH cfg AS (
                ORDER BY COUNT(*) DESC
                LIMIT 1),
              'UTC'
-           ) AS tz
+           ) AS tz,
+           -- Card 17296's own rule, so the roster link this feeds cannot land
+           -- a day off. The fallback exists only so the column never goes NULL
+           -- for a timezone reason; no live org needs it.
+           COALESCE(
+             (o.config #>> '{general,primaryTimezone}')::text,
+             COALESCE(
+               (SELECT l.timezone
+                  FROM location l
+                 WHERE l.organization_id = o.id
+                   AND l.deleted_at IS NULL
+                   AND l.timezone <> 'UTC'
+                 GROUP BY l.timezone
+                 ORDER BY COUNT(*) DESC
+                 LIMIT 1),
+               'UTC')
+           ) AS roster_tz
     FROM organization o
     WHERE o.id = {{org_id}}::uuid
 ),
@@ -104,6 +132,43 @@ win AS (
 
 sections AS (
     SELECT DISTINCT section_id FROM win
+),
+
+-- ── The run's FIRST session ─────────────────────────────────────────────
+-- This column exists for ONE reader: the roster link on the schedule page.
+--
+-- CARD 17296 DATES A BOOKING BY COALESCE(the session's own date, THE RUN'S
+-- FIRST SESSION). A type='section' booking has no session_id — those people
+-- are enrolled in the RUN, not in a meeting — so every one of them is dated by
+-- the first session, whatever date the row on this schedule carries. Without
+-- this column a per-section row's roster link asks for its own date, a date
+-- none of those bookings carry, and the roster correctly returns nothing.
+-- That is exactly the bug Dan hit on 09.September Code: 9974 at Clarksville —
+-- 30 sessions across September, 6 section bookings, 0 session bookings.
+--
+-- REPRODUCED FROM 17296 RATHER THAN APPROXIMATED. Its definition is a LATERAL
+-- reading MIN(starts_at) over the section's sessions filtered on
+-- deleted_at IS NULL ALONE — not on canceled_at, and NOT scoped by the
+-- report's window. All three of those matter: scope it by `win` and a run that
+-- began before the window reports its first IN-WINDOW meeting instead of its
+-- real first, which is a different date and a link that finds nobody.
+--
+-- ONE GROUP BY, NOT A PER-SECTION LATERAL. Mirroring 17296's LATERAL shape
+-- here would re-do per section the work this can do in one pass — the precise
+-- change that made an earlier 17295 candidate cost more than it saved and time
+-- out at apex. It drives from `sections` (already restricted to the window)
+-- into session_sectionid_index, so it reads only the runs on screen.
+--
+-- IT IS THE ONE COLUMN ON THIS CARD IN roster_tz RATHER THAN tz, deliberately,
+-- because its consumer is 17296 and not this page. Measured over 25,339
+-- sections, the two rules put the first-session date on a different DAY for 6
+-- of them (city-of-niagara-falls, reno-sandbox) — small, real, and silent.
+run AS (
+    SELECT s.section_id, MIN(s.starts_at) AS first_starts
+    FROM sections sx
+    JOIN "session" s ON s.section_id = sx.section_id
+                    AND s.deleted_at IS NULL
+    GROUP BY s.section_id
 ),
 
 -- ── Confirmed participants, PER SESSION ──────────────────────────────────
@@ -288,6 +353,12 @@ SELECT
     -- about the section's configuration, and a 0 would read as "no room".
     COALESCE(w.session_capacity, sec.capacity)               AS "Capacity",
     w.reg_mode                                               AS "Registration Mode",
+    -- The date card 17296 files this section's type='section' bookings under,
+    -- so a per-section row's roster link can ask for ONE day and get the
+    -- people. A per-session row ignores it and keeps its own date, which was
+    -- right all along. NULL only where a section has no sessions at all, which
+    -- `win` makes impossible for a row on this page.
+    (run.first_starts AT TIME ZONE cfg.roster_tz)::date      AS "Section First Session",
     COALESCE(wl.waitlist_active, 0)::int                     AS "Waitlist",
     COALESCE(elig.eligibility_label, '')                     AS "Eligibility",
 
@@ -325,6 +396,7 @@ LEFT JOIN fac  ON fac.section_id  = w.section_id
 LEFT JOIN wl   ON wl.section_id   = w.section_id
 LEFT JOIN elig ON elig.section_id = w.section_id
 LEFT JOIN site ON site.session_id = w.session_id
+LEFT JOIN run  ON run.section_id  = w.section_id
 -- ONE location join, because session.location_id is always a location for a
 -- program session — see the header. 17298's `court site` branch is dead here,
 -- and the real site comes from the `site` CTE above instead.

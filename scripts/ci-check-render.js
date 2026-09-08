@@ -574,7 +574,15 @@ function progSchedRows() {
   const row = (o) => Object.assign({
     Day: dow(o.Date), "Begin Sort": o.Begin, "Site Count": o.Site ? 1 : 0,
     "Instructor Count": o.Instructor ? 1 : 0, "Instructor Level": o.Instructor ? "section" : "",
-    "Registration Mode": "per-section", Waitlist: 0, Eligibility: "6-12 yrs",
+    // 'section', NOT 'per-section'. The platform emits 'section' (138,802 of
+    // 160,825 live sessions) and 'per-session' (22,023); 'per-section' does
+    // not exist. This fixture used to say 'per-section', which matched a
+    // hardcoded filter button that could never match a real feed — the
+    // fixture and the bug agreed with each other and every case passed.
+    "Registration Mode": "section", Waitlist: 0, Eligibility: "6-12 yrs",
+    // Card 21649's run-first-session date. Defaults to the run's own start so
+    // a per-section row's roster link is exact; overridden per row below.
+    "Section First Session": d(-7),
     Price: "$40.00", Status: "Scheduled", Published: true,
   }, o);
   return [
@@ -1271,8 +1279,18 @@ const STUBS = [
      the Facilities hub's own feed on `rows: []` with three lane cases
      reporting green. */
   { match: /\/programs-schedule\/api\/data/,
-    body: () => ({ rows: progSchedRows(),
-                   meta: { org_id: "org-uuid-1", dataAt: new Date().toISOString() } }) },
+    // `prefirst` is a feed from BEFORE card 21649 grew "Section First
+    // Session" — the shape a warm four-hour cache entry still holds after the
+    // push. It is a different state from a column present and empty, and the
+    // page must fall back rather than link to a date of "undefined".
+    // STUB_MODE, not a body parameter: the stub is called as body(url, org),
+    // so a `mode` argument would silently receive the URL and never match.
+    body: () => ({
+      rows: STUB_MODE === "prefirst"
+        ? progSchedRows().map((r) => { const c = Object.assign({}, r);
+                                       delete c["Section First Session"]; return c; })
+        : progSchedRows(),
+      meta: { org_id: "org-uuid-1", dataAt: new Date().toISOString() } }) },
   { match: /\/api\/data/,                   body: () => ({ rows: campsiteRows(),
       meta: { window: { start: "2026-08-19", end: "2026-08-26" } } }) },
   { match: /\/api\/pulse/,                  body: () => ({ items: [], generated: null }) },
@@ -1620,18 +1638,54 @@ const CASES = [
       });
     } },
 
-  /* A PER-SECTION ROW MUST NOT BE SCOPED TO ITS OWN DATE — the bug Dan hit,
-     a roster reading "No participants found" over a class with six people.
-     Card 17296 dates a section booking by the RUN'S FIRST SESSION, so a
-     single date asks for one none of them carry.
+  /* A PER-SECTION ROW MUST BE SCOPED TO THE RUN'S FIRST SESSION — not to its
+     own date (the bug Dan hit: a roster reading "No participants found" over
+     a class with six people), and no longer to a three-year window either.
+     Card 17296 dates a section booking by the RUN'S FIRST SESSION, and card
+     21649 now ships that date, so the link is one exact day again.
 
-     THE OLD CASE PINNED THE BUG: every fixture row was per-section and the
-     assertion demanded start == end, so it passed on the broken link and
-     would have failed on the fix. Keyed on the window ending on this row's
-     own date while reaching far enough back to contain the run. */
-  { name: "programs-schedule · a per-section roster link opens the whole run",
+     THE ORIGINAL CASE PINNED THE BUG: every fixture row was per-section and
+     the assertion demanded start == end, so it passed on the broken link and
+     would have failed on the fix.
+
+     IT KEYS ON THE FIRST-SESSION DATE, NOT MERELY ON start == end. Requiring
+     equality alone passes on the ORIGINAL bug, where both ends were the row's
+     own date — so the assertion has to name which day, and that day must
+     differ from the row's. */
+  { name: "programs-schedule · a per-section roster link asks for the run's first session",
     path: "/{org}/programs-schedule",
     needs: "[data-ps-secroster='ok']",
+    act: async (page) => {
+      await page.waitForSelector("[data-ready='true']", { timeout: 20000 });
+      await page.evaluate(() => {
+        const a = document.querySelector('a.rosterlink[data-roster-section="Pottery Eve"]');
+        const row = Array.from(document.querySelectorAll(".row-wrap"))
+          .find(x => /Pottery Eve/.test(x.textContent));
+        if (!a || !row) return;
+        const u = new URL(a.getAttribute("href"), location.origin);
+        const st = u.searchParams.get("start_date"), en = u.searchParams.get("end_date");
+        // the fixture's run began a week before the window
+        const first = new Date(Date.now() - 7 * 86400000);
+        const p = (x) => String(x).padStart(2, "0");
+        const want = first.getFullYear() + "-" + p(first.getMonth() + 1) + "-" + p(first.getDate());
+        const own = row.closest("[data-ps-date]");
+        document.body.setAttribute("data-ps-secroster-win", st + ".." + en);
+        if (st === want && en === want && st !== (own && own.getAttribute("data-ps-date")) &&
+            u.searchParams.get("section_id") === "sec-pot")
+          document.body.setAttribute("data-ps-secroster", "ok");
+      });
+    } },
+
+  /* A PRE-COLUMN FEED MUST STILL LINK SOMEWHERE. Feeds cache four hours, so a
+     response without "Section First Session" and one with it are both live at
+     once. The page falls back to the lookback window rather than linking to a
+     date of "undefined" — the colPresence rule. Keyed on the window being
+     WIDE, which is the only thing that separates the fallback from the exact
+     link. */
+  { name: "programs-schedule · a pre-column feed falls back to the lookback window",
+    path: "/{org}/programs-schedule",
+    stubMode: "prefirst",
+    needs: "[data-ps-fallback='ok']",
     act: async (page) => {
       await page.waitForSelector("[data-ready='true']", { timeout: 20000 });
       await page.evaluate(() => {
@@ -1639,12 +1693,45 @@ const CASES = [
         if (!a) return;
         const u = new URL(a.getAttribute("href"), location.origin);
         const st = u.searchParams.get("start_date"), en = u.searchParams.get("end_date");
+        if (!st || !en || /undefined|NaN/.test(st + en)) return;
         const days = (new Date(en + "T12:00:00") - new Date(st + "T12:00:00")) / 86400000;
-        const row = Array.from(document.querySelectorAll(".row-wrap"))
-          .find(x => /Pottery Eve/.test(x.textContent));
-        if (row && days > 365 && u.searchParams.get("section_id") === "sec-pot")
-          document.body.setAttribute("data-ps-secroster", "ok");
+        if (days > 365) document.body.setAttribute("data-ps-fallback", "ok");
       });
+    } },
+
+  /* THE SECTION-BASED FILTER EMPTIED THE TABLE FOR EVERY ORG. The buttons
+     were hardcoded ['all','per-section','per-session'] and the platform emits
+     'section', never 'per-section' — so the majority grain (138,802 of
+     160,825 live sessions) filtered on a string no row can match.
+
+     Nothing caught it because the FIXTURE said 'per-section' too, so the
+     button and the fixture agreed and every case passed. Keyed on the row
+     COUNT after the click: "a button rendered" and "a button that filters to
+     nothing" look identical otherwise. */
+  { name: "programs-schedule · the section-based filter keeps its rows",
+    path: "/{org}/programs-schedule",
+    needs: "[data-ps-grain='ok']",
+    act: async (page) => {
+      await page.waitForSelector("[data-ready='true']", { timeout: 20000 });
+      const before = await page.$eval("[data-ps-rows]", (e) => e.getAttribute("data-ps-rows"));
+      const clicked = await page.evaluate(() => {
+        const b = Array.from(document.querySelectorAll("[data-grain]"))
+          .find(x => x.getAttribute("data-grain") !== "all" &&
+                     /per-section/i.test(x.textContent || ""));
+        if (!b) return false;
+        b.click(); return true;
+      });
+      if (!clicked) return;
+      await page.waitForFunction(
+        (b) => { const e = document.querySelector("[data-ps-rows]");
+                 return e && e.getAttribute("data-ps-rows") !== b; },
+        { timeout: 5000 }, before).catch(() => {});
+      await page.evaluate((b) => {
+        const n = Number(document.querySelector("[data-ps-rows]").getAttribute("data-ps-rows"));
+        // 4 of the fixture's 6 rows are 'section' grain; the two Tot Lessons
+        // rows are 'per-session'. A filter matching nothing reads 0.
+        if (n > 0 && n < Number(b)) document.body.setAttribute("data-ps-grain", "ok");
+      }, before);
     } },
 
   // No link where nobody is enrolled — absent, not disabled, the rental
