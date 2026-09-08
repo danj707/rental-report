@@ -454,7 +454,7 @@
   }
 
   /* ── State ── */
-  var NONE = ' ';   // sentinel for "no instructor" / "no site" — an option, never a dropped row
+  var NONE = '\u0000';   // sentinel for "no instructor" / "no site" — an option, never a dropped row
   var S = {
     start: URL_Q.get('start_date') || defaultRange().start,
     end:   URL_Q.get('end_date')   || defaultRange().end,
@@ -1044,7 +1044,18 @@
     var f = document.getElementById('runStamp');
     if (f) f.textContent = 'Run Date/Time: ' + new Date().toLocaleString('en-US');
     var rdy = document.getElementById('report-ready');
-    if (rdy) rdy.setAttribute('data-ready', (S.rows && !S.loading) ? 'true' : 'false');
+    if (rdy) {
+      rdy.setAttribute('data-ready', (S.rows && !S.loading) ? 'true' : 'false');
+      // COMPUTED values, stamped so a render case can assert a NUMBER rather
+      // than that a table appeared. "A schedule rendered" passes just as
+      // happily on a filter that filters nothing, or on a window label built
+      // from new Date("YYYY-MM-DD") — which is UTC midnight and renders as
+      // the previous day west of UTC.
+      var vis = filtered();
+      rdy.setAttribute('data-ps-rows', String(vis.length));
+      rdy.setAttribute('data-ps-window',
+        fmtRangeLabel(S.loadedStart || S.start, S.loadedEnd || S.end));
+    }
   };
 
   /* ── Header chrome ── */

@@ -1758,6 +1758,7 @@ const REPORT_DIRECTORY = {
   qoq:                 { label: "QoQ Revenue Comparison",   emoji: "📉" },
   selfservice:         { label: "Self-Service Mix",         emoji: "🖱️" },
   "programs-monthly":  { label: "Programs by Month",        emoji: "📅" },
+  "programs-schedule": { label: "Program Schedule",       emoji: "🗓️" },
 };
 
 // ── Shared Metabase UUIDs (one query per report type, parameterized by org_id) ──
@@ -1771,19 +1772,16 @@ const SHARED_UUIDS = {
   // sql/report-cards/21649-programs-schedule.sql; the LIVE CARD is the source
   // of truth. https://rec.metabaseapp.com/question/21649
   //
-  // ABSENT until someone creates the public link, and that is deliberate:
-  // an omitted key 404s the data route, so the page renders its own error
-  // with the remedy in it. A wired-but-erroring card would instead draw an
-  // empty schedule, which says "nothing is running this week" when the
-  // truth is that nothing answered — the hasAbsent rule.
+  // A HARDCODED LITERAL, not an env read, like every other entry here — so
+  // the report works on deploy with no Railway variable to remember. The
+  // earlier env-gated form existed only while the public link did not.
   //
-  // TO ACTIVATE: create a public link on the card and set
-  // MB_PROGRAMS_SCHEDULE_UUID. After any API push, re-set the Start/End
-  // Date variable types to Date in the UI and re-save until the card
-  // registers THREE parameters, not six.
-  ...(process.env.MB_PROGRAMS_SCHEDULE_UUID
-        ? { "programs-schedule": process.env.MB_PROGRAMS_SCHEDULE_UUID }
-        : {}),
+  // Signed off cache-independently through the public endpoint 2026-09-08:
+  // clarksville, 2026-09-08→14, 45 rows in 3.2s, and the card registers
+  // THREE parameters with both dates typed date/single — which is what the
+  // app sends. After ANY future API push, re-set the Start/End Date variable
+  // types to Date in the UI and re-save until that list is three again.
+  "programs-schedule": "304df386-0d8a-4d44-8f3c-396da187001f",
   programs: "e35f2b47-87c9-40e3-8507-3d9b56f9ce62",
   calendar: "d77a2171-6cc8-4c11-b014-a6ad45491bf4",
   "court-utilization": "7b0fca20-8fe0-4720-9653-7e15c30176b2",
@@ -15745,7 +15743,9 @@ app.get("/", (req, res) => {
     "campmap":           { label: "Campsite Map", icon: "🏕️", desc: "Interactive campground map with per-night availability overlay", color: "#15803d" },
     "facilities":        { label: "Facilities", icon: "🏞️", desc: "Facility hub — summary plus camping, outdoor event spaces, fields, golf, aquatics, ice and racket sports", color: "#0d9488", ai: true },
     "ice-calendar":      { label: "Ice Participant Calendar", icon: "❄️", desc: "Participant-filtered monthly ice program calendar", color: "#0ea5e9" },
-    qoq:                 { label: "QoQ Revenue Comparison", icon: "📉", desc: "Quarter-over-quarter GL revenue comparison with delta analysis", color: "#8b5cf6" },  };
+    qoq:                 { label: "QoQ Revenue Comparison", icon: "📉", desc: "Quarter-over-quarter GL revenue comparison with delta analysis", color: "#8b5cf6" },
+    "programs-schedule": { label: "Program Schedule", icon: "🗓️", desc: "Every class and camp meeting by date, location and site — instructor, confirmed count, and a link to each roster", color: "#7c3aed" },
+  };
 
   const hiddenReports = getAllHiddenReports();
   const publicModes = getAllPublicModes();

@@ -148,6 +148,17 @@
       "card": "fff0027f-be52-4f99-adfa-b21dd5605634",
       "org": "aeba47d0-c97f-49cb-a0e9-93c5af3a68fa",
       "timeout": 120
+    },
+    {
+      "label": "programs-schedule / apex (card 21649, ADDED 2026-09-08 \u2014 the heaviest org, on the report's own default window of today + 7 days. SIGNED OFF 2026-09-08 through the public endpoint with the app's own date/single parameters: 687 rows, measured three times back to back at 44.8s / 35.1s / 21.6s, always the same 687 rows. The spread is replica load, not the card \u2014 the row count being identical across all three is what says so. Timeout pinned at the app's own first-try budget rather than the 60s tripwire, on that measurement. An 'An error occurred.' here means an API push reset the Start/End Date tags to Text and the app's date/single parameters no longer match; only a human re-flipping them in the Metabase UI fixes it)",
+      "card": "304df386-0d8a-4d44-8f3c-396da187001f",
+      "org": "aeba47d0-c97f-49cb-a0e9-93c5af3a68fa",
+      "timeout": 120
+    },
+    {
+      "label": "programs-schedule / watertown (TIMEZONE regression case \u2014 an EASTERN org, pinned for the same reason smyrna is pinned on fasttrack: Metabase's report timezone is America/Los_Angeles, so a Pacific org structurally cannot catch this class of bug. The card resolves each org's own majority location.timezone and converts before rendering Date/Day/Begin/End. Measured 2026-09-08: watertown is America/New_York and the conversion moves every row three hours \u2014 a 6:00pm class reads 3:00pm without it, and an 8:00am class reads 5:00am, which slips a DAY at the window boundary. 27 rows in 0.9s)",
+      "card": "304df386-0d8a-4d44-8f3c-396da187001f",
+      "org": "d781690b-c5a0-43c5-8443-9ae43899528c"
     }
   ]
 }
