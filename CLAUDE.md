@@ -263,13 +263,89 @@ were no duplicates to re-save away. The pushed SQL was **diffed back against
 the mirror** before anything else, which is the guard that exists because card
 17300 silently lost its trailing `ORDER BY` to transcription.
 
-**Sign-off, cache-independently through the public endpoint:**
+**Sign-off, cache-independently through the public endpoint, over the window the
+app actually sends (today → today+7):**
 
 | org | rows | time |
 |---|---|---|
-| apex (heaviest), 7 days | 687 | **44.8s → 35.1s → 21.6s** |
-| watertown, 7 days | 27 | 0.9s |
-| clarksville, 7 days | 45 | 3.2s |
+| apex (heaviest) | 801 | **93.0s** |
+| watertown (Eastern) | 38 | 28.1s |
+| clarksville | 54 | 1.2s |
+
+**APEX AT 93s EXCEEDS THE APP'S 60s FIRST-TRY BUDGET** and falls to the 120s
+retry, so apex leans on the 4-hour cache and is one busy minute from a slow load.
+That is pre-existing — the `Section First Session` column was measured at
+**+0.09s with an identical row count** — and it is the next thing worth looking
+at on this card.
+
+### THE SIGN-OFF ROWS SENT NO DATE WINDOW, AND THAT READ AS A CARD REGRESSION
+
+Card 21649 timed out at apex three times — 120s, 200s, 200s — and the card was
+fine. Both manifest rows carried no `days`/`start`/`end`, so `verify-report-live`
+sent **no date parameters**, the optional `[[ ]]` blocks dropped out, and each
+probe asked for the org's **entire history**.
+
+**That defeats the card's whole design premise**, since every CTE joins FROM
+`win` precisely so nothing is computed for a session nobody asked about. And the
+app never asks it: `programs-schedule` is in `FORWARD_REPORTS` and **not** in
+`NO_DATE_REPORTS`, so every real request carries today → today+7.
+
+| org | unwindowed (what the row sent) | windowed (what the app sends) |
+|---|---|---|
+| watertown | 3,269 rows in 36.8s | **27–38 rows in ~1s** |
+| apex | TIMEOUT past 200s, three times | **801 rows in 93.0s** |
+
+**SAME MISTAKE THIS FILE ALREADY RECORDS FOR CARD 17301 v7, in my own words** —
+*"the manifest's own norman row runs UNWINDOWED … the regression was predicted in
+my own notes and I added a sign-off row for exactly that shape without connecting
+the two."* Repeated three weeks later in the same file. **The labels made it
+worse:** I pasted WINDOWED numbers into rows that send no window, so they read as
+verified.
+
+**AND `days` COULD ONLY LOOK BACKWARD**, which would have left a smaller version
+of the same error. `relativeWindow` gives today−(n−1) → today, right for `gl` and
+`memberships` and wrong for a forward-looking schedule — it would have tested a
+week of sessions that already ran. **`daysAhead` is the other direction**, and a
+row must use whichever one its report type actually gets; declaring both now
+throws rather than silently preferring one. No other manifest row gains a window:
+an empty result is a FAILURE here and a genuinely quiet week is not a broken card
+(gl/littleton returns 14 rows over all time), so windowing everything would make
+the check cry wolf on small orgs.
+
+**THE COLUMN WAS EXONERATED BY A CONTROLLED A/B, not by argument.** Same session,
+back to back at apex, every joined CTE aggregated so Postgres could not eliminate
+an unused LEFT JOIN and gut the comparison: **104 rows without the `run` join,
+104 rows with it, +0.09s.** An earlier suspicion that `run` was being inlined as
+the inner side of a nested loop was **WRONG** and is recorded as wrong — the plan
+is a Merge Left Join computed once, over 532 index lookups.
+
+### THE ROSTER LOOKBACK WAS THREE YEARS, AND ONE QUIET MEASUREMENT PUT IT THERE
+
+Dan: *"the clickable class rosters are brutally slow"*, then, on the window in
+his own screenshot, *"bruh.....3 years?"*
+
+I measured the roster feed **once, on an idle replica** — one day 54s, one month
+49s, thirteen months 31s, the widest being the **fastest** — wrote down *"THE
+WINDOW IS FREE"*, and set a three-year lookback on it. The mechanism was real but
+half the story: the card's date test is a non-sargable `COALESCE(...)::date` over
+a joined column, so a wider window costs no extra **index** work — but it still
+**returns and ships every row in it**, and under load that is the entire cost. He
+hit 2m42s with the roster falling back to stale cache.
+
+**ONE QUIET MEASUREMENT IS NOT EVIDENCE ABOUT COST** — the same shape as *"one
+org's clean data is not evidence about what a column MEANS"*, already in this
+file.
+
+**400 days now**, the measured bound: over 45,695 per-section runs p99 is 133
+days and p99.9 is 361, so it still contains the run's first session for 99.9% of
+sections at roughly a fifth of the rows. It is also **transient** — it runs only
+for a feed cached before the column existed, at most one 4-hour TTL after a push.
+Verified end to end afterwards: Dan's own section asks for the single day
+2026-09-01 and the roster returns its **6 rows in 15.7s**.
+
+**The render case could not tell the fix from the bug**: it asserted
+`days > 365`, which passes on three years *and* on 400. It keys on the bound
+itself now.
 
 **The apex spread is replica load, not the card — the row count being
 identical across all three reads is what says so.** An earlier apex probe timed
