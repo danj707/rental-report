@@ -1,5 +1,59 @@
 # Project notes for Claude
 
+## PINNED: feature-adoption sparklines on the ORG DASHBOARD (Dan, 2026-09-08)
+
+*"pin a quick item for the org-dashboard feature adoption, the sparklines
+showing trends on feature adoption and use."*
+
+**It belongs in rec-dashboard, not here** — same line as the Coffee Chart:
+a dashboard is the place for a live trend, a report answers a question about
+a window somebody chose. Pinned in this file because the DATA is here.
+
+### The shape already exists
+
+`refreshOrgPulse()` in rec-dashboard already draws a sparkline per card (the
+Bookings one) off a six-month feed, with a delta and a pace figure. Adoption
+cards are that component with a different series, which is most of why this is
+"quick".
+
+### WHICH ADOPTION — the question to settle before building
+
+*"Feature adoption and use"* reads two ways and they have nothing in common:
+
+| reading | source | state |
+|---|---|---|
+| **our reports** — which of the 23 report types an org actually opens | this repo's event log | **ready**: 96,779 events, ~600/day, and `/api/admin/report-activity` already aggregates it per org/report |
+| **Rec product features** — waitlists, autopay, fast track, instant booking | the rec.us database | a different build; every figure needs its own query |
+
+The first is a week's work and is the one the pulse can draw today. The second
+is the more interesting question and is not a sparkline job.
+
+### Four traps, all already recorded in this file for other surfaces
+
+- **PREVIEW TRAFFIC IS IN THE LOG.** The 2026-08-29 fix gated Slack *posting*
+  to production; it did not stop preview environments **writing** `view` and
+  export rows. So any adoption trend crossing that date is contaminated by
+  whatever was being tested that day, and a rising line may be us. Establish
+  where the contamination starts before drawing a 12-month series.
+- **`NON_USAGE_EVENTS` is the denylist that keeps this honest.** `report-down`
+  is logged against the real org/report, so counting it as usage lets a broken
+  report look adopted — the exact loop `getReportActivity()` was built to avoid.
+- **An empty window is not zero adoption.** A fresh volume, a rotated log or a
+  short history must render *"since <date>"* rather than a confident flat line
+  at zero — the `covers` / `logStartsAt` treatment the campmap activity strip
+  already uses, and `failsafe: true` on the activity route.
+- **No trend under a floor.** Precedent in this repo: trend arrows refuse to
+  draw under 14 elapsed days, `RATE_MIN_VIEWS = 20`, `FEEDBACK_MIN_RATINGS = 5`.
+  A sparkline over three data points is a picture of noise.
+
+### And say which events the line counts
+
+`view` alone would understate badly — the six Program Summary bands have **zero**
+`view` events by design and are fetched by `programs.html` for ~15 orgs apiece.
+Any adoption figure has to count every usage event, exactly as
+`getReportActivity()` does, or it reports the platform's most-used surfaces as
+unused.
+
 ## Card 17301 v7 — PUSHED AND IT IS A REGRESSION (2026-09-04)
 
 **READ THIS BEFORE ANYTHING BELOW.** v7 is live on card 17301 and it TIMES OUT
