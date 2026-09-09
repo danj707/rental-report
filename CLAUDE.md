@@ -3997,6 +3997,73 @@ against production: **97 rows where the live card returns 685**, three locations
 date tags and set the org_id default, and `update_question` would regenerate both
 as Text, so this goes in through the UI.
 
+### CARD 2 IS APPLIED. CARDS 1, 3 AND 4 ARE MIRRORED AND NOT (2026-09-09)
+
+Dan asked whether the cards could be updated programmatically off their public
+links. **They cannot, and access was never the blocker** — I created them and
+hold write access and their numeric ids. `update_question` takes SQL only as a
+`query_handle` from `construct_native_query`, whose entire input is
+`database_id` + `sql`: **there is no template-tag field anywhere in that path**,
+so every programmatic save regenerates all three tags as Text and wipes both
+Dan's Date flips and the hardcoded `org_id` default. Now that the cards are on a
+dashboard the Date-typed tags are what its date filters BIND to, so an API save
+breaks the dashboard, not just the cards. Dan: *"all good i'll just
+copy/paste"* — and he applied card 2 (21683) the same afternoon.
+
+The other three are mirrored in `sql/report-cards/` and **each was verified by
+running THAT EXACT TEXT, whole final SELECT, bare — not wrapped in a summary
+SELECT**, which is the specific mistake that let card 21682 ship with
+`ORDER BY position 9 is not in select list`.
+
+| card | file | fix |
+|---|---|---|
+| 21682 | `21682-aquatic-lane-hours.sql` | a go-live date floor + a Staff Block / Closure bucket |
+| 21684 | `21684-aquatics-dropin.sql` | the four tender columns now sign refunds |
+| 21685 | `21685-aquatic-passes.sql` | scope is aquatic-named **OR** Rec ID, not "everything except drop-in swim" |
+
+**CARD 21684 — the tenders now tie to the card's own total.** They filtered
+`transaction_type = 'payment'`, i.e. GROSS, while Revenue is net. August: gross
+tenders $6,027.00 against revenue $5,976.00, gap **$51.00 = exactly the month's
+refunds**, and every row with zero refunds already reconciled. Signed now, and
+re-measured: **19 rows, 1,354 admissions of which 323 free, 9 refunds,
+$5,976.00 — and the four tenders sum to the revenue on ALL NINETEEN ROWS,
+refunded rows included.** Card 21685 already did it this way, so the two cards
+had been disagreeing about what a tender column means inside one dashboard.
+
+**CARD 21685 — the leak is a THIRD of the money, not "about a quarter".** I
+estimated ~$6,493 gross from a name scan; measured properly over August it is
+**$6,413.00 net of $19,557.00 — 32.8% — on 17 rows of 3,213 (0.5%)**, across
+seven items (Farmers' Market ×3, Cooking Class Materials, a kitchen fee,
+`Per Player Fee- Non Resident`, a Red Cross certificate). The 2,203 Rec ID rows
+STAY, which is why the fix is not "filter to aquatic". After: **424 rows, 3,196
+sold, $13,144.00 net, 55 items, tenders reconcile on all 424, ZERO rows falling
+to the ELSE.** A Military tier was added in the same pass — ~90 Military-priced
+pass rows had been reading `(no tier in name)` because the CASE had no branch.
+
+**CARD 21682 — the floor is 33 rows and the bucket fires on real data.**
+Everything before 2026-08-01 is **33 reservations / 35.0 lane hours** across
+2026-04/06/07, named Block, Swimlane, Hold for Reservation and
+`Pool Reservation:` — the pre-cutover test data that was the first thing Joseph
+saw, every row of it reading *"Unmapped - assign a category"*. Against 5,808
+reservations and 8,338.5 hours in August alone. In LIVE data the new
+Staff Block / Closure bucket catches exactly one thing today —
+**"Labor Day Closed", 8 reservations / 24.0 h** — so it is a live category and
+not defensive decoration. **The hours are KEPT rather than netted out**: closed
+lane time is still lane time that was not sold, and which side of a utilisation
+ratio it belongs on is Joseph's call, not the card's. Unwindowed after both
+fixes: 2,236 rows / 18,987 reservations / 35,983.50 lane hours, 2026-08 ..
+2027-01, nothing earlier.
+
+**TWO PRIOR "VERIFIED" ROW COUNTS DO NOT REPRODUCE, and the reason is the same
+one.** Card 21684's comment claims 24 rows / 1,380 admissions / $6,061 for
+August (really 19 / 1,354 / $5,976 gross-of-nothing), and card 21685's claims
+118 rows (really 424 — its grain includes Buyer Zip). Card 21685's **$19,557 net
+DOES reproduce exactly**, which is the tell: the money came from a summary probe
+that was right, and the row counts came from a probe at a grain the card never
+had. Same root cause as the ORDER BY bug — *the card's own SELECT was never
+run.* Both verification comments are corrected in the mirrors to today's
+measured figures.
+
 ### TWO PLACEMENT GAPS
 
 - **The MCP `update_dashboard` tool has no tab parameter**, so the four cards
