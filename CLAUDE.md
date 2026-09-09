@@ -3781,6 +3781,14 @@ the change is worth — hand over the one-line edit instead.**
 Cards 21683 / 21684 / 21685 were checked against their own column counts and are
 unaffected (`ORDER BY 1,3,4` of 11; `1,2,3,7 DESC` of 14; `1,2,3,10 DESC` of 16).
 
+**Dan made that edit and card 21682 now returns rows in the UI** (2026-09-09) —
+so the parameterised path is proven end to end for card 1: the flipped Date tags,
+the `org_id` default and the substitution all work together. That is the sign-off
+this file's card rule asks for, and it is the FIRST of these four to have it. The
+other three have been read back and their SQL is intact, but **none of them has
+been executed through the parameterised path**, so do not record them as signed
+off until each returns rows in the UI.
+
 ### TWO PLACEMENT GAPS
 
 - **The MCP `update_dashboard` tool has no tab parameter**, so the four cards
