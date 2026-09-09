@@ -3713,6 +3713,12 @@ correctly under a Text tag** — the cast that `sql/facility-permits.sql` and
 **optional here and only needed to attach a Metabase DATE dashboard filter**,
 which can only bind to a Date-typed tag. Nothing is broken until then.
 
+**Dan flipped all three anyway and set a DEFAULT VALUE on `org_id`**
+(`8ae77057-6bce-4c20-b0f2-366ed5fa14dd`, El Segundo), so the cards open without
+a parameter having to be typed and the dashboard's date filters bind. That
+configuration is now the reason these four cards must not be saved through the
+API again — see the ORDER BY section below.
+
 ### WHAT EACH CARD READS, after Dan's *"use the materialized items log"*
 
 | card | source | why |
@@ -3740,7 +3746,7 @@ which can only bind to a Date-typed tag. Nothing is broken until then.
 - **Card 4 emits residency BOTH ways** (buyer zip and the product name's own
   Non-Resident label). They should agree; a row where they disagree is a finding.
 
-### VERIFIED, and the one thing that is NOT
+### VERIFIED — AND CARD 1 SHIPPED BROKEN ANYWAY
 
 Every query was run against production with literal values before being saved —
 card 1: 862 rows / 8,338.5 lane hours / 6.9% unmapped; card 2: 226 rows / 781
@@ -3749,11 +3755,31 @@ admissions (335 free) / $6,061 / **zero rows without a desk**; card 4: 118 rows 
 3,213 sold / $19,557 net / **0.2% with no buyer zip**. Card 21682 was then read
 back and its SQL is byte-intact.
 
-**NOT done: the saved cards have not been executed through the parameterised
-path.** `execute_question` refuses parameterised cards and no public link exists
-yet, so the substitution itself is unproven. That is the last check and it is one
-click for Dan. **Do not record these as signed off until a card returns rows in
-the UI.**
+**AND CARD 21682 STILL FAILED THE FIRST TIME DAN OPENED IT**, with
+`ERROR: ORDER BY position 9 is not in select list`. Its SELECT emits **eight**
+columns and the tail read `ORDER BY 1, 2, 3, 9 DESC`. Correct is
+`ORDER BY 1, 2, 3, 8 DESC` — 8 is `Lane Hours`.
+
+**HOW A QUERY "RUN AGAINST PRODUCTION" WAS NEVER RUN.** I verified each card by
+wrapping its CTE logic in a *summary* `SELECT` (row counts, totals, coverage
+percentages) rather than executing the card's own final SELECT. So the CTEs were
+proven and **the column list and the `ORDER BY` line were never executed even
+once**. Byte-diffing the saved SQL back only proves the text landed intact — it
+cannot tell you the text is valid. Same class as the v7 regression at the top of
+this file: **prove the exact text you are saving, not the fragment you developed
+it with.** For a card, that means running the card's whole final SELECT, with
+literals substituted for the tags, before saving it.
+
+**THE FIX WENT THROUGH THE UI, NOT THE API, AND THAT WAS THE POINT.** By then Dan
+had flipped all three date tags and hardcoded El Segundo's `org_id`
+(`8ae77057-6bce-4c20-b0f2-366ed5fa14dd`) as the parameter's default. An
+`update_question` push regenerates every template tag as Text and would have
+wiped both. A one-character edit in the UI preserves them. **Generalise it: once
+a human has configured a card's parameters, a programmatic save costs more than
+the change is worth — hand over the one-line edit instead.**
+
+Cards 21683 / 21684 / 21685 were checked against their own column counts and are
+unaffected (`ORDER BY 1,3,4` of 11; `1,2,3,7 DESC` of 14; `1,2,3,10 DESC` of 16).
 
 ### TWO PLACEMENT GAPS
 
