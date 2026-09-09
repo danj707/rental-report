@@ -3686,6 +3686,89 @@ card · total · item comes straight out of `item_log_report` joined to
 `users.zip_code`, and it is CivicRec's layout line for line apart from the
 receipt number being ours rather than theirs.
 
+## SCOPED: Joseph's four reports as METABASE CARDS (2026-09-09)
+
+Dan: *"I suspect it's just easier to build all of these as custom metabase
+reports, no? Scope out just building the 4 reports he wants in metabase, drop the
+other stuff."* **Scoped, nothing built.** Full write-up:
+https://claude.ai/code/artifact/204633da-2f05-48dd-b1f9-6efc5963e6ca
+
+**All four are buildable as cards; three are rollups over tables already proven.**
+The measurements below are new this session and are the ones worth keeping.
+
+### THE AVAILABILITY DENOMINATOR EXISTS, AND THE TAB CANNOT SEE IT
+
+The item this file listed as *"UNVERIFIED — check whether the lanes carry
+published open hours"* is **answered: all 67 aquatic lanes carry them.**
+
+| | |
+|---|---|
+| lanes with `court_slot` rows | **67 of 67** |
+| lanes exposing `config->bookingPolicies->slots` | **0 of 67** |
+| court-days | 441 |
+| open hours/week, interval-UNIONED | **4,207 h** (avg 9.54 h/court-day) |
+| open hours/week, naive `SUM` | 4,288 h — **+1.9%, and a 63-hour day** |
+
+`court_slot` is `court_id · day_of_week · open_from · open_to · type · deleted_at`
+(**not** `start_time`/`end_time` — I guessed that first and it errored; query
+`information_schema.columns` before writing the join, as this file already says).
+All El Segundo slots are type `PRIVATE`.
+
+**UNION THE INTERVALS, NEVER `SUM` THEM.** Only **6 of 441** court-days carry
+overlapping rows, so a naive sum looks fine until you notice a court-day claiming
+63 hours. That is why the card must merge intervals — and it is a number **our own
+Facilities tab structurally cannot produce**, because it reads
+`bookingPolicies.slots`, which is empty on every one of these lanes.
+
+### REPORT 1's MAPPING IS 31 ROWS, NOT 145
+
+Measured Aug–Sep 2026 over the three aquatic locations: **19,641.5 lane hours,
+67 lanes, 145 distinct rental names.** The split is what matters:
+
+| | names | lane hours | share | booking type |
+|---|---|---|---|---|
+| real names | **31** | 11,679 | **59.5%** | all `managed` |
+| `Court Reservation: <lane>` | 114 | 7,963.5 | 40.5% | instant + managed |
+
+So the program-type mapping Joseph fills in is **31 rows**, and the other 40.5% is
+auto-generated per-lane names carrying no programme at all — **one honest bucket
+(*individual lane reservations*), not a gap.** Top named: Drop In Lanes 4,116 h ·
+Loyola Marymount 1,380 · SCAQ 1,132.5 · ESHS Waterpolo 1,008 · Rec Swim 976 ·
+Swim Lessons 347.5 · Naomi's 301 · Coastal 300.
+
+**Ship report 1 BEFORE the mapping arrives** — lane × month × rental name is
+already useful and the mapping upgrades it without changing the query's shape.
+
+### THE REST OF THE SCOPE
+
+Reports 3 and 4 are single rollups over `materialized.item_log_report`, and **the
+platform's index problem does not bite at this org: El Segundo all-time is 1.7 s**
+(measured earlier this session). Report 2 is mostly deciding which of cards 17295 /
+21055 / 17755 to point him at rather than writing SQL. Every trap is already
+recorded in the sections below — the free-row split, the double-count between
+rentals and sections, Hilltop having no aquatic site, the duplicate catalogue
+names, the missing location column on the item log, and the GL code being a
+roll-up rather than a breakout.
+
+**The cost is the flip tax**: four programmatic saves is four cards registering six
+parameters until a human re-saves them, so **batch all four into one visit** and
+sign each off through the public endpoint AFTER the flip.
+
+### DROPPED THE SAME AFTERNOON, and one claim left unverified
+
+Dan opened with two things about the Aquatics TAB — *"our aquatics facilities
+report isn't fine grained and the excel button doesn't do anything"* — and then
+redirected to the cards above (*"drop the other stuff"*). Both are parked.
+
+**The Excel claim was NOT reproduced, and I am not recording a verdict on it.**
+Static review found the button wired correctly (`exportExcel` → `aqSheetTables` →
+`saveWorkbookViaPopup`, with `CFG` and `open-pdf.js` both present), and one thing
+worth knowing turned up on the way: **in the toolbar the Excel button and the
+settings gear sit AFTER Print / PDF / Summary, and on Dan's ~1573px screenshot
+they are past the right edge.** That is a plausible cause and it is a guess — the
+browser run that would have settled it was killed when the ask changed. If it
+comes back, drive it rather than reading it.
+
 ## Joseph's four aquatics reports, measured against live data (2026-09-09)
 
 Dan: *"revisit the el segundo reporting stuff, see how what we have compares to
