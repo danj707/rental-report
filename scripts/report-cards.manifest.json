@@ -200,6 +200,12 @@
       "card": "77b0063c-8a1a-4fd7-91a0-2855d5e16f36",
       "org": "8ae77057-6bce-4c20-b0f2-366ed5fa14dd",
       "timeout": 120
+    },
+    {
+      "label": "all-users / el-segundo (card 21715 - All Users and Households. NOT in REPORT_TYPES, so the health check does not probe it and prewarm does not warm it: a re-Texted date tag or a lost column would take the report down for this org alone with nothing else noticing. Measured 2026-09-09: 6,519 rows in 9.8s unwindowed. The card was CREATED rather than re-saved so it registers exactly THREE tags - an 'An error occurred.' here means a later API save regenerated them; flip start_date/end_date back to Date and re-save until the list is three.",
+      "card": "3825556f-ca08-42b4-b277-d8fa768ebcf5",
+      "org": "8ae77057-6bce-4c20-b0f2-366ed5fa14dd",
+      "timeout": 120
     }
   ]
 }

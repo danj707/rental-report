@@ -4379,6 +4379,90 @@ from `getParams` fails only the deep-link case. The deep-link case carries the
 apostrophe (`?season=Fall%20%2726`) on purpose, since that is what a real season
 name has to survive.
 
+## All Users and Households — the first non-aquatics data report (2026-09-09)
+
+Dan: *"lets build the all users/household report next"*, with a base query, then
+*"ideally it would include all households sequenced under the same owner. so 1
+row for HH owner, then all the profiles below it, next HH, etc."*
+
+The sequencing IS the report page's group hierarchy, so the card emits one row
+per PERSON ordered owner-first within each household and `groupBy` is
+`["Household"]`. **`People` is 1 per row**, which makes the household subtotal
+the household's SIZE and the grand total the head count — otherwise the roll-up
+machinery has nothing to say on a report with no money in it.
+
+Card **21715**, public uuid `3825556f-ca08-42b4-b277-d8fa768ebcf5`.
+https://rec.metabaseapp.com/question/21715
+
+### FOUR CORRECTNESS CHANGES TO THE BASE QUERY, each measured
+
+1. **Residency comes from `group_type = 'residency'`, not the hardcoded group
+   id.** That id IS Watertown's own residency-typed *Watertown Residents*, so
+   this returns the identical answer there and a correct one everywhere else.
+   It is also **not a name ILIKE** — *"Non-Resident"* CONTAINS *"Resident"*,
+   the mistake already recorded here that reported 4,099 live memberships
+   across 35 orgs as residents.
+2. **It AGGREGATES rather than joining.** One org has TWO residency-typed
+   groups, so a plain `LEFT JOIN` duplicates that org's people. Proven absent:
+   **5,704 rows against 5,704 distinct people.**
+3. **Every org user is returned, not only heads.** The base `INNER JOIN
+   household ON owner_id` is 3,444 of Watertown's 5,704 — the other **2,260 are
+   the children and partners a camp roster is actually about.** `Household
+   Role` is a column, so filtering to *Head of Household* reproduces the base
+   query's row set **exactly (3,444 = 3,444)**.
+4. **The window tests the household OWNER**, so a household is wholly in or
+   wholly out. Filtering each person by their own `created_at` cuts households
+   in half, and half a household under a household heading is worse than
+   either. Each person's own `Created At` is still a column.
+
+`organization_association` has **no `deleted_at`** (id, created_at, updated_at,
+user_id, organization_id, source) — checked, not assumed.
+
+### VERIFIED BY RUNNING THE WHOLE FINAL SELECT
+
+Literals substituted, not a summary probe wrapped around the CTEs — the
+specific mistake that let card 21682 ship with *"ORDER BY position 9 is not in
+select list"*. Watertown: **5,704 rows / 3,444 households / 3,444 heads / 2,260
+members / 4,141 residency Yes**, owner-then-members sequencing confirmed on a
+27-row window. Then through the public endpoint with the app's own parameter
+shape: **El Segundo 6,519 rows in 9.8s**, and end-to-end through the app: 352
+people across 285 households for a three-day window.
+
+**A signal that was not planted:** every Watertown/02472 address reads
+`Residency? = Yes` and every out-of-town one reads `No` — Belmont, Boston,
+Waltham, Brookline, Natick, Cambridge and Woburn all correctly No.
+
+### NO PUBLIC LINK, NO REPORT
+
+`customReportEnabled` now requires `spec.uuid`, **checked BEFORE the org** so a
+missing link is never reported as an org problem. Without it the entry would
+build `/api/public/card//query/json` and surface Metabase's own error, which
+reads as a BROKEN report rather than an unfinished one. Same shape as
+`SHARED_UUIDS` omitting an unset key. Mutation-tested.
+
+**No `locations` key.** The filter is per report and this one has no locations
+to offer; an empty dropdown is a control that looks broken.
+
+### Two process slips worth keeping
+
+- **`create_question`'s `collection_id` was malformed in my call**, so the card
+  landed in a personal collection and the stray parameter text leaked into the
+  description. `update_question` has **patch semantics** and takes `query:
+  null`, so both were fixed **without** passing a query — which is what
+  regenerates the template tags. Worth knowing: moving or renaming a card is
+  safe; only a `query` save costs the flip.
+- **A comment I wrote quoted the slug an assertion forbids** (*"no slug
+  anywhere in the registry"*), so correct code failed. **Fifth instance in this
+  file.** Fixed by rewording the comment rather than teaching the assertion to
+  ignore comments — keeping that assertion dumb and literal is more robust, and
+  a regex comment-stripper is unsound on server.js anyway.
+
+### What it answers, from Dan's inbox
+
+Alyssa at Essex Junction: *"download a csv of all current households"* — and
+the individual-grain sheet was *"too overwhelming"*, which is exactly why the
+household is the grouping and the role is a filter rather than two reports.
+
 ## All four aquatics reports, and the column picker (2026-09-09)
 
 Dan, on report 1's PDF: *"here's the output, it's super long lol"* — 15 pages for

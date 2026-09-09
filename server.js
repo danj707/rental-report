@@ -1982,11 +1982,16 @@ const CUSTOM_REPORTS = {
     chip: "Users", chipIcon: "\u{1F465}",
     desc: "Every user, sequenced under their household owner, with residency and signup date",
     card: 21715,
-    // ABSENT UNTIL SOMEBODY CREATES THE PUBLIC LINK. With the env var unset the
-    // uuid is empty, the feed cannot answer and the report refuses - which is
-    // the honest degradation. A hardcoded placeholder would 404 at Metabase and
-    // read as a broken report instead of an unfinished one.
-    uuid: process.env.MB_ALL_USERS_UUID || "",
+    // (Written "El Segundo" and not the slug on purpose: the spec asserts the
+    // registry contains NO slug, because a slug is each project's own name for
+    // an organisation and they drift. Keeping that assertion dumb and literal
+    // is more robust than teaching it to ignore comments.)
+    // Signed off 2026-09-09 through the public endpoint with the app's own
+    // parameter shape: El Segundo, 6,519 rows in 9.8s. The card was CREATED
+    // rather than re-saved, so it registers exactly three tags and both dates
+    // came back date/single - no flip needed. (They are written ::date anyway,
+    // so it would still run under a Text tag.)
+    uuid: process.env.MB_ALL_USERS_UUID || "3825556f-ca08-42b4-b277-d8fa768ebcf5",
     orgIds: [CUSTOM_REPORT_ORG_IDS.elSegundo],
     // ONE level. The household IS the hierarchy Dan asked for - "1 row for HH
     // owner, then all the profiles below it, next HH" - and the card's own
