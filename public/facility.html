@@ -1194,10 +1194,19 @@ function getParams() {
 }
 
 // Reads one PII column's initial state. URL first (the PDF's and the share
-// link's only channel), then this browser's own preference, then OFF. A MISSING
-// `pii` parameter is not "neither" on a normal load - it means the URL is not
-// speaking about PII and the reader's own setting stands. On the print page
-// localStorage is empty, so absent correctly resolves to off there.
+// link's only channel), then this browser's own preference, then ON.
+//
+// ON IS THE DEFAULT (Dan, 2026-09-09: "phone and email should be checked by
+// default"), which is what these columns already did before the toggles
+// existed - so no org loses a column it was using. The feature is that the
+// columns can now be switched OFF, and that the choice reaches the PDF and the
+// spreadsheet rather than stopping at the screen.
+//
+// A MISSING `pii` parameter is not "neither" on a normal load - it means the
+// URL is not speaking about PII and the reader's own setting stands. On the
+// print page localStorage is empty, so a missing parameter resolves to ON
+// there, which is why downloadPdf ALWAYS sets it: an explicit empty value is
+// the only way a reader who switched both off gets a PDF that agrees.
 // One writer for the parameter both the PDF and the share link send, so the two
 // cannot disagree about how it is spelled.
 function piiParam(phone, email) {
@@ -1208,7 +1217,7 @@ function piiInitial(which) {
   const p = new URLSearchParams(window.location.search);
   const fromUrl = p.get('pii');
   if (fromUrl !== null) return fromUrl.split(',').indexOf(which) !== -1;
-  try { return localStorage.getItem('col_' + which) === 'true'; } catch { return false; }
+  try { return localStorage.getItem('col_' + which) !== 'false'; } catch { return true; }
 }
 
 function getCurrentMonthRange() {
@@ -2020,18 +2029,23 @@ function App() {
   const [showPermit, setShowPermit] = useState(() => {
     try { return localStorage.getItem('col_permit') !== 'false'; } catch { return true; }
   });
-  // PII IS OFF UNTIL AN ORG ASKS FOR IT (Dan, 2026-09-09: "we don't want to
-  // include PII here unless the org wants it"). These are the only two column
-  // toggles on this page that default OFF, and the asymmetry is the point: every
-  // other column is a display preference, these two decide whether a resident's
-  // phone number and email leave the building on a printed schedule.
+  // AN ORG CAN TAKE PII OFF THE SCHEDULE (Dan, 2026-09-09: "we don't want to
+  // include PII here unless the org wants it", then "phone and email should be
+  // checked by default"). They start ON, as they always have, so nobody loses a
+  // column they were using - what is new is that they can be switched off, and
+  // that switching them off reaches the printed page and the spreadsheet.
   //
-  // PRECEDENCE IS URL -> THIS BROWSER'S PREFERENCE -> OFF. The `pii` parameter
+  // These two are unlike every other column toggle here: the rest are display
+  // preferences, these decide whether a resident's phone number and email leave
+  // the building on a document somebody emails around.
+  //
+  // PRECEDENCE IS URL -> THIS BROWSER'S PREFERENCE -> ON. The `pii` parameter
   // exists for the PDF: the print page is this page under ?_print=1 rendered by
   // Puppeteer with an EMPTY localStorage, so without it the PDF could only ever
   // show the default whatever was on screen - the exact trap the GL refund view
-  // hit. Here the default is the safe direction, but a screen and a PDF that
-  // disagree is still wrong, so the toggles ride the URL in both directions.
+  // hit. With the default now ON, that trap is no longer the safe direction: a
+  // reader who switched PII off would still get a PDF carrying it. So the
+  // toggles ride the URL, and downloadPdf sets the parameter unconditionally.
   const [showPhone, setShowPhone] = useState(() => piiInitial('phone'));
   const [showEmail, setShowEmail] = useState(() => piiInitial('email'));
 
@@ -2615,10 +2629,10 @@ function App() {
     if (selectedSites && selectedSites.size < allSites.length) { qs.set('sites', [...selectedSites].join(',')); }
     if (bookTypeFilter && bookTypeFilter !== 'all') qs.set('book_type', bookTypeFilter);
     if (selectedAddOns)    { const a = [...selectedAddOns];    if (a.length) qs.set('addons',    a.join(',')); }
-    // ALWAYS SET, even when neither is on. The print page has no localStorage to
-    // fall back on, so an omitted parameter and "neither" have to mean the same
-    // thing there - and setting it explicitly is what makes the PDF match the
-    // screen in BOTH directions, not only when PII happens to be off.
+    // ALWAYS SET, even when neither is on. The print page has no localStorage,
+    // so an omitted parameter there resolves to the default - which is ON. An
+    // explicit empty value is therefore the ONLY way a reader who switched both
+    // columns off gets a PDF that agrees with their screen.
     qs.set('pii', piiParam(showPhone, showEmail));
 
     const pathParts = window.location.pathname.replace(/\/$/, '').split('/');

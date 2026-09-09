@@ -200,12 +200,18 @@ ok(masks.every(m => !m.includes("G") && !m.includes(",")),
 // split — which is why the total above can display one safely.
 ok(/', '/.test(CARD) || /', '\)/.test(CARD), "the card joins add-ons with a comma and space");
 
-/* ── 8. The PII columns are OFF until an org asks for them ───────────────────
-   Dan, 2026-09-09: "we don't want to include PII here unless the org wants it."
-   These are the only two column toggles on this page that default OFF, and the
-   asymmetry is the point — every other column is a display preference, these
-   two decide whether a resident's phone number and email leave the building on
-   a printed schedule.
+/* ── 8. An org can take PII off the schedule ─────────────────────────────────
+   Dan, 2026-09-09: "we don't want to include PII here unless the org wants it",
+   then "phone and email should be checked by default."
+
+   Every other column toggle here is a display preference. These two decide
+   whether a resident's phone number and email leave the building on a document
+   somebody emails around.
+
+   They start ON, as they always have, so no org loses a column it was using.
+   What is new is that they can be switched off, and that switching them off
+   reaches the printed page and the spreadsheet rather than stopping at the
+   screen — which is where this same feature broke on the GL report.
 
    THE BROWSER CASES COVER THE SCREEN AND THE PDF. They cannot see the EXCEL
    export, which builds its own header list — so an export still carrying the
@@ -215,9 +221,11 @@ ok(/', '/.test(CARD) || /', '\)/.test(CARD), "the card joins add-ons with a comm
 const piiInit = src.match(/function piiInitial\(which\)[\s\S]*?\n}/);
 ok(piiInit, "piiInitial should exist at module scope, so the URL and the "
   + "localStorage rule have ONE definition rather than one per caller");
-ok(/=== 'true'/.test(piiInit[0]),
-  "PII must default OFF: piiInitial has to test === 'true' (absent means off), "
-  + "never !== 'false' (absent means on) as every other column toggle does");
+ok(/!== 'false'/.test(piiInit[0]),
+  "PII defaults ON (Dan: \"phone and email should be checked by default\"), so "
+  + "piiInitial tests !== 'false' — absent means on. The feature is that these "
+  + "columns can be switched OFF and that the choice reaches the PDF and Excel, "
+  + "not that they start hidden");
 ok(/getItem\('col_' \+ which\)/.test(piiInit[0]),
   "piiInitial should read this browser's own preference as the second step");
 ok(/fromUrl !== null/.test(piiInit[0]),
