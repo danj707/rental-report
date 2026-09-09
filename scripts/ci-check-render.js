@@ -2950,21 +2950,32 @@ const CASES = [
     act: async page => {
       await page.waitForSelector(".card", { timeout: 15000 });
       await page.evaluate(() => {
-        const grp = document.querySelector("[data-datareports-card]");
-        document.body.dataset.dr = String(document.querySelectorAll("[data-datareport]").length);
+        const grp  = document.querySelector("[data-datareports-card]");
+        const want = ((window.ORG_CONFIG || {}).customReports || []);
+        const got  = document.querySelectorAll("[data-datareport]").length;
+        // DERIVED FROM THE INJECTED LIST, never a hardcoded count. A literal
+        // here breaks on the day a sixth data report is registered, with
+        // nothing about the card having changed — the pinned-literal
+        // brittleness this repo keeps writing down. It still discriminates:
+        // a group card that forgot a report renders identically, and this is
+        // the only thing that fails on it.
+        document.body.dataset.drok = (want.length > 0 && got === want.length) ? "1" : "0";
         // A card per report as WELL as the group card is worse than either
-        // alone, so no data report may have a tile of its own. The group's own
-        // anchor points at the first report, so it is excluded by ancestry
-        // rather than by href.
+        // alone, so no data report may have a tile of its own. Keyed on the
+        // injected KEYS rather than an `/aquatic-/` pattern, or a report whose
+        // name does not start that way is never checked. The group's own anchor
+        // points at the first report, so it is excluded by ancestry.
+        const keys = want.map(d => d.key);
         document.body.dataset.drsolo = String(
-          [...document.querySelectorAll("a.card")].filter(a =>
-            /\/aquatic-/.test(a.getAttribute("href") || "") &&
-            !(grp && grp.contains(a))).length);
+          [...document.querySelectorAll("a.card")].filter(a => {
+            const href = a.getAttribute("href") || "";
+            return keys.some(k => href.indexOf("/" + k) > -1) && !(grp && grp.contains(a));
+          }).length);
       });
     },
-    // Four chips, no stray tiles. Keyed on the COUNT rather than on the card
-    // existing: a group card that forgot a report renders identically.
-    needs: 'body[data-dr="4"][data-drsolo="0"] [data-datareports-card] [data-datareport="aquatic-passes"]' },
+    // Every injected report has a chip, no stray tiles, and one named chip so a
+    // page that agreed with an empty list could not pass.
+    needs: 'body[data-drok="1"][data-drsolo="0"] [data-datareports-card] [data-datareport="aquatic-passes"]' },
 
   { name: "org landing · an org with no data reports gets no empty section",
     path: "/{org}",
