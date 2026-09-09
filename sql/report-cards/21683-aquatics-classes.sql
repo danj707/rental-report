@@ -39,6 +39,15 @@
 -- Tue/Thurs 4:00pm-4:25pm" now reads Urho Saari on its August money row, which
 -- is what Dan's admin screenshot shows.
 --
+-- ── FIX 3 · A {{location}} FILTER, CANONICALISED ───────────────────────────
+--    A Metabase dashboard filter on a NATIVE card binds to a TEMPLATE TAG, not
+--    to a result column, so the tag has to be in the SQL. All four cards emit
+--    the same three values and take the same `location` variable:
+--        El Segundo Wiseburn Aquatic Center | Urho Saari Swim Stadium | Hilltop Park
+--    Measured 2026-09-09, aquatic sessions land at exactly three locations and
+--    nowhere else: Urho Saari 373, Wiseburn AC 110, Competition Pool 32 — so
+--    the ladder is complete and the fold leaves 142 at the Aquatic Center.
+--
 -- Everything below this line is unchanged from the live card.
 -- ════════════════════════════════════════════════════════════════════════════
 WITH aquatic_sections AS (
@@ -58,7 +67,13 @@ WITH aquatic_sections AS (
 ),
 sec_loc AS (
   -- FIX 2 · the section's location, over ALL its sessions, not this month's
-  SELECT s.section_id, MIN(l.name) AS loc
+  -- FIX 3 · CANONICAL location, so {{location}} means the same thing on all
+  -- four cards. The Competition Pool is a separate location record at the same
+  -- address and folds into the Aquatic Center (32 of 515 aquatic sessions).
+  SELECT s.section_id,
+         MIN(CASE WHEN l.name ILIKE 'El Segundo Wiseburn Aquatic%'
+                  THEN 'El Segundo Wiseburn Aquatic Center'
+                  ELSE l.name END) AS loc
   FROM session s
   JOIN aquatic_sections aq ON aq.id = s.section_id
   JOIN location l ON l.id = s.location_id
@@ -132,4 +147,17 @@ JOIN program p   ON p.id   = sec.program_id
 LEFT JOIN sec_loc ON sec_loc.section_id = sec.id
 LEFT JOIN fac     ON fac.section_id = sec.id
 LEFT JOIN enr     ON enr.section_id = sec.id
+-- WHERE TRUE so the only clause can be optional; see the header on {{location}}.
+-- A section with no location on file drops out when the filter is set, which is
+-- correct — it cannot be claimed for a location nobody recorded.
+WHERE TRUE
+  [[AND sec_loc.loc = {{location}}]]
 ORDER BY 1, 3, 4
+-- ── {{location}} VERIFIED · 2026-09-09, this exact text, unwindowed ────────
+--   Urho Saari Swim Stadium              93 rows / 373 sessions / $13,828 / 54 sections
+--   El Segundo Wiseburn Aquatic Center   31 rows / 142 sessions /  $4,435 / 14 sections
+--   (no location on file)                 1 row  /   0 sessions /      $0 /  1 section
+-- That one unresolved section is a section with no session on record at all,
+-- so it has no location to read — and it correctly drops out when the filter
+-- is set. The Aug-Sep windowed run recorded ZERO such rows; this run is
+-- unwindowed, which is a different question, not a regression.

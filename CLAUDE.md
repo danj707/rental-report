@@ -4143,7 +4143,117 @@ maintenance. Card 1 needs Urho Saari → Plunge, both Wiseburn locations →
 Aquatic Center, and Hilltop Park added; card 2 needs its session location mapped
 the same way.
 
-**Not started — it is four more card edits and Dan's call.**
+**BUILT the same afternoon — see the next section.** Dan: *"Can't we filter the
+report by location? we have that data for all these reports, no?"* and then
+*"yes, write all four--and use 'location' as the report filter, not 'facility'."*
+
+### THE LOCATION FILTER, BUILT ACROSS ALL FOUR CARDS (2026-09-09)
+
+**`location`, not `facility`** — Dan's word, and the better one: it is the field
+name the platform already uses, and "facility" reads like a building type.
+
+Every card now carries a fourth template tag, `{{location}}`, inside `[[ ]]`, and
+every card emits a **`Location` column carrying the SAME canonical values**, so
+one dashboard filter drives all four:
+
+| | |
+|---|---|
+| `El Segundo Wiseburn Aquatic Center` | Competition Pool folded in |
+| `Urho Saari Swim Stadium` | staff call it the Plunge |
+| `Hilltop Park` | |
+| `(City-wide - Rec ID)` | **card 4 only** — a Rec ID answers to neither pool |
+
+#### IT IS A HYBRID, AND THE MEASUREMENT IS WHY
+
+Cards 1 and 2 read a **real `location` record**. Cards 3 and 4 read the **GL
+code**, because `materialized.item_log_report` has no location column at all.
+
+The obvious alternative on the money cards is `desk_location_name`, and it is
+right for one of them and badly wrong for the other:
+
+| | rows with a desk |
+|---|---|
+| card 3, drop-in | **1,857 of 1,857 — 100%** |
+| card 4, aquatic passes | 175 of 1,051 — **16.7%** |
+| card 4, Rec ID cards | 283 of 2,572 — **11.0%** |
+| GL code, both cards | **every row** |
+
+Drop-in is counter-sold; passes and Rec IDs are bought online. So a desk-based
+filter would drop ~87% of card 4's money **and drop it non-randomly**, keeping
+only the counter sales. `desk_location` also has **no `location_id`** — its
+columns are id / created_at / updated_at / organization_id / name / description
+/ archived_at / enforce_access_control — so a desk cannot even be joined to a
+location record. "Plunge" the desk matching "Urho Saari Swim Stadium" the
+location is a coincidence of naming, not a relationship.
+
+On card 3 the GL code and the desk agree **1:1 with zero "(no desk)"**, which is
+what makes using the GL code on both money cards free rather than a compromise.
+
+#### THE DROPDOWN IS A CUSTOM LIST, NOT A LIVE QUERY — and Dan asked directly
+
+*"Do we need a separate mb query to pull the live location data from El Segundo,
+then wire that to the filter?"* **No, and a live one would be worse.** The CASE
+ladders in these four cards have to be hand-edited when a pool is added, so a
+self-updating dropdown would offer a fourth value that silently returns **zero
+rows on every card** — a filter that looks like it works and answers nothing.
+A static list of four cannot get ahead of the SQL. Two blocks to edit when a
+pool opens, both marked with ▼▼ in the mirrors: `aquatic_sites` on card 21682
+and the `scoped` CTE's GL ladder on 21684/21685.
+
+#### THE TAG IS A PLAIN TEXT VARIABLE, so it takes ONE value
+
+A **Field Filter** would allow multi-select and cannot bind to a computed `CASE`
+expression, so it is not available here. One location at a time, or blank for
+all — which is the common case anyway.
+
+#### `Facility` WAS REPLACED, NOT ADDED BESIDE
+
+On cards 3 and 4 the old `Facility` column (parsed out of the item name) is gone
+and `Location` sits in its place, so **the `ORDER BY` positions are unchanged** —
+the specific thing that broke card 21682 on its first save. The item name still
+carries the facility, so nothing is lost.
+
+#### A `WHERE TRUE` IS LOAD-BEARING ON THREE OF THE FOUR
+
+Cards 2, 3 and 4 had no `WHERE` on their final SELECT at all, so the optional
+clause has nothing to hang off. `WHERE TRUE [[AND … ]]` is the idiom; without it
+the `[[ ]]` block has to carry the `WHERE` itself and Metabase's substitution
+gets fragile.
+
+#### VERIFIED, each by running ITS OWN WHOLE TEXT with literals
+
+| card | with the filter unset | split by location |
+|---|---|---|
+| 21682 | 2,237 rows | Wiseburn AC 1,854 / Urho Saari 382 / Hilltop **1** |
+| 21683 | 125 rows | Urho Saari 93 · Wiseburn AC 31 · `(no location on file)` **1** |
+| 21684 | 19 rows (Aug) | 3 locations, **zero unmapped GL**; filtered to Urho Saari → 8 rows, tenders still tie |
+| 21685 | 424 rows · $13,144 (Aug) | 4 values, **zero unmapped GL**, identical to the pre-filter run |
+
+Two honest notes rather than glossed ones:
+
+- **Card 2's one `(no location on file)` row** is a section with no session on
+  record at all, so there is nothing to read a location from. It drops out when
+  the filter is set, which is correct — it cannot be claimed for a location
+  nobody recorded. The earlier Aug–Sep windowed run recorded **zero** such rows;
+  this run is unwindowed, which is a different question, not a regression.
+- **Card 1's hours move between reads** — 35,983.50 → 35,998.50 across one
+  afternoon, all on the Wiseburn instant-lane side. August is an open window and
+  campers keep booking. Never diff an open window against itself across two
+  reads.
+
+**Hilltop is +1 row, and that is the whole of it.** Card 21682 excluded Hilltop
+Park entirely; it now has a published pool site and is included **pool only**,
+because its other five sites are picnic tables and would otherwise land in a
+lane-hours report.
+
+#### THE PASTE IS DAN'S, AND ADDING THE TAG IS A UI STEP
+
+`update_question` regenerates every template tag as Text and takes SQL only as a
+`query_handle` from `construct_native_query`, whose entire input is
+`database_id` + `sql` — **there is no template-tag field anywhere in that path**.
+Dan has flipped the date tags to Date and hardcoded the `org_id` default, and
+the dashboard's date filters BIND to those Date-typed tags, so a programmatic
+save breaks the dashboard rather than only the cards. Paste in the UI.
 
 ### TWO PLACEMENT GAPS
 
