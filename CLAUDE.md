@@ -3997,7 +3997,7 @@ against production: **97 rows where the live card returns 685**, three locations
 date tags and set the org_id default, and `update_question` would regenerate both
 as Text, so this goes in through the UI.
 
-### CARD 2 IS APPLIED. CARDS 1, 3 AND 4 ARE MIRRORED AND NOT (2026-09-09)
+### ALL FOUR CARDS ARE APPLIED (2026-09-09)
 
 Dan asked whether the cards could be updated programmatically off their public
 links. **They cannot, and access was never the blocker** — I created them and
@@ -4021,6 +4021,21 @@ SELECT**, which is the specific mistake that let card 21682 ship with
 | 21684 | `21684-aquatics-dropin.sql` | the four tender columns now sign refunds |
 | 21685 | `21685-aquatic-passes.sql` | scope is aquatic-named **OR** Rec ID, not "everything except drop-in swim" |
 
+**Dan pasted all three the same afternoon, and each was read back and confirmed
+BYTE-IDENTICAL to its mirror with all three template tags intact** — `org_id`
+text carrying the El Segundo default, `start_date`/`end_date` still typed
+**date**. That is what a UI paste buys over an API save, demonstrated rather
+than argued.
+
+**AND THE FIRST PASTE OF CARD 21684 DID NOT LAND.** Dan sent a screenshot saying
+it was done; the card body was unchanged. **His own screenshot proved it before
+the card was re-read**, which is the reusable part: every row with `Refunds = 0`
+tied exactly (Hilltop Rec Swim - Youth, 108 + 492 = 600), and every row with a
+refund was over by precisely that refund — AC Lap Swim - Adult 227 + 886 =
+$1,113 against $1,105 with 1 refund, AC Rec Swim - Youth 42 + 453 = $495 against
+$477 with 3. A rendered table is checkable arithmetic, so **check the numbers in
+the screenshot against the invariant before believing a card was updated** — the
+live read then only confirms what the arithmetic already said.
 **CARD 21684 — the tenders now tie to the card's own total.** They filtered
 `transaction_type = 'payment'`, i.e. GROSS, while Revenue is net. August: gross
 tenders $6,027.00 against revenue $5,976.00, gap **$51.00 = exactly the month's
