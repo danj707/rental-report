@@ -281,4 +281,65 @@ ok(/\{showEmail && <span className="cell col-email">/.test(src),
 ok(/\{showPhone && <span className="col-phone">Phone #<\/span>\}/.test(src),
   "and the phone HEADER, or the table renders a heading over nothing");
 
+/* ── 9. THE SERVER'S OWN FORWARD LIST — the fourth gate ──────────────────────
+   Dan, 2026-09-09: "exported pdf not respecting the filters, still showing the
+   phone/email." The screen was right, the browser's own Print was right, and
+   the SERVER-rendered PDF still carried both columns.
+
+   A parameter on this platform has four gates, and passing three looks exactly
+   like working: the page's getParams whitelist, the page's own state, the
+   page's export paths, and generatePdf's forward list in server.js. `pii`
+   passed the first three.
+
+   AND IT COULD NOT RIDE THAT LIST ANYWAY. Every other parameter there is
+   meaningful only when non-empty, so the loop tests truthiness — but `pii` is a
+   list whose EMPTY value is its most important one: "" means the reader
+   switched both contact columns off. Truthiness drops it, the print page finds
+   no parameter, falls back to its default (ON), and the PDF prints contact
+   details that are not on the reader's screen.
+
+   So this LIFTS AND RUNS the real query builder rather than grepping it: the
+   bug was invisible to review twice, and a regex over our own patch is not
+   evidence that the URL comes out right. */
+
+const gp = srv.slice(srv.indexOf("async function generatePdf("));
+const qsBlock = gp.slice(gp.indexOf("const qsObj = {"),
+                         gp.indexOf("const qs = new URLSearchParams(qsObj);")
+                           + "const qs = new URLSearchParams(qsObj);".length);
+ok(qsBlock.includes("forEach"), "the generatePdf query block should be liftable");
+
+const buildQs = new Function("startDate", "endDate", "orgTok", "filters",
+  qsBlock + "\nreturn qs.toString();");
+
+// The case Dan hit: both columns switched off, which the page sends as EMPTY.
+const offQs = buildQs("2026-09-09", "2026-09-15", "tok", { pii: "" });
+ok(/(^|&)pii=(&|$)/.test(offQs),
+  "generatePdf MUST forward an EMPTY pii — that is how the page says 'the "
+  + "reader switched both contact columns off'. Dropped, the print page falls "
+  + "back to its ON default and the PDF prints phone numbers and emails that "
+  + "are not on the reader's screen. Got: " + offQs);
+
+const onQs = buildQs("2026-09-09", "2026-09-15", "tok", { pii: "phone,email" });
+ok(/pii=phone%2Cemail/.test(onQs),
+  "and it must forward a populated pii too. Got: " + onQs);
+
+// Absent is NOT the same as empty: it means the caller is not speaking about
+// PII at all, and the page's own preference should stand.
+const noneQs = buildQs("2026-09-09", "2026-09-15", "tok", {});
+ok(!/pii=/.test(noneQs),
+  "an ABSENT pii must not be invented as empty — absent means 'no opinion', "
+  + "empty means 'neither', and they are different answers. Got: " + noneQs);
+
+// The forward has to be on PRESENCE. If someone folds `pii` into the truthy
+// loop above, every assertion about a populated value still passes and only
+// the empty case breaks — which is the bug exactly as it shipped.
+ok(/if \(filters\.pii !== undefined\) qsObj\.pii = filters\.pii;/.test(srv),
+  "pii must be forwarded on presence (!== undefined), never by the truthy "
+  + "forEach that carries every other parameter");
+const inLoop = /"gl_codes", "refunds"[^\]]*"pii"/.test(srv) || /"pii",/.test(qsBlock);
+ok(!inLoop,
+  "pii must NOT be in generatePdf's truthy forward list — the loop tests "
+  + "`if (filters[k])`, which silently drops the empty value that means "
+  + "'neither', and that is the whole failure");
+
 console.log(`✓ facility-addons-forms.spec.js — ${n} assertions passed`);
