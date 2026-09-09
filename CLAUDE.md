@@ -4079,6 +4079,72 @@ had. Same root cause as the ORDER BY bug — *the card's own SELECT was never
 run.* Both verification comments are corrected in the mirrors to today's
 measured figures.
 
+### THE FILTER REQUIREMENTS, EXAMINED AGAINST THE BUILT CARDS (2026-09-09)
+
+Dan: *"now examine the filter requirements he asked for."* Four of Joseph's five
+cross-cutting requirements are met by the cards as they now stand. **Facility is
+the one gap, and it is three separate problems stacked.**
+
+| requirement | verdict |
+|---|---|
+| custom range + monthly rollup + Jul–Jun FY | **met** — all four carry Date-typed `start_date`/`end_date`, and an FY is just a range |
+| individual program name, not category totals | **met** — every card is item- or section-grain |
+| net of refunds | **met**, and since the 21684 fix the tenders tie to it |
+| mapped to a GL code | **available and unmet** — see the correction above; the column is a perfect facility key and neither money card selects it |
+| **filter by facility (AC / Plunge / Hilltop)** | **NOT POSSIBLE TODAY** |
+
+#### 1. A NATIVE CARD CANNOT BE FILTERED BY A RESULT COLUMN
+
+This is the mechanical blocker and it is worth stating plainly, because the
+cards *display* Facility and that makes the filter look one drag away. A
+Metabase dashboard filter on a native question must bind to a **template tag**.
+All four cards register exactly three — `org_id`, `start_date`, `end_date` — so
+there is nothing for a Facility widget to attach to. **Adding the filter means
+editing all four cards, not configuring the dashboard.**
+
+And the widget it can have is limited: a **Field Filter** maps to a real column
+on a real table and therefore cannot bind to a `CASE` expression, so the
+facility tag has to be a **plain variable** — a typed value or a static
+dropdown, not a live multi-select of the values on screen.
+
+#### 2. THE FOUR CARDS SPELL ONE FACILITY FOUR WAYS
+
+Measured, and this is why one filter value cannot serve the dashboard:
+
+| Joseph's name | card 1 (`location.name`) | cards 3 / 4 (item name) | `desk_location_name` |
+|---|---|---|---|
+| AC | `El Segundo Wiseburn Aquatic Center` **+** `…Aquatics Center- Competition Pool` | `Aquatic Center` | `El Segundo Wiseburn Aquatic Center` |
+| Plunge | **`Urho Saari Swim Stadium`** | `Plunge` | `Plunge` |
+| Hilltop | *(absent — see 3)* | `Hilltop` | `Hilltop` |
+
+**The Plunge IS Urho Saari Swim Stadium.** A filter set to `Plunge` returns 1,081
+rows on cards 3/4 and **zero** on card 1. The Aquatic Center is likewise two
+locations on card 1 and one bucket on cards 3/4.
+
+**And card 4's `Wiseburn` bucket is not the Aquatic Center**, which is the easy
+misread — those 182 rows are `Wiseburn Rec ID` cards, a residency product for
+the Wiseburn district, plus 2 `Wiseburn Facility Reservation` rows. They belong
+with the Rec IDs, not with a pool.
+
+#### 3. CARD 1 EXCLUDES HILLTOP, AND HILLTOP NOW HAS A POOL
+
+Card 21682's `aquatic_sites` CTE names three locations and Hilltop Park is not
+one. That was right when the card was written and is not now — see the
+correction in the section above.
+
+#### WHAT WIRING IT ACTUALLY TAKES
+
+One canonical label set — `Aquatic Center` / `Plunge` / `Hilltop` — emitted by
+all four cards, plus a `facility` template tag on each inside `[[ ]]`. On cards
+3 and 4 **drive it off the GL code rather than the item name**: it is
+structured, it is El Segundo's own field, and it agrees with the name regex
+exactly today, so switching costs nothing and stops the prefix list needing
+maintenance. Card 1 needs Urho Saari → Plunge, both Wiseburn locations →
+Aquatic Center, and Hilltop Park added; card 2 needs its session location mapped
+the same way.
+
+**Not started — it is four more card edits and Dan's call.**
+
 ### TWO PLACEMENT GAPS
 
 - **The MCP `update_dashboard` tool has no tab parameter**, so the four cards
@@ -4243,6 +4309,16 @@ has to pick one side per program and say which.
 August and has **no bookable aquatic site at all** — its only site records are
 picnic tables. Hilltop reads zero until its pool is set up as a site.
 
+**STALE AS OF 2026-09-09 — the pool site now EXISTS.** `Hilltop Pool
+Semi-Private Party` is a published `pool`-typed court at Hilltop Park with one
+reservation (2026-09-05) — the same booking the aquatics-scope backcheck
+records as *"1 booking, $256"*. So the sentence above was true when written and
+is not now. **Card 21682 still excludes it**: that card's `aquatic_sites` CTE
+lists three location names and Hilltop Park is not one of them, so a facility
+filter set to Hilltop returns nothing on card 1 while cards 3 and 4 show 297
+drop-in rows for it. Add Hilltop Park to the CTE when the facility filter is
+wired.
+
 **Nothing tags a booking with a PROGRAM TYPE.** He wants Swim Lessons / Water
 Fitness / Open-Rec Swim / Lap Swim / High Schools / Youth Water Polo / Masters.
 What exists is a free-text rental name (`SCAQ`, `Quest WP`, `Trojan`,
@@ -4301,11 +4377,32 @@ Catalogue hygiene, worth fixing before the first monthly report is filed.
   section-grain or item-grain.
 - **Net of refunds: HAVE IT.** Payments and refunds are separate rows, and the
   Programs report already shows collected / refunds / net separately.
-- **Mapped to a GL code: PARTLY, and say so out loud.** GL codes are on every
-  transaction and **almost everything is `001-505-5`** — aquatics, Farmers'
-  Market and cooking classes alike; deposits are `001-505-0`. The column is true
-  and will not distinguish any of his programs from each other. The item NAME is
-  the breakout; the GL code is the roll-up.
+- **Mapped to a GL code: ~~PARTLY~~ — CORRECTED 2026-09-09, it is a FULL
+  FACILITY KEY.** This bullet used to read *"almost everything is `001-505-5`…
+  the column will not distinguish any of his programs from each other"*. **That
+  was wrong, and it was wrong because I read only the first three segments of
+  the code.** The full value is `fund-dept-object-?-program`, and at El Segundo
+  it separates the facilities perfectly — measured over every `product` row in
+  the aquatics + Rec ID scope, with **zero cross-contamination in either
+  direction**:
+
+  | GL code | what it is | rows |
+  |---|---|---|
+  | `001-505-5213-3-43869` | **Aquatic Center** (594 drop-in + 862 pass/ID) | 1,456 |
+  | `001-505-5202-3-43869` | **Plunge** (965 drop-in + 116 pass/ID) | 1,081 |
+  | `001-505-5214-3-43860` | **Hilltop** (all drop-in) | 297 |
+  | `001-505-5213-3-43882` / `-43885` | **Wiseburn Rec ID** | 182 |
+  | `001-505-5201-3-43863` | **El Segundo Resident ID** | 2,462 |
+
+  So the GL code and the item-name regex agree **exactly** today — which means
+  the GL code is the better facility key of the two: it is structured, El
+  Segundo maintains it in their own finance system, and it needs no maintained
+  list of name prefixes. **Neither card 3 nor card 4 selects it.** Requirement 5
+  is unmet only because the column is not emitted.
+
+  **Generalise it: a truncated identifier is not the identifier.** Reading
+  `001-505-5` and concluding the field is useless is the same shape as reading a
+  schema instead of the report that already answers the question.
 
 ### WHAT WOULD ACTUALLY UNBLOCK HIM, cheapest first
 
