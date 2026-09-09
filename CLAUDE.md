@@ -114,6 +114,42 @@ regression here.
 history — the mistake this file records for card 17301 v7 *and* card 21649, now
 guarded against on a third card.
 
+### AND THE programs-monthly ROW WAS REFUSING OUTRIGHT — third instance
+
+Found in the full sweep taken for the roster sign-off. `programs-monthly / apex`
+came back
+
+```
+missing-required-parameter: #{"end_date" "start_date"}   (HTTP 400, 0.1s)
+```
+
+and had been doing so since the row was added on 2026-09-01. **The 0.1s is the
+tell** — a refusal, not load — so it never looked like the four genuine timeouts
+sitting around it in the same output (`checkins/apex`, `fasttrack/apex`,
+`instructor-payout/san-francisco-rec-park`, `programs/apex`, all known-heavy).
+
+**THE ROW SENT NO DATE PARAMETERS AT ALL.** Card 21055 uses `{{start_date}}` and
+`{{end_date}}` **BARE inside `generate_series`** — they bound the month series,
+so unlike every other card here they cannot sit in an optional `[[ ]]` block and
+cannot drop out. A dateless probe therefore cannot run at all, where the same
+mistake on 17301 and programs-schedule merely asked for the org's whole history.
+
+`days: 365`, **not** `daysAhead` — this is a BACKWARD monthly revenue rollup and
+its own sign-off window was Sep 2025 → Aug 2026. Verified: **13 rows in 7.8s**.
+
+**THE ROW'S OWN LABEL PREDICTED THE WRONG SYMPTOM**, which is part of why it went
+unread for eight days: it said *"if this row starts returning 'An error
+occurred.', the tags have been reset to Text"*. It was returning
+`missing-required-parameter`, so nobody matching on the documented string would
+have connected the two. **A guard that names the wrong failure mode is a guard
+people learn to skim.**
+
+**Third instance of the dateless-manifest-row bug in one branch** — card 17301
+v7, both programs-schedule rows, and this. Worth stating as a rule: **a manifest
+row for a card with date tags needs a window unless you have checked that the
+card's tags are optional**, and which direction it needs depends on the report,
+not on the script's default.
+
 ### Guards
 
 `scripts/roster-section-scope.spec.js` (**43 assertions, in CI**), which LIFTS
