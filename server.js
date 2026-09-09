@@ -1968,6 +1968,40 @@ const CUSTOM_REPORTS = {
       "(City-wide - Rec ID)",
     ],
   },
+
+  // The first NON-aquatics data report, and the most-requested thing in Dan's
+  // inbox: Alyssa at Essex Junction asked to "download a csv of all current
+  // households", and Ruth at Clarkstown keeps a credits list by hand.
+  //
+  // NO `locations` KEY. The filter is per report and this one has no locations
+  // to offer - an empty dropdown is a control that looks broken, so it is
+  // absent rather than empty.
+  "all-users": {
+    label: "All Users and Households",
+    emoji: "\u{1F465}",
+    chip: "Users", chipIcon: "\u{1F465}",
+    desc: "Every user, sequenced under their household owner, with residency and signup date",
+    card: 21715,
+    // ABSENT UNTIL SOMEBODY CREATES THE PUBLIC LINK. With the env var unset the
+    // uuid is empty, the feed cannot answer and the report refuses - which is
+    // the honest degradation. A hardcoded placeholder would 404 at Metabase and
+    // read as a broken report instead of an unfinished one.
+    uuid: process.env.MB_ALL_USERS_UUID || "",
+    orgIds: [CUSTOM_REPORT_ORG_IDS.elSegundo],
+    // ONE level. The household IS the hierarchy Dan asked for - "1 row for HH
+    // owner, then all the profiles below it, next HH" - and the card's own
+    // ORDER BY already emits the owner first within each block, which is the
+    // property groupRows walks and never re-sorts.
+    groupBy: ["Household"],
+    // `People` is 1 per row, so the household subtotal is the household's SIZE
+    // and the grand total is the head count. Without it the roll-up machinery
+    // has nothing to say on a report with no money in it.
+    numeric: { "People": { dp: 0 } },
+    // The address parts are on the card because a CSV needs them, and off the
+    // screen because five columns of address push the names off the page. One
+    // tick brings them back, and hiding them RE-SUMS rather than blanking.
+    hiddenColumns: ["Street Number", "Street Name", "State", "Date Added to Residency Group"],
+  },
 };
 
 // The friendly directory is DERIVED, never transcribed: label and emoji have one
@@ -1983,6 +2017,11 @@ function customReportEnabled(slug, key) {
   const spec = CUSTOM_REPORTS[key];
   const org = ORGS[slug];
   if (!spec || !org || !org.orgId) return false;
+  // NO PUBLIC LINK, NO REPORT. An entry whose uuid is unset would build
+  // /api/public/card//query/json and surface Metabase's own error, which reads
+  // as a broken report rather than an unfinished one — so the card is not
+  // offered and the routes refuse, exactly as SHARED_UUIDS omits an unset key.
+  if (!spec.uuid) return false;
   return spec.orgIds.includes(org.orgId);
 }
 // Every custom report this org can see, in registry order.

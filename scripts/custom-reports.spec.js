@@ -600,6 +600,20 @@ test("report 2 does NOT roll up a per-section total", () => {
     "while the genuinely additive columns still roll up");
 });
 
+test("a report with no public link yet is NOT offered", () => {
+  // all-users has a real card (21715) and no public link. An entry whose uuid
+  // is unset would build /api/public/card//query/json and surface Metabase's
+  // own error, which reads as a BROKEN report rather than an unfinished one.
+  // So the gate refuses it, the dashboard does not draw a chip for it, and the
+  // routes 404 — the same shape as SHARED_UUIDS omitting an unset key.
+  assert.match(srv, /if \(!spec\.uuid\) return false;/,
+    "customReportEnabled requires a public link");
+  const gate = srv.slice(srv.indexOf("function customReportEnabled"),
+                         srv.indexOf("function customReportsForOrg"));
+  assert.ok(gate.indexOf("spec.uuid") < gate.indexOf("spec.orgIds"),
+    "and it is checked before the org, so a missing link is never an org problem");
+});
+
 test("every registered report names a card, a uuid and its org", () => {
   ["aquatic-lane-hours", "aquatic-classes", "aquatic-dropin", "aquatic-passes"].forEach(k => {
     const e = entryOf(k);
