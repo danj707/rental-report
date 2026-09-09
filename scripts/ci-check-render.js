@@ -1544,6 +1544,18 @@ const openPickableLoc = async page => {
   throw new Error("no location in the tree has a pickable site — the case would prove nothing");
 };
 
+// localStorage SURVIVES between cases in this harness (already recorded for the
+// saved-view cases), and Refund Detail persists the reader's preference — so
+// `?refunds=1` two cases earlier leaves the mode stored ON, and a later case
+// either tests the wrong default or clicks the toggle the wrong way. Both gl
+// refund cases below start from a cleared preference so they mean what they say
+// whatever ran before them.
+const clearRefundPref = async (page) => {
+  await page.evaluateOnNewDocument(() => {
+    try { window.localStorage.removeItem("gl_refund_breakdown_v2"); } catch (e) {}
+  });
+};
+
 const CASES = [
   { name: "facilities · camping",  path: "/{org}/facilities?tab=camping", needs: ".camp-cal .cc-hd" },
 
@@ -3519,6 +3531,7 @@ const CASES = [
   // "Total Refunds" one, so a page that ignored the param renders a perfectly
   // plausible table and this case still fails.
   { name: "gl · refund detail is off by default", path: "/{org}/gl",
+    pre: clearRefundPref,
     needs: '[data-gl-refund-mode="0"]', absent: "th.refund-group" },
   { name: "gl · ?refunds=1 renders the split columns", path: "/{org}/gl?refunds=1",
     needs: '[data-gl-refund-mode="1"]' },
@@ -3526,6 +3539,7 @@ const CASES = [
   { name: "gl · the PDF render honours the refund mode", path: "/{org}/gl?_print=1&refunds=1",
     needs: '[data-gl-refund-mode="1"]' },
   { name: "gl · the toolbar toggle still works", path: "/{org}/gl",
+    pre: clearRefundPref,
     act: async p => { await p.waitForSelector('[data-gl-refund-btn]', { timeout: 30000 });
                       await p.click('[data-gl-refund-btn]'); },
     needs: '[data-gl-refund-mode="1"]' },
