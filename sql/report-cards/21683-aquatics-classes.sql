@@ -2,10 +2,10 @@
 -- CARD 21683 · REPORT 2 · AQUATICS CLASSES BY MONTH AND INSTRUCTOR
 -- El Segundo · Joseph Lormans        https://rec.metabaseapp.com/question/21683
 --
--- MIRROR OF THE LIVE CARD, carrying two fixes Dan found on 2026-09-09.
--- The live card does NOT have these yet — see CLAUDE.md. Apply them in the
--- Metabase UI, NOT through the API: Dan has flipped the date tags to Date and
--- set a default org_id, and a programmatic save regenerates every tag as Text.
+-- ✅ APPLIED AND VERIFIED LIVE 2026-09-09. This mirror matches the live card.
+--   NEVER push it through the API: `update_question` regenerates every template
+--   tag as Text and would wipe Dan's Date-typed date tags and the hardcoded
+--   org_id default, which the dashboard's own filters bind to. Paste in the UI.
 --
 -- ── FIX 1 · SCOPE. The card had NO aquatics filter at all, only an
 --    organization_id, so it returned all 396 El Segundo sections — Lego Club,

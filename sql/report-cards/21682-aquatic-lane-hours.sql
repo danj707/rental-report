@@ -2,9 +2,10 @@
 -- CARD 21682 · REPORT 1 · AQUATIC LANE HOURS
 --   https://rec.metabaseapp.com/question/21682        (El Segundo · Joseph Lormans)
 --
--- ⚠ THE LIVE CARD DOES NOT HAVE THE TWO FIXES BELOW. Apply them IN THE UI —
---   Dan has flipped both date tags to Date and set org_id's default, and an
---   API save regenerates every template tag as Text and wipes both.
+-- ✅ APPLIED AND VERIFIED LIVE 2026-09-09. This mirror matches the live card.
+--   NEVER push it through the API: `update_question` regenerates every template
+--   tag as Text and would wipe Dan's Date-typed date tags and the hardcoded
+--   org_id default, which the dashboard's own filters bind to. Paste in the UI.
 --
 -- One row per MONTH × LOCATION × LANE × PROGRAM TYPE × RENTAL × BOOKING TYPE.
 --

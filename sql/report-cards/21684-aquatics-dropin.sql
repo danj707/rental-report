@@ -2,9 +2,10 @@
 -- CARD 21684 · REPORT 3 · AQUATICS DROP-IN ADMISSIONS
 --   https://rec.metabaseapp.com/question/21684        (El Segundo · Joseph Lormans)
 --
--- ⚠ THE LIVE CARD DOES NOT HAVE THE TENDER FIX BELOW. Apply it IN THE UI —
---   Dan has flipped both date tags to Date and set org_id's default, and an
---   API save regenerates every template tag as Text and wipes both.
+-- ✅ APPLIED AND VERIFIED LIVE 2026-09-09. This mirror matches the live card.
+--   NEVER push it through the API: `update_question` regenerates every template
+--   tag as Text and would wipe Dan's Date-typed date tags and the hardcoded
+--   org_id default, which the dashboard's own filters bind to. Paste in the UI.
 --
 -- One row per MONTH × FACILITY × CATEGORY × ITEM × RECEIPT LOCATION.
 -- Reads materialized.item_log_report only.

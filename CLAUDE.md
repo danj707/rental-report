@@ -4246,6 +4246,51 @@ Park entirely; it now has a published pool site and is included **pool only**,
 because its other five sites are picnic tables and would otherwise land in a
 lane-hours report.
 
+#### VERIFIED LIVE AFTER DAN'S PASTE — and TWO VALUES EMPTY TWO CARDS
+
+Dan: *"ok all four pasted, verify the filter works."* **It works**, and the
+verification found something the dropdown does not say out loud.
+
+Read back live: all four cards register the `location` tag as **text**, and the
+three original tags survived the paste on every one — `org_id` text carrying the
+El Segundo default, `start_date`/`end_date` still typed **date**, which is what
+the dashboard's own date filters bind to.
+
+**THE COVERAGE MATRIX, measured unwindowed rather than assumed.** Rows each card
+returns for each of the four dropdown values:
+
+| filter value | 1 lane hours | 2 classes | 3 drop-in | 4 passes |
+|---|---|---|---|---|
+| El Segundo Wiseburn Aquatic Center | 1,854 | 14 sections | 13 | 838 |
+| Urho Saari Swim Stadium | 382 | 54 sections | 15 | 111 |
+| **Hilltop Park** | 1 | **0** | 8 | **0** |
+| **(City-wide - Rec ID)** | **0** | **0** | **0** | 1,867 |
+
+**Both empties are correct, not broken**, and neither was obvious:
+
+- **Hilltop sells drop-in swim and nothing else.** It runs no aquatic programme
+  sections and sells no passes or Rec IDs, so cards 2 and 4 have nothing to show.
+  I had assumed it carried passes; it does not.
+- **A Rec ID is city-wide by construction** — it answers to neither pool — so it
+  exists only on card 4, which is the card that sells it.
+
+So picking either of those two leaves most of the dashboard blank. **That is the
+data being honest, and it still reads as a broken filter to Joseph**, which is
+the argument for a note on the dashboard rather than for changing the SQL. The
+alternative — folding Rec IDs under a pool — would file city-wide revenue
+against a facility that never earned it.
+
+Zero rows fell to `(unmapped GL …)` on cards 3 and 4, so the GL ladder is
+complete for every product in scope.
+
+**One honest gap on card 2:** **15 of its 83 sections carry no session at all**,
+so they have no location and drop out whenever the filter is set. Checked rather
+than waved through — **all 15 have zero confirmed bookings** (Baby & Me, two
+Lego Clubs, four unstarted Tadpoles/Frogs/Clownfish sections, a *Squad Session -
+Free Trail*). They are empty shells, so nothing with money or participants in it
+is ever hidden by the filter. The earlier Aug–Sep windowed run showed 1 of these
+because the window hid the rest.
+
 #### THE PASTE IS DAN'S, AND ADDING THE TAG IS A UI STEP
 
 `update_question` regenerates every template tag as Text and takes SQL only as a
