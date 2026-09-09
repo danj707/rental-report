@@ -2033,6 +2033,48 @@ const CASES = [
   { name: "facility · no forms, no link", path: "/{org}/facility",
     needs: "[data-forms-empty=\"1\"]" },
 
+  // ── PII columns (Dan, 2026-09-09: "we don't want to include PII here unless
+  // the org wants it"). Keyed on ABSENCE from the DOM, not on a blank cell: a
+  // column rendered empty still prints a heading and still leaves a gap where
+  // the reader expects a number, and only absence proves the column is gone.
+  { name: "facility · phone and email are OFF by default", path: "/{org}/facility",
+    pre: async page => { await page.evaluateOnNewDocument(() => {
+      try { localStorage.removeItem('col_phone'); localStorage.removeItem('col_email'); } catch (e) {}
+    }); },
+    needs: ".data-row", absent: ".cell.col-phone" },
+  { name: "facility · and email too", path: "/{org}/facility",
+    pre: async page => { await page.evaluateOnNewDocument(() => {
+      try { localStorage.removeItem('col_phone'); localStorage.removeItem('col_email'); } catch (e) {}
+    }); },
+    needs: ".data-row", absent: ".cell.col-email" },
+  // Ticking one brings back ONLY that one. A case that ticked both could not
+  // tell a working pair of toggles from one switch driving both columns.
+  { name: "facility · ticking Phone shows phone and not email", path: "/{org}/facility",
+    pre: async page => { await page.evaluateOnNewDocument(() => {
+      try { localStorage.setItem('col_phone', 'true'); localStorage.removeItem('col_email'); } catch (e) {}
+    }); },
+    needs: ".cell.col-phone", absent: ".cell.col-email" },
+  // THE URL IS THE PDF'S ONLY CHANNEL. The print page is this page under
+  // ?_print=1 rendered with an EMPTY localStorage, so if `pii` were not read
+  // back the PDF could only ever show the default whatever was on screen — the
+  // GL refund-view bug. Driven as a real link, with storage cleared, so the
+  // parameter is the only thing that can be producing the column.
+  { name: "facility · the PDF's pii param brings the columns back",
+    path: "/{org}/facility?_print=1&pii=phone,email",
+    pre: async page => { await page.evaluateOnNewDocument(() => {
+      try { localStorage.clear(); } catch (e) {}
+    }); },
+    needs: ".cell.col-phone" },
+  // ...and an EMPTY pii is not "no opinion". Absent and empty have to mean the
+  // same thing on the print page, or a PDF exported with PII off would fall
+  // through to whatever the renderer's storage happened to hold.
+  { name: "facility · an empty pii param prints no PII",
+    path: "/{org}/facility?_print=1&pii=",
+    pre: async page => { await page.evaluateOnNewDocument(() => {
+      try { localStorage.setItem('col_phone', 'true'); localStorage.setItem('col_email', 'true'); } catch (e) {}
+    }); },
+    needs: ".data-row", absent: ".cell.col-phone" },
+
   { name: "facilities · summary",  path: "/{org}/facilities?tab=summary", needs: ".sum-cards, .aqua-sec, .fac-banner" },
   { name: "org landing",           path: "/{org}",                        needs: ".card" },
   { name: "gl report",             path: "/{org}/gl",                     needs: ".toolbar" },

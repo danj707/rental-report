@@ -1189,7 +1189,26 @@ function getParams() {
     sites:         p.get('sites'),      // comma-separated, from share URL
     book_type:     p.get('book_type'),  // instant | managed | all
     addons:        p.get('addons'),     // comma-separated, from share/PDF URL
+    pii:           p.get('pii'),        // phone,email - which PII columns to show
   };
+}
+
+// Reads one PII column's initial state. URL first (the PDF's and the share
+// link's only channel), then this browser's own preference, then OFF. A MISSING
+// `pii` parameter is not "neither" on a normal load - it means the URL is not
+// speaking about PII and the reader's own setting stands. On the print page
+// localStorage is empty, so absent correctly resolves to off there.
+// One writer for the parameter both the PDF and the share link send, so the two
+// cannot disagree about how it is spelled.
+function piiParam(phone, email) {
+  return [phone && 'phone', email && 'email'].filter(Boolean).join(',');
+}
+
+function piiInitial(which) {
+  const p = new URLSearchParams(window.location.search);
+  const fromUrl = p.get('pii');
+  if (fromUrl !== null) return fromUrl.split(',').indexOf(which) !== -1;
+  try { return localStorage.getItem('col_' + which) === 'true'; } catch { return false; }
 }
 
 function getCurrentMonthRange() {
@@ -2001,6 +2020,21 @@ function App() {
   const [showPermit, setShowPermit] = useState(() => {
     try { return localStorage.getItem('col_permit') !== 'false'; } catch { return true; }
   });
+  // PII IS OFF UNTIL AN ORG ASKS FOR IT (Dan, 2026-09-09: "we don't want to
+  // include PII here unless the org wants it"). These are the only two column
+  // toggles on this page that default OFF, and the asymmetry is the point: every
+  // other column is a display preference, these two decide whether a resident's
+  // phone number and email leave the building on a printed schedule.
+  //
+  // PRECEDENCE IS URL -> THIS BROWSER'S PREFERENCE -> OFF. The `pii` parameter
+  // exists for the PDF: the print page is this page under ?_print=1 rendered by
+  // Puppeteer with an EMPTY localStorage, so without it the PDF could only ever
+  // show the default whatever was on screen - the exact trap the GL refund view
+  // hit. Here the default is the safe direction, but a screen and a PDF that
+  // disagree is still wrong, so the toggles ride the URL in both directions.
+  const [showPhone, setShowPhone] = useState(() => piiInitial('phone'));
+  const [showEmail, setShowEmail] = useState(() => piiInitial('email'));
+
   const [showLink, setShowLink] = useState(() => {
     try { return localStorage.getItem('col_link') === 'true'; } catch { return false; }
   });
@@ -2059,6 +2093,18 @@ function App() {
   }, []);
   useEffect(() => { try { localStorage.setItem('col_notes',     showNotes);     } catch {} }, [showNotes]);
   useEffect(() => { try { localStorage.setItem('col_permit',    showPermit);    } catch {} }, [showPermit]);
+  // GATED ON THE URL NOT CARRYING `pii`. Opening somebody's shared link, or the
+  // print page, must not quietly rewrite the reader's own default - a link that
+  // reveals a phone number once would otherwise turn the column on for them
+  // permanently. Same rule as the GL refund view's persist gate.
+  useEffect(() => {
+    if (params.pii != null) return;
+    try { localStorage.setItem('col_phone', showPhone); } catch {}
+  }, [showPhone, params.pii]);
+  useEffect(() => {
+    if (params.pii != null) return;
+    try { localStorage.setItem('col_email', showEmail); } catch {}
+  }, [showEmail, params.pii]);
   useEffect(() => { try { localStorage.setItem('col_link',      showLink);      } catch {} }, [showLink]);
   useEffect(() => { try { localStorage.setItem('col_resident',  showResident);  } catch {} }, [showResident]);
   useEffect(() => { try { localStorage.setItem('col_booktype',  showBookType);  } catch {} }, [showBookType]);
@@ -2266,11 +2312,13 @@ function App() {
       if (selectedSites)     { const a = [...selectedSites];     if (a.length) qs.set('sites',     a.join(',')); }
       if (bookTypeFilter && bookTypeFilter !== 'all') qs.set('book_type', bookTypeFilter);
       if (selectedAddOns)    { const a = [...selectedAddOns];    if (a.length) qs.set('addons',    a.join(',')); }
+      qs.set('pii', piiParam(showPhone, showEmail));
       if (URL_TOKEN) qs.set('token', URL_TOKEN);
       return `${window.location.pathname}?${qs.toString()}`;
     };
     return () => { try { delete window.recShareLink; } catch (e) { window.recShareLink = undefined; } };
-  }, [loadedStart, loadedEnd, startDate, endDate, selectedLocations, selectedSites, selectedAddOns]);
+  }, [loadedStart, loadedEnd, startDate, endDate, selectedLocations, selectedSites, selectedAddOns,
+      showPhone, showEmail]);
 
   useEffect(() => {
     if (params._print === '1') document.body.classList.add('print-mode');
@@ -2567,6 +2615,11 @@ function App() {
     if (selectedSites && selectedSites.size < allSites.length) { qs.set('sites', [...selectedSites].join(',')); }
     if (bookTypeFilter && bookTypeFilter !== 'all') qs.set('book_type', bookTypeFilter);
     if (selectedAddOns)    { const a = [...selectedAddOns];    if (a.length) qs.set('addons',    a.join(',')); }
+    // ALWAYS SET, even when neither is on. The print page has no localStorage to
+    // fall back on, so an omitted parameter and "neither" have to mean the same
+    // thing there - and setting it explicitly is what makes the PDF match the
+    // screen in BOTH directions, not only when PII happens to be off.
+    qs.set('pii', piiParam(showPhone, showEmail));
 
     const pathParts = window.location.pathname.replace(/\/$/, '').split('/');
     const pdfBase = pathParts.length >= 3
@@ -2650,8 +2703,10 @@ function App() {
     if (!filteredRows || filteredRows.length === 0) return;
     const headers = [
       'Org Name', 'Date', 'Day', 'Location', 'Facility/Site',
-      'Begin', 'End', 'Purpose', 'Reservee', 'Phone', 'Email',
+      'Begin', 'End', 'Purpose', 'Reservee',
     ];
+    if (showPhone) headers.push('Phone');
+    if (showEmail) headers.push('Email');
     if (showHeadCount) headers.push('Head Cnt');
     if (showTotal)     headers.push('Total');
     if (showAddons) headers.push('Add-On Fees');
@@ -2667,8 +2722,9 @@ function App() {
       const row = [
         r.orgName, dateVal, (r.day || '').trim(), r.location, r.site,
         formatTime(r.start), formatTime(r.end), r.resName, r.reservee,
-        formatPhone(r.phone), r.email,
       ];
+      if (showPhone) row.push(formatPhone(r.phone));
+      if (showEmail) row.push(r.email);
       if (showHeadCount) row.push(r.headCount !== '' ? Number(r.headCount) || r.headCount : '');
       if (showTotal) { const n = parseFloat(r.total); row.push(!isNaN(n) && n !== 0 ? n : ''); }
       if (showAddons) { const n = parseFloat(r.addonFees); row.push(!isNaN(n) && n !== 0 ? n : ''); }
@@ -2689,7 +2745,9 @@ function App() {
     }
     ws['!cols'] = [
       {wch:28},{wch:12},{wch:10},{wch:22},{wch:22},{wch:9},{wch:9},
-      {wch:20},{wch:20},{wch:14},{wch:28},
+      {wch:20},{wch:20},
+      ...(showPhone?[{wch:14}]:[]),
+      ...(showEmail?[{wch:28}]:[]),
       ...(showHeadCount?[{wch:8}]:[]),
       ...(showTotal?[{wch:10}]:[]),
       ...(showAddons?[{wch:12}]:[]),
@@ -2862,6 +2920,16 @@ function App() {
               <label>
                 <input type="checkbox" checked={showTotal} onChange={e => setShowTotal(e.target.checked)} />
                 Total
+              </label>
+              <label style={{display:'flex',alignItems:'center',gap:4,cursor:'pointer',fontSize:11}}
+                title="Show the reservee's phone number. Off by default - it is personal information, and it prints.">
+                <input type="checkbox" checked={showPhone} onChange={e => setShowPhone(e.target.checked)} />
+                Phone
+              </label>
+              <label style={{display:'flex',alignItems:'center',gap:4,cursor:'pointer',fontSize:11}}
+                title="Show the reservee's email address. Off by default - it is personal information, and it prints.">
+                <input type="checkbox" checked={showEmail} onChange={e => setShowEmail(e.target.checked)} />
+                Email
               </label>
               <label style={{display:'flex',alignItems:'center',gap:4,cursor:'pointer',fontSize:11}}
                 title="Show each rental's add-ons, with their fees, in the line under the row">
@@ -3150,8 +3218,8 @@ function App() {
                           <span className="col-end">End</span>
                           <span className="col-site">Facility / Site</span>
                           <span className="col-reservee">Reservee</span>
-                          <span className="col-phone">Phone #</span>
-                          <span className="col-email">Email</span>
+                          {showPhone && <span className="col-phone">Phone #</span>}
+                          {showEmail && <span className="col-email">Email</span>}
                           <span className="col-purpose">Purpose</span>
                           {showResident  && <span className="col-resident">Resident?</span>}
                           {showBookType  && <span className="col-booktype">Book Type</span>}
@@ -3181,12 +3249,12 @@ function App() {
                                 </span>}
                               </span>
                               <span className="cell col-reservee">{r.reservee}</span>
-                              <span className="cell col-phone">{formatPhone(r.phone)}</span>
-                              <span className="cell col-email">
+                              {showPhone && <span className="cell col-phone">{formatPhone(r.phone)}</span>}
+                              {showEmail && <span className="cell col-email">
                                 {r.email
                                   ? <a href={`mailto:${r.email}`} style={{color:'inherit',textDecoration:'none'}}>{r.email}</a>
                                   : ''}
-                              </span>
+                              </span>}
                               <span className="cell col-purpose">{r.resName}</span>
                               {showResident  && <span className="cell col-resident">{r.resident}</span>}
                               {showBookType  && <span className="cell col-booktype">{r.bookingType}</span>}
