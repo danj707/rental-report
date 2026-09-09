@@ -200,4 +200,77 @@ ok(masks.every(m => !m.includes("G") && !m.includes(",")),
 // split — which is why the total above can display one safely.
 ok(/', '/.test(CARD) || /', '\)/.test(CARD), "the card joins add-ons with a comma and space");
 
+/* ── 8. The PII columns are OFF until an org asks for them ───────────────────
+   Dan, 2026-09-09: "we don't want to include PII here unless the org wants it."
+   These are the only two column toggles on this page that default OFF, and the
+   asymmetry is the point — every other column is a display preference, these
+   two decide whether a resident's phone number and email leave the building on
+   a printed schedule.
+
+   THE BROWSER CASES COVER THE SCREEN AND THE PDF. They cannot see the EXCEL
+   export, which builds its own header list — so an export still carrying the
+   columns the reader switched off would pass every render case while defeating
+   the entire point of the toggle. That half is asserted here. */
+
+const piiInit = src.match(/function piiInitial\(which\)[\s\S]*?\n}/);
+ok(piiInit, "piiInitial should exist at module scope, so the URL and the "
+  + "localStorage rule have ONE definition rather than one per caller");
+ok(/=== 'true'/.test(piiInit[0]),
+  "PII must default OFF: piiInitial has to test === 'true' (absent means off), "
+  + "never !== 'false' (absent means on) as every other column toggle does");
+ok(/getItem\('col_' \+ which\)/.test(piiInit[0]),
+  "piiInitial should read this browser's own preference as the second step");
+ok(/fromUrl !== null/.test(piiInit[0]),
+  "the `pii` URL parameter must be read, and an EMPTY value must count as "
+  + "'neither' rather than falling through — the print page has no localStorage, "
+  + "so the URL is the PDF's only channel (the GL refund-view trap)");
+
+ok(/pii:\s*p\.get\('pii'\)/.test(src),
+  "`pii` must be on getParams()'s explicit whitelist, or params.pii reads "
+  + "undefined and the deep link silently does nothing");
+
+// Both exports send it, through one writer so they cannot spell it differently.
+ok(/function piiParam\(phone, email\)/.test(src),
+  "one writer for the pii parameter, read by both the PDF and the share link");
+const piiSets = (src.match(/qs\.set\('pii', piiParam\(showPhone, showEmail\)\)/g) || []).length;
+ok(piiSets === 2,
+  "the PDF and the share link must BOTH forward pii — the PDF so the document "
+  + "matches the screen, the share link so a shared view reproduces it. Found "
+  + piiSets);
+
+// The persist gate: a shared link may SET the mode and must never rewrite the
+// reader's own stored default. Same rule as the GL refund view.
+ok(/if \(params\.pii != null\) return;[\s\S]{0,120}setItem\('col_phone'/.test(src),
+  "the phone persist effect must be gated on the URL not carrying pii, or "
+  + "opening someone's link turns the column on for that reader permanently");
+ok(/if \(params\.pii != null\) return;[\s\S]{0,120}setItem\('col_email'/.test(src),
+  "and the email persist effect the same way");
+
+// ── the Excel half, which no render case can see ──
+const xl = src.slice(src.indexOf("function downloadExcel()"),
+                     src.indexOf("function downloadExcel()") + 3000);
+ok(xl.length > 100, "downloadExcel should be findable");
+ok(!/'Reservee', 'Phone', 'Email'/.test(xl),
+  "the Excel header must not carry Phone/Email unconditionally — an export that "
+  + "ships the columns the reader switched off defeats the toggle entirely");
+ok(/if \(showPhone\) headers\.push\('Phone'\)/.test(xl)
+   && /if \(showEmail\) headers\.push\('Email'\)/.test(xl),
+  "the Excel headers must be conditional on the toggles");
+ok(/if \(showPhone\) row\.push\(formatPhone\(r\.phone\)\)/.test(xl)
+   && /if \(showEmail\) row\.push\(r\.email\)/.test(xl),
+  "and so must the Excel VALUES — a conditional header over an unconditional "
+  + "row shifts every column after it, which is worse than either alone");
+ok(/\.\.\.\(showPhone\?\[\{wch:14\}\]:\[\]\)/.test(xl)
+   && /\.\.\.\(showEmail\?\[\{wch:28\}\]:\[\]\)/.test(xl),
+  "and the column widths, or every width after them lands on the wrong column");
+
+// The table itself renders nothing rather than an empty cell: a column rendered
+// blank still prints a heading and still leaves a gap.
+ok(/\{showPhone && <span className="cell col-phone">/.test(src),
+  "the phone CELL must be gated, not merely blanked");
+ok(/\{showEmail && <span className="cell col-email">/.test(src),
+  "and the email cell too");
+ok(/\{showPhone && <span className="col-phone">Phone #<\/span>\}/.test(src),
+  "and the phone HEADER, or the table renders a heading over nothing");
+
 console.log(`✓ facility-addons-forms.spec.js — ${n} assertions passed`);
