@@ -3882,6 +3882,59 @@ filter arrives empty.
 Two fixes, neither urgent: a date floor at go-live, and a bucket for staff
 blocks/holds so they are never presented as a programme awaiting a mapping.
 
+### THE SCOPE IS A FIELD THE ORG ALREADY MAINTAINS — `category = 'Pool Programming'`
+
+Dan, with a screenshot of a programme's Activities panel reading
+*"Aquatics, Swim Lessons"*: *"for the name filter, can't we use the activity,
+'Aquatics'? There's literally an activity name that matches swimming stuff."*
+
+**Right, and the level ABOVE the activity is better still.** I was about to ship
+a `%swim%|%aqua%|%water%` name regex, which would have been a maintained guess
+over a structured field that already exists.
+
+The path is `program_activity` → `activity` → `category`, all org-scoped and all
+carrying `deleted_at`. Measured at El Segundo:
+
+| | sections |
+|---|---|
+| `activity.name = 'Aquatics'` alone | **61** |
+| **`category.name = 'Pool Programming'`** | **83** |
+| sections with no category at all | **0** |
+
+**"Aquatics" ALONE MISSES 22 SECTIONS**, and they are not marginal — the
+category holds five activities and Swim Lessons is the biggest of them:
+
+| activity | sections |
+|---|---|
+| Swim Lessons | **71** |
+| Aquatics | 61 |
+| Water Aerobics | 8 |
+| Swim Activities | 6 |
+| Stroke Refinement | 3 |
+
+So a programme can be tagged `Swim Lessons` without `Aquatics`, which is exactly
+what Dan's own screenshot shows carrying both. **One value at the category level
+beats five at the activity level** — and it picks up a sixth aquatic activity on
+the day El Segundo adds one, with no card edit. Tennis sits under `Sports`,
+Zumba under `Fitness`, Hip Hop under `Dance`, so the category genuinely
+separates.
+
+- **COVERAGE IS 100%, which is why this is usable at all.** Every one of El
+  Segundo's 396 sections carries an activity — unlike the instructor field,
+  which is empty on every aquatics section. A structured field is only better
+  than a regex if it is actually populated; this one is, and that was measured
+  before choosing it.
+- **The tag is multi-valued and 3 sections sit in two categories** — all three
+  are one programme, `Lego Club (library)`, mis-tagged with a Pool Programming
+  activity. That is El Segundo's data entry, not a structural problem, and it
+  argues for `BOOL_OR`/`EXISTS` rather than a join that could fan out.
+
+**`site_activity` CANNOT do the same job for card 1.** It exists (court_id →
+activity_id) and looks like the principled replacement for that card's hardcoded
+list of three location names — but **exactly ONE El Segundo court carries a Pool
+Programming activity**, so the table is essentially unpopulated here. Card 1
+keeps its location list. Worth knowing so nobody spends an afternoon on it.
+
 ### TWO PLACEMENT GAPS
 
 - **The MCP `update_dashboard` tool has no tab parameter**, so the four cards
