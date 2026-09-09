@@ -3935,6 +3935,68 @@ list of three location names — but **exactly ONE El Segundo court carries a Po
 Programming activity**, so the table is essentially unpopulated here. Card 1
 keeps its location list. Worth knowing so nobody spends an afternoon on it.
 
+### "(no location on sessions)" WAS A LIE, AND MY FIRST DIAGNOSIS WAS WRONG
+
+Dan: *"also for card 2, you're missing some location/site data, it's in there."*
+With the admin UI beside it: **Level 1- Tadpoles: Tue/Thurs 4:00pm-4:25pm**, every
+session at **Urho Saari Swim Stadium** — and card 2's August row for that exact
+section reading `(no location on sessions)`.
+
+**I reached for the wrong cause first, and it was a cause this file already
+records.** The note on card 17295 v6 says `session.location_id` is EITHER a court
+id OR a location id, and reading one side silently loses the other. That is a
+real trap and it is **not what happened here**: measured, **all 2,067 live El
+Segundo sessions resolve as a LOCATION, none as a court, none NULL.** Checking
+beat pattern-matching, and the pattern was one I had written down myself.
+
+**The real cause is that the location was read from THAT MONTH'S sessions.**
+`sess` groups by section × month and the SELECT reads `COALESCE(sess.loc, …)`, so
+a row arriving from the money arm alone — money moved, no session ran — has
+nowhere to read a location from. Measured on the exact section Dan named:
+
+| Level 1- Tadpoles: Tue/Thurs 4:00pm | sessions |
+|---|---|
+| 2026-08 | **0** |
+| 2026-09 | **8, all Urho Saari** |
+
+August is registration money for a course that starts in September. So the label
+blamed the data for something the query did to itself — **the location was never
+missing, it was merely not in that month.** Its Mon/Wed siblings have one August
+session each, which is why they resolved and the Tue/Thurs ones did not: same
+programme, same pool, different answer.
+
+**A SECTION'S LOCATION DOES NOT CHANGE MONTH TO MONTH**, so it is resolved from
+the section across all its sessions (`sec_loc`), and the fallback is reworded to
+`(no location on file)` — a claim about the record rather than about the month.
+
+**Generalise it: a COALESCE fallback is a sentence the reader believes.** If it
+names a cause it must be the actual cause; `(no location on sessions)` asserted
+something false about El Segundo's data entry, on a report they would have taken
+to be a finding.
+
+Two more things the fix carries, both found by running it:
+
+- **`Section ID` is now a column**, and it settles the apparent duplicate rows:
+  49 distinct section NAMES against **52 distinct section IDs** over Aug-Sep.
+  `Level 3 - Clownfish: Tue/Thurs 4:30pm-4:55pm` really is two sections, and
+  `Semi-Private: Level 1/2 9:30am` and `10:30am` likewise. Not a grouping bug.
+- **`s.starts_at IS NOT NULL`**: a NULL start makes a NULL `ym`, and `NULL = NULL`
+  never matches in the FULL OUTER JOIN, so such a session emitted a row with a
+  blank Month that could never pair with its money. Two sessions at El Segundo.
+
+**AND IT CORRECTS A CLAIM IN THIS FILE.** It says *"every aquatics section has no
+facilitator on file"*. **Saul Gonzalez teaches all six `Swim With Me - Adaptive`
+sections**, so the instructor column is populated for some aquatics after all —
+the coverage gap is real but not total, and the sweeping version of it should not
+be repeated to El Segundo.
+
+The corrected SQL is mirrored at `sql/report-cards/21683-aquatics-classes.sql`
+and was **verified by running that exact text**, whole final SELECT included,
+against production: **97 rows where the live card returns 685**, three locations,
+**zero** unresolved. **It is NOT applied to the live card** — Dan has flipped the
+date tags and set the org_id default, and `update_question` would regenerate both
+as Text, so this goes in through the UI.
+
 ### TWO PLACEMENT GAPS
 
 - **The MCP `update_dashboard` tool has no tab parameter**, so the four cards
