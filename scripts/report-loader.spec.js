@@ -240,5 +240,117 @@ ok(/loadEstimate: loadEstimateFor\(slug, rt\)/.test(server),
 ok(!/window\.ORG_CONFIG=\$\{JSON\.stringify\(orgConfig\)\}/.test(server),
    "no injection site bypasses orgConfigInject — one that did would ship a bar with no estimate");
 
+// ── 6. THE VANILLA BAR — programs-schedule.html draws its own, and it printed
+//    "usually about NaNm NaNs" on screen for three days.
+//
+//    Dan, 2026-09-09, on Windham: "err this looks like a bug when the page is
+//    loading." Root cause: that page read ORG_CONFIG.loadEstimate by hand and
+//    passed the whole {ms,basis} OBJECT to loaderEstimateNote(ms, basis). An
+//    object is truthy, so the empty guard never fired; basis arrived undefined,
+//    so the no-history guard never fired either; and fmtSecs(object) rendered
+//    the literal NaN. It also fed loaderProgress SECONDS against an estimate
+//    that fell back to 25000ms — 0.26% after forty seconds, i.e. a bar that
+//    never visibly moves.
+//
+//    Nothing here could see any of it: the page parses, the server boots, the
+//    curve's own assertions pass, and there was no case that RENDERED the bar.
+{
+  // (a) The object shape is genuinely fatal, RUN rather than argued — without
+  //     this the assertions below are pinning a rule with no teeth.
+  ok(/NaN/.test(String(sandbox.window.loaderEstimateNote({ ms: 12345, basis: "org" }))),
+     "passing the whole estimate OBJECT to estimateNote really does render NaN (the shipped bug)");
+  eq(sandbox.window.loaderEstimateNote(12345, "org"), "usually about 12s",
+     "...while (ms, basis) reads as history");
+  eq(sandbox.window.loaderEstimateNote(25000, "default"), "",
+     "...and a basis of 'default' claims nothing, which is what the undefined basis defeated");
+
+  // (b) ONE reader for the {ms,basis} shape, so no caller can get it wrong again.
+  ok(typeof sandbox.window.loaderReadEstimate === "function",
+     "report-loader.js exports loaderReadEstimate, so the estimate shape is read in one place");
+  ok(typeof sandbox.window.loaderFmtSecs === "function",
+     "...and loaderFmtSecs, so a hand-drawn bar need not reimplement the clock");
+
+  // (c) No page reads the raw config and hands it on. This is the actual defect:
+  //     a page that reads ORG_CONFIG.loadEstimate itself is one field-name slip
+  //     from NaN on screen.
+  const rawReaders = pages.filter(f =>
+    /ORG_CONFIG\s*&&\s*window\.ORG_CONFIG\.loadEstimate|ORG_CONFIG\.loadEstimate\s*\)\s*\|\|/.test(read(f)));
+  eq(rawReaders, [],
+     "no page reads ORG_CONFIG.loadEstimate by hand — every caller goes through loaderReadEstimate");
+
+  // (d) The two shared helpers are always called with the right arity/units.
+  for (const f of pages) {
+    const src = read(f);
+    for (const m of src.matchAll(/loaderEstimateNote\s*\(([^)]*)\)/g)) {
+      const args = m[1].trim();
+      if (!args || args === "est" || args === "estimateNote") continue;   // the definition/alias
+      ok(args.includes(","), f + ": loaderEstimateNote is called with (ms, basis), not one object");
+    }
+    for (const m of src.matchAll(/loaderProgress\s*\(([^)]*)\)/g)) {
+      ok(!/\/\s*1000/.test(m[1]),
+         f + ": loaderProgress is fed MILLISECONDS — dividing by 1000 flattens the bar to ~0%");
+    }
+  }
+
+  // (e) BEHAVIOURAL: lift the page's OWN startLoader and read what it writes.
+  //     Every assertion above is about source text and would pass on a renderer
+  //     that composed the note some fourth wrong way; this one reads the bytes.
+  const ps = read("programs-schedule.html");
+  const fn = ps.slice(ps.indexOf("function startLoader()"), ps.indexOf("function stopLoader()"));
+  ok(/loaderReadEstimate/.test(fn) && fn.length > 200,
+     "the startLoader slice was found (or the render assertions below are vacuous)");
+
+  const nodes = {};
+  function el(id) {
+    return nodes[id] || (nodes[id] = {
+      innerHTML: "", className: "", style: {}, setAttribute(k, v) { this[k] = v; },
+      get parentNode() { return { parentNode: { setAttribute() {} } }; }
+    });
+  }
+  let ticker = null;
+  for (const [basis, cfg, want] of [
+    ["org",     { loadEstimate: { ms: 12345, basis: "org" } },   "usually about 12s"],
+    ["default", {},                                              null],
+  ]) {
+    // report-loader.js closed over sandbox.window, so readEstimate reads
+    // ORG_CONFIG off THAT object — a copy here would silently test the default
+    // branch twice and the org case would prove nothing.
+    const w = sandbox.window;
+    w.ORG_CONFIG = cfg;
+    const ctx = {
+      window: w, esc: x => String(x), console,
+      document: { getElementById: id => el(id) },
+      setInterval: (f) => { ticker = f; return 1; }, clearInterval() {},
+      Date: { now: () => Date.__t },
+    };
+    Object.assign(ctx, w);                       // the page calls the globals bare
+    Date.__t = 0;
+    vm.createContext(ctx);
+    vm.runInContext("var loaderTimer=null,loaderT0=0,loaderShown=false;" +
+                    "var LOADER_SHOW_DELAY_MS=350;" + fn + "; startLoader();", ctx);
+
+    // Before the show delay: nothing at all. A bar that flashes on a warm cache
+    // reads as a glitch.
+    Date.__t = 200; ticker();
+    eq(el("loaderMount").innerHTML, "",
+       basis + ": nothing renders inside the 350ms show delay");
+
+    Date.__t = 5000; ticker();
+    const shown = el("rlNote").innerHTML;
+    ok(!/NaN/.test(shown), basis + ": the loading note contains no NaN — got " + JSON.stringify(shown));
+    ok(/5s/.test(shown), basis + ": ...and the elapsed count is on screen (5s)");
+    if (want) ok(shown.includes(want), basis + ": ...beside the measured estimate");
+    else ok(!/usually about/.test(shown),
+            basis + ": ...and with no history it claims no 'usually about'");
+
+    // Past the estimate the bar must still be visibly unfinished AND say so.
+    Date.__t = 90000; ticker();
+    const late = el("rlNote").innerHTML, width = parseFloat(el("rlFill").style.width);
+    ok(width > 20 && width < 96,
+       basis + ": at 90s the bar is visibly moving and short of full — got " + width + "%");
+    ok(/still working/.test(late), basis + ": ...and the overrun says it is still working");
+  }
+}
+
 if (failed) { console.error("\n" + failed + " assertion(s) FAILED."); process.exit(1); }
 console.log(passed + " assertions passed. (" + users.length + " pages on the shared loader)");

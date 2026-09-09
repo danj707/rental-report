@@ -57,6 +57,9 @@ jobs:
       - name: Saved-view helpers spec (one date mirror; offered ranges are storable; per-report allowlists)
         run: node scripts/saved-views.spec.js
 
+      - name: Roster section scope spec (section_id reaches Metabase; a name is not an identity)
+        run: node scripts/roster-section-scope.spec.js
+
       - name: Delete-org source surgery spec (never push an unparseable server.js)
         run: node scripts/delete-org.spec.js
 

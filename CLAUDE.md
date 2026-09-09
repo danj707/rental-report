@@ -1,5 +1,957 @@
 # Project notes for Claude
 
+## THE REFUND VIEW COULD NOT BE SAVED OR PRINTED (2026-09-09)
+
+Dan, on needham's GL Code Rollup with the picker open on his own
+*"GL Code Rollup w refund detail"*: *"Looks like the 'save a view' isn't saving
+when the refund view is selected. If I save this view, it doesn't update the 'GL
+Code Rollup with refund detail'. Then, when I click to print the PDF, it prints
+the version without the refund detail."*
+
+**Both halves are one root cause, and it is a CLASSIFICATION mistake rather than
+a broken wire.** Refund Detail was filed as per-browser display state:
+
+```js
+const LS_REFUND = 'gl_refund_breakdown_v2';
+const [showRefunds, setShowRefunds] = useState(() => localStorage.getItem(LS_REFUND) === 'true');
+useEffect(() => { localStorage.setItem(LS_REFUND, showRefunds); }, [showRefunds]);
+```
+
+It never entered the URL, so:
+
+| surface | why it could not see the mode |
+|---|---|
+| the saved view | `SAVED_VIEW_PARAMS.gl` is the server's allowlist and had no `refunds` key, so `PUT /saved-views` **dropped it**. Re-saving the view really did change nothing. |
+| the PDF | the print page is this page under `?_print=1`, rendered by **Puppeteer with an empty localStorage** — so the mode could only ever be OFF, whatever was on screen |
+
+### IT IS A MODE, NOT A COLUMN PREFERENCE — a deliberate reversal, for this one control
+
+`SAVED_VIEW_PARAMS`'s own comment records the opposite rule for `roster`:
+display toggles stay OUT of shared views, because *"a shared view that overwrote
+them would take a colleague's chosen columns away."* That rule stands for
+`showLocations`, which collapses one column. It does not survive here:
+
+- Refund Detail restructures the **whole table** — a different column set under
+  different group headers — which is what `tyler` does, and `tyler` has been in
+  the allowlist and set unconditionally on apply all along.
+- Dan's view is **named after the mode**. The mode IS the view, and a view that
+  cannot carry it cannot reproduce itself, on screen or in the PDF.
+
+So `refunds` follows `tyler` exactly, with two guards that keep the roster
+objection paid for:
+
+- **Precedence is URL → applied view → this browser's preference.** localStorage
+  is still the no-view default, so nobody's current setting flips.
+- **The persist effect is gated on `activeViewId`.** A view SETS the mode; it
+  must not quietly rewrite the reader's own default the moment they open
+  somebody else's saved view. Clear back to Default view and their preference
+  returns on the next load.
+- **An apply sets it in BOTH directions** (`setShowRefunds(!!f.refunds)`). A
+  view that could only turn a mode on could never turn it off, so opening a
+  plain view after the refund one would still render refund columns — and
+  `clearView` turns it off, because *"no filters"* has to mean no mode either.
+
+### AND `gl_codes` WAS THE SAME BUG ONE FILTER OVER, in the OPPOSITE half
+
+Found by reading the whole path rather than the reported symptom.
+`public/gl.html` has SENT `gl_codes` on the PDF and share link since the
+multi-select shipped, and **`generatePdf`'s forward list silently dropped it** —
+so every GL-code PDF carried the codes the reader had excluded. This file
+asserted the opposite (*"rides both the share link and the export params"*),
+which is why nobody looked: the client half was right and the claim was
+therefore half true. It was also absent from `SAVED_VIEW_PARAMS.gl`, so a view
+could not store a code selection at all.
+
+**Generalise it: a param has FOUR gates on this report and passing three of them
+looks exactly like working** — `getParams()`'s explicit whitelist, the page's
+`currentFilterParams`, the server's saved-view allowlist, and `generatePdf`'s
+forward list. `refunds` failed all four; `gl_codes` failed two.
+
+**Key ORDER in the allowlist is load-bearing.** `cleanViewParams` emits in that
+order and the page builds `currentFilterParams` the same way, because the
+"edited" marker is a string comparison against the stored params — a different
+order makes every freshly-saved view read as dirty the instant it is applied.
+
+### THE SHARE-LINK EFFECT WAS READING ITS OWN DEPS AS `undefined`
+
+Found while adding `showRefunds` to it, and it is the Babel `const`→`var` trap
+in a form no runtime assertion here can see. The effect registering
+`window.recShareLink` sat ABOVE most of the state it names in its dependency
+array (`selectedDesks`, `availableMethods`, and now `showRefunds`). These pages
+compile JSX in the browser, so `const` becomes `var`: the deps array evaluated
+to `[..., undefined, undefined]` on **every** render instead of throwing, the
+effect only ever ran on mount, and the registered closure was from that first
+render — **so Copy Link was one change behind the screen, silently.**
+
+The effect moved below everything it reads. The guard is the general form: take
+that effect's dep array out of the source, and require every name in it to be
+declared before the effect. It fails by name on the move.
+
+Also fixed while in there: the print-mode desk branch tested `params.desks`,
+which `getParams()` never returned — dead code whose comment claimed to be
+belt-and-braces against the `#report-ready` race.
+
+### Guards
+
+`saved-views.spec.js` 51 → **65 assertions**. Its `ALLOW` list is now DERIVED
+from `SAVED_VIEW_PARAMS.gl` rather than a hand-copy, or every byte-for-byte
+assertion about the new keys is a comparison of two copies of the same guess.
+Mutation-tested thirteen ways, all failing by name: the allowlist reverted (the
+bug as it shipped), `generatePdf` dropping both again, an apply that only turns
+the mode on, Default view leaving it on, the PDF and the stored view each losing
+it, the URL leg dropped, the persist gate removed, `refunds` off the `getParams`
+whitelist, the picker row reading *"no filters"* again, a stale `refunds=`
+outliving its view, the PDF losing `gl_codes`, and the share-link effect moved
+back above its deps.
+
+**Four `ci-check-render.js` cases, keyed on the COMPUTED refund column count**
+(`data-gl-refunds` / `data-gl-refund-mode`) rather than on a table existing: the
+fixture's tenders give the split view five refund columns against the single
+*"Total Refunds"* one, so a page ignoring the param renders a perfectly
+plausible table. One of them drives `?_print=1&refunds=1` — the render Dan was
+actually looking at. Verified to discriminate: dropping the URL leg fails
+**exactly** the two URL-driven cases by name while the other eight keep passing.
+
+## THE LOADING BAR PRINTED "usually about NaNm NaNs" (2026-09-09)
+
+Dan, on Windham's Program Schedule mid-load: *"err this looks like a bug when
+the page is loading."* It was, three ways at once, and every one of them came
+from **a second renderer reading the shared helpers' arguments by hand.**
+
+`programs-schedule.html` is vanilla JS (deliberately — see that section), so it
+draws its own bar around the shared `window.loaderProgress`. That much is right.
+What it did with the estimate was not:
+
+| the call it made | what happened |
+|---|---|
+| `loaderEstimateNote(est)` where the signature is `(ms, basis)` | an object is **truthy**, so `if (!est) return ''` never fired, `basis` arrived `undefined` so the no-history guard never fired, and `fmtSecs(object)` rendered the literal **`usually about NaNm NaNs`** on screen |
+| `loaderProgress(elapsed / 1000, est)` where it takes **ms** | measured by running it: **0.03% at five seconds, 0.26% at FORTY** — a bar that never visibly moves, i.e. the forever-spinner the bar replaced |
+
+**THE SECOND ONE IS THE WORSE BUG and it is the one nobody reported**, because a
+bar sitting near zero reads as "still working" rather than as broken. The NaN is
+what got it looked at.
+
+**And the `basis === 'default'` guard was being bypassed, which is the failure
+that guard exists to prevent.** Windham has no recorded history for this report,
+so the honest output is **nothing** — the loader must not dress a 25s default up
+as *"usually about 25s"*. Passing the object defeated it silently: the note read
+as measured history for an org that has never been timed.
+
+### THE FIX IS ONE READER, not three careful call sites
+
+`readEstimate` is exported as **`window.loaderReadEstimate`** (with
+`loaderFmtSecs` beside it), and every caller reads the `{ms, basis}` shape
+through it. The object/field mismatch cannot recur, which is the same argument
+as `progAutopayCell` going through `progAutopayShare` and `siteLabel` having one
+definition — *a second reader of a shape is a second chance to get it wrong.*
+
+Two things were rebuilt rather than patched, because the page was missing them
+and both are part of the shared contract:
+
+- **The meta line is re-rendered every tick.** It was composed ONCE at start, so
+  the elapsed count was absent and **the overrun state was unreachable** — a 93s
+  apex load would have said *"usually about 8s"* forever. Elapsed is the one
+  number on that panel that is not an estimate.
+- **The 350ms show delay.** The page drew its bar immediately, so a warm cache
+  flashed it for ~200ms — which reads as a glitch and makes a fast report feel
+  slow, the exact thing `SHOW_DELAY_MS` exists for.
+
+### NOTHING COULD SEE ANY OF IT, and that is the reusable part
+
+`node --check` passes (it is valid JS), the page renders, the server boots, and
+**`report-loader.spec.js`'s 44 assertions all passed** — because they cover the
+CURVE and the estimate's derivation, and there was no case that RENDERED a bar
+outside React. `ci-check-render` had twelve programs-schedule cases and not one
+of them was about the loading state, since every stub answers instantly.
+
+*Generalise it: a second renderer of a shared thing needs its own coverage. The
+helpers were fine — every assertion about them was true, and the page still
+printed NaN.*
+
+### Guards
+
+`report-loader.spec.js` 44 → **65 assertions**. The load-bearing half is
+BEHAVIOURAL: it **lifts the page's own `startLoader` and runs it against a fake
+DOM**, then reads the bytes it wrote — because every source assertion here would
+pass on a renderer that composed the note some fourth wrong way. It drives two
+bases (org history and none) at 200ms, 5s and 90s and requires: nothing inside
+the show delay, no `NaN`, the elapsed count present, *"usually about"* present
+for a timed org and **absent** for an untimed one, and at 90s a width that is
+both moving and short of full.
+
+**A harness trap in my own spec:** `report-loader.js` closed over
+`sandbox.window`, so `readEstimate` reads `ORG_CONFIG` off **that** object — an
+`Object.assign({}, sandbox.window, {ORG_CONFIG})` copy silently tested the
+default branch twice and the org case proved nothing. It failed by name, which
+is the only reason it was found.
+
+Two source assertions generalise past this page: **no page may read
+`ORG_CONFIG.loadEstimate` by hand**, and every call to `loaderProgress` is
+checked for a `/ 1000` in its arguments.
+
+Mutation-tested seven ways, all failing by name: the object passed to
+`estimateNote` (the bug exactly as it shipped — the failure message reproduces
+Dan's screenshot, `"5s · usually about NaNm NaNs"`), seconds fed to
+`loaderProgress`, the raw config read by hand again, the `default` guard removed,
+the show delay dropped, the meta line frozen at start, and the bar hardcoded to
+a fixed width.
+
+Plus `loader · the vanilla bar shows no NaN` in `ci-check-render.js` — the spec's
+fake DOM proves the composition, only a browser proves the real page **wires it
+up** and that the injected `ORG_CONFIG` reaches it. Verified to fail on the
+shipped bug while the other four loader cases keep passing, and it requires an
+elapsed count **and** no NaN: either alone passes on half the bug, since the note
+really did read `5s · usually about NaNm NaNs`.
+
+
+## THE CLASS ROSTER WAS SCOPED BY THE DATE WINDOW ALONE (2026-09-09)
+
+Dan, on Hatha Yoga after the roster got fast: *"well it kinda does. but its much
+faster now"* — over a roster reading **82 of 82** for a class that has **24**
+people in it. Speed was the symptom; the number was the bug.
+
+`section_id` rode in the URL and reached `buildMetabaseParams`, which dropped it
+for every report except `section-detail`. The page then matched the section by
+NAME, as a **substring, in the browser**. A name is not an identity.
+
+**MEASURED AT CLARKSVILLE — sections that share a name:**
+
+| name | sections | bookings |
+|---|---|---|
+| Water Aerobics Drop-In | **16** | 118 |
+| Tico's Tsunami Swimmers | 9 | 55 |
+| **Hatha Yoga** | **4** | **82** |
+| Tico's Tidal Tots | 4 | 36 |
+| ...eight more | 2 each | |
+
+**AND IT DOUBLE-COUNTED PEOPLE, not just runs.** Over the window Dan's link
+used, `section_name='Hatha Yoga'` returns **82 rows for 39 distinct people** —
+somebody enrolled in two runs appears twice. `section_id` returns **24 rows for
+24 people**. So a class of 24 was rendering as 82 lines covering 39 humans.
+
+### THE COMMENT SAID IT WAS IMPOSSIBLE, AND THE COMMENT WAS WRONG
+
+`buildMetabaseParams` carried: *"roster section filtering is client-side...
+Passing section_name here would make Metabase reject the query (unknown
+parameter)."* **Card 17296 has had a `{{section_name}}` tag with its own `[[ ]]`
+block all along.** The claim was simply false, and it is why nobody looked
+underneath it — the same failure as the *"organization.config holds no timezone
+key"* note corrected on card 21649 the day before. **A wrong statement in a
+comment is worse than no comment: it closes the question.** The spec now fails
+if that sentence comes back.
+
+### AN UNSTAMPED PARAMETER IS FATAL — measured, and it removed the ordering trap
+
+Found while sequencing this change. Against the real card through the public
+endpoint:
+
+| | |
+|---|---|
+| three stamped parameters | **200**, 1 row, 0.97s |
+| the same three plus ONE unstamped `section_id` | **HTTP 400** |
+
+Metabase rejects the **whole query** rather than ignoring the extra. The wrapper
+was passing an unknown slug through unstamped, so any card push became an
+**ordering trap**: server.js starts sending a new tag and every request for that
+report fails until a human saves the card with it — a window spanning CI, a
+deploy, and whoever has Metabase open.
+
+`enrichMetabaseCardUrl` **drops** a slug the card does not register now. The
+parameter has no effect until the card advertises the tag, which is also right if
+a card is rolled back, and it means the server half was safe to deploy before,
+after, or without the push. **It is strictly better for the STALE-ID case this
+wrapper exists for, too:** dropping yields `missing-required-parameter`, which
+`_MB_STALE_ID_RE` catches and retries; passing through yielded a generic error
+nothing recovered from. There was no case where sending it helped.
+
+### `section_name` IS DELIBERATELY STILL NOT FORWARDED
+
+Both filters stay on the card and answer different questions. `section_id` is a
+link to ONE section and is exact. `section_name` is the report's **free-text
+search box**, where a partial name is the point — forwarding it would put a
+Metabase query behind every keystroke and give every search term its own feed
+cache entry. The client-side name match also stays because it is what a
+**pre-push cached feed** still needs: feeds cache four hours, so a tag-less
+response and a scoped one are both live at once.
+
+### The push, and what was proven BEFORE it
+
+**Optional is load-bearing.** The report opens unscoped, so a non-optional clause
+would fail every roster on the platform. Proven with no downtime, before writing
+anything: with no `section_id` the new SQL is **byte-identical** to the live card
+once comments are stripped, and the scoped shape adds **exactly that one clause**.
+
+**`::uuid` is cast rather than typed**, so `section_id` survived the push as Text
+with no re-flip — only the two DATE tags needed one.
+
+The card came back registering **NINE** parameters (five real + four `string/=`
+duplicates) and the roster was down for every org until Dan flipped, exactly as
+this file predicts. After the flip: **five, no duplicates, both dates
+`date/single`**.
+
+**Sign-off, cache-independently through the public endpoint, over the window the
+page actually sends (`daysAhead:14`, since `ROSTER_DEFAULT_DAYS` is 14 and
+`roster` is in `FORWARD_REPORTS`):**
+
+| org | rows | time |
+|---|---|---|
+| apex (heaviest) | 3,819 | 23.6s |
+| watertown (Eastern) | 485 | 2.7s |
+| clarksville | 54 | 1.0s |
+
+**Additive, proven by re-reading the exact pre-push window:** unscoped
+clarksville 2026-09-08 returned **47 rows / 3 sections / 22 columns** before the
+push and **47 / 3 / 22** after.
+
+### THE SHARED ROSTER CARD HAD NO MANIFEST ROW AT ALL
+
+Found doing the sign-off — `31bdf26f` was in none of the 27 checks, so a lost
+column or a re-Texted date tag on one of the most-used reports on the platform
+would have surfaced as a blank roster rather than a failed check. Same gap
+already recorded for waitlist and checkins. **Two rows now**, and the second is a
+regression case rather than a duplicate: apex is the heaviest, and **watertown is
+EASTERN** — card 17296 dates every row by `org.config primaryTimezone` while
+Metabase renders Pacific, so a Pacific org structurally cannot catch a conversion
+regression here.
+
+**Both rows carry `daysAhead:14`.** Unwindowed they would ask for the org's whole
+history — the mistake this file records for card 17301 v7 *and* card 21649, now
+guarded against on a third card.
+
+### AND THE programs-monthly ROW WAS REFUSING OUTRIGHT — third instance
+
+Found in the full sweep taken for the roster sign-off. `programs-monthly / apex`
+came back
+
+```
+missing-required-parameter: #{"end_date" "start_date"}   (HTTP 400, 0.1s)
+```
+
+and had been doing so since the row was added on 2026-09-01. **The 0.1s is the
+tell** — a refusal, not load — so it never looked like the four genuine timeouts
+sitting around it in the same output (`checkins/apex`, `fasttrack/apex`,
+`instructor-payout/san-francisco-rec-park`, `programs/apex`, all known-heavy).
+
+**THE ROW SENT NO DATE PARAMETERS AT ALL.** Card 21055 uses `{{start_date}}` and
+`{{end_date}}` **BARE inside `generate_series`** — they bound the month series,
+so unlike every other card here they cannot sit in an optional `[[ ]]` block and
+cannot drop out. A dateless probe therefore cannot run at all, where the same
+mistake on 17301 and programs-schedule merely asked for the org's whole history.
+
+`days: 365`, **not** `daysAhead` — this is a BACKWARD monthly revenue rollup and
+its own sign-off window was Sep 2025 → Aug 2026. Verified: **13 rows in 7.8s**.
+
+**THE ROW'S OWN LABEL PREDICTED THE WRONG SYMPTOM**, which is part of why it went
+unread for eight days: it said *"if this row starts returning 'An error
+occurred.', the tags have been reset to Text"*. It was returning
+`missing-required-parameter`, so nobody matching on the documented string would
+have connected the two. **A guard that names the wrong failure mode is a guard
+people learn to skim.**
+
+**Third instance of the dateless-manifest-row bug in one branch** — card 17301
+v7, both programs-schedule rows, and this. Worth stating as a rule: **a manifest
+row for a card with date tags needs a window unless you have checked that the
+card's tags are optional**, and which direction it needs depends on the report,
+not on the script's default.
+
+### Guards
+
+`scripts/roster-section-scope.spec.js` (**43 assertions, in CI**), which LIFTS
+AND RUNS `buildMetabaseParams`. Mutation-tested nine ways, all failing by name:
+the server reverted to `section-detail` only (the bug as it shipped),
+`section_name` forwarded, the card clause made non-optional, the `::uuid` cast
+dropped, the pre-existing `section_name` clause deleted, the trailing `ORDER BY`
+dropped (the card-17300 failure), the filter moved into a JOIN where it would
+turn the LEFT JOINs above it inner, the false comment restored, and `section_id`
+forwarded for every report.
+
+`mb-param-ids.spec.js` 19 → **22**, driving the real wrapper against a fake
+Metabase whose card registers `org_id` and not `section_id`. Mutation-tested both
+directions: the unknown slug passed through again, and every parameter dropped
+including the registered ones.
+
+**A probe of mine failed and read as a card regression — third time this
+session.** `{{org_id}}` is a **UUID**, and I passed the slug `clarksville`, so
+`'clarksville'::uuid` 400'd and looked exactly like a broken card. The manifest
+uses org UUIDs; check what a parameter actually holds before believing a 400.
+
+**And Chromium cannot reach the sandbox proxy**, so the deployed page could not
+be driven directly. The stronger check was to LIFT the SERVED page's own
+`rosterWindow` and mapper and run them against the LIVE feed rows — that proves
+what the deployed bytes do with production data, which reading the diff does not.
+
+## THE PROGRAM SCHEDULE REPORT IS LIVE — card 21649 (2026-09-08)
+
+Dan asked for *"an identical report to the facility rental report, but for
+programs"* — by date, location and site, section AND session based, with the
+instructor, a confirmed count and a link to each roster. Built, pushed, wired
+and signed off. Page `public/programs-schedule.html`, card
+https://rec.metabaseapp.com/question/21649, mirror
+`sql/report-cards/21649-programs-schedule.sql`.
+
+**IT IS VISIBLE ON ALL 29 ORG DASHBOARDS the moment this deploys.**
+`allAvailable` in the `/:org` route is REPORT_TYPES minus non-addable/retired
+where `SHARED_UUIDS[r]` exists, and `DEFAULT_HIDDEN_REPORTS` is empty — so
+wiring the uuid IS the rollout. Nothing stages it per org; hiding it anywhere
+is `reportHiddenForOrg`.
+
+### THE SITE EXISTS, AND I HAD REPORTED THAT IT COULD NOT
+
+The finding worth keeping, because I published the opposite first. I wrote,
+with measurements, that a Site column would be blank for every row of every
+org and that room-level detail was a product gap. Dan: *"it's in there
+somewhere."* He was right. What my measurements had ruled out was three WRONG
+PLACES, each conclusive-looking on its own:
+
+- **`session.location_id` is ALWAYS a location.** Cards 17298 and 17295 both
+  carry a `court` branch for it and it resolves a court for **0 of 24,579**
+  sessions over a live window. Their branch really is dead code here.
+- **There is no `session_court` join table**, and `location` has no parent
+  column, so nothing nests.
+- **`session.overrides` is a `text[]` of overridden FIELD NAMES**
+  (`capacity`, `waitlistConfig`, `enrollmentMinimum`) — not a place a court id
+  hides. (It is also why `jsonb_object_keys` errors on it.)
+
+The answer is that **every program session gets a `reservation`** — 24,583 of
+24,583 in a live window, 1:1 — and the site hangs off that reservation's
+courts. `reservation.court_id` is legacy-NULL on every one of them, which
+**this file already recorded** for SF's 557,367 facility reservations (*"the
+site link is the `reservation_court` join table"*). I had the note and did not
+apply it to programs.
+
+Measured: **15,249 of 24,583 sessions (62%) across 75 orgs carry a site**, and
+the name is `court.court_number`, populated on all of them — "Bridge Room",
+"Ice - East Rink", "NHS -A Gym", "Outdoor Pickleball Court #5". Exactly the
+shape Dan described: location required, site optional.
+
+**Generalise it: a measurement rules out the PLACE YOU LOOKED, not the fact.**
+Three empty results in a row read as proof and were three wrong joins.
+
+**AGGREGATED, NEVER JOINED.** 1,444 of those sessions occupy more than one
+site and one occupies **sixteen**, so joining `reservation_court` onto the row
+set multiplies those sessions up to 16x and every enrolment figure with them.
+The `site` CTE aggregates per session and ships **`Site Count`** beside the
+name, the same reasoning as `location_count` on 17295 — "Gym A" alone is a
+confident half-truth for a session that also holds the annex. The page renders
+a *"2 sites"* chip rather than printing one room as though it were the answer.
+The reservation is deliberately **not** filtered on `canceled_at`: a cancelled
+session's reservation is how staff know which room just came free, which is
+the whole reason cancelled meetings stay on this report.
+
+### THE ROSTER LINK KEYS ON `section_id`, AND A NAME WOULD HAVE BEEN WRONG
+
+Dan asked *"don't we have the section or session UUID in there somewhere?"* —
+and he was right, card 17295 has emitted `section_id` all along and
+`programs.html` already maps and uses it. So the link needed no new plumbing,
+only the column on the new card.
+
+**Linking by section NAME would open the wrong roster for one date-row in
+seven.** Measured platform-wide: **60% of sections share their name with
+another section**, and **14.4% of section-dates** would resolve ambiguously.
+The link carries `section_id` plus the row's own single date, so it opens that
+meeting's roster and not the run's.
+
+- **No link where nobody is enrolled.** Absent, not disabled — the rental
+  schedule's Forms rule.
+- `roster-open` (📋) pings the activity feed per the standing rule, **debounced
+  PER SECTION** — an admin working down a morning's classes is telling us about
+  each class, not about one click — carrying the section and head count, both
+  clamped server-side.
+
+### THE ROSTER LINK CANNOT SCOPE A PER-SECTION ROW TO ITS OWN DATE (2026-09-08)
+
+Dan, on the preview: *"this section had a roster link, which gave me 'no
+results', but there are 6 people."* Reproduced and fixed — **my link, not the
+roster.**
+
+**Card 17296 dates a booking by `COALESCE(the session's own date, THE RUN'S
+FIRST SESSION)`.** A `type='section'` booking has no `session_id` — those
+people are enrolled in the *run*, not in a meeting — so every one of them is
+dated by the first session. Measured on the section Dan opened,
+`09.September Code: 9974` at Clarksville: `registration_mode = section`, **30
+sessions from Sep 1 to Sep 30, 6 section bookings and 0 session bookings.** My
+link asked for `start = end = Sep 10`, a date not one of them carries, so the
+roster correctly returned nothing.
+
+**A per-SESSION row keeps the single date** and is exactly right — its
+bookings really do belong to that meeting.
+
+**`section_name` NEVER REACHES METABASE.** `buildMetabaseParams` says so in a
+comment: roster section filtering is a **client-side substring match in the
+page**, and forwarding the parameter would make Metabase reject the query. So
+the *window* is the only thing that decides what the feed contains, and the
+name narrows it afterwards in the browser. That is why widening the window is
+safe here — it cannot pull another section onto the screen.
+
+**THE WINDOW IS FREE, and that is measured rather than assumed.** Same org,
+cold, through the preview: **one day 54s, one month 49s, thirteen months
+31s** — the widest was the *fastest*. The card's date test is a non-sargable
+`COALESCE(...)::date` over a joined column, so it does the same work whatever
+the window; that spread is replica load, the same tell as the apex numbers
+above.
+
+**Three years back was a bound rather than a guess, and it is now a FALLBACK
+only.** Over **45,695** per-section runs, p99 span is **133 days** and p99.9 is
+**361**, with **8** spanning more than two years (one artifact at 5,607 days) —
+so no fixed lookback is provably complete, which is why the exact fix was worth
+a card push.
+
+#### THE EXACT FIX SHIPPED — card 21649 emits `Section First Session` (2026-09-08)
+
+Dan: *"yes add that column to the card, i'll flip the tags."* `MIN(starts_at)`
+over the section's whole run, so a per-section row's roster link asks for ONE
+day again.
+
+**IT IS THE ONE COLUMN ON THAT CARD IN A DIFFERENT TIMEZONE, deliberately.**
+Card 17296 dates every booking by `org.config #>> '{general,primaryTimezone}'`;
+card 21649's own `cfg` CTE uses the **majority `location.timezone`**. Those are
+not interchangeable — measured, **they disagree for 22 of 168 orgs**, including
+live ones (pawnee `America/Chicago` vs `America/Los_Angeles`, niagara-falls
+`America/New_York` vs `America/Los_Angeles`, a three-hour gap). The column's
+consumer is 17296, so it is computed 17296's way; every other column keeps the
+card's own rule. **The practical cost of getting it wrong is small and real:
+over 25,339 sections the two rules land the first-session date on a different
+DAY for 6 of them** (niagara-falls, reno-sandbox).
+
+**And it corrected a false comment of mine in the card**, inherited from this
+file's Tyler-export section: *"organization.config holds no timezone key."* It
+does — `primaryTimezone` is populated on all 168 live orgs. A wrong statement in
+a card comment sends the next person looking in the wrong place.
+
+- **Reproduced from 17296 rather than approximated.** Its LATERAL filters on
+  `deleted_at IS NULL` **alone** — not `canceled_at`, and **not scoped by the
+  window**. Scope it by `win` and a run that began before the window reports its
+  first IN-WINDOW meeting, which is a different date and a link that finds
+  nobody. Verified: **0 rows disagree** with 17296's own LATERAL.
+- **ONE `GROUP BY`, not a per-section LATERAL** — the 17295 lesson, where the
+  LATERAL cost more than it saved and timed out at apex. It drives from the
+  already-windowed `sections` into `session_sectionid_index`.
+- **Cannot fan out** (one row per `section_id`, verified 14/14), and clarksville
+  still returns **45 rows / 45 distinct sessions** — the same figure as the
+  pre-push sign-off, which is the additive proof.
+- **PRESENCE-GATED ON THE PAGE.** Feeds cache four hours, so a pre-column
+  response and a post-column one are both live at once; the lookback survives as
+  that fallback and nothing else. A page that assumed the column would link to a
+  date of `undefined`.
+- **A single date per row is sound because NO SECTION MIXES BOOKING TYPES** —
+  measured, **0 of 23,880** sections carry both `type='section'` and
+  `type='session'` confirmed bookings.
+
+### THE SECTION-BASED FILTER EMPTIED THE TABLE FOR EVERY ORG (2026-09-08)
+
+Found while dry-running the column, from **a surprising zero**: a probe filtering
+`reg_mode = 'per-section'` returned *"0 of 0 per-section rows"* on a page full of
+them. Checked rather than reported — the rule this file already records — and the
+page was right while my probe was wrong, which then exposed a worse bug.
+
+**`registration_mode` holds `section` and `per-session`. There is no
+`per-section`.** Measured: **138,802 sessions `section`, 22,023 `per-session`.**
+`programs-schedule.html` built its grain buttons from a hardcoded
+`['all','per-section','per-session']`, so **the majority grain filtered on a
+string no row can ever match and emptied the table**, for every org, since the
+page shipped.
+
+**THE FIXTURE CARRIED THE SAME FICTION**, which is why eight render cases passed
+over it: `"Registration Mode": "per-section"`. The button matched the fixture and
+the fixture matched the button. *A test that supplies the value under test cannot
+say whether anything supplies it in production* — already recorded here for the
+Programs location filter, and reintroduced one page over.
+
+The options are built from the ROWS now, with `grainLabel()` as the single label
+definition read by both the row chip and the buttons — two copies is how a filter
+stops matching the word the reader can see (the `Past`/`Ran` lesson). The case
+keys on the row COUNT after the click: "a button rendered" and "a button that
+filters to nothing" look identical otherwise.
+
+**Sending only `end_date` would be exact and does NOT work**, which is worth
+recording because it is the tempting answer: the card's optional
+`[[ >= start_date ]]` block does drop out (verified — all six rows come back,
+17s), but `roster.html` seeds its own state with
+`p.get('start_date') || defaults.start`, so the PAGE fills the missing bound
+back in and re-narrows to its 14-day default. *An optional clause the API
+honours is not the same as a link the page honours.*
+
+**AND THE RENDER CASE PINNED THE BUG.** Every fixture row was `per-section`
+and the roster case asserted `start == end`, so it passed on the broken link
+and would have failed on the fix — the same shape as
+`report-settings.spec.js` requiring `disabled` on the gear. The fixture's
+two-meeting section is `per-session` now, and there is a second case for the
+per-section window.
+
+### THE HEADER LOGO WAS NEVER STYLED, only used
+
+Dan: *"the new programs report has a super-sized header/logo, should match the
+other reports."* `.report-header-logo` was on the `<img>` and had **no CSS rule
+anywhere in the file**, so the org mark rendered at its natural size.
+`facility.html` carries `height: 42px; max-width: 140px; object-fit: contain`
+— lifted verbatim, because the header is meant to match every other report.
+
+**No source assertion can see this**: the class is present either way. The
+render case reads the **computed** style rather than the rendered box, because
+this harness serves nothing off-origin so the logo never loads and its box is
+0 tall whether or not the rule exists.
+
+The roster column is **named** now too (Dan: *"And name that column: Roster"*)
+— a bare clipboard glyph in a header row is not a label.
+
+### THE INSTRUCTOR IS A PER-DATE FACT
+
+`session_facilitator` is populated on **48%** of sessions, so the card prefers
+the SESSION's own facilitator over the section's and ships **`Instructor
+Level`** saying which answered — a cover on one Wednesday is then visible
+instead of being overwritten by the section's regular.
+
+**A near-miss worth recording:** apex showed 1,653 instructors from session
+level and **0** from section level, and I nearly reported card 17295's
+instructor column as broken there. Checked first: the two levels track almost
+exactly (apex 1,826 vs 1,810, watertown 317/311, el-segundo 140/139) — the
+zero was an artifact of how I had scoped that one probe. *Check a surprising
+zero against a second measurement before reporting it.*
+
+### SCOPED BY CONSTRUCTION, unlike 17295 and 21286
+
+Every CTE joins **from** a `win` CTE that applies the date window first, so
+nothing computes the org's whole history and discards it — the shape that made
+17295 spend 14.0s on `item_tx` for ten times the rows it could contribute to.
+The bottom-level `[[ ]]` clauses live inside `win` rather than at the output,
+which is why they cannot drift apart from it.
+
+**DEFAULT WINDOW: today + 7 days, a week total** (Dan's call, to keep it off
+the slow end). `DEFAULT_WINDOW_DAYS` is already 7 and `FORWARD_REPORTS` decides
+the direction, so membership in that set is the entire server change. **The
+PAGE derives its own default from LOCAL date parts** rather than reusing the
+server's `toISOString().slice(0,10)`, because that is the UTC date — from 5pm
+Pacific "today" is already tomorrow and a forward-looking schedule would open
+having dropped this evening's classes. Same trap as the fasttrack dates.
+
+### VANILLA JS, NOT REACT+BABEL — a decision, not laziness
+
+Every other report page compiles JSX in the browser, which turns a `const` read
+before its declaration into `undefined` two lines later instead of a throw —
+the blank-page class this repo has shipped twice. There is no JSX here, so that
+class cannot happen. **The loading curve is still the shared one**:
+`window.loaderProgress` from `report-loader.js` is a plain function, so this
+bar and every React report's bar are the same arithmetic and the spec that
+pins the curve still covers it.
+
+### THE PUSH→FLIP DANCE, and what it cost this time
+
+All three tags came back **Text** on the API push, as this file predicts. Dan
+flipped them; verified 2026-09-08 that the card registers **THREE** parameters
+with both dates `date/single` — the shape the app actually sends — so there
+were no duplicates to re-save away. The pushed SQL was **diffed back against
+the mirror** before anything else, which is the guard that exists because card
+17300 silently lost its trailing `ORDER BY` to transcription.
+
+**Sign-off, cache-independently through the public endpoint, over the window the
+app actually sends (today → today+7):**
+
+| org | rows | time |
+|---|---|---|
+| apex (heaviest) | 801 | **93.0s** |
+| watertown (Eastern) | 38 | 28.1s |
+| clarksville | 54 | 1.2s |
+
+**APEX AT 93s EXCEEDS THE APP'S 60s FIRST-TRY BUDGET** and falls to the 120s
+retry, so apex leans on the 4-hour cache and is one busy minute from a slow load.
+That is pre-existing — the `Section First Session` column was measured at
+**+0.09s with an identical row count** — and it is the next thing worth looking
+at on this card.
+
+### THE SIGN-OFF ROWS SENT NO DATE WINDOW, AND THAT READ AS A CARD REGRESSION
+
+Card 21649 timed out at apex three times — 120s, 200s, 200s — and the card was
+fine. Both manifest rows carried no `days`/`start`/`end`, so `verify-report-live`
+sent **no date parameters**, the optional `[[ ]]` blocks dropped out, and each
+probe asked for the org's **entire history**.
+
+**That defeats the card's whole design premise**, since every CTE joins FROM
+`win` precisely so nothing is computed for a session nobody asked about. And the
+app never asks it: `programs-schedule` is in `FORWARD_REPORTS` and **not** in
+`NO_DATE_REPORTS`, so every real request carries today → today+7.
+
+| org | unwindowed (what the row sent) | windowed (what the app sends) |
+|---|---|---|
+| watertown | 3,269 rows in 36.8s | **27–38 rows in ~1s** |
+| apex | TIMEOUT past 200s, three times | **801 rows in 93.0s** |
+
+**SAME MISTAKE THIS FILE ALREADY RECORDS FOR CARD 17301 v7, in my own words** —
+*"the manifest's own norman row runs UNWINDOWED … the regression was predicted in
+my own notes and I added a sign-off row for exactly that shape without connecting
+the two."* Repeated three weeks later in the same file. **The labels made it
+worse:** I pasted WINDOWED numbers into rows that send no window, so they read as
+verified.
+
+**AND `days` COULD ONLY LOOK BACKWARD**, which would have left a smaller version
+of the same error. `relativeWindow` gives today−(n−1) → today, right for `gl` and
+`memberships` and wrong for a forward-looking schedule — it would have tested a
+week of sessions that already ran. **`daysAhead` is the other direction**, and a
+row must use whichever one its report type actually gets; declaring both now
+throws rather than silently preferring one. No other manifest row gains a window:
+an empty result is a FAILURE here and a genuinely quiet week is not a broken card
+(gl/littleton returns 14 rows over all time), so windowing everything would make
+the check cry wolf on small orgs.
+
+**THE COLUMN WAS EXONERATED BY A CONTROLLED A/B, not by argument.** Same session,
+back to back at apex, every joined CTE aggregated so Postgres could not eliminate
+an unused LEFT JOIN and gut the comparison: **104 rows without the `run` join,
+104 rows with it, +0.09s.** An earlier suspicion that `run` was being inlined as
+the inner side of a nested loop was **WRONG** and is recorded as wrong — the plan
+is a Merge Left Join computed once, over 532 index lookups.
+
+### THE ROSTER LOOKBACK WAS THREE YEARS, AND ONE QUIET MEASUREMENT PUT IT THERE
+
+Dan: *"the clickable class rosters are brutally slow"*, then, on the window in
+his own screenshot, *"bruh.....3 years?"*
+
+I measured the roster feed **once, on an idle replica** — one day 54s, one month
+49s, thirteen months 31s, the widest being the **fastest** — wrote down *"THE
+WINDOW IS FREE"*, and set a three-year lookback on it. The mechanism was real but
+half the story: the card's date test is a non-sargable `COALESCE(...)::date` over
+a joined column, so a wider window costs no extra **index** work — but it still
+**returns and ships every row in it**, and under load that is the entire cost. He
+hit 2m42s with the roster falling back to stale cache.
+
+**ONE QUIET MEASUREMENT IS NOT EVIDENCE ABOUT COST** — the same shape as *"one
+org's clean data is not evidence about what a column MEANS"*, already in this
+file.
+
+**400 days now**, the measured bound: over 45,695 per-section runs p99 is 133
+days and p99.9 is 361, so it still contains the run's first session for 99.9% of
+sections at roughly a fifth of the rows. It is also **transient** — it runs only
+for a feed cached before the column existed, at most one 4-hour TTL after a push.
+Verified end to end afterwards: Dan's own section asks for the single day
+2026-09-01 and the roster returns its **6 rows in 15.7s**.
+
+**The render case could not tell the fix from the bug**: it asserted
+`days > 365`, which passes on three years *and* on 400. It keys on the bound
+itself now.
+
+**The apex spread is replica load, not the card — the row count being
+identical across all three reads is what says so.** An earlier apex probe timed
+out at 60s and I did NOT report it as a finding, because a bare `pg_indexes`
+CATALOG query timed out in the same minutes, which is the documented tell that
+this replica is loaded.
+
+**Two manifest rows**, and the second is a regression case rather than a
+duplicate: apex is the heaviest, and **watertown is EASTERN**. Metabase renders
+in `America/Los_Angeles`, so a Pacific org structurally cannot catch a
+timezone regression here. Measured: watertown is `America/New_York` and the
+card's own conversion moves every row three hours — a 6:00pm class reads
+3:00pm without it, and an 8:00am class reads 5:00am, which **slips a day at the
+window boundary**. Same reasoning that pins smyrna on fasttrack.
+
+### Decisions on screen
+
+- **Capacity renders `22 / —`, never `22/0`.** NULL capacity is unlimited, not
+  zero — the `hasAbsent` rule.
+- **Cancelled meetings stay, struck through, with the site.**
+- **Unpublished sections are shown and MARKED**, with a toggle to drop them —
+  21% of sessions in a live window belong to one and they still hold the room.
+  Excluded is never hidden.
+- **A status pill row appears only with two or more live statuses.** One status
+  is not a filter, and a lone pill that can only empty the table is a dead end.
+- **`SHARED_UUIDS` is a hardcoded literal**, like every other entry, so the
+  report works on deploy with no Railway variable to remember. It was env-gated
+  with omit-when-unset only while the public link did not exist — an omitted key
+  404s the data route so the page shows the remedy, where a wired-but-erroring
+  card would draw an empty schedule saying *"nothing is running this week."*
+
+### The registry entry that is easy to miss
+
+**The admin dashboard's own `reportMeta` gates the ADDABLE-reports list** —
+`/api/admin/...` builds it from `reportMeta` minus non-addable/retired, so a
+report registered in `REPORT_TYPES` with no `reportMeta` entry can never be
+added to an org from the portal, silently. Three places need the description
+and they are still three: `REPORT_DIRECTORY`, the dashboard's `reportMeta`, and
+`REPORT_META` in `org.html`.
+
+**And the dashboard's copy lives inside the giant template literal**, so its
+`desc` is worded WITHOUT an apostrophe rather than escaped — one bad quote
+there discards a 201KB script and every button on the page silently stops
+working. `ci-check-admin-js.js` is the only check that sees it.
+
+### THE PAGE ITSELF SHIPPED AS A BINARY FILE — the NUL trap, in real code
+
+`NONE`, the *"no instructor / no site"* sentinel, was written as a **raw NUL
+byte** rather than `\u0000`, so git classified `public/programs-schedule.html`
+as **binary** and `grep` refused to search it. A file that cannot be read in a
+diff cannot be reviewed. **Already recorded in this file for `LOC_NONE` in a
+spec, and I reintroduced it in the report itself** — the write-up did not stop
+the second instance because it named the spec rather than the property.
+
+Two follow-ons cost real time: **`perl -0pi` splits records ON NUL**, so a
+substitution targeting one silently never matches, and
+`grep -cP '[\x00-...]'` returns **0** for NUL. Read and write the bytes in
+Python.
+
+### Guards
+
+**The report shipped with NO render coverage at all** — the state the waitlist
+report was in while its central number stayed wrong for months. Eight
+`ci-check-render.js` cases now, over a fixture where **every row is a different
+state**, because six rows of markup look identical under most regressions worth
+catching: a two-site session (the aggregated-not-joined case), the same section
+on a second date, a session with no site and NULL capacity, a per-session
+facilitator standing in for the section's, a cancelled empty session, and an
+unpublished section that still holds the room.
+
+Every case keys on a computed value or an absence: the row COUNT (so a card
+that joined `reservation_court` instead of aggregating it moves it), the
+two-site chip, `9 / —` present **and** `9/0` absent, the cancelled row present
+while its roster icon is absent, and the unpublished toggle moving the count
+**6 → 5** — a case keyed on the checkbox existing passes on a toggle wired to
+nothing. Two hooks (`data-ps-rows`, `data-ps-window`) were added to the page
+for it.
+
+**The roster case reads BOTH hrefs of the section that meets twice** and
+requires `section_id=sec-tot`, `start == end`, and the two dates to DIFFER.
+That is the assertion that catches a link keyed on the section NAME (which
+would open the wrong roster for one date-row in seven) and one carrying the
+run's dates instead of the meeting's.
+
+**`tz` IS A NEW PER-CASE HARNESS FIELD** (`page.emulateTimezone`), and **the
+zone alone is not enough**. This sandbox and GitHub Actions both run UTC, where
+a date built from `toISOString().slice(0,10)` and one from local parts are
+identical — the decorative-timezone-pin trap already recorded for
+`fasttrack-dates.spec.js`. But a zone behind UTC only separates the two
+derivations between 5pm and midnight local, so the case would still have been
+decorative for seventeen hours a day. **So the clock is pinned as well:**
+`2026-09-09T05:00Z` is `2026-09-08 22:00` Pacific, so the UTC date is Sep 9 and
+the local date is Sep 8, always. The label must read `September 8`, must NOT
+read `September 9`, and must not read `Invalid Date NaN`. (Asserting a short
+`Sep 8` reports "other" on a perfectly good label — `fmtRangeLabel` writes the
+month in full.)
+
+**The beacon is spied on `fetch`**, not read from resource timing — `keepalive`
+requests do not reliably appear there — and it asserts the event NAME and the
+section, because a JSON body instead of `?event=` 400s silently and has bitten
+this repo four times.
+
+**BUT THE RENDER CASE CANNOT PROVE THE SERVER ACCEPTS IT**, and says so: every
+`/api/` request the browser makes is answered from `STUBS`, so the page never
+reaches the real log route. That half was proven by booting the real server and
+POSTing the real beacon — **HTTP 200 `{ok:true}`, and the row lands in
+`events.jsonl` carrying `"section":"Tot Lessons AM","enrolled":22`** — plus the
+inverse, that the old **JSON-body-with-no-`?event=`** shape still answers
+**400**, which is exactly what was silently shipping on four surfaces. Boot the
+server with `SKIP_PREWARM=1` and a huge `PREWARM_STARTUP_SKIP_MS` for this, or
+the check fans ~28 orgs out against production Metabase — the
+run-the-sweep-alone rule applied to one's own verification.
+
+**A NEW STUB MUST GO ABOVE THE GENERIC `/api/data` ONE, not merely above the
+catch-all `/api/`.** `STUBS` is searched with `.find`, and
+`/\/api\/data/` matches `/:org/programs-schedule/api/data` too — so it
+answered first and the page rendered six rows of *another report's shape*.
+**The diagnostic signature is worth memorising: the row-COUNT case PASSED
+while every case about a VALUE failed** — six rows arrived, so `data-ps-rows`
+read 6, but every capacity read `0 / —`, every instructor was absent and the
+location said "Topaz Lake". Same fall-through that once left the Facilities
+hub's own feed on `rows: []` with three lane cases reporting green.
+
+**And the mutation RUNNER was wrong twice before any mutation was.** Both are
+the same class as the render check that printed `CASES.length` on a filtered
+run matching nothing, and both would have reported a green suite:
+
+- Its verdict grepped for `"uncaught error"` — a **substring of the harness's
+  own SUCCESS line**, *"N page(s) render with no uncaught errors"* — so every
+  surviving mutation read as caught. *A runner that cannot say "survived" has
+  not tested anything.*
+- The replacement counted printed ticks, and **"no ticks" is not the same as
+  "the filter matched nothing"**: a single case that FAILS prints no tick
+  either, so a genuinely caught mutation was reported VACUOUS. It reads the
+  summary line now, tells the three states apart, and **requires the case that
+  failed to be the one the mutation names** — otherwise a mutation that broke
+  something else entirely reads as caught.
+
+**`ci-check-render.js` itself had the bug on its FAILURE branch**, which is why
+that was believable: the success line was fixed to report `running.length` and
+the failure line still said `CASES.length`, so a filtered run printed
+**"1 of 281 page(s) did not render"** — which reads as one flake in a full
+sweep rather than as the only case that ran having failed. Fixed.
+
+**And the case filter must be plain ASCII.** `"programs-schedule ·"` reached
+the harness as `"programs-schedule ??"`, the middot mangled in transit, so the
+run matched nothing.
+
+**Mutation-tested twelve ways, all caught, each naming its own case:** the
+roster link keyed on the section NAME, the roster link carrying the run's dates
+instead of this meeting's, NULL capacity rendered as 0, the multi-site chip
+dropped, a roster icon offered where nobody is enrolled, the unpublished toggle
+made inert, the window default built from the UTC date, the beacon never
+firing, and — for the first-session column — the column ignored, the presence
+gate dropped (a pre-column feed linking to `undefined`), the column mapped but
+never read (the mapped-and-rendered-nowhere pattern, **fifth instance**), and
+the grain buttons hardcoded again. A thirteenth was proven by accident — the
+stub moved back below the generic `/api/data` one, which is how the first run
+failed 7 of 8.
+
+**Twelve cases now.** The three added with the column are the per-section link
+asking for the run's first session, a `prefirst` feed falling back to the
+lookback, and the section-based filter keeping its rows. **The per-section case
+keys on WHICH day, not on `start == end`** — equality alone passes on the
+ORIGINAL bug, where both ends were the row's own date — so `data-ps-date` was
+added to the row as the hook that lets it compare the two.
+
+Note `scripts/ci-check-html.js` cannot run in this sandbox
+(`@babel/standalone` is not installed locally); it runs in CI, and this page
+has no JSX for it to compile anyway. The page's single inline block was
+parse-checked directly instead.
+
+## PINNED: feature-adoption sparklines on the ORG DASHBOARD (Dan, 2026-09-08)
+
+*"pin a quick item for the org-dashboard feature adoption, the sparklines
+showing trends on feature adoption and use."*
+
+**It belongs in rec-dashboard, not here** — same line as the Coffee Chart:
+a dashboard is the place for a live trend, a report answers a question about
+a window somebody chose. Pinned in this file because the DATA is here.
+
+### The shape already exists
+
+`refreshOrgPulse()` in rec-dashboard already draws a sparkline per card (the
+Bookings one) off a six-month feed, with a delta and a pace figure. Adoption
+cards are that component with a different series, which is most of why this is
+"quick".
+
+### WHICH ADOPTION — the question to settle before building
+
+*"Feature adoption and use"* reads two ways and they have nothing in common:
+
+| reading | source | state |
+|---|---|---|
+| **our reports** — which of the 23 report types an org actually opens | this repo's event log | **ready**: 96,779 events, ~600/day, and `/api/admin/report-activity` already aggregates it per org/report |
+| **Rec product features** — waitlists, autopay, fast track, instant booking | the rec.us database | a different build; every figure needs its own query |
+
+The first is a week's work and is the one the pulse can draw today. The second
+is the more interesting question and is not a sparkline job.
+
+### Four traps, all already recorded in this file for other surfaces
+
+- **PREVIEW TRAFFIC IS IN THE LOG.** The 2026-08-29 fix gated Slack *posting*
+  to production; it did not stop preview environments **writing** `view` and
+  export rows. So any adoption trend crossing that date is contaminated by
+  whatever was being tested that day, and a rising line may be us. Establish
+  where the contamination starts before drawing a 12-month series.
+- **`NON_USAGE_EVENTS` is the denylist that keeps this honest.** `report-down`
+  is logged against the real org/report, so counting it as usage lets a broken
+  report look adopted — the exact loop `getReportActivity()` was built to avoid.
+- **An empty window is not zero adoption.** A fresh volume, a rotated log or a
+  short history must render *"since <date>"* rather than a confident flat line
+  at zero — the `covers` / `logStartsAt` treatment the campmap activity strip
+  already uses, and `failsafe: true` on the activity route.
+- **No trend under a floor.** Precedent in this repo: trend arrows refuse to
+  draw under 14 elapsed days, `RATE_MIN_VIEWS = 20`, `FEEDBACK_MIN_RATINGS = 5`.
+  A sparkline over three data points is a picture of noise.
+
+### And say which events the line counts
+
+`view` alone would understate badly — the six Program Summary bands have **zero**
+`view` events by design and are fetched by `programs.html` for ~15 orgs apiece.
+Any adoption figure has to count every usage event, exactly as
+`getReportActivity()` does, or it reports the platform's most-used surfaces as
+unused.
+
 ## Card 17301 v7 — PUSHED AND IT IS A REGRESSION (2026-09-04)
 
 **READ THIS BEFORE ANYTHING BELOW.** v7 is live on card 17301 and it TIMES OUT

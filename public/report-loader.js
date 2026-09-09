@@ -148,6 +148,14 @@
 
   window.loaderProgress = loaderProgress;
   window.loaderEstimateNote = estimateNote;
+  window.loaderFmtSecs = fmtSecs;
+  // EXPORTED BECAUSE A SECOND READER GOT THE SHAPE WRONG. programs-schedule.html
+  // is vanilla JS and draws its own bar, and it read ORG_CONFIG.loadEstimate by
+  // hand and passed the whole {ms,basis} OBJECT to estimateNote — which is
+  // truthy, so the no-history guard never fired and fmtSecs(object) rendered the
+  // literal "usually about NaNm NaNs" on screen. Every caller reads the estimate
+  // through here now, so the object/field mismatch cannot recur.
+  window.loaderReadEstimate = readEstimate;
 
   window.ReportLoader = function ReportLoader(props) {
     props = props || {};

@@ -632,7 +632,7 @@ function glOptionKey(r) {
 function getParams() {
   const p = new URLSearchParams(window.location.search);
   return { start_date: p.get('start_date'), end_date: p.get('end_date'), _print: p.get('_print'), tyler: p.get('tyler'),
-           glq: p.get('glq'), view: p.get('view') };
+           glq: p.get('glq'), view: p.get('view'), desks: p.get('desks'), refunds: p.get('refunds') };
 }
 
 function toISO(d) {
@@ -1280,7 +1280,8 @@ function defaultSavedRange() {
 function parseViewParams(params) {
   const p = new URLSearchParams(params || '');
   const csv = k => { const v = p.get(k); return v ? v.split(',').map(x => x.trim()).filter(Boolean) : null; };
-  return { desks: csv('desks'), methods: csv('methods'), glCodes: csv('gl_codes'), glq: p.get('glq') || '', tyler: p.get('tyler') === '1' };
+  return { desks: csv('desks'), methods: csv('methods'), glCodes: csv('gl_codes'), glq: p.get('glq') || '',
+           tyler: p.get('tyler') === '1', refunds: p.get('refunds') === '1' };
 }
 
 function viewFilterSummary(v, methodLabels) {
@@ -1288,8 +1289,10 @@ function viewFilterSummary(v, methodLabels) {
   const bits = [];
   if (f.desks)   bits.push(f.desks.length === 1 ? f.desks[0] : f.desks.length + ' desks');
   if (f.methods) bits.push(f.methods.map(k => (methodLabels && methodLabels[k]) || k).join(', '));
+  if (f.glCodes) bits.push(f.glCodes.length === 1 ? 'GL ' + f.glCodes[0] : f.glCodes.length + ' GL codes');
   if (f.glq)     bits.push('"' + f.glq + '"');
   if (f.tyler)   bits.push('turnover');
+  if (f.refunds) bits.push('refund detail');
   return bits.length ? bits.join(' · ') : 'no filters';
 }
 
@@ -1347,6 +1350,7 @@ function App() {
       if (selectedDesks && allDesks.length > 1 && selectedDesks.size < allDesks.length) p.set('desks', [...selectedDesks].join(','));
       if (selectedGlCodes && allGlCodes.length > 1 && selectedGlCodes.size < allGlCodes.length) p.set('gl_codes', [...selectedGlCodes].join(','));
       if (selectedMethods && availableMethods.length > 1 && selectedMethods.size < availableMethods.length) p.set('methods', [...selectedMethods].join(','));
+      if (showRefunds) p.set('refunds', '1');
       return p.toString();
     }
 
@@ -1506,26 +1510,16 @@ function App() {
     );
   }
 
-  // widget copies a URL that reproduces the on-screen view (mirrors the PDF).
-  useEffect(() => {
-    window.recShareLink = () => {
-      const qs = new URLSearchParams();
-      qs.set('start_date', loadedStart || startDate);
-      qs.set('end_date',   loadedEnd   || endDate);
-      if (hasDesk && selectedDesks && selectedDesks.size < allDesks.length) qs.set('desks', [...selectedDesks].join(','));
-      // Without this the PDF silently contains every GL code the reader filtered out.
-      if (hasGlCodes && selectedGlCodes && selectedGlCodes.size < allGlCodes.length) qs.set('gl_codes', [...selectedGlCodes].join(','));
-      if (availableMethods.length > 1 && selectedMethods && selectedMethods.size < availableMethods.length) qs.set('methods', [...selectedMethods].join(','));
-      if (isTylerActive) qs.set('tyler', '1');
-      if (URL_TOKEN) qs.set('token', URL_TOKEN);
-      return `${window.location.pathname}?${qs.toString()}`;
-    };
-    return () => { try { delete window.recShareLink; } catch (e) { window.recShareLink = undefined; } };
-  }, [loadedStart, loadedEnd, startDate, endDate, isTylerActive, hasDesk, selectedDesks, allDesks, selectedMethods, availableMethods]);
-
-  const [showRefunds,   setShowRefunds]   = useState(
-    () => localStorage.getItem(LS_REFUND) === 'true'
-  );
+  // Refund Detail is a MODE, not a column preference — see SAVED_VIEW_PARAMS in
+  // server.js. Precedence: the URL (PDF/print, share link) beats an applied
+  // view, which beats this browser's own preference. Puppeteer starts with an
+  // empty localStorage, so without the URL leg the PDF could only ever render
+  // the plain table however the screen looked.
+  const [showRefunds,   setShowRefunds]   = useState(() => {
+    if (params.refunds === '1') return true;
+    if (params.refunds === '0') return false;
+    return localStorage.getItem(LS_REFUND) === 'true';
+  });
   const [showLocations, setShowLocations] = useState(
     () => localStorage.getItem(LS_LOCS) !== 'false'  // default ON
   );
@@ -1569,7 +1563,15 @@ function App() {
   const [fbComment, setFbComment] = useState('');
 
   useEffect(() => { if (params._print === '1') document.body.classList.add('print-mode'); }, []);
-  useEffect(() => { localStorage.setItem(LS_REFUND,   showRefunds);   }, [showRefunds]);
+  // Only while NO view is applied. A view sets this mode, and persisting that
+  // would quietly rewrite the reader's own default the moment they opened
+  // somebody else's saved view — which is the objection the display-state rule
+  // was written about. Clearing back to Default view restores their preference
+  // on the next load.
+  useEffect(() => {
+    if (activeViewId) return;
+    localStorage.setItem(LS_REFUND, showRefunds);
+  }, [showRefunds, activeViewId]);
   useEffect(() => { localStorage.setItem(LS_LOCS,     showLocations); }, [showLocations]);
 
   // ── Fetch ───────────────────────────────────────────────────────────
@@ -1799,22 +1801,52 @@ function App() {
     if (hasDesk && selectedDesks && selectedDesks.size < allDesks.length) {
       p.set('desks', [...selectedDesks].join(','));
     }
+    if (hasGlCodes && selectedGlCodes && selectedGlCodes.size < allGlCodes.length) {
+      p.set('gl_codes', [...selectedGlCodes].join(','));
+    }
     if (availableMethods.length > 1 && selectedMethods && selectedMethods.size < availableMethods.length) {
       p.set('methods', [...selectedMethods].join(','));
     }
     if (glFilter.trim()) p.set('glq', glFilter.trim());
     if (isTylerActive)   p.set('tyler', '1');
+    if (showRefunds)     p.set('refunds', '1');
     return p.toString();
-  }, [hasDesk, selectedDesks, allDesks, availableMethods, selectedMethods, glFilter, isTylerActive]);
+  }, [hasDesk, selectedDesks, allDesks, hasGlCodes, selectedGlCodes, allGlCodes,
+      availableMethods, selectedMethods, glFilter, isTylerActive, showRefunds]);
+
+  // widget copies a URL that reproduces the on-screen view (mirrors the PDF).
+  // MUST sit below everything it reads. It used to sit above most of it, and
+  // Babel compiles `const` to `var` — so those deps read `undefined` on every
+  // render, the effect only ever ran on mount, and the copied link was one
+  // change behind whatever was on screen.
+  useEffect(() => {
+    window.recShareLink = () => {
+      const qs = new URLSearchParams();
+      qs.set('start_date', loadedStart || startDate);
+      qs.set('end_date',   loadedEnd   || endDate);
+      if (hasDesk && selectedDesks && selectedDesks.size < allDesks.length) qs.set('desks', [...selectedDesks].join(','));
+      // Without this the PDF silently contains every GL code the reader filtered out.
+      if (hasGlCodes && selectedGlCodes && selectedGlCodes.size < allGlCodes.length) qs.set('gl_codes', [...selectedGlCodes].join(','));
+      if (availableMethods.length > 1 && selectedMethods && selectedMethods.size < availableMethods.length) qs.set('methods', [...selectedMethods].join(','));
+      if (isTylerActive) qs.set('tyler', '1');
+      if (showRefunds && !isTylerActive) qs.set('refunds', '1');
+      if (URL_TOKEN) qs.set('token', URL_TOKEN);
+      return `${window.location.pathname}?${qs.toString()}`;
+    };
+    return () => { try { delete window.recShareLink; } catch (e) { window.recShareLink = undefined; } };
+  }, [loadedStart, loadedEnd, startDate, endDate, isTylerActive, showRefunds,
+      hasDesk, selectedDesks, allDesks, hasGlCodes, selectedGlCodes, allGlCodes,
+      selectedMethods, availableMethods]);
 
   const activeView = useMemo(
     () => views.find(v => v.id === activeViewId) || null,
     [views, activeViewId]
   );
 
-  // "Edited" = the filters (or, for a view that carries dates, the range) have
-  // moved off what the view stores. Display toggles are deliberately excluded —
-  // collapsing a column must not light up Save.
+  // "Edited" = the filters, the Refund Detail mode, or (for a view that carries
+  // dates) the range have moved off what the view stores. Genuine display
+  // toggles are still excluded — collapsing the Locations column must not light
+  // up Save. Refund Detail is not one of those; see currentFilterParams.
   const viewDirty = useMemo(() => {
     if (!activeView) return false;
     if (activeView.params !== currentFilterParams) return true;
@@ -1870,9 +1902,13 @@ function App() {
   // restore on page load — that is not a user action worth logging.
   function applyView(v, announce) {
     const f = parseViewParams(v.params);
-    setIntent(prev => ({ seq: prev.seq + 1, desks: f.desks, methods: f.methods }));
+    setIntent(prev => ({ seq: prev.seq + 1, desks: f.desks, methods: f.methods, glCodes: f.glCodes }));
     setGlFilter(f.glq || '');
     if (tylerEnabled) setTylerView(f.tyler);
+    // Unconditional, exactly like tyler above: a view that only turned the mode
+    // ON could never turn it back off, so switching from the refund view to a
+    // plain one would leave the refund columns on screen.
+    setShowRefunds(!!f.refunds);
     setWarnDismissed(false);
     setActiveViewId(v.id);
     try { localStorage.setItem(LS_LAST_VIEW + orgSlug, v.id); } catch (_) {}
@@ -1891,7 +1927,7 @@ function App() {
     // Keep the URL honest: it reproduces the filters AND names the view.
     try {
       const qs = new URLSearchParams(window.location.search);
-      ['desks', 'methods', 'glq', 'tyler'].forEach(k => qs.delete(k));
+      ['desks', 'gl_codes', 'methods', 'glq', 'tyler', 'refunds'].forEach(k => qs.delete(k));
       new URLSearchParams(v.params).forEach((val, k) => qs.set(k, val));
       qs.set('view', v.id);
       if (range) { qs.set('start_date', range.start); qs.set('end_date', range.end); }
@@ -1907,15 +1943,16 @@ function App() {
   // `seq` with every dimension null is what makes the effects above reset each
   // one back to everything.
   function clearView() {
-    setIntent(prev => ({ seq: prev.seq + 1, desks: null, methods: null }));
+    setIntent(prev => ({ seq: prev.seq + 1, desks: null, methods: null, glCodes: null }));
     setGlFilter('');
     if (tylerEnabled) setTylerView(false);
+    setShowRefunds(false);
     setActiveViewId(null);
     setWarnDismissed(false);
     try { localStorage.removeItem(LS_LAST_VIEW + orgSlug); } catch (_) {}
     try {
       const qs = new URLSearchParams(window.location.search);
-      ['desks', 'methods', 'glq', 'tyler', 'view'].forEach(k => qs.delete(k));
+      ['desks', 'gl_codes', 'methods', 'glq', 'tyler', 'refunds', 'view'].forEach(k => qs.delete(k));
       const q = qs.toString();
       window.history.replaceState(null, '', window.location.pathname + (q ? '?' + q : ''));
     } catch (_) {}
@@ -2001,7 +2038,7 @@ function App() {
       const named = urlQs.get('view');
       const hit = named && j.views.find(v => v.id === named);
       if (hit) { applyView(hit, false); return; }
-      const hasUrlFilters = ['desks', 'methods', 'glq'].some(k => urlQs.get(k));
+      const hasUrlFilters = ['desks', 'gl_codes', 'methods', 'glq', 'refunds'].some(k => urlQs.get(k));
       if (hasUrlFilters) return;
       let lastId = null;
       try { lastId = localStorage.getItem(LS_LAST_VIEW + orgSlug); } catch (_) {}
@@ -2049,7 +2086,9 @@ function App() {
   const displayRows = useMemo(() => {
     if (!rows) return [];
     var base;
-    // Belt-and-suspenders: in print mode, apply desk filter from URL directly
+    // Belt-and-suspenders: in print mode, apply the desk filter from the URL on
+    // the FIRST render. #report-ready is in the DOM as soon as rows are, so
+    // waiting for the intent effect to settle is a race Puppeteer can lose.
     if (params._print === '1' && params.desks) {
       const allowed = new Set(params.desks.split(',').map(d => d.trim()));
       const filtered = rows.filter(r => allowed.has(r.deskLocation || NO_DESK_LABEL));
@@ -2333,8 +2372,15 @@ function App() {
     }
     // Respect the GL code / account text filter so the PDF matches the view.
     if (glFilter.trim()) qs.set('glq', glFilter.trim());
+    // Respect the GL code checkboxes, or the PDF carries codes the reader excluded.
+    if (hasGlCodes && selectedGlCodes && selectedGlCodes.size < allGlCodes.length) {
+      qs.set('gl_codes', [...selectedGlCodes].join(','));
+    }
     // Tyler mode → portrait Munis cover sheets instead of the landscape rollup
     if (isTylerActive) qs.set('tyler', '1');
+    // Refund Detail. The print page has no React state and an empty
+    // localStorage, so this param is the only way the mode reaches the PDF.
+    if (showRefunds && !isTylerActive) qs.set('refunds', '1');
     const pdfUrl = parts.length >= 2
       ? `/${parts[0]}/${parts[1]}/api/pdf?${qs}`
       : '/api/pdf';
@@ -2614,6 +2660,7 @@ function App() {
         {!isTylerActive && (
           <button
             className={showRefunds ? 'active' : ''}
+            data-gl-refund-btn="1"
             style={{fontSize:11, padding:'4px 10px'}}
             onClick={() => setShowRefunds(v => !v)}
           >
@@ -2813,7 +2860,11 @@ function App() {
               {!showRefunds && hasOtherPmts   && <th className="group" colSpan={1}>Other</th>}
               <th className="group" colSpan={1}>Total Pmts</th>
               <th className="group" colSpan={1}></th>
-              <th className={`group${showRefunds ? ' refund-group' : ''}`} colSpan={refundCols}>{showRefunds ? 'Refunds' : 'Total Refunds'}</th>
+              {/* data-gl-refunds carries the COMPUTED column count, so a render
+                  case can tell the split view from the single Total Refunds
+                  column. "A table rendered" passes on either. */}
+              <th className={`group${showRefunds ? ' refund-group' : ''}`} colSpan={refundCols}
+                  data-gl-refunds={refundCols} data-gl-refund-mode={showRefunds ? '1' : '0'}>{showRefunds ? 'Refunds' : 'Total Refunds'}</th>
               <th className="group" colSpan={1}></th>
               <th className="group" colSpan={1}>Net</th>
             </tr>

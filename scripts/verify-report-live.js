@@ -92,18 +92,39 @@ function buildParams(registered, { org, start, end }) {
    everything would make this check cry wolf on small orgs, which is how a
    sign-off tool stops being read. Opt-in per row keeps that decision explicit.
 
-   The window ENDS TODAY and is computed at run time, never stored: a hardcoded
-   date in a JSON manifest is a check that silently drifts out of the data. */
+   The window is computed at run time, never stored: a hardcoded date in a JSON
+   manifest is a check that silently drifts out of the data.
+
+   AND IT HAS TO RUN THE RIGHT WAY ROUND. `days` looks BACKWARD (today-(n-1) ->
+   today), which is right for gl and memberships and WRONG for a forward-looking
+   report. server.js splits these with FORWARD_REPORTS — facility, calendar,
+   roster, historic, programs-schedule all get today -> today + N — so probing
+   one of those backward tests a window the app never sends. `daysAhead` is that
+   direction, and a row must use whichever one its report type actually gets.
+   Getting this wrong is not cosmetic: a forward report's backward window is
+   mostly sessions that already ran. */
 function relativeWindow(days) {
   const end = new Date();
   const start = new Date(end.getTime() - (Number(days) - 1) * 86400000);
   const ymd = d => d.toISOString().slice(0, 10);
   return { start: ymd(start), end: ymd(end) };
 }
+function forwardWindow(days) {
+  const start = new Date();
+  const end = new Date(start.getTime() + Number(days) * 86400000);
+  const ymd = d => d.toISOString().slice(0, 10);
+  return { start: ymd(start), end: ymd(end) };
+}
 
-async function checkCard({ label, card, org, start, end, days, timeout = 60, minRows = 1 }) {
-  // An explicit --start/--end always wins; `days` only fills a gap.
-  if (days && !start && !end) ({ start, end } = relativeWindow(days));
+async function checkCard({ label, card, org, start, end, days, daysAhead, timeout = 60, minRows = 1 }) {
+  // An explicit --start/--end always wins; the relative forms only fill a gap.
+  // A row declaring BOTH directions is a contradiction, not a preference — it
+  // would silently pick one and report the other's intent.
+  if (days && daysAhead) throw new Error(`${label || card}: set days OR daysAhead, not both`);
+  if (!start && !end) {
+    if (daysAhead) ({ start, end } = forwardWindow(daysAhead));
+    else if (days) ({ start, end } = relativeWindow(days));
+  }
   let registered;
   try {
     registered = await fetchCardParams(card, timeout);
@@ -152,12 +173,13 @@ async function main() {
     checks = [{
       label: args.label || `${args.card.slice(0, 8)}/${args.org.slice(0, 8)}`,
       card: args.card, org: args.org, start: args.start, end: args.end,
+      daysAhead: args["days-ahead"],
       days: args.days ? Number(args.days) : undefined,
       timeout: args.timeout ? Number(args.timeout) : undefined,
       minRows: args["min-rows"] ? Number(args["min-rows"]) : undefined,
     }];
   } else {
-    console.error("Usage: --card <uuid> --org <orgId> [--start --end --days --timeout --min-rows]  |  --manifest <file>");
+    console.error("Usage: --card <uuid> --org <orgId> [--start --end --days --days-ahead --timeout --min-rows]  |  --manifest <file>");
     process.exit(2);
   }
 

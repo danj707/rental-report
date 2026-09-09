@@ -155,6 +155,33 @@ const QUERY_URL = `${MB}/api/public/card/${UUID}/query/json?parameters=${PARAMS}
     ok(/%22id%22%3A%2222222222/.test(calls.queries[1] || ""), "...and the retry carries the CURRENT id");
   }
 
+  // 2b — A SLUG THE CARD DOES NOT REGISTER IS DROPPED, not sent unstamped.
+  // Measured 2026-09-09 against the real card 17296: three stamped parameters
+  // answer 200, and adding a fourth UNSTAMPED one returns HTTP 400 — Metabase
+  // rejects the whole query rather than ignoring the extra. So passing an
+  // unknown slug through is a guaranteed outage of that report, and it turns
+  // every card push into an ordering trap: server.js starts sending a new tag
+  // and the report fails until someone saves the card with it.
+  {
+    const calls = { defs: 0, queries: [] };
+    const H = meta(async (url) => {
+      if (url.includes("/query/json")) { calls.queries.push(url); return res(200, "[]"); }
+      calls.defs++;
+      return res(200, JSON.stringify({ id: 1, parameters: [
+        { id: NEW_ID, slug: "org_id", type: "string/=", target: ["variable", ["template-tag", "org_id"]] }] }));
+    }, MB);
+    const withUnknown = `${MB}/api/public/card/${UUID}/query/json?parameters=` + encodeURIComponent(JSON.stringify([
+      { type: "string/=", target: ["variable", ["template-tag", "org_id"]], value: "o" },
+      { type: "string/=", target: ["variable", ["template-tag", "section_id"]], value: "s" }]));
+    const r = await H.wrapped(withUnknown);
+    eq(r.status, 200, "a parameter the card does not register must not fail the request");
+    const sent = decodeURIComponent((calls.queries[0] || "").split("parameters=")[1] || "");
+    ok(sent.indexOf("section_id") < 0,
+       "AN UNREGISTERED SLUG IS DROPPED, not sent unstamped — an unstamped parameter is a guaranteed 400 for the whole query");
+    ok(sent.indexOf("org_id") >= 0 && sent.indexOf(NEW_ID) >= 0,
+       "...while the registered parameter is still stamped and sent, so dropping one does not cost the others");
+  }
+
   // 3 — a 400 that is not about parameters must cost ONE query. A heavy card
   // that timed out must never be asked twice; that is how a slow report becomes
   // a down one.
