@@ -1,5 +1,145 @@
 # Project notes for Claude
 
+## THE CLASS ROSTER WAS SCOPED BY THE DATE WINDOW ALONE (2026-09-09)
+
+Dan, on Hatha Yoga after the roster got fast: *"well it kinda does. but its much
+faster now"* — over a roster reading **82 of 82** for a class that has **24**
+people in it. Speed was the symptom; the number was the bug.
+
+`section_id` rode in the URL and reached `buildMetabaseParams`, which dropped it
+for every report except `section-detail`. The page then matched the section by
+NAME, as a **substring, in the browser**. A name is not an identity.
+
+**MEASURED AT CLARKSVILLE — sections that share a name:**
+
+| name | sections | bookings |
+|---|---|---|
+| Water Aerobics Drop-In | **16** | 118 |
+| Tico's Tsunami Swimmers | 9 | 55 |
+| **Hatha Yoga** | **4** | **82** |
+| Tico's Tidal Tots | 4 | 36 |
+| ...eight more | 2 each | |
+
+**AND IT DOUBLE-COUNTED PEOPLE, not just runs.** Over the window Dan's link
+used, `section_name='Hatha Yoga'` returns **82 rows for 39 distinct people** —
+somebody enrolled in two runs appears twice. `section_id` returns **24 rows for
+24 people**. So a class of 24 was rendering as 82 lines covering 39 humans.
+
+### THE COMMENT SAID IT WAS IMPOSSIBLE, AND THE COMMENT WAS WRONG
+
+`buildMetabaseParams` carried: *"roster section filtering is client-side...
+Passing section_name here would make Metabase reject the query (unknown
+parameter)."* **Card 17296 has had a `{{section_name}}` tag with its own `[[ ]]`
+block all along.** The claim was simply false, and it is why nobody looked
+underneath it — the same failure as the *"organization.config holds no timezone
+key"* note corrected on card 21649 the day before. **A wrong statement in a
+comment is worse than no comment: it closes the question.** The spec now fails
+if that sentence comes back.
+
+### AN UNSTAMPED PARAMETER IS FATAL — measured, and it removed the ordering trap
+
+Found while sequencing this change. Against the real card through the public
+endpoint:
+
+| | |
+|---|---|
+| three stamped parameters | **200**, 1 row, 0.97s |
+| the same three plus ONE unstamped `section_id` | **HTTP 400** |
+
+Metabase rejects the **whole query** rather than ignoring the extra. The wrapper
+was passing an unknown slug through unstamped, so any card push became an
+**ordering trap**: server.js starts sending a new tag and every request for that
+report fails until a human saves the card with it — a window spanning CI, a
+deploy, and whoever has Metabase open.
+
+`enrichMetabaseCardUrl` **drops** a slug the card does not register now. The
+parameter has no effect until the card advertises the tag, which is also right if
+a card is rolled back, and it means the server half was safe to deploy before,
+after, or without the push. **It is strictly better for the STALE-ID case this
+wrapper exists for, too:** dropping yields `missing-required-parameter`, which
+`_MB_STALE_ID_RE` catches and retries; passing through yielded a generic error
+nothing recovered from. There was no case where sending it helped.
+
+### `section_name` IS DELIBERATELY STILL NOT FORWARDED
+
+Both filters stay on the card and answer different questions. `section_id` is a
+link to ONE section and is exact. `section_name` is the report's **free-text
+search box**, where a partial name is the point — forwarding it would put a
+Metabase query behind every keystroke and give every search term its own feed
+cache entry. The client-side name match also stays because it is what a
+**pre-push cached feed** still needs: feeds cache four hours, so a tag-less
+response and a scoped one are both live at once.
+
+### The push, and what was proven BEFORE it
+
+**Optional is load-bearing.** The report opens unscoped, so a non-optional clause
+would fail every roster on the platform. Proven with no downtime, before writing
+anything: with no `section_id` the new SQL is **byte-identical** to the live card
+once comments are stripped, and the scoped shape adds **exactly that one clause**.
+
+**`::uuid` is cast rather than typed**, so `section_id` survived the push as Text
+with no re-flip — only the two DATE tags needed one.
+
+The card came back registering **NINE** parameters (five real + four `string/=`
+duplicates) and the roster was down for every org until Dan flipped, exactly as
+this file predicts. After the flip: **five, no duplicates, both dates
+`date/single`**.
+
+**Sign-off, cache-independently through the public endpoint, over the window the
+page actually sends (`daysAhead:14`, since `ROSTER_DEFAULT_DAYS` is 14 and
+`roster` is in `FORWARD_REPORTS`):**
+
+| org | rows | time |
+|---|---|---|
+| apex (heaviest) | 3,819 | 23.6s |
+| watertown (Eastern) | 485 | 2.7s |
+| clarksville | 54 | 1.0s |
+
+**Additive, proven by re-reading the exact pre-push window:** unscoped
+clarksville 2026-09-08 returned **47 rows / 3 sections / 22 columns** before the
+push and **47 / 3 / 22** after.
+
+### THE SHARED ROSTER CARD HAD NO MANIFEST ROW AT ALL
+
+Found doing the sign-off — `31bdf26f` was in none of the 27 checks, so a lost
+column or a re-Texted date tag on one of the most-used reports on the platform
+would have surfaced as a blank roster rather than a failed check. Same gap
+already recorded for waitlist and checkins. **Two rows now**, and the second is a
+regression case rather than a duplicate: apex is the heaviest, and **watertown is
+EASTERN** — card 17296 dates every row by `org.config primaryTimezone` while
+Metabase renders Pacific, so a Pacific org structurally cannot catch a conversion
+regression here.
+
+**Both rows carry `daysAhead:14`.** Unwindowed they would ask for the org's whole
+history — the mistake this file records for card 17301 v7 *and* card 21649, now
+guarded against on a third card.
+
+### Guards
+
+`scripts/roster-section-scope.spec.js` (**43 assertions, in CI**), which LIFTS
+AND RUNS `buildMetabaseParams`. Mutation-tested nine ways, all failing by name:
+the server reverted to `section-detail` only (the bug as it shipped),
+`section_name` forwarded, the card clause made non-optional, the `::uuid` cast
+dropped, the pre-existing `section_name` clause deleted, the trailing `ORDER BY`
+dropped (the card-17300 failure), the filter moved into a JOIN where it would
+turn the LEFT JOINs above it inner, the false comment restored, and `section_id`
+forwarded for every report.
+
+`mb-param-ids.spec.js` 19 → **22**, driving the real wrapper against a fake
+Metabase whose card registers `org_id` and not `section_id`. Mutation-tested both
+directions: the unknown slug passed through again, and every parameter dropped
+including the registered ones.
+
+**A probe of mine failed and read as a card regression — third time this
+session.** `{{org_id}}` is a **UUID**, and I passed the slug `clarksville`, so
+`'clarksville'::uuid` 400'd and looked exactly like a broken card. The manifest
+uses org UUIDs; check what a parameter actually holds before believing a 400.
+
+**And Chromium cannot reach the sandbox proxy**, so the deployed page could not
+be driven directly. The stronger check was to LIFT the SERVED page's own
+`rosterWindow` and mapper and run them against the LIVE feed rows — that proves
+what the deployed bytes do with production data, which reading the diff does not.
+
 ## THE PROGRAM SCHEDULE REPORT IS LIVE — card 21649 (2026-09-08)
 
 Dan asked for *"an identical report to the facility rental report, but for
