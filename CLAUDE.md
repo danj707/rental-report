@@ -3427,6 +3427,141 @@ from `getParams` fails only the deep-link case. The deep-link case carries the
 apostrophe (`?season=Fall%20%2726`) on purpose, since that is what a real season
 name has to survive.
 
+## Joseph's four aquatics reports, measured against live data (2026-09-09)
+
+Dan: *"revisit the el segundo reporting stuff, see how what we have compares to
+the requests in the email from Joseph at el seg."* Measured, nothing changed.
+Write-up artifact:
+https://claude.ai/code/artifact/0a35b7c8-9fbf-4cf3-98b8-10f0cf624070
+
+**EL SEGUNDO WENT LIVE IN AUGUST 2026, and that reframes the whole ask.** Net
+revenue by month: **Jul $3,214 · Aug $141,514 · Sep-to-date $47,412**. His
+report is due end of September against a July–June fiscal year, so Rec holds
+**one complete month**. Whatever he filed for July came from Civic Rec, and the
+first Rec-sourced report will look thin for reasons that are not our reporting.
+
+Note the org is **not in `server.js`** — it is a dynamic org served from the
+store, so its saved `aquaticsScope` could not be read from the sandbox. That is
+the one unverified item below.
+
+### THE ROOT CAUSE OF REPORTS 1 AND 2 IS ONE FACT: LANE TIME IS BOOKED TWO WAYS
+
+Rentals, groups and drop-in go through **facility reservations**, which attach
+to each lane. Instructional classes go through **program sections**, which
+attach to a building. Measured: of El Segundo's **284 program sessions** in
+Jul–Aug, **284 carry a `location_id` and ZERO carry a court** — and there is no
+session→court join table anywhere in the schema (`reservation` is the only table
+carrying both a `session_id` and a court/site).
+
+So **swim lessons contribute zero lane hours and no report can invent them.**
+That is not a gap in the Aquatics tab; it is a gap in what the platform records.
+
+**And the reservation side is exactly what Joseph wants, with no assumptions.**
+His definition — *"4 lanes for 1 hour/day, 5 days/week = 20 lane hours/week"* —
+is what `reservation_court` already produces, because a rental attaches to each
+lane it occupies. Naomi's Water Aerobics in August: **96 lane-reservations
+across 8 distinct lanes over 13 days = 83 lane hours**, computed his way.
+
+August aquatic lane hours: **Wiseburn 6,513 h / 53 sites**, **Urho Saari (the
+Plunge) 1,872 h / 16 sites**, competition pool 21 h — **~8,406 h**. Named groups:
+Drop In Lanes 1,692 h (Urho 1,152 + Wiseburn 540), Loyola Marymount 660, SCAQ
+387.5, Rec Swim 224, Coastal 120, Tower 115.5, BCA 94, LAM 93, Naomi's 83, Quest
+WP 80, Trojan 80, Mary's 79. The rest is individual lane reservations.
+
+**DOUBLE-COUNT TRAP:** Naomi's and Mary's exist BOTH as a facility rental and as
+a program section (Naomi's 83 h rental / 43 h of sessions; Mary's 79 h / 17.5 h).
+Summing rental hours and session hours counts them twice. Any lane-hours report
+has to pick one side per program and say which.
+
+**HILLTOP CAN NEVER SHOW LANE HOURS.** It sold 282 rec-swim admissions in
+August and has **no bookable aquatic site at all** — its only site records are
+picnic tables. Hilltop reads zero until its pool is set up as a site.
+
+**Nothing tags a booking with a PROGRAM TYPE.** He wants Swim Lessons / Water
+Fitness / Open-Rec Swim / Lap Swim / High Schools / Youth Water Polo / Masters.
+What exists is a free-text rental name (`SCAQ`, `Quest WP`, `Trojan`,
+`Drop In Lanes`). A human reads those; a report cannot group them without a
+mapping the org supplies — same shape as `aquaticsScope`, and the single
+cheapest thing that would turn the existing lane-hours panel into his report 1.
+
+### THE INSTRUCTOR COLUMN IS EMPTY, AND THE FIELD WORKS FINE
+
+Report 2 asks for *by instructor*. **Every aquatics section has no facilitator
+on file** — Naomi's HIIT Water Aerobics, Mary's Water Fitness, Level 1 Tadpoles,
+Level 2 Frogs, all blank. Tennis (Sergiu Boerica), Zumba (Sandra Delgado) and
+Red Cross (Loretta Zarp) all have one, so this is data entry at El Segundo, not
+a reporting gap. Consistent with the 155-of-286 coverage already recorded above.
+
+**ATTENDANCE SPLITS ACROSS TWO REPORTS AND THAT IS NOT A DEFECT.** August has
+**1,161 check-ins: 761 pass + 251 membership + 149 booking** (plus 35 undone).
+Only the **149 booking scans** attribute to a section — those are report 2's
+attendance. The other **1,012 pass/membership scans are org-grain** and are
+precisely report 3's drop-in check-in count. Do not try to put them on a class.
+
+### REPORT 4 IS ESSENTIALLY DONE, BECAUSE THE ORG ENCODED IT IN ITEM NAMES
+
+Facility, category, tier and residency are all in the product name:
+`AC Lap Swim - Adult`, `Plunge Rec Swim - Youth`, `Hilltop Rec Swim - Adult`,
+`Plunge Non-Resident 10 Punch Pass - Adult`. Every non-resident product is
+explicitly labelled, so his resident/non-resident split is separable by string.
+
+**His "annual (Rec ID) memberships" IS a product family already:**
+`El Segundo Resident ID Card` (**2,455 sold in August**, $2,085) and
+`Wiseburn Rec ID` (180, $180). Cleanly separable from pass sales.
+
+**DO NOT COUNT ROWS AS SALES.** **8,261 of August's 20,201 transactions carry
+`transaction_method = 'free'`** — punch redemptions and $0 admissions sitting in
+the ledger shaped exactly like sales. A row count overstates "passes sold" by
+roughly 40%.
+
+**Two naming schemes for one product.** `Aquatic Center 30 Punch Pass - Adult`
+(122) and `AC 30 Punch Pass - Adult` (61) are the same thing; a by-name report
+lists them twice. Same for the 10/20-punch and Annual Membership families.
+Catalogue hygiene, worth fixing before the first monthly report is filed.
+
+### THE CROSS-CUTTING REQUIREMENTS — one of the five genuinely does not hold
+
+- **Filter by facility (AC / Plunge / Hilltop): PARTLY.** Works for lane hours
+  and classes, which carry a real site or session location. It does **not** work
+  on the revenue ledger: **`materialized.item_log_report` has no location column
+  at all** (columns are customer / order item / transaction / gl / desk). The
+  facility is in the item NAME, or in `desk_location_name` — and desks are real
+  (`El Segundo Wiseburn Aquatic Center`, `Plunge`, `Hilltop`) but **72% of
+  August's rows have no desk** ($146,275 of $189,000) because they were bought
+  online. So desk cannot be the facility filter.
+- **Custom range + monthly rollup + Jul–Jun FY: HAVE IT.** A fiscal year is just
+  a range; nothing special is needed.
+- **Individual program name, not category totals: HAVE IT.** Everything here is
+  section-grain or item-grain.
+- **Net of refunds: HAVE IT.** Payments and refunds are separate rows, and the
+  Programs report already shows collected / refunds / net separately.
+- **Mapped to a GL code: PARTLY, and say so out loud.** GL codes are on every
+  transaction and **almost everything is `001-505-5`** — aquatics, Farmers'
+  Market and cooking classes alike; deposits are `001-505-0`. The column is true
+  and will not distinguish any of his programs from each other. The item NAME is
+  the breakout; the GL code is the roll-up.
+
+### WHAT WOULD ACTUALLY UNBLOCK HIM, cheapest first
+
+Two of the three biggest wins are El Segundo's to do, not ours:
+
+1. **Assign instructors to the aquatics sections.** Sole blocker on report 2's
+   instructor column, and it is admin data entry.
+2. **Get a program-type mapping** — which rental names are Masters, High
+   Schools, Youth Water Polo. One list turns the existing lane-hours panel into
+   his report 1.
+3. **Confirm `aquaticsScope` has Wiseburn and Urho ticked.** Their lanes are
+   typed `court`, so without both the tab reports 21 hours instead of ~8,406.
+   **UNVERIFIED** — the org is dynamic and the setting could not be read here.
+4. **Check whether the lanes carry published open hours.** If they do,
+   available-vs-reserved (his report 3) is a matter of pointing the existing
+   `courtSchedulesFor` / `courtOpenHours` denominator at aquatics rather than
+   building anything. If they do not, the denominator is a conversation.
+5. **A store-item admission has no duration**, so lane hours for Lap Swim and
+   Rec Swim store items can only come from the posted rec-swim window — a number
+   El Segundo supplies, never one we measure. Presenting it as measured is the
+   `DIR_FT_MINUTES_PER_REG` mistake.
+
 ## El Segundo's aquatics asks — residency, lane hours, section location (2026-08-31)
 
 Joseph Lormans (El Segundo) asked for four aquatics reports by mid-September on a
