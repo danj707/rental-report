@@ -138,10 +138,11 @@
       "timeout": 120
     },
     {
-      "label": "programs-monthly / apex (card 21055, ADDED 2026-09-01 \u2014 the money half of the Programs by-month panel. SIGNED OFF 2026-09-01: 12 rows in 1.9s for Sep 2025\u2013Aug 2026, through the public endpoint with the app's own date/single parameters. Apex is the worst case: a full scan of materialized.item_log_report, measured 21.4s unfiltered all-time against the base-table join which TIMED OUT past 60s on a single month. If this row starts returning 'An error occurred.', the start_date/end_date tags have been reset to Text and the app's date/single parameters no longer match \u2014 only a human re-flipping them in the Metabase UI fixes that)",
+      "label": "programs-monthly / apex (card 21055, ADDED 2026-09-01 \u2014 the money half of the Programs by-month panel. SIGNED OFF 2026-09-01: 12 rows in 1.9s for Sep 2025\u2013Aug 2026, through the public endpoint with the app's own date/single parameters. Apex is the worst case: a full scan of materialized.item_log_report, measured 21.4s unfiltered all-time against the base-table join which TIMED OUT past 60s on a single month. If this row starts returning 'An error occurred.', the start_date/end_date tags have been reset to Text and the app's date/single parameters no longer match \u2014 only a human re-flipping them in the Metabase UI fixes that) \u2014 FIXED 2026-09-09: this row sent NO date parameters and had therefore been failing with missing-required-parameter since it was added on 2026-09-01. Card 21055 uses {{start_date}}/{{end_date}} BARE inside generate_series (they bound the month series, so they cannot drop out of an optional block), which is why a dateless probe refuses in 0.1s rather than timing out. days:365 not daysAhead: this is a BACKWARD monthly revenue rollup, and its own sign-off window was Sep 2025 -> Aug 2026. THIRD instance of the dateless-manifest-row bug, after card 17301 v7 and both programs-schedule rows.",
       "card": "a9f6a60e-43bf-4368-ada9-c6a7245f639c",
       "org": "aeba47d0-c97f-49cb-a0e9-93c5af3a68fa",
-      "timeout": 120
+      "timeout": 120,
+      "days": 365
     },
     {
       "label": "waitlist / apex (card 19273 v6, ADDED 2026-09-01 \u2014 this shared card had NO manifest row at all, and its central number was wrong for months: a claim was inferred from a timestamp that really marked the expiry sweep. SIGNED OFF 2026-09-01: 3,374 rows in 13.0s through the public endpoint with the app's own date/single parameters. An 'An error occurred.' here means the Start/End Date tags were reset to Text by an API push and need re-flipping in the Metabase UI)",
