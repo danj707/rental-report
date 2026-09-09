@@ -453,6 +453,20 @@
     'programs-schedule': { label: 'Program Schedule', icon: '🗓️', desc: 'Every class and camp by date, location and site — with instructor, confirmed count and a link to each roster' },
   };
 
+  /* Per-org custom data reports (CUSTOM_REPORTS in server.js) are MERGED IN
+     rather than listed above. The server owns the label, the icon and the
+     description; a second copy here would drift the first time one is renamed
+     and the card would then open a report it does not name. Anything the
+     server did not send falls back to the generic card, so a missing entry is
+     a plain card, never a broken one. */
+  Object.assign(REPORT_META, (cfg.customReportMeta || {}));
+  /* The per-org data reports, in registry order. They are drawn as ONE card
+     with a chip per report rather than a card each: four near-identical tiles
+     in a row says nothing, and there are more of these coming. */
+  var DATA_REPORTS = (cfg.customReports || []).filter(function(d) {
+    return d && d.key && (cfg.reports || []).indexOf(d.key) > -1;
+  });
+
   /* Reports whose real content lives in tabs. Without these the Fields and
      Outdoor Facilities views are two clicks deep behind a card that says
      "Facilities", which is how a whole vertical stays invisible to the people
@@ -786,6 +800,11 @@
     var used = {};
     pinned.forEach(function(r) { used[r] = true; });
 
+    // The data reports are drawn by their own card, so they must not ALSO
+    // appear as individual tiles — the card and four copies of its own contents
+    // is worse than either alone.
+    DATA_REPORTS.forEach(function(d) { used[d.key] = true; });
+
     var html = '';
 
     // Pinned reports float to the top (preserve pin order)
@@ -801,6 +820,12 @@
       });
       if (cards.length) html += groupHTML(cat.icon, cat.label, cards);
     });
+
+    // Data Reports, in its own section. Above "More reports" because it is a
+    // deliberate group rather than the leftovers, and self-hiding: an org with
+    // none of these never sees an empty heading.
+    var drCard = dataReportsCardHTML();
+    if (drCard) html += groupHTML('\u{1F4CB}', 'Data Reports', [drCard]);
 
     // Any reports not covered by a category
     var leftover = reports.filter(function(r) { return !used[r]; });
@@ -865,23 +890,48 @@
     return ''; // health badges shown only on admin portal
   }
 
+  /* Labels are TEXT and go out through innerHTML, so they are escaped HERE
+     rather than pre-escaped in the config — "Sales & Mix" is the page's own tab
+     name, and an entity stored in CARD_TABS would leak into anything that ever
+     reads a label as a string. At module scope because two card builders use
+     it now, and two copies drift the first time one gains a character. */
+  function escChip(s) {
+    return String(s == null ? '' : s).replace(/[&<>"]/g, function(c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+    });
+  }
+  function escAttr(s) { return escChip(s); }
+
   function tabChipsHTML(r) {
     var tabs = CARD_TABS[r];
     if (!tabs) return '';
     var sep = tokenQS ? '&' : '?';
-    // The label is TEXT and goes out through innerHTML, so it is escaped here
-    // rather than pre-escaped in the config — "Sales & Mix" is the page's own
-    // tab name, and an entity stored in CARD_TABS would leak into anything that
-    // ever reads a label as a string.
-    function escChip(s) {
-      return String(s == null ? '' : s).replace(/[&<>"]/g, function(c) {
-        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
-      });
-    }
     return '<div class="card-tabs">' + tabs.map(function(t) {
       return '<a class="card-tab" href="/' + slug + '/' + r + tokenQS + sep + 'tab=' + encodeURIComponent(t.tab) + '">'
         + escChip(t.icon) + ' ' + escChip(t.label) + '</a>';
     }).join('') + '</div>';
+  }
+
+  /* The Data Reports card. Its chips differ from every other card's in one
+     way that matters: CARD_TABS chips are tabs of the SAME report
+     (`?tab=<tab>`), and these are separate reports (`/<slug>/<report>`). The
+     card's own anchor opens the first of them, so it is never a dead tile. */
+  function dataReportsCardHTML() {
+    if (!DATA_REPORTS.length) return '';
+    var first = DATA_REPORTS[0].key;
+    var m = { label: 'Data Reports', icon: '\u{1F4CB}',
+              desc: 'Row-level reports with roll-ups, built to print and to export' };
+    var chips = '<div class="card-tabs">' + DATA_REPORTS.map(function(d) {
+      return '<a class="card-tab" data-datareport="' + escAttr(d.key) + '"'
+        + ' href="/' + slug + '/' + encodeURIComponent(d.key) + tokenQS + '">'
+        + escChip(d.icon) + ' ' + escChip(d.chip) + '</a>';
+    }).join('') + '</div>';
+    return '<div class="card-wrap" data-datareports-card>'
+      + '<a href="/' + slug + '/' + encodeURIComponent(first) + tokenQS + '" class="card">'
+      + '<div class="card-icon">' + m.icon + '</div>'
+      + '<div class="card-body"><div class="card-title">' + escChip(m.label) + '</div>'
+      + '<div class="card-desc">' + escChip(m.desc) + '</div></div></a>'
+      + chips + '</div>';
   }
 
   function cardHTML(r, isPinned) {

@@ -4379,6 +4379,1632 @@ from `getParams` fails only the deep-link case. The deep-link case carries the
 apostrophe (`?season=Fall%20%2726`) on purpose, since that is what a real season
 name has to survive.
 
+## All Users and Households — the first non-aquatics data report (2026-09-09)
+
+Dan: *"lets build the all users/household report next"*, with a base query, then
+*"ideally it would include all households sequenced under the same owner. so 1
+row for HH owner, then all the profiles below it, next HH, etc."*
+
+The sequencing IS the report page's group hierarchy, so the card emits one row
+per PERSON ordered owner-first within each household and `groupBy` is
+`["Household"]`. **`People` is 1 per row**, which makes the household subtotal
+the household's SIZE and the grand total the head count — otherwise the roll-up
+machinery has nothing to say on a report with no money in it.
+
+Card **21715**, public uuid `3825556f-ca08-42b4-b277-d8fa768ebcf5`.
+https://rec.metabaseapp.com/question/21715
+
+### FOUR CORRECTNESS CHANGES TO THE BASE QUERY, each measured
+
+1. **Residency comes from `group_type = 'residency'`, not the hardcoded group
+   id.** That id IS Watertown's own residency-typed *Watertown Residents*, so
+   this returns the identical answer there and a correct one everywhere else.
+   It is also **not a name ILIKE** — *"Non-Resident"* CONTAINS *"Resident"*,
+   the mistake already recorded here that reported 4,099 live memberships
+   across 35 orgs as residents.
+2. **It AGGREGATES rather than joining.** One org has TWO residency-typed
+   groups, so a plain `LEFT JOIN` duplicates that org's people. Proven absent:
+   **5,704 rows against 5,704 distinct people.**
+3. **Every org user is returned, not only heads.** The base `INNER JOIN
+   household ON owner_id` is 3,444 of Watertown's 5,704 — the other **2,260 are
+   the children and partners a camp roster is actually about.** `Household
+   Role` is a column, so filtering to *Head of Household* reproduces the base
+   query's row set **exactly (3,444 = 3,444)**.
+4. **The window tests the household OWNER**, so a household is wholly in or
+   wholly out. Filtering each person by their own `created_at` cuts households
+   in half, and half a household under a household heading is worse than
+   either. Each person's own `Created At` is still a column.
+
+`organization_association` has **no `deleted_at`** (id, created_at, updated_at,
+user_id, organization_id, source) — checked, not assumed.
+
+### VERIFIED BY RUNNING THE WHOLE FINAL SELECT
+
+Literals substituted, not a summary probe wrapped around the CTEs — the
+specific mistake that let card 21682 ship with *"ORDER BY position 9 is not in
+select list"*. Watertown: **5,704 rows / 3,444 households / 3,444 heads / 2,260
+members / 4,141 residency Yes**, owner-then-members sequencing confirmed on a
+27-row window. Then through the public endpoint with the app's own parameter
+shape: **El Segundo 6,519 rows in 9.8s**, and end-to-end through the app: 352
+people across 285 households for a three-day window.
+
+**A signal that was not planted:** every Watertown/02472 address reads
+`Residency? = Yes` and every out-of-town one reads `No` — Belmont, Boston,
+Waltham, Brookline, Natick, Cambridge and Woburn all correctly No.
+
+### NO PUBLIC LINK, NO REPORT
+
+`customReportEnabled` now requires `spec.uuid`, **checked BEFORE the org** so a
+missing link is never reported as an org problem. Without it the entry would
+build `/api/public/card//query/json` and surface Metabase's own error, which
+reads as a BROKEN report rather than an unfinished one. Same shape as
+`SHARED_UUIDS` omitting an unset key. Mutation-tested.
+
+**No `locations` key.** The filter is per report and this one has no locations
+to offer; an empty dropdown is a control that looks broken.
+
+### Two process slips worth keeping
+
+- **`create_question`'s `collection_id` was malformed in my call**, so the card
+  landed in a personal collection and the stray parameter text leaked into the
+  description. `update_question` has **patch semantics** and takes `query:
+  null`, so both were fixed **without** passing a query — which is what
+  regenerates the template tags. Worth knowing: moving or renaming a card is
+  safe; only a `query` save costs the flip.
+- **A comment I wrote quoted the slug an assertion forbids** (*"no slug
+  anywhere in the registry"*), so correct code failed. **Fifth instance in this
+  file.** Fixed by rewording the comment rather than teaching the assertion to
+  ignore comments — keeping that assertion dumb and literal is more robust, and
+  a regex comment-stripper is unsound on server.js anyway.
+
+### What it answers, from Dan's inbox
+
+Alyssa at Essex Junction: *"download a csv of all current households"* — and
+the individual-grain sheet was *"too overwhelming"*, which is exactly why the
+household is the grouping and the role is a filter rather than two reports.
+
+## All four aquatics reports, and the column picker (2026-09-09)
+
+Dan, on report 1's PDF: *"here's the output, it's super long lol"* — 15 pages for
+one month. Then, on the fix: *"How about leaving rental name as a checkbox
+option, and adding a filter on the report. I can see that being useful for
+future reports."* And: *"go back and build out the other reports, these are
+great aquatics reports."*
+
+### THE FORMATTING WAS FINE. THE CARD'S GRAIN IS SIX DIMENSIONS AND JOSEPH ASKED FOR THREE
+
+Measured on September 2026 rather than eyeballed:
+
+| grain | rows | pages |
+|---|---|---|
+| as shipped | **825** | ~15 |
+| drop Rental Name + Booking Type | 258 | ~5 |
+| Joseph's brief — month x pool x program type | **12** | **1** |
+
+**`Rental Name` is the whole explosion: 493 of the 825 rows are auto-generated
+`Court Reservation: <lane>` strings** carrying no programme at all — a third of
+the hours and 60% of the paper. Every heading, both subtotal levels, the grand
+total and the CSV footnote were correct throughout.
+
+### HIDING A COLUMN RE-SUMS. It does not blank a cell
+
+`collapseRows()` is the point of the whole feature. A picker that only hid the
+column would leave 825 rows that look identical, repeat each other down the page
+and still add to the same total — **which reads as a broken report rather than a
+shorter one.** Collapsing to the kept dimensions gives 258.
+
+- **The key is `JSON.stringify` of the value array, not a joined string.** Two
+  dimension values otherwise straddle the separator — `"a b" + "c"` and
+  `"a" + "b c"` — and silently merge two rows that are not the same row.
+- **First appearance wins**, so the card's own `ORDER BY` still drives the
+  hierarchy and nothing is re-sorted — the property `groupRows` depends on.
+- **The collapse must not move the grand total.** A collapse that loses or
+  duplicates a row is the one failure a reader cannot see, because the page
+  still looks right; the spec asserts the total is unchanged.
+
+### THE EARLY RETURN IS COMPUTED FROM STATE, because hiding is a DEFAULT
+
+`shownRows` skips the collapse only when `shownDims.length === dimCols.length`.
+Gating it on *"has the reader filtered yet"* would silently not apply
+`hiddenColumns` at all — **the exact bug already recorded for `scopedRows` when
+cancelled sections became a default rather than an opt-in.**
+
+### THE FILTERS ARE KEYED BY COLUMN NAME, and this shipped wrong for one revision
+
+`filterRows` looks up `r[key]`, so a map keyed by the URL parameter name
+(`f_Program_Type`) matches **nothing** and the filter appears to do nothing at
+all. The slug now exists only at the URL boundary.
+
+**NO UNIT ASSERTION COULD SEE IT.** The spec's fixture passed *column* names —
+which the app never did — so `filterRows` was proven correct on data nothing
+produced. Same lesson as the Programs location filter that shipped unable to
+render: *a unit test that supplies the field under test cannot tell you whether
+anything supplies it in production.* **The render check is what caught it.**
+
+Other decisions, all following rules already recorded here:
+
+- **Empty means ALL, never none** — hence a Clear and no Select all.
+- **Options are built from the rows**, so a filter can never offer a value the
+  report cannot produce. The shared aquatics dashboard does exactly that with
+  its location list and it reads as broken.
+- **A blank value is its own option, labelled** — a row the card could not
+  attribute is still a row, and hiding it makes the grand total disagree with
+  the CSV.
+- **Repeated `?f_<col>=`, read with `getAll`, deleted before appending.** A
+  rental name legitimately contains a comma (`Court Reservation: Lane 2 - B,
+  Court Reservation: Lane 3 - A`), so a comma split would cut it in half; and
+  `append` alone stacks a second copy of every value on each render.
+- **Columns persist per browser and are NOT in the URL; filters are the
+  reverse.** Which columns you like looking at is a display preference; a filter
+  is part of the question the report answers.
+- **The deep link's filters resolve only once the feed says what the columns
+  are** — the parameter is a slug of the column and the mapping back is lossy.
+- **The exports follow the VIEW**, filters and hidden columns both. An export
+  quietly carrying rows the reader excluded is the Programs Excel bug verbatim.
+  Still no subtotal lines.
+- **Filtered-to-nothing is its own empty state**, or the reader widens the dates
+  when the fix is to clear a filter.
+- **A narrowed view SAYS so, in the page and not the toolbar** — whoever prints
+  this has no toolbar to look at, so the note must survive into the PDF.
+
+### The other three reports are registry entries
+
+| # | report | card | groupBy |
+|---|---|---|---|
+| 2 | Aquatics Classes by Month | 21683 | Month / Location / Program |
+| 3 | Aquatics Drop-In Admissions | 21684 | Month / Location / Category |
+| 4 | Aquatic Passes and Memberships | 21685 | Month / Location / Category |
+
+All four cards register exactly **four** correctly-typed parameters — `org_id`
+(carrying El Segundo's default), `start_date`/`end_date` as `date/single`, and
+`location`. No six-parameter duplication, because they were created rather than
+re-saved.
+
+**`Participants (section total)` IS NOT ADDITIVE and is deliberately not in
+report 2's `numeric` map.** It is a per-section total repeated on every month
+that section runs, so summing it down a column double-counts any section
+spanning two months — the same trap as the wizard summing `Number of Payments`,
+right by luck at one org and latently wrong everywhere else. Left out of
+`numeric` it renders per row and never rolls up, which is honest. Making it
+additive needs a card change, not a registry edit.
+
+**Each report offers only the locations its OWN card can answer for**, measured:
+Hilltop runs no aquatic sections and sells no passes, so it is absent from
+reports 2 and 4 while present on 3; the city-wide Rec ID bucket exists only on
+report 4, which is the card that sells them.
+
+`hiddenColumns` per report: report 1 `Rental Name` (the 15 pages), report 2
+`Section ID` (a uuid is noise on a printed report, but it is what separates two
+sections sharing a name — 49 names against 52 ids — so it is hidden rather than
+dropped), report 4 `Buyer Zip` (the column beside it already summarises it).
+
+### Guards
+
+`custom-reports.spec.js` 32 → **44 assertions**, lifting and RUNNING
+`collapseRows`, `filterRows`, `valueCountsFor` and `levelsSafe`.
+Mutation-tested thirteen ways, all failing by name: the collapse dropped, its
+key joined with a string, an empty filter meaning none, blanks dropped from the
+options, the URL appending without deleting, the exports reading the unfiltered
+feed, the table handed the whole column set, the filtered empty state collapsed
+into the plain one, the scope note dropped, the print stylesheet hiding it,
+report 2 summing the per-section total, and Hilltop offered on a card that
+answers nothing for it.
+
+**One mutation SURVIVED the first draft** — the table still rendering
+`bodyCols` over `rows`, which is the bug the whole picker exists to prevent.
+Every other assertion passed with it in place. Found by mutation, not review.
+
+Plus **4 `ci-check-render.js` cases**, and the fixture gained a row that
+**differs from another only in `Rental Name`** — without a pair like that,
+hiding a column changes nothing and no case can tell a picker that re-sums from
+one that only blanks a cell.
+
+**Two harness lessons, both of which cost a false failure:**
+
+- **`waitForSelector` does not reliably see an attribute VALUE change** on an
+  element that was already there. It timed out for 8s on a page that had
+  already rendered the right answer. `waitForFunction` polls a predicate, which
+  is what this needs. A fixed sleep was flaky — it stamped a stale count on one
+  run in two, and *a flaky assertion is not a guard.*
+- **`localStorage` survives between render cases.** The case that ticks Rental
+  Name ON left it on for the next case, which then saw 6 rows instead of 5 —
+  a green baseline turning red only when run as part of the group. Both
+  order-sensitive cases clear it in `pre`. Already recorded here for the
+  saved-views cases; second instance.
+
+### And I wrote an unrendered escape into JSX text, again
+
+`\u25be` sitting in JSX **text** rather than a string literal renders as the
+literal characters. Third instance in this file. Caught before the guard ran,
+but the guard exists because it has shipped twice.
+
+### WHERE THEY SHOULD LIVE — decided, not built
+
+Dan: *"where do we think these three reports should live? On the main org
+dashboard page? Under the aquatics facility section? In a new 'basic reports'
+section?"*
+
+**A "Data Reports" section on the main org dashboard.** They are already pushed
+into that page's `available` list, so the change is a header driven off
+`CUSTOM_REPORTS` rather than a move. **Not under the Aquatics facility tab** —
+that tab is a dashboard over cards 19570/17294 and these are reports over four
+different cards with their own window and exports; burying a standalone report
+inside a tab of another report is how the aquatics settings gear and the
+Private Instructor Lessons panel both became unfindable. **"Data" rather than
+"Basic"**, because these are the authoritative row-level exports and the charts
+are the derived view.
+
+## Joseph's reports, rebuilt in the reporting project (2026-09-09)
+
+Dan: *"Ok so the reports are in MB and give a raw csv of the data he wants. now
+what's missing are the roll ups or total rows at the bottom, correct? … Create a
+new card pulling data from the mb cards, add filters that match up with the mb
+report, then format it on the frontend to look like his Civic Rec reports?"* Then:
+*"lets start with report 1, once we nail that we can move on. Build these ONLY for
+El Segundo in their org dashboard, with aptly named report names, same headers and
+filters from the mb card/report."*
+
+**Report 1 is BUILT.** `/el-segundo-recreation/aquatic-lane-hours`, reading card
+**21682** through its public link
+`b1f4ca67-1a91-4e91-8581-5b3dbaf0d9a2`.
+
+### NO, ROLL-UPS WERE NOT THE ONLY GAP — and that is why this is a page
+
+Read off the four CivicRec PDFs rather than assumed. Beyond the raw rows every
+one of them carries:
+
+| | |
+|---|---|
+| a provenance header | Run On, Run By, From/To, **and the filter values echoed back** |
+| group headings as HEADINGS | `Category: Rec ID` → `Activity: Wiseburn Rec ID` → rows |
+| **two** levels of subtotal | an unlabelled row under each group, then `Totals for Category: X` |
+| row numbers that restart per group | 1., 2., 3. |
+| accounting negatives | `($26.00)`, `($0.11)` |
+| links | receipt # and user name (report D) |
+
+**A native Metabase card can produce none of it.** A dashboard filter binds to a
+template TAG, never to a result column, and the visualisation is one flat table.
+`GROUPING SETS` can fake subtotal ROWS and they come out as ordinary rows with
+blank cells — indistinguishable from data, and they poison the CSV. So the
+formatting half was never a Metabase job.
+
+**AND THE WRAPPER CARD IN DAN'S PLAN IS NOT NEEDED.** Metabase can reference a
+card from a native query (`{{#21684}}`), but it adds a fifth thing to keep in
+sync and breaks the parameter pass-through. The four cards are already the right
+feed shape: `org_id` + optional `start_date`/`end_date`, which is exactly what
+`buildMetabaseParams` sends. Becoming a feed is a registry entry, not a rewrite.
+
+**One real DATA gap, separate from formatting:** report D (Aquatic Passes) is one
+row per transaction — receipt #, date, time, user, zip — and card 21685 is
+aggregated. That needs a transaction-grain variant. A, B, C and E already match
+our grain.
+
+### `CUSTOM_REPORTS` — a registry, so reports 2–4 are config
+
+One entry in server.js carries the label, the emoji, the public uuid, the numeric
+card id, the org allow-list, the group hierarchy, which columns roll up and the
+location list. `public/custom-report.html` is ONE page that renders all of them.
+
+- **THE GATE IS THE `orgId`, NEVER THE SLUG.** El Segundo is a dynamic org and
+  the two projects already spell it differently; a slug is each project's own
+  name for an organisation and they drift — the `town-of-shrewsbury` link 404'd
+  for five weeks. The registry contains no slug at all, and the spec asserts it.
+- **NOT a `REPORT_TYPES` entry.** A report type with a `SHARED_UUIDS` entry is
+  offered to every org, health-checked, prewarmed and subscribable. This card's
+  SQL hardcodes El Segundo's locations, so every other org would get an empty
+  report. Same shape as `lessons` (SF only): a per-org gate plus its own routes.
+- **THE COLUMNS AND THEIR HEADERS ARE READ FROM THE FEED**, in the card's own
+  order. Dan asked for "same headers … from the mb card", and inheriting them is
+  also the only way that stays true: a transcribed header is a copy that goes
+  stale the day the card gains a column — the guessed-grain mistake, one field
+  over. The registry names only the group levels and the numeric columns.
+- **`REPORT_DIRECTORY` and org.html's card are DERIVED**, not transcribed. The
+  server injects `customReportMeta` and `org.html` merges it, so a rename cannot
+  leave a card opening a report it does not name.
+
+### THE HIERARCHY IS THE CARD'S OWN `ORDER BY`, so nothing is re-sorted
+
+`groupRows` walks the rows in the order they arrive (Month → Location, which is
+card 21682's `ORDER BY 1, 2, …`) and never sorts. Re-sorting here would silently
+disagree with the CSV beside it. A parent's totals are the sum of its LEAF rows,
+so **a parent reconciles to its children by construction** rather than by a
+second pass that could disagree with what is on screen.
+
+**WHICH SUBTOTAL EACH LEVEL GETS IS CIVICREC'S RULE, and it is load-bearing:**
+the **deepest** group takes the unlabelled row directly under its rows, every
+outer level takes a labelled `Totals for <level>: <value>`. Give both to the
+deepest group and it prints the same numbers twice, one directly under the other.
+
+**ONE TABLE, not a table per group.** A "Totals for X" row is only readable
+sitting under the columns it totals, and separate `<table>` elements do not share
+column widths — the first build had the roll-up drifting out of line with the
+numbers above it, which is the one thing that row exists to prevent.
+
+**A row the card could not attribute is grouped as `(none)`, never dropped** —
+hiding it makes the grand total disagree with the CSV.
+
+### The exports, and the split that decides what goes in them
+
+- **CSV and Excel are the ROWS ONLY — no subtotal lines.** A data file gets
+  re-aggregated by whoever opens it, and a subtotal row indistinguishable from a
+  data row double-counts the moment anyone sums a column. Both go through
+  `flatTable` → `csvFromRows` → `saveTextViaPopup` with the **BOM**, and Excel
+  through the same flat table, so the two files cannot disagree.
+- **The group columns are IN the file.** A spreadsheet row cannot be expanded, so
+  what the screen puts in a heading the file has to carry per row.
+- **PRINT is the formatted one**, and it is the whole export argument: Dan's
+  *"mb exporting->pdf looks terrible"*. A print stylesheet we own keeps group
+  headings with their rows and never orphans a subtotal.
+
+### The location filter is PER REPORT, which fixes something the dashboard has
+
+The Metabase dashboard drives all four cards from one filter, and **two of its
+four values return zero rows on two of the cards** — Hilltop sells drop-in only,
+a Rec ID is city-wide. That is the data being honest and it still reads as a
+broken filter. Here each report offers only what it can answer: card 1 lists its
+three pools and no city-wide bucket. **An unknown value is DROPPED, not
+forwarded** — a value outside the list returns nothing and reads as an empty
+report rather than as a rejected filter.
+
+A STATIC list, not a live one, for the reason already recorded: the card's CASE
+ladder is hand-edited when a pool opens, so a self-updating dropdown would offer
+a fourth value returning zero rows everywhere.
+
+### Two defects found by driving the real routes, not by review
+
+- **The beacon overwrote the report TYPE.** `logEvent` merges `extra` over the
+  record it builds, so an extra called `report` (I passed the label) replaced
+  `aquatic-lane-hours` with `Aquatic Lane Hours` in `events.jsonl` — out of
+  `getReportActivity()`'s reach and disagreeing with every other row. Found by
+  reading the log back after a real POST.
+- **A refused beacon posted a DEAD LINK alert.** `noteDeadLink()` keys on *"a 404
+  that arrived with a valid-looking token"*, which is byte-identical to every
+  refusal here. All three gated 404s are marked `deliberate404` now. **And the
+  spec's zero-deadlink assertion was VACUOUS at first**: its fixture tokens were
+  `tok-yes`/`tok-no`, and `noteDeadLink` ignores a token under 8 characters as
+  bot noise — so the mutation that unmarks the refusal SURVIVED. Third instance
+  of that exact vacuity in this file.
+
+### Verified against the card, not against itself
+
+Recomputed from the feed independently and compared to what the page draws, El
+Segundo, August 2026:
+
+| | page | independent |
+|---|---|---|
+| Wiseburn AC | 5,170 res / 6,467.50 h | **5,170 / 6,467.50** |
+| Urho Saari | 638 / 1,871.00 | **638 / 1,871.00** |
+| Totals for Month: August 2026 | 5,808 / 8,338.50 | **5,808 / 8,338.50** |
+| grand total | 5,808 / 8,338.50 | 862 rows |
+
+8,338.5 is the figure this file already records for card 21682's August. The CSV
+was read as BYTES out of the popup: 863 lines (header + 862 rows), the BOM
+present, RFC4180 quoting on `Inst Lane 1- 4'6" Depth (25Y) - A`, and **no
+`Totals for` or `Grand total` line anywhere in it**.
+
+### Guards
+
+`scripts/custom-reports.spec.js` (**32 assertions, in CI**), which LIFTS AND RUNS
+`groupRows`, `flattenTree`, `flatTable`, `columnsOf`, `fmtNum` and `prettyDate`,
+plus a live half that boots a server against a fixture org and drives the real
+routes. `SKIP_SOURCE=1` drops the source half so the live half can be shown to
+catch a regression alone.
+
+The fixture is shaped so a wrong roll-up cannot look right: two months, two
+locations inside each, and month totals (13, 21) and a grand (34) that appear
+nowhere else — a subtotal read from the wrong level would have to hit one by
+accident.
+
+Mutation-tested, all failing by name: the deepest group given a labelled subtotal
+too, an outer total reading its first child's subtotal, the CSV built from the
+grouped display rows, the BOM dropped, a level the card no longer emits still
+grouped on, the empty state removed, the shared dashboard's city-wide value added
+to the list, the header reading the toolbar instead of the applied window, the
+gate reconciling on the slug, the `report` key smuggled back into the beacon, and
+each of the three deliberate-404 markings removed.
+
+Plus **8 `ci-check-render.js` cases**, every one keyed on a COMPUTED FIGURE —
+"a totals row appeared" passes on all of the above. `ci-check-render.js` gained a
+per-case **`token`**, because these reports are gated on a different org than the
+one it resolves, and it now writes an `orgs.json` fixture before the spawn
+(`loadDynamicOrgs()` runs at server module scope, so a later write is never seen).
+
+**One of my own absent-assertions was vacuous and mutation is what showed it**:
+`[data-sub-level="1"] .sublabel.lbl` matches nothing on any build — `lbl` is on
+the ROW — so the duplicate-subtotal mutation passed it. It is `tr[data-sub-level="1"].lbl` now.
+
+`scripts/report-cards.manifest.json` gained an **aquatic-lane-hours / el-segundo**
+row (2,239 rows in 23.7s, measured after the build). It matters more here than
+usual: this card is not in `REPORT_TYPES`, so **the health check does not probe
+it** and a re-Texted date tag would take the report down for El Segundo with
+nothing else noticing.
+
+### THE REGISTRY'S PLACEMENT IN server.js IS LOAD-BEARING
+
+It sits above the shared-UUID map, not below it. `card-drift.spec.js` slices
+server.js from that map's declaration to the `resolveReportCard` comment and
+EVALS the result; sitting in that gap pulled the `REPORT_DIRECTORY` line into the
+slice, where the directory is not defined, and the spec **DIED with a bare
+ReferenceError instead of failing by name** — Nth instance of a slice reaching
+past its own inputs. And writing the marker text into the explanatory comment
+moved the slice's own start point, which is the same mistake one level up. Stay
+out of the gap and do not quote its boundaries.
+
+### NOT DONE, and worth knowing
+
+- **`Run By` is absent.** CivicRec names the person who ran the report; this
+  platform authenticates with an org token and has no user identity, so the
+  header states Run On, the window, the location and the source card, and does
+  not invent a name.
+- **No `REPORT_DEPENDENCIES` entry**, so a dropped column on the base tables card
+  21682 reads is not attributed to this report by the schema watchdog. Its tables
+  (`reservation`, `reservation_court`, `court`, `location`, `facility_rental`)
+  are all declared under other reports, so the break would still be seen — just
+  not named here.
+- **NOT PREWARMED.** `prewarmCache` walks `REPORT_TYPES`, which this is not in,
+  so the first open of the day is a cold query — measured **23.7s unwindowed,
+  34.8s for August** through the sandbox. That is why the progress bar matters
+  here: after three loads it has a measured estimate for this org and report.
+  Warming it is a few lines in prewarm if Joseph ever finds the wait annoying.
+- **Reports 2, 3 and 4 are config**, once Dan creates each card's public link:
+  a registry entry naming the uuid, the hierarchy and the numeric columns. Card
+  21685 also wants the transaction-grain variant above before it matches report D.
+
+## The FIVE CivicRec exports Joseph actually runs (2026-09-09)
+
+Dan forwarded four CivicRec PDFs plus a reservations CSV, all **July 2026** —
+their last full month on the old system. These are more specific than the email
+and they settle two things the email left open. Same artifact:
+https://claude.ai/code/artifact/0a35b7c8-9fbf-4cf3-98b8-10f0cf624070
+
+**THE CUTOVER IS CLEAN, so these are a BASELINE and not a comparison.** Rec holds
+**10 aquatic lane reservations in July and 5,882 in August**. July lives in
+CivicRec, August lives in Rec. Never diff one against the other.
+
+**Read them with `pdftoppm`** — every one is a page image, `pypdf` extracts an
+empty string. `poppler-utils` is not in the sandbox image; `apt-get update` first
+or the install 404s on a stale package index.
+
+| | report | July figures | verdict |
+|---|---|---|---|
+| A | Facility Reservations by Date (CSV) | 7,782 lane rows · 7,861.0 h · $16,634 | **have it** |
+| B | Aquatics Drop In Numbers | 4,956 admissions · $17,786.50 | **have it** |
+| C | Rec ID Summary per month | 171 IDs · $2,040 | close |
+| D | Aquatic Passes by Date | $12,024 over four tender columns | close |
+| E | Instructor Transaction Summary by Session | 567 participants · $7,924 · 24.59 h | close at SECTION grain — see the correction |
+
+### THE $0 ROWS ARE THE POINT — this corrects what I wrote on 2026-09-09
+
+I flagged that **8,261 of August's 20,201 transactions carry
+`transaction_method = 'free'`** and warned that counting rows overstates passes
+sold by ~40%. **That is right for the REVENUE column and wrong as a general
+rule.** CivicRec lists membership-holder swipes as their own line with a real
+Quantity and a $0.00 Total:
+
+```
+AC Lap Swim-Adult                       216   $1,720.00
+AC Lap Swim-Adult (Membership Holder)   179       $0.00
+```
+
+Those 179 are attendance Joseph reports on. **The drop-in report needs BOTH
+columns** — visits including the free ones, revenue excluding them — not one
+number with the judgement baked in.
+
+### RESIDENCY HAS A SECOND AND BETTER ANSWER: THE BUYER'S ZIP
+
+The Passes report carries a **Zip** column, and the negative lines on it
+(a $70.00 charge with a −$26.00 beside it on the SAME receipt) are the resident
+discount, appearing only on 90245 buyers.
+
+- **`users.zip_code` is populated for 2,719 of El Segundo's 2,990 buyers (91%)**,
+  and **1,346 are 90245**. So the Zip column is reproducible and residency is
+  computable from the BUYER rather than inferred from a product name. Note
+  `users` has **no `organization_id`** — scope it through the item log's
+  `customer_id`.
+- **`residency_zipcode_group` exists platform-wide — 820 zips across 46 orgs —
+  and EL SEGUNDO HAS ZERO ROWS.** The platform already has a zip-based residency
+  feature they have not switched on. Adding 90245 makes it a first-class flag.
+
+### THE TENDER SPLIT IS A ONE-TO-ONE MAP, and no report of ours has it
+
+Every CivicRec money report breaks out **Cash · Check · Credit/Debit · User
+Credit**. Measured at El Segundo, August:
+
+| CivicRec column | `transaction_method` | August |
+|---|---|---|
+| Cash | `cash` | $6,481 |
+| Check | `check` | $6,075 |
+| Credit/Debit | `card-online` + `card-present` | $131,188 |
+| User Credit | `organization-credit` | **−$2,185** |
+| (none) | `free` — the membership swipes above | $0 |
+
+User Credit is negative in both systems (CivicRec's Rec ID report shows
+`($5.00)`), so the mapping holds on sign as well as name. **It is columns on
+`item_log_report`, not a new card.**
+
+### Per report
+
+**A — Facility Reservations by Date.** Their columns are Date · Location/Facility
+· Rental Time · Description · User · Total Paid, **one row per lane**, which is
+Joseph's own lane-hours definition falling straight out. We produce this today,
+full lane names included (`siteLabel()` was fixed for these exact names). **69%
+of their rows are $0.00**, the same membership-holder pattern. The only column
+with no home is the free-text note in Description (*"All north lanes are taken by
+a team on the 8th"*) — **13 of 7,782 rows**, the reservation instruction field.
+
+**B — Aquatics Drop In Numbers.** Grouped by item name → Receipt Location →
+Quantity + Total. Item name already carries pool, category, tier and residency.
+**The open question is "Receipt Location" = the DESK**, and 72% of August rows
+have no desk because they were bought online — but drop-in is counter-sold, so
+coverage there is probably far better. **That measurement is unrun and it decides
+whether this report is finished.** Worth knowing: their own export has duplicate
+headings ("Plunge REC Swim - Senior" twice with different numbers), so the
+two-catalogue-entries-for-one-product problem is not ours.
+
+**C — Rec ID Summary per month.** The product family is already distinct
+(`El Segundo Resident ID Card` Adult/Senior/Youth/Infant, `Wiseburn Rec ID`) and
+quantity, tier and tender all derive. **The gap is the Category → Activity →
+Session HIERARCHY**, which is CivicRec's and not ours — we have flat item names
+and two grouping levels have to come from a name-prefix rule or a small org-
+supplied map. That is the SAME map report 1's program types need, so ask once.
+**Expect August to look like explosive growth and say it is not**: 171 Rec IDs in
+July against 2,635 in August is everyone re-registering at cutover.
+
+**D — Aquatic Passes by Date.** Transaction-grain with buyer, date, time and
+amount — `item_log_report`'s natural shape — plus the tender columns and the Zip
+above. **Receipt # will not match theirs**: we have a stable identity
+(`transaction_event_id`) but our own numbering, so it is fine going forward and
+no help reconciling history.
+
+**E — Instructor Transaction Summary by Session.** Columns: Activity · Session ·
+Participants · Instructor Applicable Total · Hours · Instructor % · Instructor
+Hourly · Instructor Fees · After Instructor Dues. **Dan closed two of the three
+gaps on 2026-09-09** — read the correction below, then this:
+
+1. **Naomi Gol is NAMED in CivicRec and blank in Rec.** Dan: *"Ignore the fact
+   they don't have instructors assigned to all programs, I'll remind them but it
+   doesn't block our reporting."* So it stays a note to El Segundo, not a gap on
+   our side. The column works; the field is empty.
+2. **Per-SESSION grain — NOT BEING BUILT.** Dan: *"lets skip the per session rows
+   for now, I think the program level is fine."* CivicRec emits thirty dated rows
+   per section and the Instructor Payout report emits one; that is the difference,
+   and it is accepted. **Do not start on card 17755's session grain** without
+   checking in — the note below about it being the right card to grow describes
+   HOW, not whether.
+3. **The payout split and the payout DOCUMENT are already built — I said they
+   were not, and that was wrong.** See the correction below.
+
+**So ONE column is left on report E: Hours.** At section grain it is the sum of
+that section's session durations (their 24.59 h over thirty rows becomes one
+figure per section), and it only earns its place if El Segundo pays anyone
+hourly — **Instructor Hourly, Instructor Fees and After Instructor Dues all read
+$0.00 in Naomi's own July export**, so ask before building it.
+
+### CORRECTION: REPORT E IS NOT "FURTHEST OFF" — the Instructor Payout report is it
+
+Dan, with a screenshot of the report filtered to one instructor: *"here's a
+filtered instructor report for a single instructor by section, doesn't this get
+them to what they want at a slightly higher level?"* **He is right, and I had
+written the opposite twice** — in the row above and in the artifact — on the
+strength of reading `instructor.org_cut_bps_override` and finding no hourly-rate
+column. I looked at the SCHEMA and never looked at the REPORT. `public/instructor-payout.html` (card 17755)
+already covers six of CivicRec's nine columns and then goes further than they do:
+
+| CivicRec column | ours |
+|---|---|
+| Activity | Program |
+| Session | **Section** — theirs is one row per class DATE, ours per section |
+| Participants | Enrolled |
+| Instructor Applicable Total | Net Revenue (paid − refunded) |
+| Instructor % | the split control — 90/10 … 50/50 plus a free-entry pair |
+| Instructor Fees / After Instructor Dues | Instr (N%) and Org (100−N%) |
+| Hours | **absent** |
+| Instructor Hourly | absent |
+| (none) | **a printable pay slip per section and per period** |
+
+Grace Maxwell, El Segundo, September: 5 sections, 19 enrolments, $2,827.80 net,
+$1,979.46 to the instructor at 70/30, and a check-style voucher naming the pay
+period. CivicRec produces no such document.
+
+**Dan then closed it to ONE optional column.** *"lets skip the per session rows
+for now, I think the program level is fine."* So per-session grain is not being
+built, and what is left of report E is **Hours** — at section grain, the sum of
+that section's session durations. **Instructor Hourly / Instructor Fees / After
+Instructor Dues all read $0.00 in Naomi's own July export**, so that half of
+their template may simply be unused at El Segundo, and Hours only matters if
+somebody is paid by the hour. Ask before building either.
+
+**One honest nuance about the split:** ours is a TOOLBAR CHOICE applied to every
+row in view, not a rate stored per instructor — so a single-instructor filtered
+view (exactly what Dan showed) is right, and one pull across a roster on mixed
+splits would not be. `org_cut_bps_override` exists on `instructor` and nothing
+reads it; wiring it in is what would make a whole-roster pull correct.
+
+**The empty instructor column at El Segundo is THEIRS, not a gap here** (Dan,
+2026-09-09: *"Ignore the fact they don't have instructors assigned to all
+programs, I'll remind them but it doesn't block our reporting."*). Grace Maxwell
+teaches dance (Hip Hop for Kids, Tutus & Taps, Thriller Workshop) and has a
+facilitator on file; every aquatics section does not, so this report and report
+2's instructor column are both empty for the programmes Joseph is reporting on
+until somebody assigns them. That is a reminder to El Segundo — **it is no longer
+carried on our list as a blocker.**
+
+**Generalise it: do not measure a capability from the schema when a report that
+answers it already ships.** I searched `instructor` for a rate column, found
+none, and wrote "cannot be computed at all" about a number the platform prints on
+a voucher.
+
+### THEIR REPORT → OUR REPORT, built side by side (2026-09-09)
+
+Dan: *"give me a direct comparison of what el seg wants and how we can provide
+it. fine if it's a report from rec itself, like the transactions/items log …
+Screenshots for both would be great, something like their report->our report."*
+Built into the same artifact. Two things made it possible and are worth keeping.
+
+**A LOCAL INSTANCE SERVING A DYNAMIC ORG'S REAL DATA.** El Segundo is not in
+`server.js` and its token could not be read from here, so the reporting project
+could not be screenshotted against it. It can be run locally instead: a scratch
+`DATA_DIR` holding an `orgs.json` with the org's real `orgId`
+(`8ae77057-…`) and a throwaway local token, plus a
+`report-settings.json` carrying the `aquaticsScope` that could not be read from
+production. **Shared card UUIDs are hardcoded in `server.js` and the Metabase
+public endpoint needs no key, so a local boot serves REAL production data.**
+
+- **Write `prewarm-state.json` with a fresh `lastCompletedAt` BEFORE booting.**
+  `PREWARM_STARTUP_SKIP_MS` is 6h and the boot logs
+  *"Startup pre-warm skipped"* — otherwise the boot fans out across ~28 orgs
+  against production Metabase, which is the self-inflicted load this file already
+  records twice.
+- **`readReportSettingsStore()` memoises on first read**, so the settings file has
+  to exist before the server starts, not after.
+- **Chromium cannot reach cdnjs** — only `curl` honours the sandbox proxy — so a
+  Puppeteer run must intercept off-host requests and serve them from
+  `node_modules/.cache/render-check`, exactly as `ci-check-render.js` does.
+  Without it every page renders blank, which reads as a code defect.
+- **Puppeteer's default `protocolTimeout` (180s) is shorter than a cold card.**
+  The lane-hours panel fetches card 17294 and the first run died on the protocol
+  timeout, not on the selector. `protocolTimeout: 900000`, and the second run is
+  fast because the feed cache is warm.
+
+**AND I HIT THE pkill SELF-MATCH TRAP FOR THE FOURTH TIME IN THIS FILE.** A
+`grep -F "node server.js"` inside the kill pipeline matched the pipeline's own
+command line; every later command exited 144 with no output. The recorded remedy
+is the right one and I did not follow it: assemble the needle at runtime, or
+find the process another way. Note `ss -lptn` could NOT see the listener in this
+container, so the reliable route is reading `/proc/*/cmdline` — and the cmdline
+is the bare **`node server.js`**, not the absolute path, so a matcher requiring
+`rental-report` in it finds nothing.
+
+**THE RESULT: the Aquatics tab on El Segundo's real August data** — 6,770 pool
+bookings, $40,834 charged, 69 active sites, and **8,016 lane hours across 67
+lanes** with the hour-coverage heat grid and a CSV link on every panel. Note
+8,016 against the **8,406.7** this file records from raw SQL: the tab counts
+`oeIsArrival` timed bookings only (5,485 of them) and excludes multi-day rows
+that carry no per-day hours, which is the documented behaviour rather than a
+discrepancy — but the two numbers must not be quoted interchangeably.
+
+### DESK COVERAGE ON DROP-IN IS 100% — the open question is closed
+
+The previous section left this as *"the measurement that decides whether report B
+works"*. Measured: **1,375 of 1,375 drop-in rows carry a `desk_location_name`**.
+So CivicRec's "Receipt Location" column reproduces exactly, and **report B needs
+nothing further**. The org-wide 72%-without-a-desk figure is online *program*
+registrations dragging the average down; counter-sold drop-in is unaffected.
+Generalise it: **a coverage figure taken over the whole org is not evidence about
+one report's row set.**
+
+### What each side actually looks like, with the figures used
+
+| | theirs (CivicRec, July) | ours (Rec, August) |
+|---|---|---|
+| A lane hours | 7,782 lane rows · 7,861.0 h · $16,634 | 8,016 h · 67 lanes · 5,485 timed bookings |
+| B drop-in | 4,956 admissions · $17,786.50 | item × desk × qty × free × revenue, 100% desk |
+| C Rec ID | 171 IDs · $2,040 | 2,371 IDs · $1,875, four tender columns |
+| D passes | $12,024 over four tender columns | 793 rows · $10,386 · zip on 791 (99.7%) |
+| E instructor | 567 participants · $7,924 · 24.59 h | **the Instructor Payout report** — per section, with a pay slip |
+
+**The passes comparison is the strongest single piece of evidence** that this is
+columns and not a rebuild: receipt · date · time · user · zip · cash · check ·
+card · total · item comes straight out of `item_log_report` joined to
+`users.zip_code`, and it is CivicRec's layout line for line apart from the
+receipt number being ours rather than theirs.
+
+## BUILT: Joseph's four aquatics cards (2026-09-09)
+
+Dan: *"lets build them - give me the four SQL reports directly in MB and I'll
+wire them up with any needed filters."* Built in collection **3994**
+(El Segundo, CA) and added to dashboard **3136**.
+
+| # | card | id | link |
+|---|---|---|---|
+| 1 | Aquatic Lane Hours | 21682 | https://rec.metabaseapp.com/question/21682 |
+| 2 | Aquatics Classes by Month and Instructor | 21683 | https://rec.metabaseapp.com/question/21683 |
+| 3 | Aquatics Drop-In Admissions | 21684 | https://rec.metabaseapp.com/question/21684 |
+| 4 | Aquatic Passes and Memberships | 21685 | https://rec.metabaseapp.com/question/21685 |
+
+### THE FLIP TAX DID NOT APPLY, and the reason is reusable
+
+Every card registered **exactly THREE** template tags, not six — because these
+were **created**, not updated. The six-parameter duplication this file records
+comes from *re-saving* a card that already had `date/single` tags; a brand-new
+card has nothing to duplicate against.
+
+All three tags came back **`type: "text"`**, as always. **But every date bound is
+written `{{start_date}}::date` and `{{end_date}}::date + 1`, so the cards run
+correctly under a Text tag** — the cast that `sql/facility-permits.sql` and
+`gl-account-detail.sql` have always used. Flipping to Date is therefore
+**optional here and only needed to attach a Metabase DATE dashboard filter**,
+which can only bind to a Date-typed tag. Nothing is broken until then.
+
+**Dan flipped all three anyway and set a DEFAULT VALUE on `org_id`**
+(`8ae77057-6bce-4c20-b0f2-366ed5fa14dd`, El Segundo), so the cards open without
+a parameter having to be typed and the dashboard's date filters bind. That
+configuration is now the reason these four cards must not be saved through the
+API again — see the ORDER BY section below.
+
+### WHAT EACH CARD READS, after Dan's *"use the materialized items log"*
+
+| card | source | why |
+|---|---|---|
+| 3, 4 | `materialized.item_log_report` only | ✔ |
+| 4 | + `users` for the buyer's zip | the item log carries `customer_id` but no zip; `users` has **no `organization_id`**, so it is scoped through `customer_id` |
+| 2 | `item_log_report` (money) + `booking_report` (participants) + base `session`/`section_facilitator` | **no materialized table carries a session schedule or a facilitator** |
+| 1 | base `reservation`/`reservation_court`/`court` | **`booking_report` is enrollment-grain — no court, no lane, no reservation range.** There is no materialized lane data at all |
+
+### THE DECISIONS INSIDE THE CARDS worth not re-deriving
+
+- **Card 1 has NO money column, on purpose.** A reservation spanning two lanes
+  emits two rows, so revenue at lane grain double-counts. Facility money stays
+  in the Facility Rental report.
+- **Card 1's CASE tests `Court Reservation:%` FIRST.** Otherwise a lane called
+  *"Court Reservation: Lap Lane 3"* files as Lap Swim programming — the
+  ordering-is-load-bearing rule, third instance.
+- **Card 2 FULL OUTER JOINs sessions to money**, because the month a class RAN
+  and the month its MONEY MOVED are different months and both are real. An inner
+  join would silently drop a term paid for in advance.
+- **Cards 3 and 4 PARTITION the org's `product` items** — 3 is Lap Swim + Rec
+  Swim, 4 is everything else — so there is no overlap and no gap between them.
+- **Card 3 emits admissions INCLUDING `free` and revenue EXCLUDING it**, in two
+  columns, which is the whole point of that report.
+- **Card 4 emits residency BOTH ways** (buyer zip and the product name's own
+  Non-Resident label). They should agree; a row where they disagree is a finding.
+
+### VERIFIED — AND CARD 1 SHIPPED BROKEN ANYWAY
+
+Every query was run against production with literal values before being saved —
+card 1: 862 rows / 8,338.5 lane hours / 6.9% unmapped; card 2: 226 rows / 781
+sessions / 1,171.4 h / 123 of 226 with an instructor; card 3: 24 rows / 1,380
+admissions (335 free) / $6,061 / **zero rows without a desk**; card 4: 118 rows /
+3,213 sold / $19,557 net / **0.2% with no buyer zip**. Card 21682 was then read
+back and its SQL is byte-intact.
+
+**AND CARD 21682 STILL FAILED THE FIRST TIME DAN OPENED IT**, with
+`ERROR: ORDER BY position 9 is not in select list`. Its SELECT emits **eight**
+columns and the tail read `ORDER BY 1, 2, 3, 9 DESC`. Correct is
+`ORDER BY 1, 2, 3, 8 DESC` — 8 is `Lane Hours`.
+
+**HOW A QUERY "RUN AGAINST PRODUCTION" WAS NEVER RUN.** I verified each card by
+wrapping its CTE logic in a *summary* `SELECT` (row counts, totals, coverage
+percentages) rather than executing the card's own final SELECT. So the CTEs were
+proven and **the column list and the `ORDER BY` line were never executed even
+once**. Byte-diffing the saved SQL back only proves the text landed intact — it
+cannot tell you the text is valid. Same class as the v7 regression at the top of
+this file: **prove the exact text you are saving, not the fragment you developed
+it with.** For a card, that means running the card's whole final SELECT, with
+literals substituted for the tags, before saving it.
+
+**THE FIX WENT THROUGH THE UI, NOT THE API, AND THAT WAS THE POINT.** By then Dan
+had flipped all three date tags and hardcoded El Segundo's `org_id`
+(`8ae77057-6bce-4c20-b0f2-366ed5fa14dd`) as the parameter's default. An
+`update_question` push regenerates every template tag as Text and would have
+wiped both. A one-character edit in the UI preserves them. **Generalise it: once
+a human has configured a card's parameters, a programmatic save costs more than
+the change is worth — hand over the one-line edit instead.**
+
+Cards 21683 / 21684 / 21685 were checked against their own column counts and are
+unaffected (`ORDER BY 1,3,4` of 11; `1,2,3,7 DESC` of 14; `1,2,3,10 DESC` of 16).
+
+**Dan made that edit and card 21682 now returns rows in the UI** (2026-09-09) —
+so the parameterised path is proven end to end for card 1: the flipped Date tags,
+the `org_id` default and the substitution all work together. That is the sign-off
+this file's card rule asks for, and it is the FIRST of these four to have it. The
+other three have been read back and their SQL is intact, but **none of them has
+been executed through the parameterised path**, so do not record them as signed
+off until each returns rows in the UI.
+
+### THE BACKCHECK AGAINST DAN'S SCREENSHOTS — three defects, one arithmetic (2026-09-09)
+
+Dan: *"let me drop in what the mb reports look like here and we can confirm they
+match the exports from Civic Rec, at least data wise."* Four screenshots of the
+dashboard. **Card 3 is correct. The other three each carry one real defect**, and
+all four were measured against production rather than read off the screen.
+
+#### CARD 3's TENDER COLUMNS DO NOT TIE TO ITS OWN REVENUE
+
+The only arithmetic error of the four, and the one that matters most because
+**every CivicRec money report has its tender columns sum to its total.**
+
+| El Segundo, August 2026 | |
+|---|---|
+| Cash + Check + Credit/Debit + User Credit | **$6,027.00** |
+| Revenue (net of refunds) | **$5,976.00** |
+| gap | **$51.00 — exactly August's refunds** |
+
+Card 3's four tender aggregates filter `transaction_type = 'payment'`, while
+`Revenue (net of refunds)` subtracts refunds. So the columns are **gross** and
+the total is **net**, and they disagree on precisely the refunded rows. Visible
+on screen row by row: every row with `Refunds = 0` reconciles to the cent, and
+every row with a refund is over by that refund.
+
+**Card 4 already does this correctly** — its tenders carry
+`* CASE WHEN transaction_type = 'refund' THEN -1 ELSE 1 END`, so they net. **The
+two cards disagree with each other about what a tender column means**, which is
+the two-surfaces-disagreeing trap inside one dashboard. Card 3 should copy card
+4, not the reverse: CivicRec's User Credit is negative, so signed is the shape
+that reproduces theirs.
+
+#### CARD 2 IS THE WHOLE ORG, NOT AQUATICS
+
+Its SQL scopes to `sec.organization_id` and **nothing else** — there is no
+aquatics filter anywhere in it. Measured: **367 of El Segundo's 396 sections are
+not aquatic** (87 non-aquatic programmes against 5 aquatic-ish), so the card
+titled *"Aquatics Classes by Month and Instructor"* returns Lego Club, Basic
+Cooking for Kids, Adult Tapping and Ballet & Tap. 685 rows.
+
+Two more things visible on that card, neither a bug:
+
+- **`Sessions in Month 0` beside real money is the FULL OUTER JOIN working.**
+  Money moved in a month the class did not run — the design this file already
+  records. But a table where most rows read `0 · 0` reads as broken, so it needs
+  saying on screen rather than only in the card comment.
+- **Two rows for "El Segundo Training Program", same month, same instructor, are
+  two DIFFERENT sections sharing a name.** The card groups by section id and
+  prints `sec.name`, so identical names are indistinguishable. A `Section ID`
+  column would settle it; without one this reads as a duplicate.
+
+#### CARD 4 LEAKS CITY-WIDE FEES — but far less than the screenshot suggests
+
+The screenshot leads with Farmers' Market and Dial-A-Ride, so it looks as if the
+card is the whole catalogue. **It is not, and the measurement corrects my own
+first read.** August, rows whose item name carries no aquatic facility:
+
+| | rows | gross |
+|---|---|---|
+| **Rec ID cards** — legitimately Joseph's report C | **2,203** | $1,830 |
+| genuinely out of scope (Farmers' Market ×3, cooking materials, Per Player Fee, Outreach Donations, Red Cross cert) | **19** | **~$6,493** |
+
+So it is **19 rows of 3,221 (0.6%) — and about a quarter of the card's money**,
+one `Per Player Fee- Non Resident` row alone carrying $3,695. **The fix is
+therefore NOT "filter to aquatic"**, which would delete the Rec ID report; it is
+*aquatic-named OR Rec ID, and nothing else*.
+
+**THE PARTITION IS WHAT CAUSED THIS, and it was my design.** Card 4's scope is
+*"every `product` item EXCEPT Lap Swim / Rec Swim"* — chosen so 3 and 4 partition
+with no overlap and no gap. That is a fine property and the wrong objective:
+"everything that is not a drop-in swim" is not "aquatic passes", it is the rest
+of the city. **A partition is only worth having over a set that is already the
+right set.**
+
+Also found: **`El Segundo Recreation ID Card - Adult` (1 row) against
+`El Segundo Resident ID Card - Adult` (1,074)** — a third instance of the
+two-catalogue-names-for-one-product trap already recorded for the punch passes.
+
+#### CARD 1 IS RIGHT FOR AUGUST; ITS DEFAULT VIEW IS PRE-CUTOVER TEST DATA
+
+August is clean — **5,808 lane reservations, 4,332 auto-generated
+(`Court Reservation:`) against 1,476 real rental names, and ZERO staff blocks or
+holds.** The classification works.
+
+What Dan's screenshot shows is **2026-04 and 2026-06**, before El Segundo went
+live: `Block`, `Swimlane`, `Hold for Reservation`, and a `Pool Reservation:`
+prefix that does not appear in August at all. Every one of them falls to
+*"Unmapped - assign a category"*, so **the first screen Joseph sees is test data
+telling him to go categorise it.** The card has no date floor and the dashboard
+filter arrives empty.
+
+Two fixes, neither urgent: a date floor at go-live, and a bucket for staff
+blocks/holds so they are never presented as a programme awaiting a mapping.
+
+### THE SCOPE IS A FIELD THE ORG ALREADY MAINTAINS — `category = 'Pool Programming'`
+
+Dan, with a screenshot of a programme's Activities panel reading
+*"Aquatics, Swim Lessons"*: *"for the name filter, can't we use the activity,
+'Aquatics'? There's literally an activity name that matches swimming stuff."*
+
+**Right, and the level ABOVE the activity is better still.** I was about to ship
+a `%swim%|%aqua%|%water%` name regex, which would have been a maintained guess
+over a structured field that already exists.
+
+The path is `program_activity` → `activity` → `category`, all org-scoped and all
+carrying `deleted_at`. Measured at El Segundo:
+
+| | sections |
+|---|---|
+| `activity.name = 'Aquatics'` alone | **61** |
+| **`category.name = 'Pool Programming'`** | **83** |
+| sections with no category at all | **0** |
+
+**"Aquatics" ALONE MISSES 22 SECTIONS**, and they are not marginal — the
+category holds five activities and Swim Lessons is the biggest of them:
+
+| activity | sections |
+|---|---|
+| Swim Lessons | **71** |
+| Aquatics | 61 |
+| Water Aerobics | 8 |
+| Swim Activities | 6 |
+| Stroke Refinement | 3 |
+
+So a programme can be tagged `Swim Lessons` without `Aquatics`, which is exactly
+what Dan's own screenshot shows carrying both. **One value at the category level
+beats five at the activity level** — and it picks up a sixth aquatic activity on
+the day El Segundo adds one, with no card edit. Tennis sits under `Sports`,
+Zumba under `Fitness`, Hip Hop under `Dance`, so the category genuinely
+separates.
+
+- **COVERAGE IS 100%, which is why this is usable at all.** Every one of El
+  Segundo's 396 sections carries an activity — unlike the instructor field,
+  which is empty on every aquatics section. A structured field is only better
+  than a regex if it is actually populated; this one is, and that was measured
+  before choosing it.
+- **The tag is multi-valued and 3 sections sit in two categories** — all three
+  are one programme, `Lego Club (library)`, mis-tagged with a Pool Programming
+  activity. That is El Segundo's data entry, not a structural problem, and it
+  argues for `BOOL_OR`/`EXISTS` rather than a join that could fan out.
+
+**`site_activity` CANNOT do the same job for card 1.** It exists (court_id →
+activity_id) and looks like the principled replacement for that card's hardcoded
+list of three location names — but **exactly ONE El Segundo court carries a Pool
+Programming activity**, so the table is essentially unpopulated here. Card 1
+keeps its location list. Worth knowing so nobody spends an afternoon on it.
+
+### "(no location on sessions)" WAS A LIE, AND MY FIRST DIAGNOSIS WAS WRONG
+
+Dan: *"also for card 2, you're missing some location/site data, it's in there."*
+With the admin UI beside it: **Level 1- Tadpoles: Tue/Thurs 4:00pm-4:25pm**, every
+session at **Urho Saari Swim Stadium** — and card 2's August row for that exact
+section reading `(no location on sessions)`.
+
+**I reached for the wrong cause first, and it was a cause this file already
+records.** The note on card 17295 v6 says `session.location_id` is EITHER a court
+id OR a location id, and reading one side silently loses the other. That is a
+real trap and it is **not what happened here**: measured, **all 2,067 live El
+Segundo sessions resolve as a LOCATION, none as a court, none NULL.** Checking
+beat pattern-matching, and the pattern was one I had written down myself.
+
+**The real cause is that the location was read from THAT MONTH'S sessions.**
+`sess` groups by section × month and the SELECT reads `COALESCE(sess.loc, …)`, so
+a row arriving from the money arm alone — money moved, no session ran — has
+nowhere to read a location from. Measured on the exact section Dan named:
+
+| Level 1- Tadpoles: Tue/Thurs 4:00pm | sessions |
+|---|---|
+| 2026-08 | **0** |
+| 2026-09 | **8, all Urho Saari** |
+
+August is registration money for a course that starts in September. So the label
+blamed the data for something the query did to itself — **the location was never
+missing, it was merely not in that month.** Its Mon/Wed siblings have one August
+session each, which is why they resolved and the Tue/Thurs ones did not: same
+programme, same pool, different answer.
+
+**A SECTION'S LOCATION DOES NOT CHANGE MONTH TO MONTH**, so it is resolved from
+the section across all its sessions (`sec_loc`), and the fallback is reworded to
+`(no location on file)` — a claim about the record rather than about the month.
+
+**Generalise it: a COALESCE fallback is a sentence the reader believes.** If it
+names a cause it must be the actual cause; `(no location on sessions)` asserted
+something false about El Segundo's data entry, on a report they would have taken
+to be a finding.
+
+Two more things the fix carries, both found by running it:
+
+- **`Section ID` is now a column**, and it settles the apparent duplicate rows:
+  49 distinct section NAMES against **52 distinct section IDs** over Aug-Sep.
+  `Level 3 - Clownfish: Tue/Thurs 4:30pm-4:55pm` really is two sections, and
+  `Semi-Private: Level 1/2 9:30am` and `10:30am` likewise. Not a grouping bug.
+- **`s.starts_at IS NOT NULL`**: a NULL start makes a NULL `ym`, and `NULL = NULL`
+  never matches in the FULL OUTER JOIN, so such a session emitted a row with a
+  blank Month that could never pair with its money. Two sessions at El Segundo.
+
+**AND IT CORRECTS A CLAIM IN THIS FILE.** It says *"every aquatics section has no
+facilitator on file"*. **Saul Gonzalez teaches all six `Swim With Me - Adaptive`
+sections**, so the instructor column is populated for some aquatics after all —
+the coverage gap is real but not total, and the sweeping version of it should not
+be repeated to El Segundo.
+
+The corrected SQL is mirrored at `sql/report-cards/21683-aquatics-classes.sql`
+and was **verified by running that exact text**, whole final SELECT included,
+against production: **97 rows where the live card returns 685**, three locations,
+**zero** unresolved. **It is NOT applied to the live card** — Dan has flipped the
+date tags and set the org_id default, and `update_question` would regenerate both
+as Text, so this goes in through the UI.
+
+### ALL FOUR CARDS ARE APPLIED (2026-09-09)
+
+Dan asked whether the cards could be updated programmatically off their public
+links. **They cannot, and access was never the blocker** — I created them and
+hold write access and their numeric ids. `update_question` takes SQL only as a
+`query_handle` from `construct_native_query`, whose entire input is
+`database_id` + `sql`: **there is no template-tag field anywhere in that path**,
+so every programmatic save regenerates all three tags as Text and wipes both
+Dan's Date flips and the hardcoded `org_id` default. Now that the cards are on a
+dashboard the Date-typed tags are what its date filters BIND to, so an API save
+breaks the dashboard, not just the cards. Dan: *"all good i'll just
+copy/paste"* — and he applied card 2 (21683) the same afternoon.
+
+The other three are mirrored in `sql/report-cards/` and **each was verified by
+running THAT EXACT TEXT, whole final SELECT, bare — not wrapped in a summary
+SELECT**, which is the specific mistake that let card 21682 ship with
+`ORDER BY position 9 is not in select list`.
+
+| card | file | fix |
+|---|---|---|
+| 21682 | `21682-aquatic-lane-hours.sql` | a go-live date floor + a Staff Block / Closure bucket |
+| 21684 | `21684-aquatics-dropin.sql` | the four tender columns now sign refunds |
+| 21685 | `21685-aquatic-passes.sql` | scope is aquatic-named **OR** Rec ID, not "everything except drop-in swim" |
+
+**Dan pasted all three the same afternoon, and each was read back and confirmed
+BYTE-IDENTICAL to its mirror with all three template tags intact** — `org_id`
+text carrying the El Segundo default, `start_date`/`end_date` still typed
+**date**. That is what a UI paste buys over an API save, demonstrated rather
+than argued.
+
+**AND THE FIRST PASTE OF CARD 21684 DID NOT LAND.** Dan sent a screenshot saying
+it was done; the card body was unchanged. **His own screenshot proved it before
+the card was re-read**, which is the reusable part: every row with `Refunds = 0`
+tied exactly (Hilltop Rec Swim - Youth, 108 + 492 = 600), and every row with a
+refund was over by precisely that refund — AC Lap Swim - Adult 227 + 886 =
+$1,113 against $1,105 with 1 refund, AC Rec Swim - Youth 42 + 453 = $495 against
+$477 with 3. A rendered table is checkable arithmetic, so **check the numbers in
+the screenshot against the invariant before believing a card was updated** — the
+live read then only confirms what the arithmetic already said.
+**CARD 21684 — the tenders now tie to the card's own total.** They filtered
+`transaction_type = 'payment'`, i.e. GROSS, while Revenue is net. August: gross
+tenders $6,027.00 against revenue $5,976.00, gap **$51.00 = exactly the month's
+refunds**, and every row with zero refunds already reconciled. Signed now, and
+re-measured: **19 rows, 1,354 admissions of which 323 free, 9 refunds,
+$5,976.00 — and the four tenders sum to the revenue on ALL NINETEEN ROWS,
+refunded rows included.** Card 21685 already did it this way, so the two cards
+had been disagreeing about what a tender column means inside one dashboard.
+
+**CARD 21685 — the leak is a THIRD of the money, not "about a quarter".** I
+estimated ~$6,493 gross from a name scan; measured properly over August it is
+**$6,413.00 net of $19,557.00 — 32.8% — on 17 rows of 3,213 (0.5%)**, across
+seven items (Farmers' Market ×3, Cooking Class Materials, a kitchen fee,
+`Per Player Fee- Non Resident`, a Red Cross certificate). The 2,203 Rec ID rows
+STAY, which is why the fix is not "filter to aquatic". After: **424 rows, 3,196
+sold, $13,144.00 net, 55 items, tenders reconcile on all 424, ZERO rows falling
+to the ELSE.** A Military tier was added in the same pass — ~90 Military-priced
+pass rows had been reading `(no tier in name)` because the CASE had no branch.
+
+**CARD 21682 — the floor is 33 rows and the bucket fires on real data.**
+Everything before 2026-08-01 is **33 reservations / 35.0 lane hours** across
+2026-04/06/07, named Block, Swimlane, Hold for Reservation and
+`Pool Reservation:` — the pre-cutover test data that was the first thing Joseph
+saw, every row of it reading *"Unmapped - assign a category"*. Against 5,808
+reservations and 8,338.5 hours in August alone. In LIVE data the new
+Staff Block / Closure bucket catches exactly one thing today —
+**"Labor Day Closed", 8 reservations / 24.0 h** — so it is a live category and
+not defensive decoration. **The hours are KEPT rather than netted out**: closed
+lane time is still lane time that was not sold, and which side of a utilisation
+ratio it belongs on is Joseph's call, not the card's. Unwindowed after both
+fixes: 2,236 rows / 18,987 reservations / 35,983.50 lane hours, 2026-08 ..
+2027-01, nothing earlier.
+
+**TWO PRIOR "VERIFIED" ROW COUNTS DO NOT REPRODUCE, and the reason is the same
+one.** Card 21684's comment claims 24 rows / 1,380 admissions / $6,061 for
+August (really 19 / 1,354 / $5,976 gross-of-nothing), and card 21685's claims
+118 rows (really 424 — its grain includes Buyer Zip). Card 21685's **$19,557 net
+DOES reproduce exactly**, which is the tell: the money came from a summary probe
+that was right, and the row counts came from a probe at a grain the card never
+had. Same root cause as the ORDER BY bug — *the card's own SELECT was never
+run.* Both verification comments are corrected in the mirrors to today's
+measured figures.
+
+### THE FILTER REQUIREMENTS, EXAMINED AGAINST THE BUILT CARDS (2026-09-09)
+
+Dan: *"now examine the filter requirements he asked for."* Four of Joseph's five
+cross-cutting requirements are met by the cards as they now stand. **Facility is
+the one gap, and it is three separate problems stacked.**
+
+| requirement | verdict |
+|---|---|
+| custom range + monthly rollup + Jul–Jun FY | **met** — all four carry Date-typed `start_date`/`end_date`, and an FY is just a range |
+| individual program name, not category totals | **met** — every card is item- or section-grain |
+| net of refunds | **met**, and since the 21684 fix the tenders tie to it |
+| mapped to a GL code | **available and unmet** — see the correction above; the column is a perfect facility key and neither money card selects it |
+| **filter by facility (AC / Plunge / Hilltop)** | **NOT POSSIBLE TODAY** |
+
+#### 1. A NATIVE CARD CANNOT BE FILTERED BY A RESULT COLUMN
+
+This is the mechanical blocker and it is worth stating plainly, because the
+cards *display* Facility and that makes the filter look one drag away. A
+Metabase dashboard filter on a native question must bind to a **template tag**.
+All four cards register exactly three — `org_id`, `start_date`, `end_date` — so
+there is nothing for a Facility widget to attach to. **Adding the filter means
+editing all four cards, not configuring the dashboard.**
+
+And the widget it can have is limited: a **Field Filter** maps to a real column
+on a real table and therefore cannot bind to a `CASE` expression, so the
+facility tag has to be a **plain variable** — a typed value or a static
+dropdown, not a live multi-select of the values on screen.
+
+#### 2. THE FOUR CARDS SPELL ONE FACILITY FOUR WAYS
+
+Measured, and this is why one filter value cannot serve the dashboard:
+
+| Joseph's name | card 1 (`location.name`) | cards 3 / 4 (item name) | `desk_location_name` |
+|---|---|---|---|
+| AC | `El Segundo Wiseburn Aquatic Center` **+** `…Aquatics Center- Competition Pool` | `Aquatic Center` | `El Segundo Wiseburn Aquatic Center` |
+| Plunge | **`Urho Saari Swim Stadium`** | `Plunge` | `Plunge` |
+| Hilltop | *(absent — see 3)* | `Hilltop` | `Hilltop` |
+
+**The Plunge IS Urho Saari Swim Stadium.** A filter set to `Plunge` returns 1,081
+rows on cards 3/4 and **zero** on card 1. The Aquatic Center is likewise two
+locations on card 1 and one bucket on cards 3/4.
+
+**And card 4's `Wiseburn` bucket is not the Aquatic Center**, which is the easy
+misread — those 182 rows are `Wiseburn Rec ID` cards, a residency product for
+the Wiseburn district, plus 2 `Wiseburn Facility Reservation` rows. They belong
+with the Rec IDs, not with a pool.
+
+#### 3. CARD 1 EXCLUDES HILLTOP, AND HILLTOP NOW HAS A POOL
+
+Card 21682's `aquatic_sites` CTE names three locations and Hilltop Park is not
+one. That was right when the card was written and is not now — see the
+correction in the section above.
+
+#### WHAT WIRING IT ACTUALLY TAKES
+
+One canonical label set — `Aquatic Center` / `Plunge` / `Hilltop` — emitted by
+all four cards, plus a `facility` template tag on each inside `[[ ]]`. On cards
+3 and 4 **drive it off the GL code rather than the item name**: it is
+structured, it is El Segundo's own field, and it agrees with the name regex
+exactly today, so switching costs nothing and stops the prefix list needing
+maintenance. Card 1 needs Urho Saari → Plunge, both Wiseburn locations →
+Aquatic Center, and Hilltop Park added; card 2 needs its session location mapped
+the same way.
+
+**BUILT the same afternoon — see the next section.** Dan: *"Can't we filter the
+report by location? we have that data for all these reports, no?"* and then
+*"yes, write all four--and use 'location' as the report filter, not 'facility'."*
+
+### THE LOCATION FILTER, BUILT ACROSS ALL FOUR CARDS (2026-09-09)
+
+**`location`, not `facility`** — Dan's word, and the better one: it is the field
+name the platform already uses, and "facility" reads like a building type.
+
+Every card now carries a fourth template tag, `{{location}}`, inside `[[ ]]`, and
+every card emits a **`Location` column carrying the SAME canonical values**, so
+one dashboard filter drives all four:
+
+| | |
+|---|---|
+| `El Segundo Wiseburn Aquatic Center` | Competition Pool folded in |
+| `Urho Saari Swim Stadium` | staff call it the Plunge |
+| `Hilltop Park` | |
+| `(City-wide - Rec ID)` | **card 4 only** — a Rec ID answers to neither pool |
+
+#### IT IS A HYBRID, AND THE MEASUREMENT IS WHY
+
+Cards 1 and 2 read a **real `location` record**. Cards 3 and 4 read the **GL
+code**, because `materialized.item_log_report` has no location column at all.
+
+The obvious alternative on the money cards is `desk_location_name`, and it is
+right for one of them and badly wrong for the other:
+
+| | rows with a desk |
+|---|---|
+| card 3, drop-in | **1,857 of 1,857 — 100%** |
+| card 4, aquatic passes | 175 of 1,051 — **16.7%** |
+| card 4, Rec ID cards | 283 of 2,572 — **11.0%** |
+| GL code, both cards | **every row** |
+
+Drop-in is counter-sold; passes and Rec IDs are bought online. So a desk-based
+filter would drop ~87% of card 4's money **and drop it non-randomly**, keeping
+only the counter sales. `desk_location` also has **no `location_id`** — its
+columns are id / created_at / updated_at / organization_id / name / description
+/ archived_at / enforce_access_control — so a desk cannot even be joined to a
+location record. "Plunge" the desk matching "Urho Saari Swim Stadium" the
+location is a coincidence of naming, not a relationship.
+
+On card 3 the GL code and the desk agree **1:1 with zero "(no desk)"**, which is
+what makes using the GL code on both money cards free rather than a compromise.
+
+#### THE DROPDOWN IS A CUSTOM LIST, NOT A LIVE QUERY — and Dan asked directly
+
+*"Do we need a separate mb query to pull the live location data from El Segundo,
+then wire that to the filter?"* **No, and a live one would be worse.** The CASE
+ladders in these four cards have to be hand-edited when a pool is added, so a
+self-updating dropdown would offer a fourth value that silently returns **zero
+rows on every card** — a filter that looks like it works and answers nothing.
+A static list of four cannot get ahead of the SQL. Two blocks to edit when a
+pool opens, both marked with ▼▼ in the mirrors: `aquatic_sites` on card 21682
+and the `scoped` CTE's GL ladder on 21684/21685.
+
+#### THE TAG IS A PLAIN TEXT VARIABLE, so it takes ONE value
+
+A **Field Filter** would allow multi-select and cannot bind to a computed `CASE`
+expression, so it is not available here. One location at a time, or blank for
+all — which is the common case anyway.
+
+#### `Facility` WAS REPLACED, NOT ADDED BESIDE
+
+On cards 3 and 4 the old `Facility` column (parsed out of the item name) is gone
+and `Location` sits in its place, so **the `ORDER BY` positions are unchanged** —
+the specific thing that broke card 21682 on its first save. The item name still
+carries the facility, so nothing is lost.
+
+#### A `WHERE TRUE` IS LOAD-BEARING ON THREE OF THE FOUR
+
+Cards 2, 3 and 4 had no `WHERE` on their final SELECT at all, so the optional
+clause has nothing to hang off. `WHERE TRUE [[AND … ]]` is the idiom; without it
+the `[[ ]]` block has to carry the `WHERE` itself and Metabase's substitution
+gets fragile.
+
+#### VERIFIED, each by running ITS OWN WHOLE TEXT with literals
+
+| card | with the filter unset | split by location |
+|---|---|---|
+| 21682 | 2,237 rows | Wiseburn AC 1,854 / Urho Saari 382 / Hilltop **1** |
+| 21683 | 125 rows | Urho Saari 93 · Wiseburn AC 31 · `(no location on file)` **1** |
+| 21684 | 19 rows (Aug) | 3 locations, **zero unmapped GL**; filtered to Urho Saari → 8 rows, tenders still tie |
+| 21685 | 424 rows · $13,144 (Aug) | 4 values, **zero unmapped GL**, identical to the pre-filter run |
+
+Two honest notes rather than glossed ones:
+
+- **Card 2's one `(no location on file)` row** is a section with no session on
+  record at all, so there is nothing to read a location from. It drops out when
+  the filter is set, which is correct — it cannot be claimed for a location
+  nobody recorded. The earlier Aug–Sep windowed run recorded **zero** such rows;
+  this run is unwindowed, which is a different question, not a regression.
+- **Card 1's hours move between reads** — 35,983.50 → 35,998.50 across one
+  afternoon, all on the Wiseburn instant-lane side. August is an open window and
+  campers keep booking. Never diff an open window against itself across two
+  reads.
+
+**Hilltop is +1 row, and that is the whole of it.** Card 21682 excluded Hilltop
+Park entirely; it now has a published pool site and is included **pool only**,
+because its other five sites are picnic tables and would otherwise land in a
+lane-hours report.
+
+#### VERIFIED LIVE AFTER DAN'S PASTE — and TWO VALUES EMPTY TWO CARDS
+
+Dan: *"ok all four pasted, verify the filter works."* **It works**, and the
+verification found something the dropdown does not say out loud.
+
+Read back live: all four cards register the `location` tag as **text**, and the
+three original tags survived the paste on every one — `org_id` text carrying the
+El Segundo default, `start_date`/`end_date` still typed **date**, which is what
+the dashboard's own date filters bind to.
+
+**THE COVERAGE MATRIX, measured unwindowed rather than assumed.** Rows each card
+returns for each of the four dropdown values:
+
+| filter value | 1 lane hours | 2 classes | 3 drop-in | 4 passes |
+|---|---|---|---|---|
+| El Segundo Wiseburn Aquatic Center | 1,854 | 14 sections | 13 | 838 |
+| Urho Saari Swim Stadium | 382 | 54 sections | 15 | 111 |
+| **Hilltop Park** | 1 | **0** | 8 | **0** |
+| **(City-wide - Rec ID)** | **0** | **0** | **0** | 1,867 |
+
+**Both empties are correct, not broken**, and neither was obvious:
+
+- **Hilltop sells drop-in swim and nothing else.** It runs no aquatic programme
+  sections and sells no passes or Rec IDs, so cards 2 and 4 have nothing to show.
+  I had assumed it carried passes; it does not.
+- **A Rec ID is city-wide by construction** — it answers to neither pool — so it
+  exists only on card 4, which is the card that sells it.
+
+So picking either of those two leaves most of the dashboard blank. **That is the
+data being honest, and it still reads as a broken filter to Joseph**, which is
+the argument for a note on the dashboard rather than for changing the SQL. The
+alternative — folding Rec IDs under a pool — would file city-wide revenue
+against a facility that never earned it.
+
+Zero rows fell to `(unmapped GL …)` on cards 3 and 4, so the GL ladder is
+complete for every product in scope.
+
+**One honest gap on card 2:** **15 of its 83 sections carry no session at all**,
+so they have no location and drop out whenever the filter is set. Checked rather
+than waved through — **all 15 have zero confirmed bookings** (Baby & Me, two
+Lego Clubs, four unstarted Tadpoles/Frogs/Clownfish sections, a *Squad Session -
+Free Trail*). They are empty shells, so nothing with money or participants in it
+is ever hidden by the filter. The earlier Aug–Sep windowed run showed 1 of these
+because the window hid the rest.
+
+#### THE PASTE IS DAN'S, AND ADDING THE TAG IS A UI STEP
+
+`update_question` regenerates every template tag as Text and takes SQL only as a
+`query_handle` from `construct_native_query`, whose entire input is
+`database_id` + `sql` — **there is no template-tag field anywhere in that path**.
+Dan has flipped the date tags to Date and hardcoded the `org_id` default, and
+the dashboard's date filters BIND to those Date-typed tags, so a programmatic
+save breaks the dashboard rather than only the cards. Paste in the UI.
+
+### TWO PLACEMENT GAPS
+
+- **The MCP `update_dashboard` tool has no tab parameter**, so the four cards
+  landed on the dashboard's default tab rather than its `aquatics` tab. They have
+  to be dragged across by hand.
+- **`create_question` HTML-escapes the name.** Card 2 saved as
+  `Aquatics Classes by Month &amp;amp; Instructor` and had to be renamed — the
+  same `Sales &amp;amp; Mix` escaping trap already recorded in this file, one API
+  over. **Do not put an ampersand in a card name passed through this tool.**
+
+### WHERE THIS IS HEADED (Dan, same session)
+
+Two notes worth keeping, neither of them acted on yet:
+
+1. *"Civic (and many orgs) just want data reports, not a fancy visualization. So
+   maybe it's worth retroactively building these types of Reports joseph is
+   looking for into a more cross functional set of 'data only' reports into the
+   org dashboard?"*
+2. *"once i can validate that the data looks similar, we'll consider flipping
+   these into a new 'custom reports' section in the reporting project. main
+   reasons are mb exporting->pdf looks terrible, and if we manage the report we
+   can control what the export looks like."*
+
+**These four cards are already the right shape for that flip.** Each takes
+`org_id` + optional `start_date`/`end_date`, which is exactly what
+`buildMetabaseParams` sends, so becoming a feed behind a reporting-project page
+is a `SHARED_UUIDS` entry and a table renderer — not a rewrite. The export
+argument is the strongest one on the list: this repo already owns CSV with the
+BOM (`csvFromRows` + `saveTextViaPopup`) and PDF via Puppeteer, both of which
+beat Metabase's PDF.
+
+## SCOPED: Joseph's four reports as METABASE CARDS (2026-09-09)
+
+Dan: *"I suspect it's just easier to build all of these as custom metabase
+reports, no? Scope out just building the 4 reports he wants in metabase, drop the
+other stuff."* **Scoped, nothing built.** Full write-up:
+https://claude.ai/code/artifact/204633da-2f05-48dd-b1f9-6efc5963e6ca
+
+**All four are buildable as cards; three are rollups over tables already proven.**
+The measurements below are new this session and are the ones worth keeping.
+
+### THE AVAILABILITY DENOMINATOR EXISTS, AND THE TAB CANNOT SEE IT
+
+The item this file listed as *"UNVERIFIED — check whether the lanes carry
+published open hours"* is **answered: all 67 aquatic lanes carry them.**
+
+| | |
+|---|---|
+| lanes with `court_slot` rows | **67 of 67** |
+| lanes exposing `config->bookingPolicies->slots` | **0 of 67** |
+| court-days | 441 |
+| open hours/week, interval-UNIONED | **4,207 h** (avg 9.54 h/court-day) |
+| open hours/week, naive `SUM` | 4,288 h — **+1.9%, and a 63-hour day** |
+
+`court_slot` is `court_id · day_of_week · open_from · open_to · type · deleted_at`
+(**not** `start_time`/`end_time` — I guessed that first and it errored; query
+`information_schema.columns` before writing the join, as this file already says).
+All El Segundo slots are type `PRIVATE`.
+
+**UNION THE INTERVALS, NEVER `SUM` THEM.** Only **6 of 441** court-days carry
+overlapping rows, so a naive sum looks fine until you notice a court-day claiming
+63 hours. That is why the card must merge intervals — and it is a number **our own
+Facilities tab structurally cannot produce**, because it reads
+`bookingPolicies.slots`, which is empty on every one of these lanes.
+
+### REPORT 1's MAPPING IS 31 ROWS, NOT 145
+
+Measured Aug–Sep 2026 over the three aquatic locations: **19,641.5 lane hours,
+67 lanes, 145 distinct rental names.** The split is what matters:
+
+| | names | lane hours | share | booking type |
+|---|---|---|---|---|
+| real names | **31** | 11,679 | **59.5%** | all `managed` |
+| `Court Reservation: <lane>` | 114 | 7,963.5 | 40.5% | instant + managed |
+
+So the program-type mapping Joseph fills in is **31 rows**, and the other 40.5% is
+auto-generated per-lane names carrying no programme at all — **one honest bucket
+(*individual lane reservations*), not a gap.** Top named: Drop In Lanes 4,116 h ·
+Loyola Marymount 1,380 · SCAQ 1,132.5 · ESHS Waterpolo 1,008 · Rec Swim 976 ·
+Swim Lessons 347.5 · Naomi's 301 · Coastal 300.
+
+**Ship report 1 BEFORE the mapping arrives** — lane × month × rental name is
+already useful and the mapping upgrades it without changing the query's shape.
+
+### THE REST OF THE SCOPE
+
+Reports 3 and 4 are single rollups over `materialized.item_log_report`, and **the
+platform's index problem does not bite at this org: El Segundo all-time is 1.7 s**
+(measured earlier this session). Report 2 is mostly deciding which of cards 17295 /
+21055 / 17755 to point him at rather than writing SQL. Every trap is already
+recorded in the sections below — the free-row split, the double-count between
+rentals and sections, Hilltop having no aquatic site, the duplicate catalogue
+names, the missing location column on the item log, and the GL code being a
+roll-up rather than a breakout.
+
+**The cost is the flip tax**: four programmatic saves is four cards registering six
+parameters until a human re-saves them, so **batch all four into one visit** and
+sign each off through the public endpoint AFTER the flip.
+
+### DROPPED THE SAME AFTERNOON, and one claim left unverified
+
+Dan opened with two things about the Aquatics TAB — *"our aquatics facilities
+report isn't fine grained and the excel button doesn't do anything"* — and then
+redirected to the cards above (*"drop the other stuff"*). Both are parked.
+
+**The Excel claim was NOT reproduced, and I am not recording a verdict on it.**
+Static review found the button wired correctly (`exportExcel` → `aqSheetTables` →
+`saveWorkbookViaPopup`, with `CFG` and `open-pdf.js` both present), and one thing
+worth knowing turned up on the way: **in the toolbar the Excel button and the
+settings gear sit AFTER Print / PDF / Summary, and on Dan's ~1573px screenshot
+they are past the right edge.** That is a plausible cause and it is a guess — the
+browser run that would have settled it was killed when the ask changed. If it
+comes back, drive it rather than reading it.
+
+## Joseph's four aquatics reports, measured against live data (2026-09-09)
+
+Dan: *"revisit the el segundo reporting stuff, see how what we have compares to
+the requests in the email from Joseph at el seg."* Measured, nothing changed.
+Write-up artifact:
+https://claude.ai/code/artifact/0a35b7c8-9fbf-4cf3-98b8-10f0cf624070
+
+**EL SEGUNDO WENT LIVE IN AUGUST 2026, and that reframes the whole ask.** Net
+revenue by month: **Jul $3,214 · Aug $141,514 · Sep-to-date $47,412**. His
+report is due end of September against a July–June fiscal year, so Rec holds
+**one complete month**. Whatever he filed for July came from Civic Rec, and the
+first Rec-sourced report will look thin for reasons that are not our reporting.
+
+Note the org is **not in `server.js`** — it is a dynamic org served from the
+store, so its saved `aquaticsScope` could not be read from the sandbox. That is
+the one unverified item below.
+
+### THE ROOT CAUSE OF REPORTS 1 AND 2 IS ONE FACT: LANE TIME IS BOOKED TWO WAYS
+
+Rentals, groups and drop-in go through **facility reservations**, which attach
+to each lane. Instructional classes go through **program sections**, which
+attach to a building. Measured: of El Segundo's **284 program sessions** in
+Jul–Aug, **284 carry a `location_id` and ZERO carry a court** — and there is no
+session→court join table anywhere in the schema (`reservation` is the only table
+carrying both a `session_id` and a court/site).
+
+So **swim lessons contribute zero lane hours and no report can invent them.**
+That is not a gap in the Aquatics tab; it is a gap in what the platform records.
+
+**And the reservation side is exactly what Joseph wants, with no assumptions.**
+His definition — *"4 lanes for 1 hour/day, 5 days/week = 20 lane hours/week"* —
+is what `reservation_court` already produces, because a rental attaches to each
+lane it occupies. Naomi's Water Aerobics in August: **96 lane-reservations
+across 8 distinct lanes over 13 days = 83 lane hours**, computed his way.
+
+August aquatic lane hours: **Wiseburn 6,513 h / 53 sites**, **Urho Saari (the
+Plunge) 1,872 h / 16 sites**, competition pool 21 h — **~8,406 h**. Named groups:
+Drop In Lanes 1,692 h (Urho 1,152 + Wiseburn 540), Loyola Marymount 660, SCAQ
+387.5, Rec Swim 224, Coastal 120, Tower 115.5, BCA 94, LAM 93, Naomi's 83, Quest
+WP 80, Trojan 80, Mary's 79. The rest is individual lane reservations.
+
+**DOUBLE-COUNT TRAP:** Naomi's and Mary's exist BOTH as a facility rental and as
+a program section (Naomi's 83 h rental / 43 h of sessions; Mary's 79 h / 17.5 h).
+Summing rental hours and session hours counts them twice. Any lane-hours report
+has to pick one side per program and say which.
+
+**HILLTOP CAN NEVER SHOW LANE HOURS.** It sold 282 rec-swim admissions in
+August and has **no bookable aquatic site at all** — its only site records are
+picnic tables. Hilltop reads zero until its pool is set up as a site.
+
+**STALE AS OF 2026-09-09 — the pool site now EXISTS.** `Hilltop Pool
+Semi-Private Party` is a published `pool`-typed court at Hilltop Park with one
+reservation (2026-09-05) — the same booking the aquatics-scope backcheck
+records as *"1 booking, $256"*. So the sentence above was true when written and
+is not now. **Card 21682 still excludes it**: that card's `aquatic_sites` CTE
+lists three location names and Hilltop Park is not one of them, so a facility
+filter set to Hilltop returns nothing on card 1 while cards 3 and 4 show 297
+drop-in rows for it. Add Hilltop Park to the CTE when the facility filter is
+wired.
+
+**Nothing tags a booking with a PROGRAM TYPE.** He wants Swim Lessons / Water
+Fitness / Open-Rec Swim / Lap Swim / High Schools / Youth Water Polo / Masters.
+What exists is a free-text rental name (`SCAQ`, `Quest WP`, `Trojan`,
+`Drop In Lanes`). A human reads those; a report cannot group them without a
+mapping the org supplies — same shape as `aquaticsScope`, and the single
+cheapest thing that would turn the existing lane-hours panel into his report 1.
+
+### THE INSTRUCTOR COLUMN IS EMPTY, AND THE FIELD WORKS FINE
+
+Report 2 asks for *by instructor*. **Every aquatics section has no facilitator
+on file** — Naomi's HIIT Water Aerobics, Mary's Water Fitness, Level 1 Tadpoles,
+Level 2 Frogs, all blank. Tennis (Sergiu Boerica), Zumba (Sandra Delgado) and
+Red Cross (Loretta Zarp) all have one, so this is data entry at El Segundo, not
+a reporting gap. Consistent with the 155-of-286 coverage already recorded above.
+
+**ATTENDANCE SPLITS ACROSS TWO REPORTS AND THAT IS NOT A DEFECT.** August has
+**1,161 check-ins: 761 pass + 251 membership + 149 booking** (plus 35 undone).
+Only the **149 booking scans** attribute to a section — those are report 2's
+attendance. The other **1,012 pass/membership scans are org-grain** and are
+precisely report 3's drop-in check-in count. Do not try to put them on a class.
+
+### REPORT 4 IS ESSENTIALLY DONE, BECAUSE THE ORG ENCODED IT IN ITEM NAMES
+
+Facility, category, tier and residency are all in the product name:
+`AC Lap Swim - Adult`, `Plunge Rec Swim - Youth`, `Hilltop Rec Swim - Adult`,
+`Plunge Non-Resident 10 Punch Pass - Adult`. Every non-resident product is
+explicitly labelled, so his resident/non-resident split is separable by string.
+
+**His "annual (Rec ID) memberships" IS a product family already:**
+`El Segundo Resident ID Card` (**2,455 sold in August**, $2,085) and
+`Wiseburn Rec ID` (180, $180). Cleanly separable from pass sales.
+
+**DO NOT COUNT ROWS AS SALES.** **8,261 of August's 20,201 transactions carry
+`transaction_method = 'free'`** — punch redemptions and $0 admissions sitting in
+the ledger shaped exactly like sales. A row count overstates "passes sold" by
+roughly 40%.
+
+**Two naming schemes for one product.** `Aquatic Center 30 Punch Pass - Adult`
+(122) and `AC 30 Punch Pass - Adult` (61) are the same thing; a by-name report
+lists them twice. Same for the 10/20-punch and Annual Membership families.
+Catalogue hygiene, worth fixing before the first monthly report is filed.
+
+### THE CROSS-CUTTING REQUIREMENTS — one of the five genuinely does not hold
+
+- **Filter by facility (AC / Plunge / Hilltop): PARTLY.** Works for lane hours
+  and classes, which carry a real site or session location. It does **not** work
+  on the revenue ledger: **`materialized.item_log_report` has no location column
+  at all** (columns are customer / order item / transaction / gl / desk). The
+  facility is in the item NAME, or in `desk_location_name` — and desks are real
+  (`El Segundo Wiseburn Aquatic Center`, `Plunge`, `Hilltop`) but **72% of
+  August's rows have no desk** ($146,275 of $189,000) because they were bought
+  online. So desk cannot be the facility filter.
+- **Custom range + monthly rollup + Jul–Jun FY: HAVE IT.** A fiscal year is just
+  a range; nothing special is needed.
+- **Individual program name, not category totals: HAVE IT.** Everything here is
+  section-grain or item-grain.
+- **Net of refunds: HAVE IT.** Payments and refunds are separate rows, and the
+  Programs report already shows collected / refunds / net separately.
+- **Mapped to a GL code: ~~PARTLY~~ — CORRECTED 2026-09-09, it is a FULL
+  FACILITY KEY.** This bullet used to read *"almost everything is `001-505-5`…
+  the column will not distinguish any of his programs from each other"*. **That
+  was wrong, and it was wrong because I read only the first three segments of
+  the code.** The full value is `fund-dept-object-?-program`, and at El Segundo
+  it separates the facilities perfectly — measured over every `product` row in
+  the aquatics + Rec ID scope, with **zero cross-contamination in either
+  direction**:
+
+  | GL code | what it is | rows |
+  |---|---|---|
+  | `001-505-5213-3-43869` | **Aquatic Center** (594 drop-in + 862 pass/ID) | 1,456 |
+  | `001-505-5202-3-43869` | **Plunge** (965 drop-in + 116 pass/ID) | 1,081 |
+  | `001-505-5214-3-43860` | **Hilltop** (all drop-in) | 297 |
+  | `001-505-5213-3-43882` / `-43885` | **Wiseburn Rec ID** | 182 |
+  | `001-505-5201-3-43863` | **El Segundo Resident ID** | 2,462 |
+
+  So the GL code and the item-name regex agree **exactly** today — which means
+  the GL code is the better facility key of the two: it is structured, El
+  Segundo maintains it in their own finance system, and it needs no maintained
+  list of name prefixes. **Neither card 3 nor card 4 selects it.** Requirement 5
+  is unmet only because the column is not emitted.
+
+  **Generalise it: a truncated identifier is not the identifier.** Reading
+  `001-505-5` and concluding the field is useless is the same shape as reading a
+  schema instead of the report that already answers the question.
+
+### WHAT WOULD ACTUALLY UNBLOCK HIM, cheapest first
+
+Two of the three biggest wins are El Segundo's to do, not ours:
+
+1. **Assign instructors to the aquatics sections.** Fills report 2's instructor
+   column and the Instructor Payout report for aquatics. **El Segundo's to do,
+   and Dan's call is that it does not block us** — the columns work, the field is
+   empty; he will remind them.
+2. **Get a program-type mapping** — which rental names are Masters, High
+   Schools, Youth Water Polo. One list turns the existing lane-hours panel into
+   his report 1.
+3. **Confirm `aquaticsScope` has Wiseburn and Urho ticked.** Their lanes are
+   typed `court`, so without both the tab reports 21 hours instead of ~8,406.
+   **UNVERIFIED** — the org is dynamic and the setting could not be read here.
+4. **Check whether the lanes carry published open hours.** If they do,
+   available-vs-reserved (his report 3) is a matter of pointing the existing
+   `courtSchedulesFor` / `courtOpenHours` denominator at aquatics rather than
+   building anything. If they do not, the denominator is a conversation.
+5. **A store-item admission has no duration**, so lane hours for Lap Swim and
+   Rec Swim store items can only come from the posted rec-swim window — a number
+   El Segundo supplies, never one we measure. Presenting it as measured is the
+   `DIR_FT_MINUTES_PER_REG` mistake.
+
 ## El Segundo's aquatics asks — residency, lane hours, section location (2026-08-31)
 
 Joseph Lormans (El Segundo) asked for four aquatics reports by mid-September on a

@@ -176,6 +176,36 @@
       "org": "d781690b-c5a0-43c5-8443-9ae43899528c",
       "timeout": 60,
       "daysAhead": 14
+    },
+    {
+      "label": "aquatic-lane-hours / el-segundo (card 21682 \u2014 the first custom data report. The reporting page fetches this card DIRECTLY, so a re-Texted date tag or a lost ORDER BY takes the report down for El Segundo alone and nothing else would notice: it is not in REPORT_TYPES, so the health check does not probe it. Measured 2026-09-09: 862 rows / 34.8s for August 2026, unwindowed 2,237 rows)",
+      "card": "b1f4ca67-1a91-4e91-8581-5b3dbaf0d9a2",
+      "org": "8ae77057-6bce-4c20-b0f2-366ed5fa14dd",
+      "timeout": 120
+    },
+    {
+      "label": "aquatic-classes / el-segundo (card 21683 - aquatics classes by month and instructor). Measured 2026-09-09: 47 rows for September 2026. These custom data reports are NOT in REPORT_TYPES, so the health check does not probe them and prewarm does not warm them - a re-Texted date tag would take the report down for El Segundo alone with nothing else noticing. That is what this row is for. An 'An error occurred.' here means an API save regenerated the tags as Text; flip start_date/end_date back to Date and re-save until the list is FOUR (org_id, start_date, end_date, location).",
+      "card": "60ada9bc-76c3-4139-b5cb-072bc79c7eb8",
+      "org": "8ae77057-6bce-4c20-b0f2-366ed5fa14dd",
+      "timeout": 120
+    },
+    {
+      "label": "aquatic-dropin / el-segundo (card 21684 - drop-in and public swim admissions). Measured 2026-09-09: 17 rows for September 2026, and the four tender columns sum to Revenue on every row - they filtered transaction_type='payment' (gross) against a net Revenue and were over by exactly the month's refunds until 2026-09-09. These custom data reports are NOT in REPORT_TYPES, so the health check does not probe them and prewarm does not warm them - a re-Texted date tag would take the report down for El Segundo alone with nothing else noticing. That is what this row is for. An 'An error occurred.' here means an API save regenerated the tags as Text; flip start_date/end_date back to Date and re-save until the list is FOUR (org_id, start_date, end_date, location).",
+      "card": "453928c4-4b5a-4c21-bd84-5dc1785df630",
+      "org": "8ae77057-6bce-4c20-b0f2-366ed5fa14dd",
+      "timeout": 120
+    },
+    {
+      "label": "aquatic-passes / el-segundo (card 21685 - passes, memberships and Rec ID cards). Measured 2026-09-09: 126 rows for September 2026. Its grain includes Buyer Zip, which is why an earlier comment claiming 118 rows for August does not reproduce - that figure came from a probe at a grain the card never had. These custom data reports are NOT in REPORT_TYPES, so the health check does not probe them and prewarm does not warm them - a re-Texted date tag would take the report down for El Segundo alone with nothing else noticing. That is what this row is for. An 'An error occurred.' here means an API save regenerated the tags as Text; flip start_date/end_date back to Date and re-save until the list is FOUR (org_id, start_date, end_date, location).",
+      "card": "77b0063c-8a1a-4fd7-91a0-2855d5e16f36",
+      "org": "8ae77057-6bce-4c20-b0f2-366ed5fa14dd",
+      "timeout": 120
+    },
+    {
+      "label": "all-users / el-segundo (card 21715 - All Users and Households. NOT in REPORT_TYPES, so the health check does not probe it and prewarm does not warm it: a re-Texted date tag or a lost column would take the report down for this org alone with nothing else noticing. Measured 2026-09-09: 6,519 rows in 9.8s unwindowed. The card was CREATED rather than re-saved so it registers exactly THREE tags - an 'An error occurred.' here means a later API save regenerated them; flip start_date/end_date back to Date and re-save until the list is three.",
+      "card": "3825556f-ca08-42b4-b277-d8fa768ebcf5",
+      "org": "8ae77057-6bce-4c20-b0f2-366ed5fa14dd",
+      "timeout": 120
     }
   ]
 }

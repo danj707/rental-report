@@ -41,6 +41,35 @@ const BOOT_DEADLINE_MS = 45000;
 const PAGE_TIMEOUT_MS = 45000;
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "render-check-"));
 
+/* The per-org custom data reports (CUSTOM_REPORTS in server.js) are gated on an
+   org's own orgId, and El Segundo is a DYNAMIC org — it is not in the code ORGS
+   map, so no case could reach its report without a fixture here. Written NOW,
+   long before the spawn, because loadDynamicOrgs() runs at server module scope;
+   the cases carry their own token, since the org resolved below is a different
+   one and its token would 404 this report before anything rendered. */
+const AQ_ORG = "render-check-aquatics";
+const AQ_TOKEN = "render-check-aquatics-token";
+try {
+  fs.writeFileSync(path.join(dataDir, "orgs.json"), JSON.stringify({
+    [AQ_ORG]: { token: AQ_TOKEN, orgId: "8ae77057-6bce-4c20-b0f2-366ed5fa14dd",
+                logoUrl: "", displayName: "Render Check Aquatics" },
+  }));
+  /* AND A FRESH prewarm-state.json, BEFORE the spawn.
+     Without it every boot of this harness runs the STARTUP pre-warm — a fan-out
+     across ~28 orgs against PRODUCTION Metabase — because PREWARM_STARTUP_SKIP_MS
+     only skips when a cycle completed inside the last 6 hours, and a scratch
+     DATA_DIR has never completed one.
+
+     It is not merely wasteful. The /:org route is heavy (metrics, pulse, goals,
+     health), so while that fan-out is in flight it can exceed the 45s
+     navigation budget and EVERY org-landing case times out at once — which
+     reads exactly like a page regression and reproduces on a clean tree. That
+     cost real time here, and CLAUDE.md already records the same trap twice for
+     hand-run local servers. */
+  fs.writeFileSync(path.join(dataDir, "prewarm-state.json"),
+    JSON.stringify({ lastCompletedAt: Date.now() }));
+} catch (_) {}
+
 // ── Fixtures ────────────────────────────────────────────────────────────────
 // Column names copied from a real facility feed. Two campsites, one of them a
 // multi-night stay with an add-on, spanning a weekend and a weekday so the
@@ -1161,6 +1190,31 @@ let STUB_MODE = "";
 let CURRENT_STUB_DELAY_MS = 0;
 
 const STUBS = [
+  /* Card 21682 (Aquatic Lane Hours), the first of the per-org custom data
+     reports. THE FIXTURE IS SHAPED SO A WRONG ROLL-UP CANNOT LOOK RIGHT: two
+     months, two locations inside each, and month totals (13 and 21) and a grand
+     (34) that appear nowhere else — a subtotal read from the wrong level would
+     have to render one of those by accident. Rows arrive in the card's own
+     ORDER BY, which is what the grouper walks.
+     `prevloc` drops the Location column, i.e. a card that no longer emits a
+     level the registry names: the report must group on what it has rather than
+     file every row under "(none)". */
+  { match: /\/aquatic-lane-hours\/api\/data/, body: () => ({
+      rows: (STUB_MODE === "aqempty" ? [] : [
+        { Month: "2026-07", Location: "Wiseburn", Lane: "A", "Program Type": "Lap Swim",        "Rental Name": "Lap Swim",     "Booking Type": "managed", Reservations: 3,  "Lane Hours": 10.5 },
+        /* DIFFERS FROM THE ROW ABOVE ONLY IN Rental Name, which is what makes
+           the column picker testable at all: with Rental Name hidden (this
+           report's default) the two must MERGE into one row, and without a pair
+           like this hiding a column changes nothing — so no case could tell a
+           picker that RE-SUMS from one that only blanks a cell. */
+        { Month: "2026-07", Location: "Wiseburn", Lane: "A", "Program Type": "Lap Swim",        "Rental Name": "Court Reservation: Lane A", "Booking Type": "managed", Reservations: 4,  "Lane Hours": 6.5 },
+        { Month: "2026-07", Location: "Wiseburn", Lane: "B", "Program Type": "Swim Lessons",    "Rental Name": "Swim Lessons", "Booking Type": "managed", Reservations: 2,  "Lane Hours": 4.5 },
+        { Month: "2026-07", Location: "Urho",     Lane: "C", "Program Type": "Masters",         "Rental Name": "SCAQ",         "Booking Type": "managed", Reservations: 8,  "Lane Hours": 21.25 },
+        { Month: "2026-08", Location: "Wiseburn", Lane: "A", "Program Type": "Lap Swim",        "Rental Name": "Lap Swim",     "Booking Type": "managed", Reservations: 20, "Lane Hours": 40.5 },
+        { Month: "2026-08", Location: "Hilltop",  Lane: "D", "Program Type": "Open / Rec Swim", "Rental Name": "Drop In Lanes","Booking Type": "managed", Reservations: 1,  "Lane Hours": 2 },
+      ].map(r => (STUB_MODE === "prevloc" ? (({ Location, ...rest }) => rest)(r) : r))),
+      meta: { card: 21682, window: { start: "2026-07-01", end: "2026-08-31" }, location: null },
+    }) },
   { match: /\/facilities\/api\/campsites/, body: () => campsitesGeo },
   { match: /\/waitlist\/api\/data/, body: () => ({ rows: waitlistRows(), meta: { org_id: "org-uuid-1" } }) },
   { match: /\/gl\/api\/data/, body: () => ({ rows: glRows(), meta: { org_id: "org-uuid-1" } }) },
@@ -2891,6 +2945,44 @@ const CASES = [
   { name: "org landing · no wizard card", path: "/{org}",
     needs: ".card", absent: 'a.card[href*="/report-wizard"]' },
 
+  { name: "org landing · the data reports are ONE card with a chip each",
+    path: "/" + AQ_ORG, token: AQ_TOKEN,
+    act: async page => {
+      await page.waitForSelector(".card", { timeout: 15000 });
+      await page.evaluate(() => {
+        const grp  = document.querySelector("[data-datareports-card]");
+        const want = ((window.ORG_CONFIG || {}).customReports || []);
+        const got  = document.querySelectorAll("[data-datareport]").length;
+        // DERIVED FROM THE INJECTED LIST, never a hardcoded count. A literal
+        // here breaks on the day a sixth data report is registered, with
+        // nothing about the card having changed — the pinned-literal
+        // brittleness this repo keeps writing down. It still discriminates:
+        // a group card that forgot a report renders identically, and this is
+        // the only thing that fails on it.
+        document.body.dataset.drok = (want.length > 0 && got === want.length) ? "1" : "0";
+        // A card per report as WELL as the group card is worse than either
+        // alone, so no data report may have a tile of its own. Keyed on the
+        // injected KEYS rather than an `/aquatic-/` pattern, or a report whose
+        // name does not start that way is never checked. The group's own anchor
+        // points at the first report, so it is excluded by ancestry.
+        const keys = want.map(d => d.key);
+        document.body.dataset.drsolo = String(
+          [...document.querySelectorAll("a.card")].filter(a => {
+            const href = a.getAttribute("href") || "";
+            return keys.some(k => href.indexOf("/" + k) > -1) && !(grp && grp.contains(a));
+          }).length);
+      });
+    },
+    // Every injected report has a chip, no stray tiles, and one named chip so a
+    // page that agreed with an empty list could not pass.
+    needs: 'body[data-drok="1"][data-drsolo="0"] [data-datareports-card] [data-datareport="aquatic-passes"]' },
+
+  { name: "org landing · an org with no data reports gets no empty section",
+    path: "/{org}",
+    // Self-hiding, or every other org sees a heading over nothing — the dead-end
+    // pattern this repo keeps writing down.
+    needs: ".card", absent: "[data-datareports-card]" },
+
   { name: "org landing · hub tab chips", path: "/{org}",
     needs: ".card-tab[href*=\"tab=fields\"]" },
   { name: "org landing · checkins chip", path: "/{org}",
@@ -4136,6 +4228,212 @@ const CASES = [
         }
       });
     } },
+  /* ── The per-org custom data reports ─────────────────────────────────────
+     Joseph Lormans' CivicRec exports, rebuilt here so the reader gets a report
+     rather than a grid. Every case keys on a COMPUTED FIGURE, because a
+     roll-up that adds up wrongly renders a perfectly plausible number and "a
+     totals row appeared" passes on every one of these regressions. */
+  { name: "aquatic-lane-hours · rolls up to each level and to a grand total",
+    path: "/" + AQ_ORG + "/aquatic-lane-hours", token: AQ_TOKEN,
+    // July = 3 + 2 + 8 = 13, August = 20 + 1 = 21, grand = 34. None of those
+    // figures is any single location's subtotal, so a total read off the wrong
+    // level cannot pass this.
+    needs: '[data-sub-level="0"] [data-total-col="Reservations"][data-total-val="17"]' },
+  { name: "aquatic-lane-hours · the grand total is every row, to the fraction",
+    path: "/" + AQ_ORG + "/aquatic-lane-hours", token: AQ_TOKEN,
+    // 10.5 + 4.5 + 21.25 + 40.5 + 2 — a rounding at the wrong level gives 78.8
+    // or 79, and a column that does not add up on screen is how a report stops
+    // being trusted.
+    needs: '[data-grand-col="Lane Hours"][data-grand-val="85.25"]' },
+  { name: "aquatic-lane-hours · the innermost group takes the UNLABELLED subtotal",
+    path: "/" + AQ_ORG + "/aquatic-lane-hours", token: AQ_TOKEN,
+    // CivicRec's rule. Give the deepest group a labelled row too and it prints
+    // the same numbers twice, one directly under the other.
+    needs: '[data-sub-level="1"] [data-total-col="Reservations"][data-total-val="9"]',
+    // `lbl` is on the ROW, not on the label cell. The first draft of this
+    // asserted `[data-sub-level="1"] .sublabel.lbl`, which matches nothing on
+    // any build — the mutation that labels every level SURVIVED it. A vacuous
+    // absent assertion is not a guard.
+    absent: 'tr[data-sub-level="1"].lbl' },
+  { name: "aquatic-lane-hours · the header describes the rows, not the toolbar",
+    path: "/" + AQ_ORG + "/aquatic-lane-hours?start_date=2026-07-01&end_date=2026-08-31",
+    token: AQ_TOKEN,
+    // Moves the From field WITHOUT running the report. The header must still
+    // describe the rows on screen: a failed or unrun change would otherwise
+    // label the previous window's numbers with a range nobody asked for — the
+    // Memberships 504 lesson, where the KPIs were the last window's and
+    // nothing said so. Also pins the date FORMATTING: a bare ISO date through
+    // new Date() renders as Jun 30 across the US.
+    act: async page => {
+      await page.waitForSelector("[data-report-body]", { timeout: 15000 });
+      // A date input takes DIGITS into its segments; a click-and-type appends
+      // to what is already there (it produced the year 12020 on the first try).
+      const from = await page.$('input[type="date"]');
+      await from.focus();
+      await page.keyboard.type("01012020");
+      await new Promise(r => setTimeout(r, 300));
+      await page.evaluate(() => {
+        // Stamped under DIFFERENT names: reusing data-head-from would make the
+        // <body> itself match the page's own selector, and the assertion would
+        // then be reading its own stamp.
+        document.body.dataset.hf = document.querySelector("span[data-head-from]").textContent.trim();
+        document.body.dataset.ff = document.querySelector('input[type="date"]').value;
+      });
+    },
+    needs: 'body[data-hf="Jul 1, 2026"][data-ff="2020-01-01"]' },
+  { name: "aquatic-lane-hours · the location filter offers only this report's pools",
+    path: "/" + AQ_ORG + "/aquatic-lane-hours", token: AQ_TOKEN,
+    // Card 1 sells no Rec IDs. The shared Metabase dashboard offers one filter
+    // for four cards, and two of its values return nothing on two of them.
+    needs: '[data-loc-select] option[value="Hilltop Park"]',
+    absent: '[data-loc-select] option[value="(City-wide - Rec ID)"]' },
+  { name: "aquatic-lane-hours · an empty window says so instead of an empty table",
+    path: "/" + AQ_ORG + "/aquatic-lane-hours", token: AQ_TOKEN, stubMode: "aqempty",
+    needs: "[data-empty]", absent: "[data-report-body]" },
+  { name: "aquatic-lane-hours · a level the card no longer emits is not grouped on",
+    path: "/" + AQ_ORG + "/aquatic-lane-hours", token: AQ_TOKEN, stubMode: "prevloc",
+    // Month only. Without the guard every row lands in one group called
+    // "(none)" — a report that looks fine and says nothing.
+    needs: '[data-group-key="Month"]', absent: '[data-group-key="Location"]' },
+  { name: "aquatic-lane-hours · the CSV is the rows, with no subtotal lines",
+    path: "/" + AQ_ORG + "/aquatic-lane-hours", token: AQ_TOKEN,
+    // NO SOURCE ASSERTION CAN SEE THIS: a download wired to the grouped view
+    // renders identically and produces a plausible file. So the case reads the
+    // BYTES the popup is handed, and stamps what it found onto <body>.
+    pre: async page => {
+      await page.evaluateOnNewDocument(() => {
+        window.open = () => ({ document: { write() {}, close() {} },
+          set __recExport(v) { window.__payload = v; },
+          get __recExport() { return window.__payload; } });
+      });
+    },
+    act: async page => {
+      await page.waitForSelector("[data-report-body]", { timeout: 15000 });
+      await page.evaluate(() => {
+        [...document.querySelectorAll("button")].find(b => /CSV/.test(b.textContent)).click();
+      });
+      await new Promise(r => setTimeout(r, 600));
+      await page.evaluate(() => {
+        const b = window.__payload && window.__payload.bytes;
+        const d = document.body.dataset;
+        if (!b) { d.csv = "none"; return; }
+        const text = new TextDecoder().decode(b);
+        // The BOM has to be read off the BYTES: TextDecoder strips it by
+        // default, so a decoded string makes the assertion pass either way.
+        d.csvBom = (b[0] === 239 && b[1] === 187 && b[2] === 191) ? "1" : "0";
+        d.csvLines = String(text.split("\r\n").filter(Boolean).length);
+        d.csvTotals = /Totals for|Grand total/.test(text) ? "1" : "0";
+        d.csvHeader = text.replace(/^\uFEFF/, "").split("\r\n")[0];
+        // The export must carry the VIEW, not the feed: Rental Name is hidden
+        // by default here, so its absence from the header is what proves the
+        // download is not quietly reading the unfiltered rows — the exact bug
+        // already recorded for the Programs Excel export.
+        d.csvRental = /Rental Name/.test(d.csvHeader) ? "1" : "0";
+      });
+    },
+    // Header + five rows (six feed rows, two of which merge once Rental Name is
+    // hidden), the BOM present, NOT ONE subtotal line — a data file gets
+    // re-summed by whoever opens it — and no Rental Name column, which is what
+    // proves the file follows the view.
+    needs: 'body[data-csv-lines="6"][data-csv-bom="1"][data-csv-totals="0"][data-csv-rental="0"]' },
+
+  /* ── The column picker and the filters ──
+     Every one of these keys on a COMPUTED figure, never on a control existing:
+     a checkbox that lights up and filters nothing renders identically. The
+     findings are stamped onto <body> in `act` and asserted through a descendant
+     selector, because the harness takes ONE `needs` selector and there is no
+     text assertion — inventing a `needs`-adjacent field would silently prove
+     less than the case claims. */
+
+  { name: "aquatic-lane-hours · opens with Rental Name hidden and the rows SUMMED",
+    path: "/" + AQ_ORG + "/aquatic-lane-hours", token: AQ_TOKEN,
+    // THE CASES ARE NOT INDEPENDENT. The column picker persists per browser, and
+    // ci-check-render reuses the profile between cases - so the case above,
+    // which ticks Rental Name ON, leaves it on for this one and the view is 6
+    // rows instead of 5. Already recorded in CLAUDE.md for the saved-views
+    // cases; it cost a baseline failure here that looked exactly like a bug.
+    pre: async page => {
+      await page.evaluateOnNewDocument(() => { try { localStorage.clear(); } catch (e) {} });
+    },
+    act: async page => {
+      await page.waitForSelector("[data-report-body]", { timeout: 15000 });
+      await page.evaluate(() => {
+        const t = document.querySelector("[data-report-body]").innerText;
+        document.body.dataset.rental = /Court Reservation: Lane A/.test(t) ? "1" : "0";
+      });
+    },
+    // Six feed rows, five on screen, and the hidden name nowhere in the body —
+    // so a picker that BLANKS the cell instead of re-summing fails here rather
+    // than rendering something plausible.
+    needs: 'body[data-rental="0"] [data-row-count="5"]' },
+
+  { name: "aquatic-lane-hours · ticking Rental Name splits the merged rows again",
+    path: "/" + AQ_ORG + "/aquatic-lane-hours", token: AQ_TOKEN,
+    act: async page => {
+      await page.waitForSelector("[data-report-body]", { timeout: 15000 });
+      await page.evaluate(() => document.querySelector('[data-cm-btn="columns"]').click());
+      await page.waitForSelector('[data-cm-menu="columns"]', { timeout: 5000 });
+      await page.evaluate(() => {
+        const row = [...document.querySelectorAll('[data-cm-opt="columns"]')]
+          .find(l => l.getAttribute("data-cm-value") === "Rental Name");
+        row.querySelector("input").click();
+      });
+      await new Promise(r => setTimeout(r, 400));
+      await page.evaluate(() => {
+        const t = document.querySelector("[data-report-body]").innerText;
+        document.body.dataset.rental = /Court Reservation: Lane A/.test(t) ? "1" : "0";
+      });
+    },
+    needs: 'body[data-rental="1"] [data-row-count="6"]' },
+
+  { name: "aquatic-lane-hours · a filter narrows the table AND says so on the page",
+    path: "/" + AQ_ORG + "/aquatic-lane-hours", token: AQ_TOKEN,
+    // THE CASES ARE NOT INDEPENDENT. The column picker persists per browser, and
+    // ci-check-render reuses the profile between cases - so the case above,
+    // which ticks Rental Name ON, leaves it on for this one and the view is 6
+    // rows instead of 5. Already recorded in CLAUDE.md for the saved-views
+    // cases; it cost a baseline failure here that looked exactly like a bug.
+    pre: async page => {
+      await page.evaluateOnNewDocument(() => { try { localStorage.clear(); } catch (e) {} });
+    },
+    act: async page => {
+      await page.waitForSelector("[data-report-body]", { timeout: 15000 });
+      await page.evaluate(() => document.querySelector('[data-cm-btn="f_Program_Type"]').click());
+      await page.waitForSelector('[data-cm-menu="f_Program_Type"]', { timeout: 5000 });
+      await page.evaluate(() => {
+        const row = [...document.querySelectorAll('[data-cm-opt="f_Program_Type"]')]
+          .find(l => l.getAttribute("data-cm-value") === "Lap Swim");
+        row.querySelector("input").click();
+      });
+      // WAIT FOR THE CONDITION, not a fixed sleep and not waitForSelector.
+      // A sleep is flaky (this stamped a stale count on one run in two), and
+      // waitForSelector polls for a selector APPEARING - it does not reliably
+      // see an attribute VALUE change on an element that was already there.
+      // waitForFunction polls a predicate, which is what this actually needs.
+      await page.waitForFunction(() => {
+        const c = document.querySelector("[data-row-count]");
+        return c && c.getAttribute("data-row-count") === "2";
+      }, { timeout: 15000 });
+      await page.evaluate(() => {
+        const el  = document.querySelector("[data-report-body]");
+        const cnt = document.querySelector("[data-row-count]");
+        document.body.dataset.lessons = el && /Swim Lessons/.test(el.innerText) ? "1" : "0";
+        document.body.dataset.rows = cnt ? cnt.getAttribute("data-row-count") : "none";
+      });
+    },
+    // Two Lap Swim rows survive (July's merged pair, August's), Swim Lessons is
+    // gone, and the scope note is on screen in the same breath. A grand total
+    // over a narrowed set with nothing saying so is how a number stops being
+    // trusted, and whoever prints this has no toolbar to look at.
+    needs: 'body[data-lessons="0"][data-rows="2"] [data-scope-note]' },
+
+  { name: "aquatic-lane-hours · filtering everything out says WHY, not \"no rows\"",
+    path: "/" + AQ_ORG + "/aquatic-lane-hours" +
+          "?f_Program_Type=" + encodeURIComponent("Nothing Matches This"),
+    token: AQ_TOKEN,
+    // Otherwise the reader widens the dates when the fix is to clear a filter.
+    needs: "[data-empty-filtered]", absent: "[data-empty]" },
+
   { name: "wizard · feed date window", path: "/{org}/report-wizard",
     needs: "[data-rw-window=\"Aug 19 \u2013 Aug 26\"]",
     act: async page => { await page.click(".example-chip"); await page.click(".btn-generate"); } },
@@ -4150,6 +4448,7 @@ try {
   fs.writeFileSync(path.join(dataDir, "feature-flags.json"),
                    JSON.stringify({ reportSettings: true }));
 } catch (_) {}
+
 
 const child = spawn(process.execPath, [path.join(__dirname, "..", "server.js")], {
   env: { ...process.env, PORT: String(PORT), DATA_DIR: dataDir,
@@ -4327,8 +4626,11 @@ function waitForServer(started) {
     // record, a flag) has to key it by slug, and the slug is not known at
     // case-definition time.
     if (c.pre) await c.pre(page, { org, dataDir, token });
+    // A case may carry its OWN token. The per-org custom reports are gated on a
+    // different org than the one resolved above, and a case that appended the
+    // wrong org's token would 404 before rendering anything.
     const url = `http://127.0.0.1:${PORT}` + c.path.replace("{org}", org)
-      + (c.path.includes("?") ? "&" : "?") + "token=" + encodeURIComponent(token);
+      + (c.path.includes("?") ? "&" : "?") + "token=" + encodeURIComponent(c.token || token);
     let found = false, bodyLen = 0;
     try {
       await page.goto(url, { waitUntil: "domcontentloaded", timeout: PAGE_TIMEOUT_MS });
