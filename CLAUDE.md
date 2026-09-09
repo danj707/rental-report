@@ -4379,6 +4379,177 @@ from `getParams` fails only the deep-link case. The deep-link case carries the
 apostrophe (`?season=Fall%20%2726`) on purpose, since that is what a real season
 name has to survive.
 
+## All four aquatics reports, and the column picker (2026-09-09)
+
+Dan, on report 1's PDF: *"here's the output, it's super long lol"* — 15 pages for
+one month. Then, on the fix: *"How about leaving rental name as a checkbox
+option, and adding a filter on the report. I can see that being useful for
+future reports."* And: *"go back and build out the other reports, these are
+great aquatics reports."*
+
+### THE FORMATTING WAS FINE. THE CARD'S GRAIN IS SIX DIMENSIONS AND JOSEPH ASKED FOR THREE
+
+Measured on September 2026 rather than eyeballed:
+
+| grain | rows | pages |
+|---|---|---|
+| as shipped | **825** | ~15 |
+| drop Rental Name + Booking Type | 258 | ~5 |
+| Joseph's brief — month x pool x program type | **12** | **1** |
+
+**`Rental Name` is the whole explosion: 493 of the 825 rows are auto-generated
+`Court Reservation: <lane>` strings** carrying no programme at all — a third of
+the hours and 60% of the paper. Every heading, both subtotal levels, the grand
+total and the CSV footnote were correct throughout.
+
+### HIDING A COLUMN RE-SUMS. It does not blank a cell
+
+`collapseRows()` is the point of the whole feature. A picker that only hid the
+column would leave 825 rows that look identical, repeat each other down the page
+and still add to the same total — **which reads as a broken report rather than a
+shorter one.** Collapsing to the kept dimensions gives 258.
+
+- **The key is `JSON.stringify` of the value array, not a joined string.** Two
+  dimension values otherwise straddle the separator — `"a b" + "c"` and
+  `"a" + "b c"` — and silently merge two rows that are not the same row.
+- **First appearance wins**, so the card's own `ORDER BY` still drives the
+  hierarchy and nothing is re-sorted — the property `groupRows` depends on.
+- **The collapse must not move the grand total.** A collapse that loses or
+  duplicates a row is the one failure a reader cannot see, because the page
+  still looks right; the spec asserts the total is unchanged.
+
+### THE EARLY RETURN IS COMPUTED FROM STATE, because hiding is a DEFAULT
+
+`shownRows` skips the collapse only when `shownDims.length === dimCols.length`.
+Gating it on *"has the reader filtered yet"* would silently not apply
+`hiddenColumns` at all — **the exact bug already recorded for `scopedRows` when
+cancelled sections became a default rather than an opt-in.**
+
+### THE FILTERS ARE KEYED BY COLUMN NAME, and this shipped wrong for one revision
+
+`filterRows` looks up `r[key]`, so a map keyed by the URL parameter name
+(`f_Program_Type`) matches **nothing** and the filter appears to do nothing at
+all. The slug now exists only at the URL boundary.
+
+**NO UNIT ASSERTION COULD SEE IT.** The spec's fixture passed *column* names —
+which the app never did — so `filterRows` was proven correct on data nothing
+produced. Same lesson as the Programs location filter that shipped unable to
+render: *a unit test that supplies the field under test cannot tell you whether
+anything supplies it in production.* **The render check is what caught it.**
+
+Other decisions, all following rules already recorded here:
+
+- **Empty means ALL, never none** — hence a Clear and no Select all.
+- **Options are built from the rows**, so a filter can never offer a value the
+  report cannot produce. The shared aquatics dashboard does exactly that with
+  its location list and it reads as broken.
+- **A blank value is its own option, labelled** — a row the card could not
+  attribute is still a row, and hiding it makes the grand total disagree with
+  the CSV.
+- **Repeated `?f_<col>=`, read with `getAll`, deleted before appending.** A
+  rental name legitimately contains a comma (`Court Reservation: Lane 2 - B,
+  Court Reservation: Lane 3 - A`), so a comma split would cut it in half; and
+  `append` alone stacks a second copy of every value on each render.
+- **Columns persist per browser and are NOT in the URL; filters are the
+  reverse.** Which columns you like looking at is a display preference; a filter
+  is part of the question the report answers.
+- **The deep link's filters resolve only once the feed says what the columns
+  are** — the parameter is a slug of the column and the mapping back is lossy.
+- **The exports follow the VIEW**, filters and hidden columns both. An export
+  quietly carrying rows the reader excluded is the Programs Excel bug verbatim.
+  Still no subtotal lines.
+- **Filtered-to-nothing is its own empty state**, or the reader widens the dates
+  when the fix is to clear a filter.
+- **A narrowed view SAYS so, in the page and not the toolbar** — whoever prints
+  this has no toolbar to look at, so the note must survive into the PDF.
+
+### The other three reports are registry entries
+
+| # | report | card | groupBy |
+|---|---|---|---|
+| 2 | Aquatics Classes by Month | 21683 | Month / Location / Program |
+| 3 | Aquatics Drop-In Admissions | 21684 | Month / Location / Category |
+| 4 | Aquatic Passes and Memberships | 21685 | Month / Location / Category |
+
+All four cards register exactly **four** correctly-typed parameters — `org_id`
+(carrying El Segundo's default), `start_date`/`end_date` as `date/single`, and
+`location`. No six-parameter duplication, because they were created rather than
+re-saved.
+
+**`Participants (section total)` IS NOT ADDITIVE and is deliberately not in
+report 2's `numeric` map.** It is a per-section total repeated on every month
+that section runs, so summing it down a column double-counts any section
+spanning two months — the same trap as the wizard summing `Number of Payments`,
+right by luck at one org and latently wrong everywhere else. Left out of
+`numeric` it renders per row and never rolls up, which is honest. Making it
+additive needs a card change, not a registry edit.
+
+**Each report offers only the locations its OWN card can answer for**, measured:
+Hilltop runs no aquatic sections and sells no passes, so it is absent from
+reports 2 and 4 while present on 3; the city-wide Rec ID bucket exists only on
+report 4, which is the card that sells them.
+
+`hiddenColumns` per report: report 1 `Rental Name` (the 15 pages), report 2
+`Section ID` (a uuid is noise on a printed report, but it is what separates two
+sections sharing a name — 49 names against 52 ids — so it is hidden rather than
+dropped), report 4 `Buyer Zip` (the column beside it already summarises it).
+
+### Guards
+
+`custom-reports.spec.js` 32 → **44 assertions**, lifting and RUNNING
+`collapseRows`, `filterRows`, `valueCountsFor` and `levelsSafe`.
+Mutation-tested thirteen ways, all failing by name: the collapse dropped, its
+key joined with a string, an empty filter meaning none, blanks dropped from the
+options, the URL appending without deleting, the exports reading the unfiltered
+feed, the table handed the whole column set, the filtered empty state collapsed
+into the plain one, the scope note dropped, the print stylesheet hiding it,
+report 2 summing the per-section total, and Hilltop offered on a card that
+answers nothing for it.
+
+**One mutation SURVIVED the first draft** — the table still rendering
+`bodyCols` over `rows`, which is the bug the whole picker exists to prevent.
+Every other assertion passed with it in place. Found by mutation, not review.
+
+Plus **4 `ci-check-render.js` cases**, and the fixture gained a row that
+**differs from another only in `Rental Name`** — without a pair like that,
+hiding a column changes nothing and no case can tell a picker that re-sums from
+one that only blanks a cell.
+
+**Two harness lessons, both of which cost a false failure:**
+
+- **`waitForSelector` does not reliably see an attribute VALUE change** on an
+  element that was already there. It timed out for 8s on a page that had
+  already rendered the right answer. `waitForFunction` polls a predicate, which
+  is what this needs. A fixed sleep was flaky — it stamped a stale count on one
+  run in two, and *a flaky assertion is not a guard.*
+- **`localStorage` survives between render cases.** The case that ticks Rental
+  Name ON left it on for the next case, which then saw 6 rows instead of 5 —
+  a green baseline turning red only when run as part of the group. Both
+  order-sensitive cases clear it in `pre`. Already recorded here for the
+  saved-views cases; second instance.
+
+### And I wrote an unrendered escape into JSX text, again
+
+`\u25be` sitting in JSX **text** rather than a string literal renders as the
+literal characters. Third instance in this file. Caught before the guard ran,
+but the guard exists because it has shipped twice.
+
+### WHERE THEY SHOULD LIVE — decided, not built
+
+Dan: *"where do we think these three reports should live? On the main org
+dashboard page? Under the aquatics facility section? In a new 'basic reports'
+section?"*
+
+**A "Data Reports" section on the main org dashboard.** They are already pushed
+into that page's `available` list, so the change is a header driven off
+`CUSTOM_REPORTS` rather than a move. **Not under the Aquatics facility tab** —
+that tab is a dashboard over cards 19570/17294 and these are reports over four
+different cards with their own window and exports; burying a standalone report
+inside a tab of another report is how the aquatics settings gear and the
+Private Instructor Lessons panel both became unfindable. **"Data" rather than
+"Basic"**, because these are the authoritative row-level exports and the charts
+are the derived view.
+
 ## Joseph's reports, rebuilt in the reporting project (2026-09-09)
 
 Dan: *"Ok so the reports are in MB and give a raw csv of the data he wants. now

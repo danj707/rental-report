@@ -54,6 +54,20 @@ try {
     [AQ_ORG]: { token: AQ_TOKEN, orgId: "8ae77057-6bce-4c20-b0f2-366ed5fa14dd",
                 logoUrl: "", displayName: "Render Check Aquatics" },
   }));
+  /* AND A FRESH prewarm-state.json, BEFORE the spawn.
+     Without it every boot of this harness runs the STARTUP pre-warm — a fan-out
+     across ~28 orgs against PRODUCTION Metabase — because PREWARM_STARTUP_SKIP_MS
+     only skips when a cycle completed inside the last 6 hours, and a scratch
+     DATA_DIR has never completed one.
+
+     It is not merely wasteful. The /:org route is heavy (metrics, pulse, goals,
+     health), so while that fan-out is in flight it can exceed the 45s
+     navigation budget and EVERY org-landing case times out at once — which
+     reads exactly like a page regression and reproduces on a clean tree. That
+     cost real time here, and CLAUDE.md already records the same trap twice for
+     hand-run local servers. */
+  fs.writeFileSync(path.join(dataDir, "prewarm-state.json"),
+    JSON.stringify({ lastCompletedAt: Date.now() }));
 } catch (_) {}
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
@@ -1188,6 +1202,12 @@ const STUBS = [
   { match: /\/aquatic-lane-hours\/api\/data/, body: () => ({
       rows: (STUB_MODE === "aqempty" ? [] : [
         { Month: "2026-07", Location: "Wiseburn", Lane: "A", "Program Type": "Lap Swim",        "Rental Name": "Lap Swim",     "Booking Type": "managed", Reservations: 3,  "Lane Hours": 10.5 },
+        /* DIFFERS FROM THE ROW ABOVE ONLY IN Rental Name, which is what makes
+           the column picker testable at all: with Rental Name hidden (this
+           report's default) the two must MERGE into one row, and without a pair
+           like this hiding a column changes nothing — so no case could tell a
+           picker that RE-SUMS from one that only blanks a cell. */
+        { Month: "2026-07", Location: "Wiseburn", Lane: "A", "Program Type": "Lap Swim",        "Rental Name": "Court Reservation: Lane A", "Booking Type": "managed", Reservations: 4,  "Lane Hours": 6.5 },
         { Month: "2026-07", Location: "Wiseburn", Lane: "B", "Program Type": "Swim Lessons",    "Rental Name": "Swim Lessons", "Booking Type": "managed", Reservations: 2,  "Lane Hours": 4.5 },
         { Month: "2026-07", Location: "Urho",     Lane: "C", "Program Type": "Masters",         "Rental Name": "SCAQ",         "Booking Type": "managed", Reservations: 8,  "Lane Hours": 21.25 },
         { Month: "2026-08", Location: "Wiseburn", Lane: "A", "Program Type": "Lap Swim",        "Rental Name": "Lap Swim",     "Booking Type": "managed", Reservations: 20, "Lane Hours": 40.5 },
@@ -2925,6 +2945,33 @@ const CASES = [
   { name: "org landing · no wizard card", path: "/{org}",
     needs: ".card", absent: 'a.card[href*="/report-wizard"]' },
 
+  { name: "org landing · the data reports are ONE card with a chip each",
+    path: "/" + AQ_ORG, token: AQ_TOKEN,
+    act: async page => {
+      await page.waitForSelector(".card", { timeout: 15000 });
+      await page.evaluate(() => {
+        const grp = document.querySelector("[data-datareports-card]");
+        document.body.dataset.dr = String(document.querySelectorAll("[data-datareport]").length);
+        // A card per report as WELL as the group card is worse than either
+        // alone, so no data report may have a tile of its own. The group's own
+        // anchor points at the first report, so it is excluded by ancestry
+        // rather than by href.
+        document.body.dataset.drsolo = String(
+          [...document.querySelectorAll("a.card")].filter(a =>
+            /\/aquatic-/.test(a.getAttribute("href") || "") &&
+            !(grp && grp.contains(a))).length);
+      });
+    },
+    // Four chips, no stray tiles. Keyed on the COUNT rather than on the card
+    // existing: a group card that forgot a report renders identically.
+    needs: 'body[data-dr="4"][data-drsolo="0"] [data-datareports-card] [data-datareport="aquatic-passes"]' },
+
+  { name: "org landing · an org with no data reports gets no empty section",
+    path: "/{org}",
+    // Self-hiding, or every other org sees a heading over nothing — the dead-end
+    // pattern this repo keeps writing down.
+    needs: ".card", absent: "[data-datareports-card]" },
+
   { name: "org landing · hub tab chips", path: "/{org}",
     needs: ".card-tab[href*=\"tab=fields\"]" },
   { name: "org landing · checkins chip", path: "/{org}",
@@ -4180,18 +4227,18 @@ const CASES = [
     // July = 3 + 2 + 8 = 13, August = 20 + 1 = 21, grand = 34. None of those
     // figures is any single location's subtotal, so a total read off the wrong
     // level cannot pass this.
-    needs: '[data-sub-level="0"] [data-total-col="Reservations"][data-total-val="13"]' },
+    needs: '[data-sub-level="0"] [data-total-col="Reservations"][data-total-val="17"]' },
   { name: "aquatic-lane-hours · the grand total is every row, to the fraction",
     path: "/" + AQ_ORG + "/aquatic-lane-hours", token: AQ_TOKEN,
     // 10.5 + 4.5 + 21.25 + 40.5 + 2 — a rounding at the wrong level gives 78.8
     // or 79, and a column that does not add up on screen is how a report stops
     // being trusted.
-    needs: '[data-grand-col="Lane Hours"][data-grand-val="78.75"]' },
+    needs: '[data-grand-col="Lane Hours"][data-grand-val="85.25"]' },
   { name: "aquatic-lane-hours · the innermost group takes the UNLABELLED subtotal",
     path: "/" + AQ_ORG + "/aquatic-lane-hours", token: AQ_TOKEN,
     // CivicRec's rule. Give the deepest group a labelled row too and it prints
     // the same numbers twice, one directly under the other.
-    needs: '[data-sub-level="1"] [data-total-col="Reservations"][data-total-val="5"]',
+    needs: '[data-sub-level="1"] [data-total-col="Reservations"][data-total-val="9"]',
     // `lbl` is on the ROW, not on the label cell. The first draft of this
     // asserted `[data-sub-level="1"] .sublabel.lbl`, which matches nothing on
     // any build — the mutation that labels every level SURVIVED it. A vacuous
@@ -4266,11 +4313,115 @@ const CASES = [
         d.csvLines = String(text.split("\r\n").filter(Boolean).length);
         d.csvTotals = /Totals for|Grand total/.test(text) ? "1" : "0";
         d.csvHeader = text.replace(/^\uFEFF/, "").split("\r\n")[0];
+        // The export must carry the VIEW, not the feed: Rental Name is hidden
+        // by default here, so its absence from the header is what proves the
+        // download is not quietly reading the unfiltered rows — the exact bug
+        // already recorded for the Programs Excel export.
+        d.csvRental = /Rental Name/.test(d.csvHeader) ? "1" : "0";
       });
     },
-    // Header + five rows, the BOM present, and NOT ONE subtotal line — a data
-    // file gets re-summed by whoever opens it.
-    needs: 'body[data-csv-lines="6"][data-csv-bom="1"][data-csv-totals="0"]' },
+    // Header + five rows (six feed rows, two of which merge once Rental Name is
+    // hidden), the BOM present, NOT ONE subtotal line — a data file gets
+    // re-summed by whoever opens it — and no Rental Name column, which is what
+    // proves the file follows the view.
+    needs: 'body[data-csv-lines="6"][data-csv-bom="1"][data-csv-totals="0"][data-csv-rental="0"]' },
+
+  /* ── The column picker and the filters ──
+     Every one of these keys on a COMPUTED figure, never on a control existing:
+     a checkbox that lights up and filters nothing renders identically. The
+     findings are stamped onto <body> in `act` and asserted through a descendant
+     selector, because the harness takes ONE `needs` selector and there is no
+     text assertion — inventing a `needs`-adjacent field would silently prove
+     less than the case claims. */
+
+  { name: "aquatic-lane-hours · opens with Rental Name hidden and the rows SUMMED",
+    path: "/" + AQ_ORG + "/aquatic-lane-hours", token: AQ_TOKEN,
+    // THE CASES ARE NOT INDEPENDENT. The column picker persists per browser, and
+    // ci-check-render reuses the profile between cases - so the case above,
+    // which ticks Rental Name ON, leaves it on for this one and the view is 6
+    // rows instead of 5. Already recorded in CLAUDE.md for the saved-views
+    // cases; it cost a baseline failure here that looked exactly like a bug.
+    pre: async page => {
+      await page.evaluateOnNewDocument(() => { try { localStorage.clear(); } catch (e) {} });
+    },
+    act: async page => {
+      await page.waitForSelector("[data-report-body]", { timeout: 15000 });
+      await page.evaluate(() => {
+        const t = document.querySelector("[data-report-body]").innerText;
+        document.body.dataset.rental = /Court Reservation: Lane A/.test(t) ? "1" : "0";
+      });
+    },
+    // Six feed rows, five on screen, and the hidden name nowhere in the body —
+    // so a picker that BLANKS the cell instead of re-summing fails here rather
+    // than rendering something plausible.
+    needs: 'body[data-rental="0"] [data-row-count="5"]' },
+
+  { name: "aquatic-lane-hours · ticking Rental Name splits the merged rows again",
+    path: "/" + AQ_ORG + "/aquatic-lane-hours", token: AQ_TOKEN,
+    act: async page => {
+      await page.waitForSelector("[data-report-body]", { timeout: 15000 });
+      await page.evaluate(() => document.querySelector('[data-cm-btn="columns"]').click());
+      await page.waitForSelector('[data-cm-menu="columns"]', { timeout: 5000 });
+      await page.evaluate(() => {
+        const row = [...document.querySelectorAll('[data-cm-opt="columns"]')]
+          .find(l => l.getAttribute("data-cm-value") === "Rental Name");
+        row.querySelector("input").click();
+      });
+      await new Promise(r => setTimeout(r, 400));
+      await page.evaluate(() => {
+        const t = document.querySelector("[data-report-body]").innerText;
+        document.body.dataset.rental = /Court Reservation: Lane A/.test(t) ? "1" : "0";
+      });
+    },
+    needs: 'body[data-rental="1"] [data-row-count="6"]' },
+
+  { name: "aquatic-lane-hours · a filter narrows the table AND says so on the page",
+    path: "/" + AQ_ORG + "/aquatic-lane-hours", token: AQ_TOKEN,
+    // THE CASES ARE NOT INDEPENDENT. The column picker persists per browser, and
+    // ci-check-render reuses the profile between cases - so the case above,
+    // which ticks Rental Name ON, leaves it on for this one and the view is 6
+    // rows instead of 5. Already recorded in CLAUDE.md for the saved-views
+    // cases; it cost a baseline failure here that looked exactly like a bug.
+    pre: async page => {
+      await page.evaluateOnNewDocument(() => { try { localStorage.clear(); } catch (e) {} });
+    },
+    act: async page => {
+      await page.waitForSelector("[data-report-body]", { timeout: 15000 });
+      await page.evaluate(() => document.querySelector('[data-cm-btn="f_Program_Type"]').click());
+      await page.waitForSelector('[data-cm-menu="f_Program_Type"]', { timeout: 5000 });
+      await page.evaluate(() => {
+        const row = [...document.querySelectorAll('[data-cm-opt="f_Program_Type"]')]
+          .find(l => l.getAttribute("data-cm-value") === "Lap Swim");
+        row.querySelector("input").click();
+      });
+      // WAIT FOR THE CONDITION, not a fixed sleep and not waitForSelector.
+      // A sleep is flaky (this stamped a stale count on one run in two), and
+      // waitForSelector polls for a selector APPEARING - it does not reliably
+      // see an attribute VALUE change on an element that was already there.
+      // waitForFunction polls a predicate, which is what this actually needs.
+      await page.waitForFunction(() => {
+        const c = document.querySelector("[data-row-count]");
+        return c && c.getAttribute("data-row-count") === "2";
+      }, { timeout: 15000 });
+      await page.evaluate(() => {
+        const el  = document.querySelector("[data-report-body]");
+        const cnt = document.querySelector("[data-row-count]");
+        document.body.dataset.lessons = el && /Swim Lessons/.test(el.innerText) ? "1" : "0";
+        document.body.dataset.rows = cnt ? cnt.getAttribute("data-row-count") : "none";
+      });
+    },
+    // Two Lap Swim rows survive (July's merged pair, August's), Swim Lessons is
+    // gone, and the scope note is on screen in the same breath. A grand total
+    // over a narrowed set with nothing saying so is how a number stops being
+    // trusted, and whoever prints this has no toolbar to look at.
+    needs: 'body[data-lessons="0"][data-rows="2"] [data-scope-note]' },
+
+  { name: "aquatic-lane-hours · filtering everything out says WHY, not \"no rows\"",
+    path: "/" + AQ_ORG + "/aquatic-lane-hours" +
+          "?f_Program_Type=" + encodeURIComponent("Nothing Matches This"),
+    token: AQ_TOKEN,
+    // Otherwise the reader widens the dates when the fix is to clear a filter.
+    needs: "[data-empty-filtered]", absent: "[data-empty]" },
 
   { name: "wizard · feed date window", path: "/{org}/report-wizard",
     needs: "[data-rw-window=\"Aug 19 \u2013 Aug 26\"]",

@@ -74,10 +74,16 @@ const lifted = new Function("NUMERIC", "MONTHS", `
   ${liftFn(page, "groupRows")}
   ${liftFn(page, "flattenTree")}
   ${liftFn(page, "flatTable")}
-  return { numOf, fmtNum, prettyDate, columnsOf, groupRows, flattenTree, flatTable };
+  ${liftFn(page, "levelsSafe")}
+  ${liftFn(page, "collapseRows")}
+  ${liftFn(page, "filterRows")}
+  ${liftFn(page, "valueCountsFor")}
+  return { numOf, fmtNum, prettyDate, columnsOf, groupRows, flattenTree, flatTable,
+           levelsSafe, collapseRows, filterRows, valueCountsFor };
 `)(NUMERIC_FIXTURE,
    ['January','February','March','April','May','June','July','August','September','October','November','December']);
-const { fmtNum, prettyDate, columnsOf, groupRows, flattenTree, flatTable } = lifted;
+const { fmtNum, prettyDate, columnsOf, groupRows, flattenTree, flatTable,
+        levelsSafe, collapseRows, filterRows, valueCountsFor } = lifted;
 
 /* ── The fixture ───────────────────────────────────────────────────────────
    Deliberately shaped so a WRONG roll-up cannot look right:
@@ -232,8 +238,16 @@ test("the CSV is the ROWS ONLY — no subtotal lines", () => {
 });
 
 test("the exports go through the shared writer, the popup and the BOM", () => {
-  assert.match(page, /csvFromRows\(flatTable\(rows, cols\)\)/,
+  assert.match(page, /csvFromRows\(flatTable\(shownRows, exportCols\(\)\)\)/,
     "one CSV writer, not a per-page quoting rule");
+  // AND IT READS THE VIEW, not the raw feed. An export that quietly carries
+  // rows the reader filtered out, or a column they hid, is the exact bug
+  // already recorded in CLAUDE.md for the Programs Excel export — and a file
+  // that disagrees with the page it came from is how a number stops being
+  // trusted. Scoped to the two download functions, because `rows` is the right
+  // thing to read almost everywhere else on this page.
+  const dl = page.slice(page.indexOf("function downloadCsv()"), page.indexOf("function print()"));
+  assert.doesNotMatch(dl, /flatTable\(rows\b/, "the exports must not read the unfiltered feed");
   assert.match(page, /saveTextViaPopup\([\s\S]{0,200}bom: true/,
     "with the BOM — Excel sniffs bytes, and a sandboxed iframe's own download is dropped");
   assert.match(page, /saveWorkbookViaPopup\(XLSX, wb/, "and Excel through the same popup");
@@ -248,6 +262,20 @@ const spec = (() => {
   const j = srv.indexOf("\n};", i);
   return srv.slice(i, j + 3);
 })();
+
+/* One report's own entry. The registry holds four now, so an assertion about
+   what report 1 must NOT offer is meaningless against the whole map — report 4
+   legitimately carries the value report 1 must not. */
+function entryOf(key) {
+  const i = spec.indexOf('"' + key + '": {');
+  if (i < 0) throw new Error(key + " is not in CUSTOM_REPORTS");
+  let depth = 0, j = spec.indexOf("{", i);
+  for (; j < spec.length; j++) {
+    if (spec[j] === "{") depth++;
+    else if (spec[j] === "}") { depth--; if (depth === 0) break; }
+  }
+  return spec.slice(i, j + 1);
+}
 
 test("the gate is the orgId, never the slug", () => {
   // The slug is each project's own name for an organisation and they drift —
@@ -274,7 +302,43 @@ test("the location list is per report and matches the card's own CASE ladder", (
     assert.ok(spec.includes(`"${l}"`), l + " is offered");
     assert.ok(sql.includes(`'${l}'`), l + " is a value the card can actually return");
   });
-  assert.doesNotMatch(spec, /City-wide/, "card 1 sells no Rec IDs, so it must not offer that value");
+  // SCOPED TO REPORT 1's OWN ENTRY. Report 4 legitimately offers the city-wide
+  // bucket — a Rec ID answers to neither pool — so a registry-wide assertion
+  // would either fail on correct code or have to be deleted, and deleting it
+  // loses the thing it was written to catch.
+  assert.ok(locationsOf("aquatic-lane-hours").every(l => l.indexOf("City-wide") === -1),
+    "card 1 sells no Rec IDs, so it must not offer that value");
+  assert.ok(locationsOf("aquatic-passes").indexOf("(City-wide - Rec ID)") !== -1,
+    "and card 4 does, because it is the card that sells them");
+});
+
+/* The locations ARRAY, parsed — not the entry's text. The entry's own comment
+   explains which locations are deliberately absent and therefore NAMES them, so
+   a text assertion fails on correct code. Fourth instance of that trap in this
+   repo; see CLAUDE.md. */
+function locationsOf(key) {
+  const e = entryOf(key);
+  const m = e.match(/locations:\s*\[([\s\S]*?)\]/);
+  if (!m) return [];
+  return (m[1].match(/"([^"]*)"/g) || []).map(x => x.slice(1, -1));
+}
+
+test("each report offers only locations its OWN card can answer for", () => {
+  // Hilltop runs no aquatic programme sections and sells no passes, so offering
+  // it on reports 2 and 4 would return zero rows and read as a broken filter
+  // however correct the data is. Measured 2026-09-09 against all four cards.
+  assert.ok(locationsOf("aquatic-classes").indexOf("Hilltop Park") === -1,
+    "Hilltop runs no aquatic sections — card 2 would answer nothing");
+  assert.ok(locationsOf("aquatic-passes").indexOf("Hilltop Park") === -1,
+    "Hilltop sells no passes or Rec IDs — card 4 would answer nothing");
+  assert.ok(locationsOf("aquatic-dropin").indexOf("Hilltop Park") !== -1,
+    "but Hilltop DOES sell drop-in swim, so card 3 offers it");
+  // Every report offers at least the two real pools, or the filter is useless.
+  ["aquatic-lane-hours", "aquatic-classes", "aquatic-dropin", "aquatic-passes"].forEach(k => {
+    const l = locationsOf(k);
+    assert.ok(l.indexOf("El Segundo Wiseburn Aquatic Center") !== -1, k + " offers Wiseburn");
+    assert.ok(l.indexOf("Urho Saari Swim Stadium") !== -1, k + " offers Urho Saari");
+  });
 });
 
 test("an unknown location is DROPPED, not forwarded", () => {
@@ -333,8 +397,9 @@ test("the CSV download is announced, and says which report and how much", () => 
   assert.ok(notify.includes('"report-csv"'), "report-csv is in SLACK_NOTIFY");
   assert.match(srv, /"report-csv":\s*\{ emoji: "[^"]+", verb: "downloaded the data CSV from" \}/);
   assert.match(srv, /const CUSTOM_LOG_EVENTS = \["excel", "print", "report-csv"\]/);
-  assert.match(page, /logClientEvent\('report-csv', \{ n: rows\.length/,
-    "the row count travels with it");
+  assert.match(page, /logClientEvent\('report-csv', \{ n: shownRows\.length/,
+    "the row count travels with it — and it is the count in the FILE, which is "
+    + "the view, not the feed");
   assert.match(page, /basePath \+ '\/api\/log\?' \+ qs\.toString\(\)/,
     "?event= in the QUERY STRING — a JSON body comes back 400 and never complains");
 });
@@ -370,7 +435,179 @@ test("the route's own sentence reaches the reader", () => {
 test("a level the feed does not carry is not grouped on", () => {
   // Otherwise every row lands in one group called "(none)" — a report that
   // looks fine and says nothing.
-  assert.match(page, /GROUP_BY\.filter\(g => cols\.includes\(g\)\)/);
+  // Lifted and RUN rather than regexed: a regex over a filter passes on an
+  // inverted comparison.
+  assert.deepStrictEqual(levelsSafe(["Month", "Location", "Nope"], ["Month", "Location", "Lane"]),
+                         ["Month", "Location"]);
+  assert.deepStrictEqual(levelsSafe(["Month"], []), [], "a feed with no columns groups on nothing");
+  assert.match(page, /const levels = useMemo\(\(\) => levelsSafe\(GROUP_BY, cols\)/,
+    "and the page actually calls it");
+});
+
+/* ── The column picker and the filters ─────────────────────────────────── */
+
+// Deliberately shaped so a wrong roll-up cannot look right: hiding Rental Name
+// must MERGE the two Lap Swim rows on lane A into one reading 5 / 16.0, and the
+// figures 5 and 16.0 appear nowhere else in the fixture.
+const WIDE = [
+  { Month: "2026-07", Location: "Wiseburn", Lane: "A", "Program Type": "Lap Swim",  "Rental Name": "Court Reservation: A", Reservations: 3, "Lane Hours": 10.5 },
+  { Month: "2026-07", Location: "Wiseburn", Lane: "A", "Program Type": "Lap Swim",  "Rental Name": "Court Reservation: B", Reservations: 2, "Lane Hours": 5.5 },
+  { Month: "2026-07", Location: "Wiseburn", Lane: "B", "Program Type": "Rec Swim",  "Rental Name": "Rec Swim",            Reservations: 7, "Lane Hours": 21.0 },
+  { Month: "2026-08", Location: "Urho",     Lane: "A", "Program Type": "Masters",   "Rental Name": "",                    Reservations: 1, "Lane Hours": 2.0 },
+];
+const WIDE_NUM = ["Reservations", "Lane Hours"];
+
+test("hiding a column RE-SUMS the rows rather than blanking a cell", () => {
+  // The whole reason the picker exists. Card 21682 returns 825 rows for
+  // September and 493 of them differ only in an auto-generated
+  // "Court Reservation: <lane>" string — so a picker that merely hid the column
+  // would leave 825 identical-looking rows adding to the same total, which
+  // reads as a broken report rather than a shorter one.
+  const kept = ["Month", "Location", "Lane", "Program Type"];
+  const out = collapseRows(WIDE, kept, WIDE_NUM);
+  assert.strictEqual(out.length, 3, "the two Court Reservation rows merge");
+  assert.strictEqual(out[0].Reservations, 5, "3 + 2");
+  assert.strictEqual(out[0]["Lane Hours"], 16, "10.5 + 5.5");
+  assert.ok(!("Rental Name" in out[0]), "the hidden column is gone, not blank");
+  // AND THE TOTAL IS UNCHANGED. A collapse that loses or duplicates a row is
+  // the one failure a reader cannot see, because the page still looks right.
+  const before = WIDE.reduce((t, r) => t + r["Lane Hours"], 0);
+  const after  = out.reduce((t, r) => t + r["Lane Hours"], 0);
+  assert.strictEqual(after, before, "collapsing must not move the grand total");
+});
+
+test("the collapse keeps the card's own order, and never merges across a separator", () => {
+  // FIRST APPEARANCE WINS, so the hierarchy still comes from the card's ORDER BY
+  // and nothing is re-sorted here — the property groupRows depends on.
+  const out = collapseRows(WIDE, ["Month"], WIDE_NUM);
+  assert.deepStrictEqual(out.map(r => r.Month), ["2026-07", "2026-08"]);
+  // Two dimension values must not straddle a joined key: "a b" + "c" and
+  // "a" + "b c" are different rows and a string join silently merges them.
+  const tricky = [
+    { X: "a b", Y: "c", N: 1 },
+    { X: "a",   Y: "b c", N: 1 },
+  ];
+  assert.strictEqual(collapseRows(tricky, ["X", "Y"], ["N"]).length, 2,
+    "these are two different rows and must stay two");
+});
+
+test("an empty filter means ALL, never none", () => {
+  // The rule every other multi-select in this repo follows, and it is why there
+  // is a Clear and no Select all: two controls producing one state is a control
+  // that looks broken.
+  assert.strictEqual(filterRows(WIDE, {}).length, 4);
+  assert.strictEqual(filterRows(WIDE, { f_Lane: [] }).length, 4, "an emptied filter is not a filter");
+  assert.strictEqual(filterRows(WIDE, { Lane: ["A"] }).length, 3);
+  assert.strictEqual(filterRows(WIDE, { Lane: ["A"], "Program Type": ["Masters"] }).length, 1,
+    "two filters intersect");
+});
+
+test("a blank value is its own filter option, labelled and never dropped", () => {
+  // A row the card could not attribute is still a row, and hiding it makes the
+  // grand total disagree with the CSV beside it.
+  const opts = valueCountsFor(WIDE, "Rental Name");
+  assert.ok(opts.some(o => o.value === ""), "blank is offered");
+  assert.strictEqual(filterRows(WIDE, { "Rental Name": [""] }).length, 1,
+    "and selecting it keeps the blank row");
+  // Busiest first, so the value someone is hunting for leads.
+  const byLane = valueCountsFor(WIDE, "Lane");
+  assert.deepStrictEqual(byLane.map(o => o.value), ["A", "B"]);
+  assert.strictEqual(byLane[0].count, 3);
+});
+
+test("the filters are in the URL and the column picker is NOT", () => {
+  // Which columns you like looking at is a display preference — per browser,
+  // like every other column picker here. The filters are part of the question
+  // the report answers, so a link has to carry them.
+  assert.match(page, /localStorage\.setItem\(COLS_KEY/, "columns persist per browser");
+  assert.doesNotMatch(page, /searchParams\.set\('hidden'/, "and never reach the URL");
+  assert.match(page, /SP\.getAll\(filterParam\(c\)\)/,
+    "read with getAll — repeated keys, because these values contain commas");
+  // AND KEYED BY COLUMN NAME. filterRows looks up r[key], so a map keyed by the
+  // URL parameter name matches nothing and the filter silently does nothing at
+  // all — which is how it shipped for one revision. The unit fixture could not
+  // see it because it supplied column names the app never did; the render check
+  // is what caught it.
+  assert.match(page, /if \(next\.length\) out\[col\] = next; else delete out\[col\];/,
+    "the filter map is keyed by the column, never by its URL slug");
+  assert.match(page, /selected=\{filters\[c\] \|\| \[\]\}/,
+    "and the menu reads it the same way");
+  const url = page.slice(page.indexOf("const u = new URL(window.location.href)"),
+                         page.indexOf("window.history.replaceState"));
+  assert.match(url, /searchParams\.delete\(k\)/, "delete before appending");
+  // The column -> parameter slug conversion happens HERE and nowhere else: the
+  // slug is a URL concern, and letting it into the state is what broke the
+  // filters for a revision.
+  assert.match(url, /searchParams\.append\(filterParam\(c\), v\)/);
+  // Appending without deleting stacks a second copy of every value on each
+  // render — the exact bug already recorded for the season filter.
+  assert.ok(url.indexOf("delete") < url.indexOf("append"), "delete comes FIRST");
+});
+
+test("the hidden-column default is applied even though nobody touched a control", () => {
+  // scopedRows on the Programs page handed `rows` straight back when no filter
+  // was picked — correct while every filter was opt-in, and wrong the moment one
+  // became a DEFAULT. hiddenColumns IS a default, so the early return has to be
+  // computed from state rather than from whether the reader has interacted.
+  const memo = page.slice(page.indexOf("const shownRows = useMemo"),
+                          page.indexOf("// Only group on levels"));
+  assert.match(memo, /if \(shownDims\.length === dimCols\.length\) return kept;/,
+    "the skip is a comparison of what is shown against what exists");
+  assert.doesNotMatch(memo, /touched|dirty|userHasFiltered/,
+    "never gated on whether the reader has interacted");
+});
+
+test("the TABLE is handed the narrowed view, not the whole feed", () => {
+  // Found by mutation, not by review: every other assertion here passed with
+  // the table still rendering `bodyCols` over `rows`, which is the bug the
+  // whole picker exists to prevent — the hidden column comes back, blank, and
+  // the row count on screen disagrees with the one in the toolbar.
+  const render = page.slice(page.indexOf("<GroupedTable"), page.indexOf("<GroupedTable") + 200);
+  assert.match(render, /cols=\{viewCols\}/, "the table renders the visible columns");
+  assert.match(render, /rowCount=\{shownRows\.length\}/, "and counts the visible rows");
+  assert.doesNotMatch(render, /bodyCols|rows\.length/,
+    "never the unfiltered column set or the unfiltered count");
+});
+
+test("filtered to nothing is a DIFFERENT empty state from a window with no rows", () => {
+  // Otherwise the reader widens the dates when the fix is to clear a filter.
+  assert.match(page, /data-empty-filtered/);
+  assert.match(page, /const emptiedByFilter = !!\(rows && rows\.length\) && !shownRows\.length/);
+});
+
+test("a narrowed view SAYS it is narrowed, in the page and not the toolbar", () => {
+  // Excluded is never hidden: a grand total over a narrowed set with nothing on
+  // screen saying so is how a number stops being trusted — and whoever prints
+  // this has no toolbar to look at.
+  assert.match(page, /data-scope-note/);
+  const note = page.slice(page.indexOf("data-scope-note"), page.indexOf("data-scope-note") + 1400);
+  assert.match(note, /shownRows\.length[\s\S]{0,80}rows\.length/, "N of M rows");
+  const printCss = page.slice(page.indexOf("@media print"), page.indexOf("@media print") + 1200);
+  assert.doesNotMatch(printCss, /\.scope-note[^}]*display:\s*none/,
+    "and it survives into the PDF, which is where it matters most");
+});
+
+test("report 2 does NOT roll up a per-section total", () => {
+  // "Participants (section total)" is the same value repeated on every month a
+  // section runs, so summing it down a column double-counts any section
+  // spanning two months. Same trap as the wizard summing "Number of Payments" —
+  // right at Clarksville by luck, latently wrong everywhere else.
+  const e = entryOf("aquatic-classes");
+  const num = e.match(/numeric:\s*\{([\s\S]*?)\n    \}/)[1];
+  assert.ok(num.indexOf("Participants") === -1,
+    "a per-section total must not be additive");
+  assert.ok(num.indexOf('"Session Hours"') !== -1 && num.indexOf('"Net Revenue"') !== -1,
+    "while the genuinely additive columns still roll up");
+});
+
+test("every registered report names a card, a uuid and its org", () => {
+  ["aquatic-lane-hours", "aquatic-classes", "aquatic-dropin", "aquatic-passes"].forEach(k => {
+    const e = entryOf(k);
+    assert.match(e, /card: 216\d\d/, k + " names its numeric card id");
+    assert.match(e, /uuid: process\.env\.[A-Z_]+ \|\| "[0-9a-f-]{36}"/, k + " has a public uuid");
+    assert.match(e, /orgIds: \[CUSTOM_REPORT_ORG_IDS\.elSegundo\]/, k + " is gated on the orgId");
+    assert.doesNotMatch(e, /el-segundo/, k + " carries no slug");
+  });
 });
 
 test("an out-of-date run cannot overwrite a newer one", () => {

@@ -29,6 +29,24 @@
   .toolbar .row-count { font-size: 11px; color: #aaa; }
   .toolbar .divider { width: 1px; height: 28px; background: rgba(255,255,255,.15); margin: 0 2px; }
 
+  /* The row rules below are RESETS, not decoration. `.toolbar label` (0,1,1)
+     sets text-transform: uppercase, color: #aaa and flex-direction: column for
+     the date captions, and these options are <label>s inside .toolbar - so
+     without them the checkboxes render UPPERCASE, GREY and STACKED. An inline
+     style only wins for the properties it names; this exact bug has shipped
+     twice in this repo (the season menu, then the aquatics settings sheet). */
+  .cmenu-wrap { position: relative; display: inline-flex; }
+  .cmenu { position: absolute; top: calc(100% + 6px); left: 0; z-index: 300; background: #2c2c2c; border: 1px solid rgba(255,255,255,.22); border-radius: 6px; padding: 6px; min-width: 280px; max-width: 460px; max-height: 360px; overflow: auto; box-shadow: 0 10px 28px rgba(0,0,0,.45); }
+  .cmenu label { display: flex; flex-direction: row; align-items: center; gap: 8px; text-transform: none; letter-spacing: 0; color: #eee; font-size: 12px; padding: 4px 6px; border-radius: 4px; cursor: pointer; }
+  .cmenu label:hover { background: rgba(255,255,255,.08); }
+  .cmenu input[type="checkbox"] { margin: 0; flex: none; }
+  .cmenu .cm-label { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cmenu .cm-n { color: #9ca3af; font-size: 11px; flex: none; }
+  .cmenu .cm-empty { padding: 6px; color: #9ca3af; font-size: 12px; }
+  .cmenu-foot { display: flex; gap: 6px; padding: 6px 4px 2px; border-top: 1px solid rgba(255,255,255,.12); margin-top: 4px; }
+  .cmenu-foot button { padding: 4px 10px; font-size: 11px; }
+  .scope-note { margin: 12px 0 0; font-size: 11.5px; color: #6b7280; }
+
   .page { max-width: 1280px; margin: 16px auto; padding: 26px 30px 34px; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
 
   /* ── The provenance block. CivicRec puts Run On / From / To / the filter
@@ -136,6 +154,29 @@ const basePath = '/' + parts.slice(0, 2).join('/');
 const GROUP_BY  = Array.isArray(CFG.groupBy) ? CFG.groupBy : [];
 const NUMERIC   = CFG.numeric || {};
 const LOCATIONS = Array.isArray(CFG.locations) ? CFG.locations : [];
+// Body columns this report opens with HIDDEN. Every non-numeric body column is
+// toggleable whatever the registry says - deriving that rather than declaring
+// it means reports 2-4 inherit the control with no registry churn - but which
+// ones start off is a per-report judgement about what the reader came for.
+const HIDDEN_DEFAULT = Array.isArray(CFG.hiddenColumns) ? CFG.hiddenColumns : [];
+// Per browser, like every other column picker here, and deliberately NOT in the
+// URL: which columns you like looking at is a display preference, not part of
+// the question the report answers. The filters ARE in the URL, because they
+// are.
+const COLS_KEY = 'customreport:' + (CFG.report || '') + ':hidden';
+function loadHidden() {
+  try {
+    const raw = localStorage.getItem(COLS_KEY);
+    if (raw) { const v = JSON.parse(raw); if (Array.isArray(v)) return v; }
+  } catch (e) { /* a browser refusing storage must not blank the report */ }
+  return HIDDEN_DEFAULT.slice();
+}
+function saveHidden(v) { try { localStorage.setItem(COLS_KEY, JSON.stringify(v)); } catch (e) {} }
+// Repeated ?f_<column>=, read with getAll - NEVER comma-joined. A rental name
+// legitimately contains a comma ("Court Reservation: Lane 2 - B, Court
+// Reservation: Lane 3 - A") and a split would quietly cut it in half, which is
+// the season-filter lesson already recorded in CLAUDE.md.
+function filterParam(col) { return 'f_' + col.replace(/[^A-Za-z0-9]+/g, '_'); }
 const REPORT_LABEL = CFG.reportLabel || 'Report';
 /* The tab, and therefore the filename a browser suggests when the reader prints
    this to PDF. The static <title> sits above the injected ORG_CONFIG, so it
@@ -203,6 +244,13 @@ function columnsOf(rows) {
    walks them in order and never re-sorts. A group's totals are the sum of its
    LEAF rows, so a parent always reconciles to its children by construction
    rather than by a second pass that could disagree with the rows on screen. */
+/* The registry's hierarchy, restricted to what the feed actually carries. A
+   level the card no longer emits would otherwise put every row into one group
+   called "(none)" - a report that looks fine and says nothing. */
+function levelsSafe(groupBy, cols) {
+  return (groupBy || []).filter(g => (cols || []).indexOf(g) !== -1);
+}
+
 function groupRows(rows, levels, numericKeys) {
   const zero = () => { const t = {}; numericKeys.forEach(k => { t[k] = 0; }); return t; };
   const addInto = (t, row) => { numericKeys.forEach(k => { t[k] += numOf(row[k]); }); };
@@ -241,6 +289,71 @@ function groupRows(rows, levels, numericKeys) {
    version of the report is the print/PDF one. */
 function flatTable(rows, cols) {
   return [cols.slice()].concat((rows || []).map(r => cols.map(c => (r[c] == null ? '' : r[c]))));
+}
+
+/* -- Hiding a column RE-SUMS, never blanks a cell -------------------------
+   Card 21682 emits Lane x Program Type x Rental Name x Booking Type. In
+   September 493 of its 825 rows differ only in an auto-generated
+   "Court Reservation: <lane>" string, so a picker that merely hid that column
+   would leave 825 rows that look identical, repeat each other down the page
+   and still add to the same total - which reads as a broken report rather than
+   a shorter one. Collapsing to the kept dimensions gives 258.
+
+   Pure and at module scope so a spec can RUN it: a regex over a reducer passes
+   on an inverted comparison.
+
+   FIRST APPEARANCE WINS, so the card's own ORDER BY still drives the hierarchy
+   and nothing is ever re-sorted here - the same property groupRows relies on.
+   The key is JSON rather than a joined string: two dimension values can
+   otherwise straddle a separator ("a b" + "c" and "a" + "b c") and silently
+   merge two rows that are not the same row. */
+function collapseRows(rows, dims, numericKeys) {
+  if (!rows || !rows.length) return [];
+  const out = [];
+  const at  = new Map();
+  rows.forEach(r => {
+    const k = JSON.stringify(dims.map(d => (r[d] == null ? '' : String(r[d]))));
+    let row = at.get(k);
+    if (!row) {
+      row = {};
+      dims.forEach(d => { row[d] = r[d]; });
+      numericKeys.forEach(n => { row[n] = 0; });
+      at.set(k, row);
+      out.push(row);
+    }
+    numericKeys.forEach(n => { row[n] += numOf(r[n]); });
+  });
+  return out;
+}
+
+/* -- The filters ----------------------------------------------------------
+   EMPTY MEANS ALL, never none - the rule every other multi-select in this repo
+   follows, and it is why there is a Clear and no Select all: two controls
+   producing one state is a control that looks broken.
+
+   Options are built from the rows rather than declared, so a filter can never
+   offer a value the report cannot produce. The shared aquatics dashboard does
+   exactly that with its location list and it reads as broken; see CLAUDE.md. */
+function filterRows(rows, filters) {
+  const keys = Object.keys(filters || {}).filter(k => (filters[k] || []).length);
+  if (!keys.length) return rows || [];
+  return (rows || []).filter(r =>
+    keys.every(k => filters[k].indexOf(r[k] == null ? '' : String(r[k])) !== -1)
+  );
+}
+
+/* Busiest first, so the value someone is hunting for leads. Blank is its own
+   option and is LABELLED, never dropped: a row the card could not attribute is
+   still a row, and hiding it makes the grand total disagree with the CSV. */
+function valueCountsFor(rows, col) {
+  const m = new Map();
+  (rows || []).forEach(r => {
+    const v = r[col] == null ? '' : String(r[col]);
+    m.set(v, (m.get(v) || 0) + 1);
+  });
+  return Array.from(m.entries())
+    .sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0])))
+    .map(e => ({ value: e[0], count: e[1] }));
 }
 
 /* ── Beacon ────────────────────────────────────────────────────────────────
@@ -291,6 +404,49 @@ function flattenTree(node, levels, depth) {
 }
 
 /* ══ Components ══════════════════════════════════════════════════════════ */
+
+/* -- One menu, two callers -------------------------------------------------
+   The column picker and every filter are the SAME component with a different
+   `slug` driving its data-cm-* handles. Two copies would drift the first time
+   one gained a behaviour, and the thing that would drift is the part that has
+   already broken twice here: the <label> resets that stop `.toolbar label`
+   rendering these options uppercase, grey and stacked. */
+function CheckMenu({ slug, label, options, selected, onToggle, onClear, clearLabel }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const away = e => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    const esc  = e => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', away);
+    document.addEventListener('keydown', esc);
+    return () => { document.removeEventListener('mousedown', away); document.removeEventListener('keydown', esc); };
+  }, [open]);
+  const n = (selected || []).length;
+  return (
+    <span className="cmenu-wrap" ref={ref}>
+      <button type="button" data-cm-btn={slug} onClick={() => setOpen(o => !o)}>
+        {label}{n ? ' · ' + n : ''} ▾
+      </button>
+      {open && (
+        <div className="cmenu" data-cm-menu={slug}>
+          {options.map(o => (
+            <label key={o.value} data-cm-opt={slug} data-cm-value={o.value}>
+              <input type="checkbox" checked={(selected || []).indexOf(o.value) !== -1}
+                     onChange={() => onToggle(o.value)} />
+              <span className="cm-label">{o.label}</span>
+              {o.count != null && <span className="cm-n">{o.count.toLocaleString()}</span>}
+            </label>
+          ))}
+          {!options.length && <div className="cm-empty">Nothing to choose here.</div>}
+          <div className="cmenu-foot">
+            <button type="button" data-cm-clear={slug} onClick={onClear}>{clearLabel || 'Clear'}</button>
+          </div>
+        </div>
+      )}
+    </span>
+  );
+}
 
 function GroupedTable({ tree, levels, cols, rowCount }) {
   // Text columns first, then the ones that roll up — a totals row has to line
@@ -392,6 +548,19 @@ function App() {
   const [meta, setMeta]     = useState({});
   const [error, setError]   = useState(null);
   const [loading, setLoading] = useState(true);
+  // Which body columns are hidden, and the per-column filters. Both narrow what
+  // is on screen; neither re-runs the query, because the card has already
+  // answered for this window and re-asking would cost 25s to show a subset of
+  // rows we are holding.
+  const [hidden, setHidden]   = useState(loadHidden);
+  // KEYED BY COLUMN NAME, never by the URL parameter name. filterRows looks up
+  // r[key], so a map keyed by 'f_Program_Type' silently matches nothing and the
+  // filter appears to do nothing at all - which is exactly how this shipped for
+  // one revision, and the unit test could not see it because the fixture
+  // supplied column names the app never did. Found by the render check.
+  const [filters, setFilters] = useState({});
+  const hydratedFilters = useRef(false);
+  useEffect(() => { saveHidden(hidden); }, [hidden]);
   const runSeq = useRef(0);
 
   const run = useCallback((sd, ed, loc) => {
@@ -431,35 +600,107 @@ function App() {
       applied.start ? u.searchParams.set('start_date', applied.start) : u.searchParams.delete('start_date');
       applied.end   ? u.searchParams.set('end_date',   applied.end)   : u.searchParams.delete('end_date');
       applied.location ? u.searchParams.set('location', applied.location) : u.searchParams.delete('location');
+      // DELETE then append, never append alone: append stacks a second copy of
+      // every value on each render. Repeated keys rather than a comma join,
+      // because these values can contain a comma.
+      Array.from(u.searchParams.keys()).forEach(k => { if (k.indexOf('f_') === 0) u.searchParams.delete(k); });
+      Object.keys(filters).forEach(c => (filters[c] || []).forEach(v => u.searchParams.append(filterParam(c), v)));
       window.history.replaceState({}, '', u.toString());
     } catch (e) { /* never break the page over a URL */ }
-  }, [applied]);
+  }, [applied, filters]);
 
   const cols = useMemo(() => columnsOf(rows), [rows]);
   const bodyCols = useMemo(() => cols.filter(c => !GROUP_BY.includes(c)), [cols]);
   const numericKeys = useMemo(() => cols.filter(c => NUMERIC[c]), [cols]);
+  // Toggleable and filterable are the same set: the body's non-numeric columns.
+  // Numerics are the answer, so they are never hidden and never filtered on.
+  const dimCols = useMemo(() => bodyCols.filter(c => !NUMERIC[c]), [bodyCols]);
+  const shownDims = useMemo(() => dimCols.filter(c => hidden.indexOf(c) === -1), [dimCols, hidden]);
+  // The card's own column order, minus what is hidden. Numerics always survive.
+  const viewCols = useMemo(
+    () => bodyCols.filter(c => NUMERIC[c] || hidden.indexOf(c) === -1),
+    [bodyCols, hidden]
+  );
+
+  // filter -> collapse -> group. The collapse is skipped only when nothing is
+  // actually hidden, computed from STATE rather than from whether the reader
+  // touched anything: hiddenColumns is a DEFAULT, so an early return gated on
+  // "has the user filtered yet" would silently not apply it. That is exactly
+  // the bug recorded for scopedRows when cancellations became a default.
+  const shownRows = useMemo(() => {
+    const kept = filterRows(rows || [], filters);
+    if (shownDims.length === dimCols.length) return kept;
+    return collapseRows(kept, levelsSafe(GROUP_BY, cols).concat(shownDims), numericKeys);
+  }, [rows, filters, shownDims, dimCols, cols, numericKeys]);
   // Only group on levels the feed actually carries. A registry naming a column
   // the card no longer emits would otherwise put every row in one group called
   // "(none)" — a report that looks fine and says nothing.
-  const levels = useMemo(() => GROUP_BY.filter(g => cols.includes(g)), [cols]);
+  // Only group on levels the feed actually carries. A registry naming a column
+  // the card no longer emits would otherwise put every row in one group called
+  // "(none)" - a report that looks fine and says nothing.
+  const levels = useMemo(() => levelsSafe(GROUP_BY, cols), [cols]);
   const tree = useMemo(
-    () => (rows && rows.length ? groupRows(rows, levels, numericKeys) : null),
-    [rows, levels, numericKeys]
+    () => (shownRows && shownRows.length ? groupRows(shownRows, levels, numericKeys) : null),
+    [shownRows, levels, numericKeys]
+  );
+  const filtered = useMemo(
+    () => Object.keys(filters).some(k => (filters[k] || []).length),
+    [filters]
   );
 
+  // A deep link's filters can only be resolved once the feed has said what the
+  // columns ARE - the parameter name is a slug of the column and the mapping
+  // back is lossy. Runs once, and a value the feed cannot produce is dropped
+  // rather than emptying the report, the same rule the location filter follows.
+  useEffect(() => {
+    if (hydratedFilters.current || !dimCols.length) return;
+    hydratedFilters.current = true;
+    const f = {};
+    dimCols.forEach(c => {
+      const v = SP.getAll(filterParam(c));
+      if (v.length) f[c] = v;
+    });
+    if (Object.keys(f).length) setFilters(f);
+  }, [dimCols]);
+
+  function toggleHidden(c) {
+    setHidden(h => (h.indexOf(c) === -1 ? h.concat([c]) : h.filter(x => x !== c)));
+  }
+  function toggleFilter(col, v) {
+    setFilters(f => {
+      const cur = f[col] || [];
+      const next = cur.indexOf(v) === -1 ? cur.concat([v]) : cur.filter(x => x !== v);
+      const out = Object.assign({}, f);
+      if (next.length) out[col] = next; else delete out[col];
+      return out;
+    });
+  }
+  function clearFilter(col) {
+    setFilters(f => { const out = Object.assign({}, f); delete out[col]; return out; });
+  }
+
+  // THE EXPORTS FOLLOW WHAT IS ON SCREEN - the filters and the hidden columns
+  // both. An export that quietly carries rows the reader has excluded is the
+  // exact bug already recorded in CLAUDE.md for the Programs Excel export, and
+  // a file disagreeing with the page it came from is how a number stops being
+  // trusted. Still no subtotal lines: a data file gets re-aggregated by whoever
+  // opens it, and a subtotal row indistinguishable from a data row double-counts.
+  function exportCols() { return levels.concat(viewCols); }
+
   function downloadCsv() {
-    if (!rows || !rows.length) return;
-    const csv = csvFromRows(flatTable(rows, cols));
+    if (!shownRows.length) return;
+    const csv = csvFromRows(flatTable(shownRows, exportCols()));
     const stamp = (applied.end || isoOf(new Date())).replace(/-/g, '');
     saveTextViaPopup(csv, orgSlug + '-' + (CFG.report || 'report') + '-' + stamp + '.csv', { bom: true });
-    logClientEvent('report-csv', { n: rows.length, location: applied.location || '' });
+    logClientEvent('report-csv', { n: shownRows.length, location: applied.location || '' });
   }
 
   function downloadExcel() {
-    if (!rows || !rows.length) return;
-    const table = flatTable(rows, cols);
+    if (!shownRows.length) return;
+    const ec = exportCols();
+    const table = flatTable(shownRows, ec);
     const ws = XLSX.utils.aoa_to_sheet(table);
-    ws['!cols'] = cols.map(c => ({ wch: Math.min(38, Math.max(11, c.length + 4)) }));
+    ws['!cols'] = ec.map(c => ({ wch: Math.min(38, Math.max(11, c.length + 4)) }));
     const wb = XLSX.utils.book_new();
     // Excel refuses a sheet name over 31 chars or carrying : \ / ? * [ ]
     XLSX.utils.book_append_sheet(wb, ws, REPORT_LABEL.replace(/[:\\/?*\[\]]/g, ' ').slice(0, 31));
@@ -467,11 +708,16 @@ function App() {
     logClientEvent('excel', { n: rows.length, location: applied.location || '' });
   }
 
-  function print() { logClientEvent('print', { n: (rows || []).length, location: applied.location || '' }); window.print(); }
+  function print() { logClientEvent('print', { n: shownRows.length, location: applied.location || '' }); window.print(); }
 
   const backHref = '/' + orgSlug + (URL_TOKEN ? '?token=' + encodeURIComponent(URL_TOKEN) : '');
   const orgName = CFG.displayName || orgSlug;
-  const hasRows = !!(rows && rows.length);
+  const hasRows = shownRows.length > 0;
+  // A feed that answered with rows, all of which the filters excluded, is a
+  // different state from a window the card had nothing for - and it needs a
+  // different sentence, or the reader widens the dates when the fix is to
+  // clear a filter.
+  const emptiedByFilter = !!(rows && rows.length) && !shownRows.length;
 
   return (
     <div>
@@ -499,7 +745,39 @@ function App() {
         <button className="btn-run" data-run onClick={() => run(pending.start, pending.end, pending.location)} disabled={loading}>
           {loading ? 'Running…' : 'Run report'}
         </button>
-        {hasRows && <span className="row-count" data-row-count={rows.length}>{rows.length.toLocaleString()} row{rows.length === 1 ? '' : 's'}</span>}
+        {dimCols.length > 0 && (
+          <CheckMenu
+            slug="columns"
+            label="Columns"
+            options={dimCols.map(c => ({ value: c, label: c }))}
+            selected={shownDims}
+            onToggle={toggleHidden}
+            onClear={() => setHidden([])}
+            clearLabel="Show all"
+          />
+        )}
+        {/* One filter menu per dimension column, values taken from THIS window's
+            rows. A filter offering a value the report cannot produce reads as
+            broken; the shared aquatics dashboard's location list does exactly
+            that. Hidden columns keep their filter - narrowing by something you
+            are not looking at is a legitimate thing to want, and the scope note
+            says what was applied. */}
+        {dimCols.map(c => (
+          <CheckMenu
+            key={c}
+            slug={filterParam(c)}
+            label={c}
+            options={valueCountsFor(rows || [], c).map(o => ({
+              value: o.value,
+              label: o.value === '' ? '(blank)' : o.value,
+              count: o.count,
+            }))}
+            selected={filters[c] || []}
+            onToggle={v => toggleFilter(c, v)}
+            onClear={() => clearFilter(c)}
+          />
+        ))}
+        {hasRows && <span className="row-count" data-row-count={shownRows.length}>{shownRows.length.toLocaleString()} row{shownRows.length === 1 ? '' : 's'}</span>}
         <span className="toolbar-spacer" />
         {hasRows && <button onClick={downloadCsv} title="The rows as data — no subtotal rows">⬇ CSV</button>}
         {hasRows && <button className="btn-excel" onClick={downloadExcel}>📊 Excel</button>}
@@ -535,7 +813,15 @@ function App() {
           <div className="err"><strong>Couldn't run this report.</strong> {error}</div>
         )}
 
-        {!loading && !error && !hasRows && (
+        {!loading && !error && emptiedByFilter && (
+          <div className="empty" data-empty-filtered>
+            <b>Every row is filtered out.</b>{' '}
+            The card returned {rows.length.toLocaleString()} row{rows.length === 1 ? '' : 's'} for this window
+            — clear a filter in the toolbar to see them.
+          </div>
+        )}
+
+        {!loading && !error && !hasRows && !emptiedByFilter && (
           <div className="empty" data-empty>
             <b>No rows for this window.</b>{' '}
             Nothing was booked between {applied.start ? prettyDate(applied.start) : 'the beginning'} and{' '}
@@ -546,11 +832,37 @@ function App() {
 
         {!loading && !error && hasRows && tree && (
           <div className="grp" data-report-body>
-            <GroupedTable tree={tree} levels={levels} cols={bodyCols} rowCount={rows.length} />
+            <GroupedTable tree={tree} levels={levels} cols={viewCols} rowCount={shownRows.length} />
             <div className="note">
-              Subtotals roll up the rows above them; the grand total is every row in this window.
-              The CSV and Excel exports carry the rows only — no subtotal lines — so they can be re-summed safely.
+              Subtotals roll up the rows above them; the grand total is every row shown.
+              The CSV and Excel exports carry these same rows — no subtotal lines — so they can be re-summed safely.
             </div>
+            {/* EXCLUDED IS NEVER HIDDEN. A grand total over a narrowed set with
+                nothing on screen saying it was narrowed is how a number stops
+                being trusted - and the reader who prints this has no toolbar to
+                look at, which is why this sits in the page and not in the bar. */}
+            {(filtered || shownDims.length !== dimCols.length) && (
+              <div className="scope-note" data-scope-note>
+                {filtered && (
+                  <span>
+                    Filtered to {shownRows.length.toLocaleString()} of {rows.length.toLocaleString()} rows
+                    {' · '}
+                    {Object.keys(filters).filter(c => (filters[c] || []).length).map(c =>
+                      c + ': ' + filters[c].map(v => (v === '' ? '(blank)' : v)).join(', ')
+                    ).join(' · ')}
+                    {'. '}
+                  </span>
+                )}
+                {shownDims.length !== dimCols.length && (
+                  <span>
+                    {dimCols.filter(c => shownDims.indexOf(c) === -1).join(', ')}
+                    {' hidden — rows that differ only by '}
+                    {shownDims.length === dimCols.length - 1 ? 'it' : 'them'}
+                    {' are summed together.'}
+                  </span>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>

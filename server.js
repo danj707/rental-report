@@ -1823,6 +1823,11 @@ const CUSTOM_REPORTS = {
   // Joseph Lormans' report 1. Metabase card 21682 (🏊 1 · Aquatic Lane Hours).
   "aquatic-lane-hours": {
     label: "Aquatic Lane Hours",
+    // The chip on the Data Reports card. Its OWN glyph, not the report's:
+    // four identical icons in one chip row is the duplicate-glyph mistake
+    // already recorded for the Fast Track chips, and the full label is far
+    // too long for a chip.
+    chip: "Lane Hours", chipIcon: "\u{1F3CA}",
     emoji: "\u{1F3CA}",
     desc: "Lane hours by month, pool and program type — reservation hours on every aquatic lane",
     card: 21682,
@@ -1837,6 +1842,13 @@ const CUSTOM_REPORTS = {
     // rather than transcribed here, so a column added to the card shows up
     // without an edit (a transcribed header is a copy that goes stale silently).
     numeric: { "Reservations": { dp: 0 }, "Lane Hours": { dp: 2 } },
+    // Opens WITHOUT Rental Name. Measured on September 2026: the card returns
+    // 825 rows, and 493 of them differ only in an auto-generated
+    // "Court Reservation: <lane>" string that carries no programme at all - so
+    // the report printed at 15 pages. Hidden, the same window is 258 rows, and
+    // the checkbox in the toolbar brings it back. Hiding RE-SUMS rather than
+    // blanking the cell; see collapseRows in public/custom-report.html.
+    hiddenColumns: ["Rental Name"],
     // The location dropdown, matching the aquatics dashboard's own custom list.
     // PER REPORT, deliberately: card 1 has no city-wide Rec ID bucket, and the
     // shared dashboard filter offers values that return zero rows on cards that
@@ -1851,6 +1863,109 @@ const CUSTOM_REPORTS = {
       "El Segundo Wiseburn Aquatic Center",
       "Urho Saari Swim Stadium",
       "Hilltop Park",
+    ],
+  },
+
+  // Joseph's report 2. Metabase card 21683 (aquatics classes by month + instructor).
+  "aquatic-classes": {
+    label: "Aquatics Classes by Month",
+    chip: "Classes", chipIcon: "\u{1F4C6}",
+    emoji: "\u{1F3CA}",
+    desc: "Class sessions, hours and revenue by month, pool, programme and instructor",
+    card: 21683,
+    uuid: process.env.MB_AQUATIC_CLASSES_UUID || "60ada9bc-76c3-4139-b5cb-072bc79c7eb8",
+    orgIds: [CUSTOM_REPORT_ORG_IDS.elSegundo],
+    groupBy: ["Month", "Location", "Program"],
+    // "Participants (section total)" is DELIBERATELY NOT HERE, and it is the
+    // most important line in this entry. It is a per-SECTION total repeated on
+    // every month that section runs, so summing it down a column double-counts
+    // any section spanning two months - the non-additive-column trap already
+    // recorded in CLAUDE.md for the wizard summing "Number of Payments". Left
+    // out of `numeric` it renders per row and never rolls up, which is honest.
+    // Making it additive needs a card change, not a registry edit.
+    numeric: {
+      "Sessions in Month": { dp: 0 },
+      "Session Hours": { dp: 2 },
+      "Collected": { dp: 2, money: true },
+      "Refunded": { dp: 2, money: true },
+      "Net Revenue": { dp: 2, money: true },
+    },
+    // A uuid on a printed report is noise, but it is what separates two
+    // sections sharing a name (49 names against 52 ids at El Segundo), so it is
+    // hidden rather than dropped - and unhiding it splits them apart again.
+    hiddenColumns: ["Section ID"],
+    // Hilltop runs no aquatic programme sections, so it is NOT offered here.
+    // A filter value that returns zero rows on the card it is applied to reads
+    // as broken however correct the data is.
+    locations: [
+      "El Segundo Wiseburn Aquatic Center",
+      "Urho Saari Swim Stadium",
+    ],
+  },
+
+  // Joseph's report 3. Metabase card 21684 (drop-in / public swim admissions).
+  "aquatic-dropin": {
+    label: "Aquatics Drop-In Admissions",
+    chip: "Drop-In", chipIcon: "\u{1F39F}\u{FE0F}",
+    emoji: "\u{1F3CA}",
+    desc: "Drop-in and public swim admissions by month, pool and category, with the tender split",
+    card: 21684,
+    uuid: process.env.MB_AQUATIC_DROPIN_UUID || "453928c4-4b5a-4c21-bd84-5dc1785df630",
+    orgIds: [CUSTOM_REPORT_ORG_IDS.elSegundo],
+    groupBy: ["Month", "Location", "Category"],
+    // Admissions INCLUDE the free member swipes and revenue EXCLUDES them, in
+    // two columns - CivicRec lists membership-holder swipes as their own line
+    // with a real quantity and a $0.00 total, and Joseph reports on both.
+    // The four tenders sum to Revenue on every row (they sign refunds); that
+    // was a real defect on this card and is fixed.
+    numeric: {
+      "Admissions": { dp: 0 },
+      "Of which free (member swipes)": { dp: 0 },
+      "Refunds": { dp: 0 },
+      "Revenue (net of refunds)": { dp: 2, money: true },
+      "Cash": { dp: 2, money: true },
+      "Check": { dp: 2, money: true },
+      "Credit / Debit": { dp: 2, money: true },
+      "User Credit": { dp: 2, money: true },
+    },
+    locations: [
+      "El Segundo Wiseburn Aquatic Center",
+      "Urho Saari Swim Stadium",
+      "Hilltop Park",
+    ],
+  },
+
+  // Joseph's report 4. Metabase card 21685 (passes, memberships and Rec IDs).
+  "aquatic-passes": {
+    label: "Aquatic Passes and Memberships",
+    chip: "Passes", chipIcon: "\u{1FAAA}",
+    emoji: "\u{1F3CA}",
+    desc: "Passes, memberships and Rec ID cards by month, pool and category, with residency and the tender split",
+    card: 21685,
+    uuid: process.env.MB_AQUATIC_PASSES_UUID || "77b0063c-8a1a-4fd7-91a0-2855d5e16f36",
+    orgIds: [CUSTOM_REPORT_ORG_IDS.elSegundo],
+    groupBy: ["Month", "Location", "Category"],
+    numeric: {
+      "Sold": { dp: 0 },
+      "Refunds": { dp: 0 },
+      "Net Revenue": { dp: 2, money: true },
+      "Cash": { dp: 2, money: true },
+      "Check": { dp: 2, money: true },
+      "Credit / Debit": { dp: 2, money: true },
+      "User Credit": { dp: 2, money: true },
+    },
+    // The raw zip is what "Residency (buyer zip)" is DERIVED from, so carrying
+    // both on screen splits every row by a value the column beside it already
+    // summarises. Hidden by default, one click away when somebody wants the
+    // actual zips.
+    hiddenColumns: ["Buyer Zip"],
+    // A Rec ID is city-wide by construction - it answers to neither pool - so
+    // this card, and only this card, carries that bucket. Hilltop sells no
+    // passes or Rec IDs and is not offered.
+    locations: [
+      "El Segundo Wiseburn Aquatic Center",
+      "Urho Saari Swim Stadium",
+      "(City-wide - Rec ID)",
     ],
   },
 };
@@ -7329,6 +7444,10 @@ Object.keys(CUSTOM_REPORTS).forEach((key) => {
       groupBy: spec.groupBy,
       numeric: spec.numeric,
       locations: spec.locations,
+      // Which body columns this report OPENS with hidden. Every non-numeric
+      // body column is toggleable regardless - the page derives that from the
+      // feed - so a new report inherits the control without a registry edit.
+      hiddenColumns: spec.hiddenColumns || [],
     };
     const html = fs.readFileSync(path.join(__dirname, "public", "custom-report.html"), "utf8");
     res.type("html").send(html.replace("</head>", () => orgConfigInject(orgConfig, req) + "</head>"));
@@ -14729,6 +14848,16 @@ app.get("/:org", async (req, res, next) => {
     customReportMeta: Object.fromEntries(customReportsForOrg(slug).map(k => [k, {
       label: CUSTOM_REPORTS[k].label, icon: CUSTOM_REPORTS[k].emoji, desc: CUSTOM_REPORTS[k].desc,
     }])),
+    // ORDERED, because the dashboard draws ONE "Data Reports" card whose chips
+    // are these reports — a card per report would put four near-identical tiles
+    // in a row, and there are more of these coming. Derived from the registry
+    // rather than transcribed, so a rename cannot leave a chip opening a report
+    // it does not name.
+    customReports: customReportsForOrg(slug).map(k => ({
+      key: k,
+      chip: CUSTOM_REPORTS[k].chip || CUSTOM_REPORTS[k].label,
+      icon: CUSTOM_REPORTS[k].chipIcon || CUSTOM_REPORTS[k].emoji,
+    })),
     token: org.token || "",
     chatVisible: !RETIRED_REPORTS.has("chat") && !orgHidden.has("chat"),
     // Both gates: RETIRED_REPORTS decides whether the card is drawn, wizardEnabled
