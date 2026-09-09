@@ -3789,6 +3789,99 @@ other three have been read back and their SQL is intact, but **none of them has
 been executed through the parameterised path**, so do not record them as signed
 off until each returns rows in the UI.
 
+### THE BACKCHECK AGAINST DAN'S SCREENSHOTS — three defects, one arithmetic (2026-09-09)
+
+Dan: *"let me drop in what the mb reports look like here and we can confirm they
+match the exports from Civic Rec, at least data wise."* Four screenshots of the
+dashboard. **Card 3 is correct. The other three each carry one real defect**, and
+all four were measured against production rather than read off the screen.
+
+#### CARD 3's TENDER COLUMNS DO NOT TIE TO ITS OWN REVENUE
+
+The only arithmetic error of the four, and the one that matters most because
+**every CivicRec money report has its tender columns sum to its total.**
+
+| El Segundo, August 2026 | |
+|---|---|
+| Cash + Check + Credit/Debit + User Credit | **$6,027.00** |
+| Revenue (net of refunds) | **$5,976.00** |
+| gap | **$51.00 — exactly August's refunds** |
+
+Card 3's four tender aggregates filter `transaction_type = 'payment'`, while
+`Revenue (net of refunds)` subtracts refunds. So the columns are **gross** and
+the total is **net**, and they disagree on precisely the refunded rows. Visible
+on screen row by row: every row with `Refunds = 0` reconciles to the cent, and
+every row with a refund is over by that refund.
+
+**Card 4 already does this correctly** — its tenders carry
+`* CASE WHEN transaction_type = 'refund' THEN -1 ELSE 1 END`, so they net. **The
+two cards disagree with each other about what a tender column means**, which is
+the two-surfaces-disagreeing trap inside one dashboard. Card 3 should copy card
+4, not the reverse: CivicRec's User Credit is negative, so signed is the shape
+that reproduces theirs.
+
+#### CARD 2 IS THE WHOLE ORG, NOT AQUATICS
+
+Its SQL scopes to `sec.organization_id` and **nothing else** — there is no
+aquatics filter anywhere in it. Measured: **367 of El Segundo's 396 sections are
+not aquatic** (87 non-aquatic programmes against 5 aquatic-ish), so the card
+titled *"Aquatics Classes by Month and Instructor"* returns Lego Club, Basic
+Cooking for Kids, Adult Tapping and Ballet & Tap. 685 rows.
+
+Two more things visible on that card, neither a bug:
+
+- **`Sessions in Month 0` beside real money is the FULL OUTER JOIN working.**
+  Money moved in a month the class did not run — the design this file already
+  records. But a table where most rows read `0 · 0` reads as broken, so it needs
+  saying on screen rather than only in the card comment.
+- **Two rows for "El Segundo Training Program", same month, same instructor, are
+  two DIFFERENT sections sharing a name.** The card groups by section id and
+  prints `sec.name`, so identical names are indistinguishable. A `Section ID`
+  column would settle it; without one this reads as a duplicate.
+
+#### CARD 4 LEAKS CITY-WIDE FEES — but far less than the screenshot suggests
+
+The screenshot leads with Farmers' Market and Dial-A-Ride, so it looks as if the
+card is the whole catalogue. **It is not, and the measurement corrects my own
+first read.** August, rows whose item name carries no aquatic facility:
+
+| | rows | gross |
+|---|---|---|
+| **Rec ID cards** — legitimately Joseph's report C | **2,203** | $1,830 |
+| genuinely out of scope (Farmers' Market ×3, cooking materials, Per Player Fee, Outreach Donations, Red Cross cert) | **19** | **~$6,493** |
+
+So it is **19 rows of 3,221 (0.6%) — and about a quarter of the card's money**,
+one `Per Player Fee- Non Resident` row alone carrying $3,695. **The fix is
+therefore NOT "filter to aquatic"**, which would delete the Rec ID report; it is
+*aquatic-named OR Rec ID, and nothing else*.
+
+**THE PARTITION IS WHAT CAUSED THIS, and it was my design.** Card 4's scope is
+*"every `product` item EXCEPT Lap Swim / Rec Swim"* — chosen so 3 and 4 partition
+with no overlap and no gap. That is a fine property and the wrong objective:
+"everything that is not a drop-in swim" is not "aquatic passes", it is the rest
+of the city. **A partition is only worth having over a set that is already the
+right set.**
+
+Also found: **`El Segundo Recreation ID Card - Adult` (1 row) against
+`El Segundo Resident ID Card - Adult` (1,074)** — a third instance of the
+two-catalogue-names-for-one-product trap already recorded for the punch passes.
+
+#### CARD 1 IS RIGHT FOR AUGUST; ITS DEFAULT VIEW IS PRE-CUTOVER TEST DATA
+
+August is clean — **5,808 lane reservations, 4,332 auto-generated
+(`Court Reservation:`) against 1,476 real rental names, and ZERO staff blocks or
+holds.** The classification works.
+
+What Dan's screenshot shows is **2026-04 and 2026-06**, before El Segundo went
+live: `Block`, `Swimlane`, `Hold for Reservation`, and a `Pool Reservation:`
+prefix that does not appear in August at all. Every one of them falls to
+*"Unmapped - assign a category"*, so **the first screen Joseph sees is test data
+telling him to go categorise it.** The card has no date floor and the dashboard
+filter arrives empty.
+
+Two fixes, neither urgent: a date floor at go-live, and a bucket for staff
+blocks/holds so they are never presented as a programme awaiting a mapping.
+
 ### TWO PLACEMENT GAPS
 
 - **The MCP `update_dashboard` tool has no tab parameter**, so the four cards
