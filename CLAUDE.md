@@ -3535,18 +3535,27 @@ no help reconciling history.
 
 **E — Instructor Transaction Summary by Session.** Columns: Activity · Session ·
 Participants · Instructor Applicable Total · Hours · Instructor % · Instructor
-Hourly · Instructor Fees · After Instructor Dues. Three separate gaps:
+Hourly · Instructor Fees · After Instructor Dues. **Dan closed two of the three
+gaps on 2026-09-09** — read the correction below, then this:
 
-1. **Naomi Gol is NAMED in CivicRec and blank in Rec.** The instructor-coverage
-   gap with a face on it — the old system holds the assignment and the migration
-   did not carry it. Still the cheapest fix on the list.
-2. **Per-SESSION grain.** Card 17295 gives one period figure per section, not
-   thirty dated rows. **Card 17755 is the right card to grow, not a new one** —
-   it is participant-grain, already carries the instructor, and already handles
-   drop-in bookings that carry only a `session_id`. Session hours are free: their
-   24.59 h is just the sum of session durations (0.83 h = a 50-minute class).
+1. **Naomi Gol is NAMED in CivicRec and blank in Rec.** Dan: *"Ignore the fact
+   they don't have instructors assigned to all programs, I'll remind them but it
+   doesn't block our reporting."* So it stays a note to El Segundo, not a gap on
+   our side. The column works; the field is empty.
+2. **Per-SESSION grain — NOT BEING BUILT.** Dan: *"lets skip the per session rows
+   for now, I think the program level is fine."* CivicRec emits thirty dated rows
+   per section and the Instructor Payout report emits one; that is the difference,
+   and it is accepted. **Do not start on card 17755's session grain** without
+   checking in — the note below about it being the right card to grow describes
+   HOW, not whether.
 3. **The payout split and the payout DOCUMENT are already built — I said they
    were not, and that was wrong.** See the correction below.
+
+**So ONE column is left on report E: Hours.** At section grain it is the sum of
+that section's session durations (their 24.59 h over thirty rows becomes one
+figure per section), and it only earns its place if El Segundo pays anyone
+hourly — **Instructor Hourly, Instructor Fees and After Instructor Dues all read
+$0.00 in Naomi's own July export**, so ask before building it.
 
 ### CORRECTION: REPORT E IS NOT "FURTHEST OFF" — the Instructor Payout report is it
 
@@ -3574,15 +3583,13 @@ Grace Maxwell, El Segundo, September: 5 sections, 19 enrolments, $2,827.80 net,
 $1,979.46 to the instructor at 70/30, and a check-style voucher naming the pay
 period. CivicRec produces no such document.
 
-**So the gap is TWO columns, not a report:** per-session dated rows, and Hours.
-Both come off `session` (their 24.59 h is the sum of session durations, 0.83 h =
-a 50-minute class), and card 17755 is still the right card to grow — it is
-participant-grain, carries the instructor, and already handles drop-in bookings
-that arrive with only a `session_id`.
-
-**Instructor Hourly / Instructor Fees / After Instructor Dues all read $0.00 in
-Naomi's own July export**, so that half of their template may simply be unused at
-El Segundo. Ask before building it.
+**Dan then closed it to ONE optional column.** *"lets skip the per session rows
+for now, I think the program level is fine."* So per-session grain is not being
+built, and what is left of report E is **Hours** — at section grain, the sum of
+that section's session durations. **Instructor Hourly / Instructor Fees / After
+Instructor Dues all read $0.00 in Naomi's own July export**, so that half of
+their template may simply be unused at El Segundo, and Hours only matters if
+somebody is paid by the hour. Ask before building either.
 
 **One honest nuance about the split:** ours is a TOOLBAR CHOICE applied to every
 row in view, not a rate stored per instructor — so a single-instructor filtered
@@ -3590,11 +3597,14 @@ view (exactly what Dan showed) is right, and one pull across a roster on mixed
 splits would not be. `org_cut_bps_override` exists on `instructor` and nothing
 reads it; wiring it in is what would make a whole-roster pull correct.
 
-**And it does not move report 2 at El Segundo.** Grace Maxwell teaches dance
-(Hip Hop for Kids, Tutus & Taps, Thriller Workshop). Every aquatics section still
-has no facilitator on file, so this report is EMPTY for the programmes Joseph is
-reporting on. Instructor assignment stays the number-one blocker, and it is data
-entry rather than engineering.
+**The empty instructor column at El Segundo is THEIRS, not a gap here** (Dan,
+2026-09-09: *"Ignore the fact they don't have instructors assigned to all
+programs, I'll remind them but it doesn't block our reporting."*). Grace Maxwell
+teaches dance (Hip Hop for Kids, Tutus & Taps, Thriller Workshop) and has a
+facilitator on file; every aquatics section does not, so this report and report
+2's instructor column are both empty for the programmes Joseph is reporting on
+until somebody assigns them. That is a reminder to El Segundo — **it is no longer
+carried on our list as a blocker.**
 
 **Generalise it: do not measure a capability from the schema when a report that
 answers it already ships.** I searched `instructor` for a rate column, found
@@ -3794,8 +3804,10 @@ Catalogue hygiene, worth fixing before the first monthly report is filed.
 
 Two of the three biggest wins are El Segundo's to do, not ours:
 
-1. **Assign instructors to the aquatics sections.** Sole blocker on report 2's
-   instructor column, and it is admin data entry.
+1. **Assign instructors to the aquatics sections.** Fills report 2's instructor
+   column and the Instructor Payout report for aquatics. **El Segundo's to do,
+   and Dan's call is that it does not block us** — the columns work, the field is
+   empty; he will remind them.
 2. **Get a program-type mapping** — which rental names are Masters, High
    Schools, Youth Water Polo. One list turns the existing lane-hours panel into
    his report 1.
