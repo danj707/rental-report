@@ -1,5 +1,97 @@
 # Project notes for Claude
 
+## THE LOADING BAR PRINTED "usually about NaNm NaNs" (2026-09-09)
+
+Dan, on Windham's Program Schedule mid-load: *"err this looks like a bug when
+the page is loading."* It was, three ways at once, and every one of them came
+from **a second renderer reading the shared helpers' arguments by hand.**
+
+`programs-schedule.html` is vanilla JS (deliberately — see that section), so it
+draws its own bar around the shared `window.loaderProgress`. That much is right.
+What it did with the estimate was not:
+
+| the call it made | what happened |
+|---|---|
+| `loaderEstimateNote(est)` where the signature is `(ms, basis)` | an object is **truthy**, so `if (!est) return ''` never fired, `basis` arrived `undefined` so the no-history guard never fired, and `fmtSecs(object)` rendered the literal **`usually about NaNm NaNs`** on screen |
+| `loaderProgress(elapsed / 1000, est)` where it takes **ms** | measured by running it: **0.03% at five seconds, 0.26% at FORTY** — a bar that never visibly moves, i.e. the forever-spinner the bar replaced |
+
+**THE SECOND ONE IS THE WORSE BUG and it is the one nobody reported**, because a
+bar sitting near zero reads as "still working" rather than as broken. The NaN is
+what got it looked at.
+
+**And the `basis === 'default'` guard was being bypassed, which is the failure
+that guard exists to prevent.** Windham has no recorded history for this report,
+so the honest output is **nothing** — the loader must not dress a 25s default up
+as *"usually about 25s"*. Passing the object defeated it silently: the note read
+as measured history for an org that has never been timed.
+
+### THE FIX IS ONE READER, not three careful call sites
+
+`readEstimate` is exported as **`window.loaderReadEstimate`** (with
+`loaderFmtSecs` beside it), and every caller reads the `{ms, basis}` shape
+through it. The object/field mismatch cannot recur, which is the same argument
+as `progAutopayCell` going through `progAutopayShare` and `siteLabel` having one
+definition — *a second reader of a shape is a second chance to get it wrong.*
+
+Two things were rebuilt rather than patched, because the page was missing them
+and both are part of the shared contract:
+
+- **The meta line is re-rendered every tick.** It was composed ONCE at start, so
+  the elapsed count was absent and **the overrun state was unreachable** — a 93s
+  apex load would have said *"usually about 8s"* forever. Elapsed is the one
+  number on that panel that is not an estimate.
+- **The 350ms show delay.** The page drew its bar immediately, so a warm cache
+  flashed it for ~200ms — which reads as a glitch and makes a fast report feel
+  slow, the exact thing `SHOW_DELAY_MS` exists for.
+
+### NOTHING COULD SEE ANY OF IT, and that is the reusable part
+
+`node --check` passes (it is valid JS), the page renders, the server boots, and
+**`report-loader.spec.js`'s 44 assertions all passed** — because they cover the
+CURVE and the estimate's derivation, and there was no case that RENDERED a bar
+outside React. `ci-check-render` had twelve programs-schedule cases and not one
+of them was about the loading state, since every stub answers instantly.
+
+*Generalise it: a second renderer of a shared thing needs its own coverage. The
+helpers were fine — every assertion about them was true, and the page still
+printed NaN.*
+
+### Guards
+
+`report-loader.spec.js` 44 → **65 assertions**. The load-bearing half is
+BEHAVIOURAL: it **lifts the page's own `startLoader` and runs it against a fake
+DOM**, then reads the bytes it wrote — because every source assertion here would
+pass on a renderer that composed the note some fourth wrong way. It drives two
+bases (org history and none) at 200ms, 5s and 90s and requires: nothing inside
+the show delay, no `NaN`, the elapsed count present, *"usually about"* present
+for a timed org and **absent** for an untimed one, and at 90s a width that is
+both moving and short of full.
+
+**A harness trap in my own spec:** `report-loader.js` closed over
+`sandbox.window`, so `readEstimate` reads `ORG_CONFIG` off **that** object — an
+`Object.assign({}, sandbox.window, {ORG_CONFIG})` copy silently tested the
+default branch twice and the org case proved nothing. It failed by name, which
+is the only reason it was found.
+
+Two source assertions generalise past this page: **no page may read
+`ORG_CONFIG.loadEstimate` by hand**, and every call to `loaderProgress` is
+checked for a `/ 1000` in its arguments.
+
+Mutation-tested seven ways, all failing by name: the object passed to
+`estimateNote` (the bug exactly as it shipped — the failure message reproduces
+Dan's screenshot, `"5s · usually about NaNm NaNs"`), seconds fed to
+`loaderProgress`, the raw config read by hand again, the `default` guard removed,
+the show delay dropped, the meta line frozen at start, and the bar hardcoded to
+a fixed width.
+
+Plus `loader · the vanilla bar shows no NaN` in `ci-check-render.js` — the spec's
+fake DOM proves the composition, only a browser proves the real page **wires it
+up** and that the injected `ORG_CONFIG` reaches it. Verified to fail on the
+shipped bug while the other four loader cases keep passing, and it requires an
+elapsed count **and** no NaN: either alone passes on half the bug, since the note
+really did read `5s · usually about NaNm NaNs`.
+
+
 ## THE CLASS ROSTER WAS SCOPED BY THE DATE WINDOW ALONE (2026-09-09)
 
 Dan, on Hatha Yoga after the roster got fast: *"well it kinda does. but its much

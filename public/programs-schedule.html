@@ -356,6 +356,8 @@
   }
   .rl-note { margin-top: 10px; font-size: 12px; color: #888; }
   .rl-note span { color: #aaa; }
+  /* Past the estimate, same amber as every React report's .rl-over. */
+  .rl-note.rl-over span { color: #b45309; }
   @media (prefers-reduced-motion: reduce) { .rl-fill { transition: none; } }
 </style>
 </head>
@@ -846,28 +848,80 @@
   }
 
   /* ── Loading bar. Same curve as every React report, via the shared
-       window.loaderProgress; a second implementation would drift. ── */
-  var loaderTimer = null, loaderT0 = 0;
+       window.loaderProgress; a second implementation would drift.
+
+       THIS RENDERER HAD THREE BUGS AT ONCE, and all three came from reading
+       the shared helpers' arguments by hand instead of through their own
+       reader (Dan, 2026-09-09, on Windham: "err this looks like a bug when
+       the page is loading"):
+
+         1. It passed the whole ORG_CONFIG.loadEstimate OBJECT to
+            loaderEstimateNote, whose signature is (ms, basis). An object is
+            truthy so the empty guard never fired, and fmtSecs(object) printed
+            the literal "usually about NaNm NaNs" ON SCREEN.
+         2. The no-history guard is `basis === 'default'`, and basis arrived
+            undefined — so an org the server has never timed was told a
+            number anyway. That guard exists precisely so a guess is never
+            dressed up as history.
+         3. It fed loaderProgress SECONDS where it takes MILLISECONDS, and
+            the object as the estimate (so the estimate fell back to 25000ms).
+            Measured: 0.03% at five seconds, 0.26% at FORTY — a bar that never
+            visibly moves, which is the forever-spinner this replaced.
+
+       Everything now comes from window.loaderReadEstimate(), so the {ms,basis}
+       shape is read in exactly one place, and the meta line is re-rendered on
+       every tick — the elapsed count is the one number here that is not an
+       estimate, and it is what makes the overrun state reachable at all. ── */
+  var loaderTimer = null, loaderT0 = 0, loaderShown = false;
+  var LOADER_SHOW_DELAY_MS = 350;   // in step with report-loader.js
   function startLoader() {
     if (loaderTimer) return;
     loaderT0 = Date.now();
+    loaderShown = false;
     var mount = document.getElementById('loaderMount');
-    var est = (window.ORG_CONFIG && window.ORG_CONFIG.loadEstimate) || null;
-    var note = (window.loaderEstimateNote && window.loaderEstimateNote(est)) || '';
-    mount.innerHTML = '<div class="rl" data-rl="1">' +
-      '<div class="rl-track"><div class="rl-fill" id="rlFill"></div></div>' +
-      '<div class="rl-note">Counting enrolments…' + (note ? ' <span>' + esc(note) + '</span>' : '') +
-      '</div></div>';
+    mount.innerHTML = '';
+    var est = window.loaderReadEstimate
+      ? window.loaderReadEstimate()
+      : { ms: 25000, basis: 'default' };
+    var note = (window.loaderEstimateNote &&
+                window.loaderEstimateNote(est.ms, est.basis)) || '';
+    var fmt = window.loaderFmtSecs || function (ms) { return Math.round(ms / 1000) + 's'; };
+
     loaderTimer = setInterval(function () {
+      var elapsed = Date.now() - loaderT0;
+      // A warm cache answers in ~200ms, and a bar that flashes for a fifth of
+      // a second reads as a glitch and makes a fast report feel slow.
+      if (elapsed < LOADER_SHOW_DELAY_MS) return;
+      var over = elapsed > est.ms;
+      if (!loaderShown) {
+        loaderShown = true;
+        mount.innerHTML = '<div class="rl" data-rl="1" data-rl-basis="' + esc(est.basis) + '">' +
+          '<div class="rl-track"><div class="rl-fill" id="rlFill"></div></div>' +
+          '<div class="rl-note" id="rlNote"></div></div>';
+      }
       var el = document.getElementById('rlFill');
       if (!el) return;
-      var pct = window.loaderProgress
-        ? window.loaderProgress((Date.now() - loaderT0) / 1000, est)
-        : 50;
-      el.style.width = pct + '%';
+      var pct = window.loaderProgress ? window.loaderProgress(elapsed, est.ms) : 50;
+      el.style.width = pct.toFixed(1) + '%';
+      el.parentNode.parentNode.setAttribute('data-rl-pct', String(Math.round(pct)));
+      el.parentNode.parentNode.setAttribute('data-rl-over', over ? '1' : '0');
+      var meta = document.getElementById('rlNote');
+      if (meta) {
+        // "longer than usual" is only true when there IS a usual; with no
+        // history the honest line claims nothing about how much longer.
+        meta.className = 'rl-note' + (over ? ' rl-over' : '');
+        meta.innerHTML = 'Counting enrolments… <span>' + esc(
+          over ? fmt(elapsed) + (note ? ' · longer than usual — still working'
+                                     : ' · still working')
+               : (note ? fmt(elapsed) + ' · ' + note : fmt(elapsed))
+        ) + '</span>';
+      }
     }, 120);
   }
-  function stopLoader() { if (loaderTimer) { clearInterval(loaderTimer); loaderTimer = null; } }
+  function stopLoader() {
+    if (loaderTimer) { clearInterval(loaderTimer); loaderTimer = null; }
+    loaderShown = false;
+  }
 
   /* ── Toolbar ── */
   function checkMenu(slug, label, all, sel, counts, noneLabel) {

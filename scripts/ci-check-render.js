@@ -1859,6 +1859,30 @@ const CASES = [
   { name: "loader · a slow report shows a progress bar", path: "/{org}/programs",
     stubDelayMs: 4000, needs: "[data-rl] .rl-bar" },
 
+  // THE VANILLA BAR IS A SECOND RENDERER, and it shipped printing "usually
+  // about NaNm NaNs" on screen (Dan, 2026-09-09, on Windham: "err this looks
+  // like a bug when the page is loading"). programs-schedule.html is not React,
+  // so it draws its own markup around the shared curve — and it passed the
+  // whole {ms,basis} object where (ms, basis) was wanted.
+  //
+  // The report-loader spec lifts that renderer into a fake DOM, which proves
+  // the composition; only a browser proves the real page WIRES it up and that
+  // the injected ORG_CONFIG reaches it. Keyed on the rendered TEXT, because a
+  // bar reading NaN renders a perfectly normal-looking bar.
+  { name: "loader · the vanilla bar shows no NaN", path: "/{org}/programs-schedule",
+    stubDelayMs: 6000, needs: "[data-rl-clean='1']",
+    act: async (page) => {
+      await page.waitForSelector("[data-rl] .rl-note", { timeout: 8000 });
+      await new Promise(r => setTimeout(r, 700));
+      await page.evaluate(() => {
+        const t = document.querySelector("[data-rl] .rl-note").textContent || "";
+        // An elapsed count present AND no NaN anywhere. Either alone passes on
+        // half the bug: the note read "5s · usually about NaNm NaNs".
+        if (!/NaN/.test(t) && /\d+s/.test(t)) document.body.setAttribute("data-rl-clean", "1");
+        document.body.setAttribute("data-rl-note", t);
+      });
+    } },
+
   // The bar must be MOVING, and moving with real numbers. "A bar rendered"
   // passes just as happily on one stuck at 0% or pinned at 100%.
   { name: "loader · the bar advances, and never claims 100%", path: "/{org}/programs",
