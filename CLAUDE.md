@@ -3427,6 +3427,222 @@ from `getParams` fails only the deep-link case. The deep-link case carries the
 apostrophe (`?season=Fall%20%2726`) on purpose, since that is what a real season
 name has to survive.
 
+## Joseph's reports, rebuilt in the reporting project (2026-09-09)
+
+Dan: *"Ok so the reports are in MB and give a raw csv of the data he wants. now
+what's missing are the roll ups or total rows at the bottom, correct? … Create a
+new card pulling data from the mb cards, add filters that match up with the mb
+report, then format it on the frontend to look like his Civic Rec reports?"* Then:
+*"lets start with report 1, once we nail that we can move on. Build these ONLY for
+El Segundo in their org dashboard, with aptly named report names, same headers and
+filters from the mb card/report."*
+
+**Report 1 is BUILT.** `/el-segundo-recreation/aquatic-lane-hours`, reading card
+**21682** through its public link
+`b1f4ca67-1a91-4e91-8581-5b3dbaf0d9a2`.
+
+### NO, ROLL-UPS WERE NOT THE ONLY GAP — and that is why this is a page
+
+Read off the four CivicRec PDFs rather than assumed. Beyond the raw rows every
+one of them carries:
+
+| | |
+|---|---|
+| a provenance header | Run On, Run By, From/To, **and the filter values echoed back** |
+| group headings as HEADINGS | `Category: Rec ID` → `Activity: Wiseburn Rec ID` → rows |
+| **two** levels of subtotal | an unlabelled row under each group, then `Totals for Category: X` |
+| row numbers that restart per group | 1., 2., 3. |
+| accounting negatives | `($26.00)`, `($0.11)` |
+| links | receipt # and user name (report D) |
+
+**A native Metabase card can produce none of it.** A dashboard filter binds to a
+template TAG, never to a result column, and the visualisation is one flat table.
+`GROUPING SETS` can fake subtotal ROWS and they come out as ordinary rows with
+blank cells — indistinguishable from data, and they poison the CSV. So the
+formatting half was never a Metabase job.
+
+**AND THE WRAPPER CARD IN DAN'S PLAN IS NOT NEEDED.** Metabase can reference a
+card from a native query (`{{#21684}}`), but it adds a fifth thing to keep in
+sync and breaks the parameter pass-through. The four cards are already the right
+feed shape: `org_id` + optional `start_date`/`end_date`, which is exactly what
+`buildMetabaseParams` sends. Becoming a feed is a registry entry, not a rewrite.
+
+**One real DATA gap, separate from formatting:** report D (Aquatic Passes) is one
+row per transaction — receipt #, date, time, user, zip — and card 21685 is
+aggregated. That needs a transaction-grain variant. A, B, C and E already match
+our grain.
+
+### `CUSTOM_REPORTS` — a registry, so reports 2–4 are config
+
+One entry in server.js carries the label, the emoji, the public uuid, the numeric
+card id, the org allow-list, the group hierarchy, which columns roll up and the
+location list. `public/custom-report.html` is ONE page that renders all of them.
+
+- **THE GATE IS THE `orgId`, NEVER THE SLUG.** El Segundo is a dynamic org and
+  the two projects already spell it differently; a slug is each project's own
+  name for an organisation and they drift — the `town-of-shrewsbury` link 404'd
+  for five weeks. The registry contains no slug at all, and the spec asserts it.
+- **NOT a `REPORT_TYPES` entry.** A report type with a `SHARED_UUIDS` entry is
+  offered to every org, health-checked, prewarmed and subscribable. This card's
+  SQL hardcodes El Segundo's locations, so every other org would get an empty
+  report. Same shape as `lessons` (SF only): a per-org gate plus its own routes.
+- **THE COLUMNS AND THEIR HEADERS ARE READ FROM THE FEED**, in the card's own
+  order. Dan asked for "same headers … from the mb card", and inheriting them is
+  also the only way that stays true: a transcribed header is a copy that goes
+  stale the day the card gains a column — the guessed-grain mistake, one field
+  over. The registry names only the group levels and the numeric columns.
+- **`REPORT_DIRECTORY` and org.html's card are DERIVED**, not transcribed. The
+  server injects `customReportMeta` and `org.html` merges it, so a rename cannot
+  leave a card opening a report it does not name.
+
+### THE HIERARCHY IS THE CARD'S OWN `ORDER BY`, so nothing is re-sorted
+
+`groupRows` walks the rows in the order they arrive (Month → Location, which is
+card 21682's `ORDER BY 1, 2, …`) and never sorts. Re-sorting here would silently
+disagree with the CSV beside it. A parent's totals are the sum of its LEAF rows,
+so **a parent reconciles to its children by construction** rather than by a
+second pass that could disagree with what is on screen.
+
+**WHICH SUBTOTAL EACH LEVEL GETS IS CIVICREC'S RULE, and it is load-bearing:**
+the **deepest** group takes the unlabelled row directly under its rows, every
+outer level takes a labelled `Totals for <level>: <value>`. Give both to the
+deepest group and it prints the same numbers twice, one directly under the other.
+
+**ONE TABLE, not a table per group.** A "Totals for X" row is only readable
+sitting under the columns it totals, and separate `<table>` elements do not share
+column widths — the first build had the roll-up drifting out of line with the
+numbers above it, which is the one thing that row exists to prevent.
+
+**A row the card could not attribute is grouped as `(none)`, never dropped** —
+hiding it makes the grand total disagree with the CSV.
+
+### The exports, and the split that decides what goes in them
+
+- **CSV and Excel are the ROWS ONLY — no subtotal lines.** A data file gets
+  re-aggregated by whoever opens it, and a subtotal row indistinguishable from a
+  data row double-counts the moment anyone sums a column. Both go through
+  `flatTable` → `csvFromRows` → `saveTextViaPopup` with the **BOM**, and Excel
+  through the same flat table, so the two files cannot disagree.
+- **The group columns are IN the file.** A spreadsheet row cannot be expanded, so
+  what the screen puts in a heading the file has to carry per row.
+- **PRINT is the formatted one**, and it is the whole export argument: Dan's
+  *"mb exporting->pdf looks terrible"*. A print stylesheet we own keeps group
+  headings with their rows and never orphans a subtotal.
+
+### The location filter is PER REPORT, which fixes something the dashboard has
+
+The Metabase dashboard drives all four cards from one filter, and **two of its
+four values return zero rows on two of the cards** — Hilltop sells drop-in only,
+a Rec ID is city-wide. That is the data being honest and it still reads as a
+broken filter. Here each report offers only what it can answer: card 1 lists its
+three pools and no city-wide bucket. **An unknown value is DROPPED, not
+forwarded** — a value outside the list returns nothing and reads as an empty
+report rather than as a rejected filter.
+
+A STATIC list, not a live one, for the reason already recorded: the card's CASE
+ladder is hand-edited when a pool opens, so a self-updating dropdown would offer
+a fourth value returning zero rows everywhere.
+
+### Two defects found by driving the real routes, not by review
+
+- **The beacon overwrote the report TYPE.** `logEvent` merges `extra` over the
+  record it builds, so an extra called `report` (I passed the label) replaced
+  `aquatic-lane-hours` with `Aquatic Lane Hours` in `events.jsonl` — out of
+  `getReportActivity()`'s reach and disagreeing with every other row. Found by
+  reading the log back after a real POST.
+- **A refused beacon posted a DEAD LINK alert.** `noteDeadLink()` keys on *"a 404
+  that arrived with a valid-looking token"*, which is byte-identical to every
+  refusal here. All three gated 404s are marked `deliberate404` now. **And the
+  spec's zero-deadlink assertion was VACUOUS at first**: its fixture tokens were
+  `tok-yes`/`tok-no`, and `noteDeadLink` ignores a token under 8 characters as
+  bot noise — so the mutation that unmarks the refusal SURVIVED. Third instance
+  of that exact vacuity in this file.
+
+### Verified against the card, not against itself
+
+Recomputed from the feed independently and compared to what the page draws, El
+Segundo, August 2026:
+
+| | page | independent |
+|---|---|---|
+| Wiseburn AC | 5,170 res / 6,467.50 h | **5,170 / 6,467.50** |
+| Urho Saari | 638 / 1,871.00 | **638 / 1,871.00** |
+| Totals for Month: August 2026 | 5,808 / 8,338.50 | **5,808 / 8,338.50** |
+| grand total | 5,808 / 8,338.50 | 862 rows |
+
+8,338.5 is the figure this file already records for card 21682's August. The CSV
+was read as BYTES out of the popup: 863 lines (header + 862 rows), the BOM
+present, RFC4180 quoting on `Inst Lane 1- 4'6" Depth (25Y) - A`, and **no
+`Totals for` or `Grand total` line anywhere in it**.
+
+### Guards
+
+`scripts/custom-reports.spec.js` (**32 assertions, in CI**), which LIFTS AND RUNS
+`groupRows`, `flattenTree`, `flatTable`, `columnsOf`, `fmtNum` and `prettyDate`,
+plus a live half that boots a server against a fixture org and drives the real
+routes. `SKIP_SOURCE=1` drops the source half so the live half can be shown to
+catch a regression alone.
+
+The fixture is shaped so a wrong roll-up cannot look right: two months, two
+locations inside each, and month totals (13, 21) and a grand (34) that appear
+nowhere else — a subtotal read from the wrong level would have to hit one by
+accident.
+
+Mutation-tested, all failing by name: the deepest group given a labelled subtotal
+too, an outer total reading its first child's subtotal, the CSV built from the
+grouped display rows, the BOM dropped, a level the card no longer emits still
+grouped on, the empty state removed, the shared dashboard's city-wide value added
+to the list, the header reading the toolbar instead of the applied window, the
+gate reconciling on the slug, the `report` key smuggled back into the beacon, and
+each of the three deliberate-404 markings removed.
+
+Plus **8 `ci-check-render.js` cases**, every one keyed on a COMPUTED FIGURE —
+"a totals row appeared" passes on all of the above. `ci-check-render.js` gained a
+per-case **`token`**, because these reports are gated on a different org than the
+one it resolves, and it now writes an `orgs.json` fixture before the spawn
+(`loadDynamicOrgs()` runs at server module scope, so a later write is never seen).
+
+**One of my own absent-assertions was vacuous and mutation is what showed it**:
+`[data-sub-level="1"] .sublabel.lbl` matches nothing on any build — `lbl` is on
+the ROW — so the duplicate-subtotal mutation passed it. It is `tr[data-sub-level="1"].lbl` now.
+
+`scripts/report-cards.manifest.json` gained an **aquatic-lane-hours / el-segundo**
+row (2,239 rows in 23.7s, measured after the build). It matters more here than
+usual: this card is not in `REPORT_TYPES`, so **the health check does not probe
+it** and a re-Texted date tag would take the report down for El Segundo with
+nothing else noticing.
+
+### THE REGISTRY'S PLACEMENT IN server.js IS LOAD-BEARING
+
+It sits above the shared-UUID map, not below it. `card-drift.spec.js` slices
+server.js from that map's declaration to the `resolveReportCard` comment and
+EVALS the result; sitting in that gap pulled the `REPORT_DIRECTORY` line into the
+slice, where the directory is not defined, and the spec **DIED with a bare
+ReferenceError instead of failing by name** — Nth instance of a slice reaching
+past its own inputs. And writing the marker text into the explanatory comment
+moved the slice's own start point, which is the same mistake one level up. Stay
+out of the gap and do not quote its boundaries.
+
+### NOT DONE, and worth knowing
+
+- **`Run By` is absent.** CivicRec names the person who ran the report; this
+  platform authenticates with an org token and has no user identity, so the
+  header states Run On, the window, the location and the source card, and does
+  not invent a name.
+- **No `REPORT_DEPENDENCIES` entry**, so a dropped column on the base tables card
+  21682 reads is not attributed to this report by the schema watchdog. Its tables
+  (`reservation`, `reservation_court`, `court`, `location`, `facility_rental`)
+  are all declared under other reports, so the break would still be seen — just
+  not named here.
+- **NOT PREWARMED.** `prewarmCache` walks `REPORT_TYPES`, which this is not in,
+  so the first open of the day is a cold query — measured **23.7s unwindowed,
+  34.8s for August** through the sandbox. That is why the progress bar matters
+  here: after three loads it has a measured estimate for this org and report.
+  Warming it is a few lines in prewarm if Joseph ever finds the wait annoying.
+- **Reports 2, 3 and 4 are config**, once Dan creates each card's public link:
+  a registry entry naming the uuid, the hierarchy and the numeric columns. Card
+  21685 also wants the transaction-grain variant above before it matches report D.
+
 ## The FIVE CivicRec exports Joseph actually runs (2026-09-09)
 
 Dan forwarded four CivicRec PDFs plus a reservations CSV, all **July 2026** —

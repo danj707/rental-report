@@ -41,6 +41,21 @@ const BOOT_DEADLINE_MS = 45000;
 const PAGE_TIMEOUT_MS = 45000;
 const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "render-check-"));
 
+/* The per-org custom data reports (CUSTOM_REPORTS in server.js) are gated on an
+   org's own orgId, and El Segundo is a DYNAMIC org — it is not in the code ORGS
+   map, so no case could reach its report without a fixture here. Written NOW,
+   long before the spawn, because loadDynamicOrgs() runs at server module scope;
+   the cases carry their own token, since the org resolved below is a different
+   one and its token would 404 this report before anything rendered. */
+const AQ_ORG = "render-check-aquatics";
+const AQ_TOKEN = "render-check-aquatics-token";
+try {
+  fs.writeFileSync(path.join(dataDir, "orgs.json"), JSON.stringify({
+    [AQ_ORG]: { token: AQ_TOKEN, orgId: "8ae77057-6bce-4c20-b0f2-366ed5fa14dd",
+                logoUrl: "", displayName: "Render Check Aquatics" },
+  }));
+} catch (_) {}
+
 // ── Fixtures ────────────────────────────────────────────────────────────────
 // Column names copied from a real facility feed. Two campsites, one of them a
 // multi-night stay with an add-on, spanning a weekend and a weekday so the
@@ -1077,6 +1092,25 @@ let STUB_MODE = "";
 let CURRENT_STUB_DELAY_MS = 0;
 
 const STUBS = [
+  /* Card 21682 (Aquatic Lane Hours), the first of the per-org custom data
+     reports. THE FIXTURE IS SHAPED SO A WRONG ROLL-UP CANNOT LOOK RIGHT: two
+     months, two locations inside each, and month totals (13 and 21) and a grand
+     (34) that appear nowhere else — a subtotal read from the wrong level would
+     have to render one of those by accident. Rows arrive in the card's own
+     ORDER BY, which is what the grouper walks.
+     `prevloc` drops the Location column, i.e. a card that no longer emits a
+     level the registry names: the report must group on what it has rather than
+     file every row under "(none)". */
+  { match: /\/aquatic-lane-hours\/api\/data/, body: () => ({
+      rows: (STUB_MODE === "aqempty" ? [] : [
+        { Month: "2026-07", Location: "Wiseburn", Lane: "A", "Program Type": "Lap Swim",        "Rental Name": "Lap Swim",     "Booking Type": "managed", Reservations: 3,  "Lane Hours": 10.5 },
+        { Month: "2026-07", Location: "Wiseburn", Lane: "B", "Program Type": "Swim Lessons",    "Rental Name": "Swim Lessons", "Booking Type": "managed", Reservations: 2,  "Lane Hours": 4.5 },
+        { Month: "2026-07", Location: "Urho",     Lane: "C", "Program Type": "Masters",         "Rental Name": "SCAQ",         "Booking Type": "managed", Reservations: 8,  "Lane Hours": 21.25 },
+        { Month: "2026-08", Location: "Wiseburn", Lane: "A", "Program Type": "Lap Swim",        "Rental Name": "Lap Swim",     "Booking Type": "managed", Reservations: 20, "Lane Hours": 40.5 },
+        { Month: "2026-08", Location: "Hilltop",  Lane: "D", "Program Type": "Open / Rec Swim", "Rental Name": "Drop In Lanes","Booking Type": "managed", Reservations: 1,  "Lane Hours": 2 },
+      ].map(r => (STUB_MODE === "prevloc" ? (({ Location, ...rest }) => rest)(r) : r))),
+      meta: { card: 21682, window: { start: "2026-07-01", end: "2026-08-31" }, location: null },
+    }) },
   { match: /\/facilities\/api\/campsites/, body: () => campsitesGeo },
   { match: /\/waitlist\/api\/data/, body: () => ({ rows: waitlistRows(), meta: { org_id: "org-uuid-1" } }) },
   { match: /\/gl\/api\/data/, body: () => ({ rows: glRows(), meta: { org_id: "org-uuid-1" } }) },
@@ -3671,6 +3705,108 @@ const CASES = [
         }
       });
     } },
+  /* ── The per-org custom data reports ─────────────────────────────────────
+     Joseph Lormans' CivicRec exports, rebuilt here so the reader gets a report
+     rather than a grid. Every case keys on a COMPUTED FIGURE, because a
+     roll-up that adds up wrongly renders a perfectly plausible number and "a
+     totals row appeared" passes on every one of these regressions. */
+  { name: "aquatic-lane-hours · rolls up to each level and to a grand total",
+    path: "/" + AQ_ORG + "/aquatic-lane-hours", token: AQ_TOKEN,
+    // July = 3 + 2 + 8 = 13, August = 20 + 1 = 21, grand = 34. None of those
+    // figures is any single location's subtotal, so a total read off the wrong
+    // level cannot pass this.
+    needs: '[data-sub-level="0"] [data-total-col="Reservations"][data-total-val="13"]' },
+  { name: "aquatic-lane-hours · the grand total is every row, to the fraction",
+    path: "/" + AQ_ORG + "/aquatic-lane-hours", token: AQ_TOKEN,
+    // 10.5 + 4.5 + 21.25 + 40.5 + 2 — a rounding at the wrong level gives 78.8
+    // or 79, and a column that does not add up on screen is how a report stops
+    // being trusted.
+    needs: '[data-grand-col="Lane Hours"][data-grand-val="78.75"]' },
+  { name: "aquatic-lane-hours · the innermost group takes the UNLABELLED subtotal",
+    path: "/" + AQ_ORG + "/aquatic-lane-hours", token: AQ_TOKEN,
+    // CivicRec's rule. Give the deepest group a labelled row too and it prints
+    // the same numbers twice, one directly under the other.
+    needs: '[data-sub-level="1"] [data-total-col="Reservations"][data-total-val="5"]',
+    // `lbl` is on the ROW, not on the label cell. The first draft of this
+    // asserted `[data-sub-level="1"] .sublabel.lbl`, which matches nothing on
+    // any build — the mutation that labels every level SURVIVED it. A vacuous
+    // absent assertion is not a guard.
+    absent: 'tr[data-sub-level="1"].lbl' },
+  { name: "aquatic-lane-hours · the header describes the rows, not the toolbar",
+    path: "/" + AQ_ORG + "/aquatic-lane-hours?start_date=2026-07-01&end_date=2026-08-31",
+    token: AQ_TOKEN,
+    // Moves the From field WITHOUT running the report. The header must still
+    // describe the rows on screen: a failed or unrun change would otherwise
+    // label the previous window's numbers with a range nobody asked for — the
+    // Memberships 504 lesson, where the KPIs were the last window's and
+    // nothing said so. Also pins the date FORMATTING: a bare ISO date through
+    // new Date() renders as Jun 30 across the US.
+    act: async page => {
+      await page.waitForSelector("[data-report-body]", { timeout: 15000 });
+      // A date input takes DIGITS into its segments; a click-and-type appends
+      // to what is already there (it produced the year 12020 on the first try).
+      const from = await page.$('input[type="date"]');
+      await from.focus();
+      await page.keyboard.type("01012020");
+      await new Promise(r => setTimeout(r, 300));
+      await page.evaluate(() => {
+        // Stamped under DIFFERENT names: reusing data-head-from would make the
+        // <body> itself match the page's own selector, and the assertion would
+        // then be reading its own stamp.
+        document.body.dataset.hf = document.querySelector("span[data-head-from]").textContent.trim();
+        document.body.dataset.ff = document.querySelector('input[type="date"]').value;
+      });
+    },
+    needs: 'body[data-hf="Jul 1, 2026"][data-ff="2020-01-01"]' },
+  { name: "aquatic-lane-hours · the location filter offers only this report's pools",
+    path: "/" + AQ_ORG + "/aquatic-lane-hours", token: AQ_TOKEN,
+    // Card 1 sells no Rec IDs. The shared Metabase dashboard offers one filter
+    // for four cards, and two of its values return nothing on two of them.
+    needs: '[data-loc-select] option[value="Hilltop Park"]',
+    absent: '[data-loc-select] option[value="(City-wide - Rec ID)"]' },
+  { name: "aquatic-lane-hours · an empty window says so instead of an empty table",
+    path: "/" + AQ_ORG + "/aquatic-lane-hours", token: AQ_TOKEN, stubMode: "aqempty",
+    needs: "[data-empty]", absent: "[data-report-body]" },
+  { name: "aquatic-lane-hours · a level the card no longer emits is not grouped on",
+    path: "/" + AQ_ORG + "/aquatic-lane-hours", token: AQ_TOKEN, stubMode: "prevloc",
+    // Month only. Without the guard every row lands in one group called
+    // "(none)" — a report that looks fine and says nothing.
+    needs: '[data-group-key="Month"]', absent: '[data-group-key="Location"]' },
+  { name: "aquatic-lane-hours · the CSV is the rows, with no subtotal lines",
+    path: "/" + AQ_ORG + "/aquatic-lane-hours", token: AQ_TOKEN,
+    // NO SOURCE ASSERTION CAN SEE THIS: a download wired to the grouped view
+    // renders identically and produces a plausible file. So the case reads the
+    // BYTES the popup is handed, and stamps what it found onto <body>.
+    pre: async page => {
+      await page.evaluateOnNewDocument(() => {
+        window.open = () => ({ document: { write() {}, close() {} },
+          set __recExport(v) { window.__payload = v; },
+          get __recExport() { return window.__payload; } });
+      });
+    },
+    act: async page => {
+      await page.waitForSelector("[data-report-body]", { timeout: 15000 });
+      await page.evaluate(() => {
+        [...document.querySelectorAll("button")].find(b => /CSV/.test(b.textContent)).click();
+      });
+      await new Promise(r => setTimeout(r, 600));
+      await page.evaluate(() => {
+        const b = window.__payload && window.__payload.bytes;
+        const d = document.body.dataset;
+        if (!b) { d.csv = "none"; return; }
+        const text = new TextDecoder().decode(b);
+        // The BOM has to be read off the BYTES: TextDecoder strips it by
+        // default, so a decoded string makes the assertion pass either way.
+        d.csvBom = (b[0] === 239 && b[1] === 187 && b[2] === 191) ? "1" : "0";
+        d.csvLines = String(text.split("\r\n").filter(Boolean).length);
+        d.csvTotals = /Totals for|Grand total/.test(text) ? "1" : "0";
+        d.csvHeader = text.replace(/^\uFEFF/, "").split("\r\n")[0];
+      });
+    },
+    // Header + five rows, the BOM present, and NOT ONE subtotal line — a data
+    // file gets re-summed by whoever opens it.
+    needs: 'body[data-csv-lines="6"][data-csv-bom="1"][data-csv-totals="0"]' },
+
   { name: "wizard · feed date window", path: "/{org}/report-wizard",
     needs: "[data-rw-window=\"Aug 19 \u2013 Aug 26\"]",
     act: async page => { await page.click(".example-chip"); await page.click(".btn-generate"); } },
@@ -3685,6 +3821,7 @@ try {
   fs.writeFileSync(path.join(dataDir, "feature-flags.json"),
                    JSON.stringify({ reportSettings: true }));
 } catch (_) {}
+
 
 const child = spawn(process.execPath, [path.join(__dirname, "..", "server.js")], {
   env: { ...process.env, PORT: String(PORT), DATA_DIR: dataDir,
@@ -3855,8 +3992,11 @@ function waitForServer(started) {
     // record, a flag) has to key it by slug, and the slug is not known at
     // case-definition time.
     if (c.pre) await c.pre(page, { org, dataDir, token });
+    // A case may carry its OWN token. The per-org custom reports are gated on a
+    // different org than the one resolved above, and a case that appended the
+    // wrong org's token would 404 before rendering anything.
     const url = `http://127.0.0.1:${PORT}` + c.path.replace("{org}", org)
-      + (c.path.includes("?") ? "&" : "?") + "token=" + encodeURIComponent(token);
+      + (c.path.includes("?") ? "&" : "?") + "token=" + encodeURIComponent(c.token || token);
     let found = false, bodyLen = 0;
     try {
       await page.goto(url, { waitUntil: "domcontentloaded", timeout: PAGE_TIMEOUT_MS });

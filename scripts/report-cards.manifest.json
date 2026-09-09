@@ -148,6 +148,12 @@
       "card": "fff0027f-be52-4f99-adfa-b21dd5605634",
       "org": "aeba47d0-c97f-49cb-a0e9-93c5af3a68fa",
       "timeout": 120
+    },
+    {
+      "label": "aquatic-lane-hours / el-segundo (card 21682 — the first custom data report. The reporting page fetches this card DIRECTLY, so a re-Texted date tag or a lost ORDER BY takes the report down for El Segundo alone and nothing else would notice: it is not in REPORT_TYPES, so the health check does not probe it. Measured 2026-09-09: 862 rows / 34.8s for August 2026, unwindowed 2,237 rows)",
+      "card": "b1f4ca67-1a91-4e91-8581-5b3dbaf0d9a2",
+      "org": "8ae77057-6bce-4c20-b0f2-366ed5fa14dd",
+      "timeout": 120
     }
   ]
 }

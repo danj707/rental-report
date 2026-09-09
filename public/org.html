@@ -452,6 +452,14 @@
     qoq:                 { label: 'QoQ Revenue Comparison', icon: '📉', desc: 'Quarter-over-quarter GL revenue comparison with delta analysis' },
   };
 
+  /* Per-org custom data reports (CUSTOM_REPORTS in server.js) are MERGED IN
+     rather than listed above. The server owns the label, the icon and the
+     description; a second copy here would drift the first time one is renamed
+     and the card would then open a report it does not name. Anything the
+     server did not send falls back to the generic card, so a missing entry is
+     a plain card, never a broken one. */
+  Object.assign(REPORT_META, (cfg.customReportMeta || {}));
+
   /* Reports whose real content lives in tabs. Without these the Fields and
      Outdoor Facilities views are two clicks deep behind a card that says
      "Facilities", which is how a whole vertical stays invisible to the people

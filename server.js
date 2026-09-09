@@ -1758,7 +1758,100 @@ const REPORT_DIRECTORY = {
   qoq:                 { label: "QoQ Revenue Comparison",   emoji: "📉" },
   selfservice:         { label: "Self-Service Mix",         emoji: "🖱️" },
   "programs-monthly":  { label: "Programs by Month",        emoji: "📅" },
+  // The per-org custom data reports are MERGED IN below, from CUSTOM_REPORTS,
+  // so their label and emoji have ONE definition — a transcribed copy drifts
+  // the first time one is renamed, and this map drives the project-update
+  // composer's chips.
 };
+
+// ── Custom data reports ────────────────────────────────────────────────
+// Metabase cards built FOR ONE ORG, served through this project so the reader
+// gets a formatted report rather than a flat grid — group headings, subtotals
+// at each level, a grand total, and exports we control.
+//
+// WHY THESE ARE NOT `REPORT_TYPES` ENTRIES. A report type with a SHARED_UUIDS
+// entry is offered to every org, health-checked, prewarmed and subscribable.
+// These cards are El Segundo's alone: their SQL hardcodes that org's locations
+// and GL codes, so every other org would get an empty report. Same shape as
+// `lessons` (SF only) — a per-org gate plus its own routes.
+//
+// THE GATE IS THE `orgId`, NOT THE SLUG. El Segundo is a dynamic org and the
+// two projects already spell it differently; a slug is each project's own name
+// for an organisation and they drift (see the town-of-shrewsbury link that 404'd
+// for five weeks). The uuid is the organisation.
+//
+// NEVER SAVE THESE CARDS THROUGH THE METABASE API. `update_question` regenerates
+// every template tag as Text, which would wipe the Date-typed date tags and the
+// hardcoded org_id default that the aquatics dashboard's own filters bind to.
+// The SQL mirrors live in sql/report-cards/; changes go in by hand in the UI.
+//
+// AND THIS BLOCK'S POSITION IS LOAD-BEARING. It sits above the shared-UUID map
+// because card-drift.spec.js slices server.js from that map's declaration to
+// the resolveReportCard comment and EVALS the result: sitting inside that gap
+// pulled the REPORT_DIRECTORY line below into the slice, where the directory is
+// not defined, and the spec DIED with a bare ReferenceError instead of failing
+// by name. Nth instance of a slice reaching past its own inputs — and writing
+// the slice's own marker text into this comment moved its start point, which is
+// the same mistake one level up. Stay out of the gap; do not quote its bounds.
+const CUSTOM_REPORT_ORG_IDS = {
+  elSegundo: "8ae77057-6bce-4c20-b0f2-366ed5fa14dd",
+};
+
+const CUSTOM_REPORTS = {
+  // Joseph Lormans' report 1. Metabase card 21682 (🏊 1 · Aquatic Lane Hours).
+  "aquatic-lane-hours": {
+    label: "Aquatic Lane Hours",
+    emoji: "\u{1F3CA}",
+    desc: "Lane hours by month, pool and program type — reservation hours on every aquatic lane",
+    card: 21682,
+    uuid: process.env.MB_AQUATIC_LANE_HOURS_UUID || "b1f4ca67-1a91-4e91-8581-5b3dbaf0d9a2",
+    orgIds: [CUSTOM_REPORT_ORG_IDS.elSegundo],
+    // The hierarchy, outermost first. It is the card's OWN sort (ORDER BY 1, 2,
+    // …), so the group headings follow the order the rows already arrive in and
+    // nothing has to be re-sorted to build them.
+    groupBy: ["Month", "Location"],
+    // Which columns roll up, and how they are written. Everything else renders
+    // as text with the card's own header — the headers are READ from the feed
+    // rather than transcribed here, so a column added to the card shows up
+    // without an edit (a transcribed header is a copy that goes stale silently).
+    numeric: { "Reservations": { dp: 0 }, "Lane Hours": { dp: 2 } },
+    // The location dropdown, matching the aquatics dashboard's own custom list.
+    // PER REPORT, deliberately: card 1 has no city-wide Rec ID bucket, and the
+    // shared dashboard filter offers values that return zero rows on cards that
+    // cannot serve them — which reads as a broken filter. Each report offers
+    // only what it can answer.
+    //
+    // A STATIC LIST, NOT A LIVE ONE. The card's CASE ladder has to be hand
+    // edited when a pool opens, so a self-updating dropdown would offer a
+    // fourth value that returns nothing on every card. Keep this in step with
+    // the ▼▼ block in sql/report-cards/21682-aquatic-lane-hours.sql.
+    locations: [
+      "El Segundo Wiseburn Aquatic Center",
+      "Urho Saari Swim Stadium",
+      "Hilltop Park",
+    ],
+  },
+};
+
+// The friendly directory is DERIVED, never transcribed: label and emoji have one
+// definition (the registry above), so renaming a report cannot leave the
+// project-update composer's chips describing the old one.
+Object.keys(CUSTOM_REPORTS).forEach((k) => {
+  REPORT_DIRECTORY[k] = { label: CUSTOM_REPORTS[k].label, emoji: CUSTOM_REPORTS[k].emoji };
+});
+
+// Enabled for an org iff the org's own uuid is listed. Reconciles on orgId for
+// the reason in the header above.
+function customReportEnabled(slug, key) {
+  const spec = CUSTOM_REPORTS[key];
+  const org = ORGS[slug];
+  if (!spec || !org || !org.orgId) return false;
+  return spec.orgIds.includes(org.orgId);
+}
+// Every custom report this org can see, in registry order.
+function customReportsForOrg(slug) {
+  return Object.keys(CUSTOM_REPORTS).filter(k => customReportEnabled(slug, k));
+}
 
 // ── Shared Metabase UUIDs (one query per report type, parameterized by org_id) ──
 // When a report type has an entry here, the server uses this UUID + passes the
@@ -3453,6 +3546,7 @@ function visibleReportsForOrg(slug) {
   if (RENTAL_CALENDAR_ORGS.has(slug) && !hidden.has("rentalcalendar")) out.push("rentalcalendar");
   if (directorsReportEnabled(slug) && !hidden.has("directors-report")) out.push("directors-report");
   if (lessonsReportEnabled(slug) && !hidden.has("lessons")) out.push("lessons");
+  customReportsForOrg(slug).forEach(k => { if (!hidden.has(k)) out.push(k); });
   if ((org.gl?.mbUuid || SHARED_UUIDS.gl) && !hidden.has("qoq")) out.push("qoq");
   if (!reportHiddenForOrg(slug, "facilities")) out.push("facilities");
   return out;
@@ -4210,7 +4304,7 @@ setTimeout(() => { checkCardParamTypes().catch(() => {}); }, 150 * 1000).unref?.
 // Inert if the env var is unset. Fire-and-forget — never blocks or breaks logging.
 // To change what pings Slack, edit SLACK_NOTIFY. High-frequency events (view/fetch)
 // are debounced per org+report so Slack isn't a firehose.
-const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "campmap-filter", "campmap-amenity", "pdf", "excel", "print", "summary", "game", "map", "outdoor", "fields", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email", "checkin-loc", "checkin-member", "checkin-failed", "form-open", "epact", "settings-open", "settings-unlock", "settings-locked", "settings-save", "settings-reset", "deadlink", "generate", "wizard-save", "mb-autorenew", "mb-salesmix", "ft-export", "panel-csv", "intel-csv", "wizard-feedback"]);
+const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "campmap-filter", "campmap-amenity", "pdf", "excel", "print", "summary", "game", "map", "outdoor", "fields", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email", "checkin-loc", "checkin-member", "checkin-failed", "form-open", "epact", "settings-open", "settings-unlock", "settings-locked", "settings-save", "settings-reset", "deadlink", "generate", "wizard-save", "mb-autorenew", "mb-salesmix", "ft-export", "panel-csv", "intel-csv", "wizard-feedback", "report-csv"]);
 const SLACK_DEBOUNCE_MS = { view: 30 * 60 * 1000, fetch: 30 * 60 * 1000,
   // A broken report stays broken. The health check only reports NEW failures,
   // but a flapping card would otherwise post every hour.
@@ -4227,6 +4321,10 @@ const SLACK_EVENT_META = {
   "panel-csv":       { emoji: "\u{1F4C8}", verb: "downloaded chart data from" },
   // Deliberately a louder glyph than panel-csv: this one carries PII.
   "intel-csv":       { emoji: "\u{1F4C7}", verb: "downloaded a contact list from" },
+  // A custom data report's own CSV. These reports exist BECAUSE the export is
+  // the deliverable — Joseph files them monthly — so the download is the event
+  // that says the report is being used, not the page view.
+  "report-csv":      { emoji: "\u{1F4D1}", verb: "downloaded the data CSV from" },
   // The rental calendar's site-type suggestion thumbs. FIFTH instance of the
   // recorded-but-never-posted trap: 11 ratings since it shipped, every one of
   // them written to events.jsonl and none of them announced, because the event
@@ -5044,6 +5142,7 @@ function buildMetrics(org, daysBack) {
   if (RENTAL_CALENDAR_ORGS.has(org)) configuredReports.push('rentalcalendar');
   if (directorsReportEnabled(org)) configuredReports.push('directors-report');
   if (lessonsReportEnabled(org)) configuredReports.push('lessons');
+  customReportsForOrg(org).forEach(k => configuredReports.push(k));
   return { summary, daily, subCounts, subByCadence, totalSubscribers: allSubs.length, insights, configuredReports };
 }
 
@@ -7098,6 +7197,198 @@ app.post("/:org/campmap/api/share", (req, res) => {
   const kind = req.query.kind === "embed" ? "embed" : "link";
   logEvent(slug, "campmap", "campmap-share", req, { kind });
   res.json({ ok: true });
+});
+
+// ━━ Custom data reports ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// One page + one feed + one beacon route per CUSTOM_REPORTS entry. See the
+// registry near SHARED_UUIDS for why these are not REPORT_TYPES.
+//
+// REGISTERED HERE, ABOVE THE GENERIC /:org/:report/api/* ROUTES, because
+// Express matches in registration order and `resolveOrg` 404s any report
+// outside REPORT_TYPES — which these deliberately are not. A beacon that 404s
+// is fire-and-forget and never complains, and that trap has now cost this repo
+// four separate silent losses (campmap, the Facilities hub, Memberships,
+// Instructor Payout). scripts/custom-reports.spec.js fails on the order.
+
+// Every string the page sends back is clamped here rather than echoed.
+const CUSTOM_LOG_EVENTS = ["excel", "print", "report-csv"];
+
+Object.keys(CUSTOM_REPORTS).forEach((key) => {
+  const spec = CUSTOM_REPORTS[key];
+
+  // ── The page ──
+  app.get(`/:org/${key}`, (req, res) => {
+    const slug = req.params.org;
+    const org = ORGS[slug];
+    if (!org) return res.status(404).send("Unknown org");
+    // A deliberate refusal, not a dead link: this path is real and the caller
+    // was told no. noteDeadLink() alerts on "a 404 that arrived with a
+    // valid-looking token", which is byte-identical to this.
+    if (!customReportEnabled(slug, key)) {
+      res.locals.deliberate404 = true;
+      return res.status(404).type("text/plain").send(`${spec.label} is not enabled for this organization.`);
+    }
+    req.reportType = key;
+    logEvent(slug, key, "view", req);
+    const orgConfig = {
+      slug,
+      displayName: org.displayName || (slug.charAt(0).toUpperCase() + slug.slice(1) + " Parks & Recreation"),
+      logoUrl: org.logoUrl || "",
+      token: org.token || "",
+      report: key,
+      reportLabel: spec.label,
+      reportEmoji: spec.emoji,
+      // The card behind the report, named on screen. A number a reader can
+      // take to Metabase is what makes a figure checkable rather than trusted.
+      cardId: spec.card,
+      groupBy: spec.groupBy,
+      numeric: spec.numeric,
+      locations: spec.locations,
+    };
+    const html = fs.readFileSync(path.join(__dirname, "public", "custom-report.html"), "utf8");
+    res.type("html").send(html.replace("</head>", () => orgConfigInject(orgConfig, req) + "</head>"));
+  });
+
+  // ── The feed ──
+  //
+  // Its own route rather than /:org/:report/api/data because that one resolves
+  // the card through SHARED_UUIDS/ORGS and knows nothing about `location`.
+  // Everything else — the cache key, the two-stage timeout, the stale fallback,
+  // the freshness headers the "Data as of · Refresh" badge reads — is the same
+  // shape as the main data route, deliberately.
+  app.get(`/:org/${key}/api/data`, async (req, res) => {
+    const slug = req.params.org;
+    const org = ORGS[slug];
+    if (!org) return res.status(404).json({ error: "Unknown org" });
+    if (!customReportEnabled(slug, key)) return refuse404(res);
+    if (!org.orgId) return res.status(400).json({ error: "Missing org_id for this org — its config may be incomplete" });
+
+    req.reportType = key;
+    logEvent(slug, key, "fetch", req);
+    recordAccess(slug, key);
+
+    const params = [
+      { type: "string/=", target: ["variable", ["template-tag", "org_id"]], value: org.orgId },
+    ];
+    const start = parseToISO(req.query.start_date);
+    const end   = parseToISO(req.query.end_date);
+    if (start) params.push({ type: "date/single", target: ["variable", ["template-tag", "start_date"]], value: start });
+    if (end)   params.push({ type: "date/single", target: ["variable", ["template-tag", "end_date"]], value: end });
+    // ONE value, never a list: the card's {{location}} is a plain text variable
+    // (a Field Filter cannot bind to a computed CASE), so a multi-select would
+    // silently pass an array Metabase renders as nothing. Anything outside the
+    // registry's own list is dropped rather than forwarded — an unknown value
+    // returns zero rows and reads as an empty report.
+    const loc = String(req.query.location || "");
+    if (loc && spec.locations.includes(loc)) {
+      params.push({ type: "string/=", target: ["variable", ["template-tag", "location"]], value: loc });
+    }
+    const paramStr = `?parameters=${encodeURIComponent(JSON.stringify(params))}`;
+    const cacheKey = feedCacheKey(slug, key, paramStr);
+    const setFreshness = (ts, state) => {
+      res.set("X-Report-Data-As-Of", new Date(ts).toISOString());
+      res.set("X-Report-Cache", state);
+    };
+
+    const forceRefresh = req.query._nocache === "1" || req.query._refresh === "1";
+    if (!forceRefresh) {
+      const hit = getCachedEntry(cacheKey, slug, key);
+      if (hit) {
+        logRequest({ ts: new Date().toISOString(), org: slug, report: key, status: 200, ms: 0, rows: hit.data.rows?.length || 0, cache: "hit" });
+        setFreshness(hit.ts, "cached");
+        return res.json(hit.data);
+      }
+      const disk = await getDiskCached(cacheKey, slug, key);
+      if (disk) {
+        logRequest({ ts: new Date().toISOString(), org: slug, report: key, status: 200, ms: 0, rows: disk.data.rows?.length || 0, cache: "disk" });
+        setFreshness(disk.ts, "cached");
+        return res.json(disk.data);
+      }
+    }
+
+    const url = `${METABASE_URL}/api/public/card/${spec.uuid}/query/json${paramStr}`;
+    console.log(`[custom] ${slug}/${key} → card ${spec.card} | ${start || "(none)"} → ${end || "(none)"} | loc: ${loc || "(all)"}`);
+    const started = Date.now();
+    try {
+      let response;
+      try {
+        response = await fetch(url, { signal: AbortSignal.timeout(60000) });
+      } catch (firstErr) {
+        if (firstErr.name !== "TimeoutError" && firstErr.name !== "AbortError") throw firstErr;
+        console.log(`[custom] ${slug}/${key} timed out — retrying with 120s`);
+        response = await fetch(url, { signal: AbortSignal.timeout(120000) });
+      }
+      if (!response.ok) {
+        const body = await response.text();
+        throw Object.assign(new Error(`Metabase returned ${response.status}`), { body: body.slice(0, 200) });
+      }
+      const rows = await response.json();
+      const ms = Date.now() - started;
+      // The card returns a bare array. The window that was SENT is echoed back
+      // rather than recomputed: a recomputed one can disagree with what
+      // Metabase was actually asked, which is exactly what makes a report
+      // uncheckable (the wizard's meta.window lesson).
+      const payload = {
+        rows: Array.isArray(rows) ? rows : [],
+        meta: {
+          card: spec.card,
+          generated_at: new Date().toISOString(),
+          window: { start: start || null, end: end || null },
+          location: loc && spec.locations.includes(loc) ? loc : null,
+          logo_url: org.logoUrl || "",
+        },
+      };
+      setCache(cacheKey, payload, key);
+      logRequest({ ts: new Date().toISOString(), org: slug, report: key, status: 200, ms, rows: payload.rows.length, cache: "miss" });
+      setFreshness(Date.now(), "live");
+      res.json(payload);
+    } catch (err) {
+      const isTimeout = err.name === "TimeoutError" || err.name === "AbortError";
+      console.error(`[custom] ${slug}/${key} failed: ${err.message}${err.body ? " — " + err.body : ""}`);
+      const stale = await getStaleCached(slug, key, cacheKey);
+      if (stale) {
+        setFreshness(stale.ts, "stale");
+        return res.json(Object.assign({}, stale.data, {
+          meta: Object.assign({}, stale.data.meta, { stale_cache: true, cached_at: new Date(stale.ts).toISOString() }),
+        }));
+      }
+      logRequest({ ts: new Date().toISOString(), org: slug, report: key, status: isTimeout ? 504 : 500, ms: Date.now() - started, rows: 0, cache: "miss", error: err.message.slice(0, 200) });
+      // The page surfaces this sentence verbatim (reportFetchError), so it has
+      // to name the REMEDY and not just the transport.
+      res.status(isTimeout ? 504 : 500).json({
+        error: isTimeout
+          ? "Metabase query timed out after 60s+120s retry — try a shorter date range or refresh"
+          : "This report's Metabase card could not answer. Try a shorter date range or refresh.",
+      });
+    }
+  });
+
+  // ── The beacon ──
+  app.post(`/:org/${key}/api/log`, (req, res) => {
+    const slug = req.params.org;
+    if (!ORGS[slug]) return res.status(404).json({ ok: false, error: "Unknown org" });
+    // A refusal, not a dead link — marked for the same reason as the two above.
+    // Verified: without this, one beacon from an org that does not have the
+    // report posts a DEAD LINK alert naming the path the 404 exists to keep quiet.
+    if (!customReportEnabled(slug, key)) return refuse404(res, { ok: false, error: "Not found" });
+    const event = String(req.query.event || "");
+    if (!CUSTOM_LOG_EVENTS.includes(event)) return res.status(400).json({ ok: false, error: "Unknown event" });
+    // WHICH window and how much of it. "Someone exported it" says nothing;
+    // "exported 412 rows for August, Urho Saari" says whether the report is
+    // being worked. Both clamped here — this route is reachable by anyone
+    // holding the org token.
+    const n = Number(req.query.n);
+    // NO `report` KEY HERE. logEvent merges `extra` over the record it builds,
+    // so an extra called `report` overwrites the report TYPE with whatever this
+    // passes — which takes the row out of getReportActivity()'s reach and makes
+    // the event log disagree with itself. Caught by reading events.jsonl back.
+    const extra = {
+      rows: Number.isFinite(n) && n >= 0 && n <= 9999999 ? Math.round(n) : undefined,
+      location: req.query.location ? String(req.query.location).slice(0, 80) : "",
+    };
+    logEvent(slug, key, event, req, extra);
+    res.json({ ok: true });
+  });
 });
 
 // ── POST /:org/facilities/api/log — activity on the Facilities hub ────
@@ -14303,11 +14594,19 @@ app.get("/:org", async (req, res, next) => {
   if (!reportHiddenForOrg(slug, 'facilities')) available.push('facilities');
   // Instructor Lessons — programs-pipeline report, per-org pilot (SF)
   if (lessonsReportEnabled(slug) && !orgHidden.has('lessons')) available.push('lessons');
+  // Custom data reports — per-org (El Segundo aquatics); see CUSTOM_REPORTS.
+  customReportsForOrg(slug).forEach(k => { if (!orgHidden.has(k)) available.push(k); });
   const orgConfig = {
     slug,
     displayName: org.displayName || `${slugTitle} Parks & Recreation`,
     logoUrl: org.logoUrl || "",
     reports: available,
+    // Card metadata for the per-org custom reports. INJECTED rather than copied
+    // into org.html's own REPORT_META: two maps drift the first time one is
+    // renamed, and the card would then open a report it does not name.
+    customReportMeta: Object.fromEntries(customReportsForOrg(slug).map(k => [k, {
+      label: CUSTOM_REPORTS[k].label, icon: CUSTOM_REPORTS[k].emoji, desc: CUSTOM_REPORTS[k].desc,
+    }])),
     token: org.token || "",
     chatVisible: !RETIRED_REPORTS.has("chat") && !orgHidden.has("chat"),
     // Both gates: RETIRED_REPORTS decides whether the card is drawn, wizardEnabled

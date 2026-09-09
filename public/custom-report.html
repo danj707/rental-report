@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex" />
+<title>Report</title>
+<style>
+  * { box-sizing: border-box; }
+  body { background: #faf9f7; color: #1c1917; margin: 0; padding: 0 0 60px;
+    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+
+  /* ── Toolbar — the standard dark report toolbar ── */
+  .toolbar { position: sticky; top: var(--rec-banner-h, 0px); z-index: 100; display: flex; align-items: center; gap: 10px; padding: 8px 20px; background: #2c2c2c; color: #eee; font-size: 13px; flex-wrap: wrap; }
+  .toolbar-title { font-weight: 600; margin-right: 4px; }
+  .toolbar-back { color: #9ca3af; text-decoration: none; font-size: 12px; }
+  .toolbar-back:hover { color: #fff; }
+  .toolbar-spacer { flex: 1; }
+  .toolbar label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: #aaa; display: flex; flex-direction: column; gap: 2px; }
+  .toolbar select { padding: 5px 8px; border: 1px solid rgba(255,255,255,.25); border-radius: 4px; background: #3a3a3a; color: #fff; font-size: 12px; font-family: inherit; max-width: 260px; }
+  .toolbar input[type="date"] { padding: 4px 6px; border: 1px solid rgba(255,255,255,.25); border-radius: 4px; background: #3a3a3a; color: #fff; font-size: 11.5px; font-family: inherit; color-scheme: dark; }
+  .toolbar button { padding: 6px 14px; border: 1px solid rgba(255,255,255,.25); border-radius: 4px; background: rgba(255,255,255,.08); color: #fff; font-size: 12px; font-family: inherit; cursor: pointer; transition: background .15s; white-space: nowrap; }
+  .toolbar button:hover { background: rgba(255,255,255,.18); }
+  .toolbar button:disabled { opacity: .45; cursor: not-allowed; }
+  .toolbar .btn-run { background: #2563eb; border-color: #2563eb; font-weight: 600; }
+  .toolbar .btn-run:hover { background: #1d4ed8; }
+  .toolbar .btn-excel { background: #16803c; border-color: #16803c; font-weight: 600; }
+  .toolbar .btn-excel:hover { background: #15692f; }
+  .toolbar .row-count { font-size: 11px; color: #aaa; }
+  .toolbar .divider { width: 1px; height: 28px; background: rgba(255,255,255,.15); margin: 0 2px; }
+
+  .page { max-width: 1280px; margin: 16px auto; padding: 26px 30px 34px; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+
+  /* ── The provenance block. CivicRec puts Run On / From / To / the filter
+     values at the top of every report, and Joseph files these monthly — a
+     page of numbers with no window on it cannot be checked by whoever reads
+     it next. Same reasoning as the wizard's "Built from" line. ── */
+  .rep-head { border-bottom: 2.5px solid #111; padding-bottom: 14px; margin-bottom: 4px; }
+  .rep-head-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; }
+  .rep-logo { height: 40px; max-width: 150px; object-fit: contain; object-position: left center; }
+  .rep-org { font-size: 10px; letter-spacing: 1.6px; text-transform: uppercase; color: #777; font-weight: 600; }
+  .rep-title { font-size: 20px; font-weight: 800; margin-top: 2px; color: #111827; letter-spacing: -.2px; }
+  .rep-facts { font-size: 11.5px; color: #444; text-align: right; line-height: 1.7; min-width: 260px; }
+  .rep-facts .k { color: #78716c; display: inline-block; min-width: 74px; text-align: right; margin-right: 8px; font-weight: 600; }
+  .rep-facts .v { color: #1c1917; }
+  .rep-source { font-size: 10.5px; color: #a8a29e; margin-top: 10px; }
+  .rep-source a { color: #a8a29e; }
+
+  /* ── The grouped table ── */
+  .grp { margin-top: 22px; }
+
+  /* A 100% width inside a scroller tells the browser to FIT THE CONTAINER, and
+     it compresses every column to do it — "Lane 1 - A" broke across two lines
+     while a free-text rental name kept its own width. So short text cells never
+     wrap and only the long ones do, which keeps the totals column on screen
+     instead of pushing it past the right edge. (min-width: max-content fixes
+     the wrap and costs exactly that: the numbers scroll out of view.) */
+  table.rep { width: 100%; border-collapse: collapse; font-size: 12px; }
+  table.rep td.txt { white-space: nowrap; }
+  table.rep td.txtwrap { white-space: normal; max-width: 420px; }
+  table.rep th { text-align: left; font-weight: 700; color: #44403c; border-bottom: 1px solid #d6d3d1; padding: 5px 8px; white-space: nowrap; font-size: 11px; }
+  table.rep td { padding: 4px 8px; border-bottom: 1px solid #f5f5f4; vertical-align: top; }
+  table.rep td.n, table.rep th.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  table.rep td.idx { color: #a8a29e; width: 30px; text-align: right; padding-right: 4px; font-variant-numeric: tabular-nums; }
+  table.rep tr.ghead td { border-bottom: none; padding-top: 16px; padding-bottom: 2px; font-weight: 800; color: #111827; }
+  table.rep tr.ghead .gh-k { color: #a8a29e; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; font-size: 9.5px; margin-right: 7px; }
+  table.rep tr.gh0 td { font-size: 15px; border-top: 1px solid #d6d3d1; }
+  table.rep tr.gh1 td { font-size: 12.5px; padding-left: 22px; }
+  table.rep tr.gh2 td { font-size: 12px; padding-left: 40px; color: #44403c; }
+  table.rep tr.sub td { border-top: 1px solid #d6d3d1; border-bottom: none; font-weight: 700; background: #fafaf9; }
+  table.rep tr.sub.lbl td { background: #f5f5f4; }
+  table.rep tr.sub td.sublabel { font-weight: 700; color: #292524; }
+  table.rep tr.grand td { border-top: 2.5px solid #111; border-bottom: 2.5px solid #111; font-weight: 800; font-size: 12.5px; background: #fff; }
+  .neg { color: #b91c1c; }
+
+  .scroller { overflow-x: auto; }
+  .err { background: #fee2e2; border: 1px solid #fecaca; color: #991b1b; border-radius: 8px; padding: 12px 16px; margin: 20px 0; }
+  .empty { background: #f5f5f4; border: 1px solid #e7e5e4; color: #57534e; border-radius: 8px; padding: 16px 18px; margin: 22px 0; }
+  .empty b { color: #292524; }
+  .loading-wrap { padding: 40px 0; }
+  .note { font-size: 11px; color: #78716c; margin-top: 14px; }
+
+  /* ── Print. THIS is the export Joseph files: Metabase's own PDF is what Dan
+     called terrible, and a print stylesheet we own is the fix. Toolbar off,
+     group headings kept with their rows, subtotals never orphaned. ── */
+  @media print {
+    body { background: #fff; padding: 0; }
+    .toolbar, .no-print, #rec-refresh-badge, .rec-banner { display: none !important; }
+    .page { max-width: none; margin: 0; padding: 0; box-shadow: none; }
+    table.rep tr { break-inside: avoid; }
+    table.rep tr.ghead { break-after: avoid; }
+    table.rep { font-size: 10.5px; }
+    table.rep thead { display: table-header-group; }
+    .scroller { overflow: visible; }
+  }
+</style>
+<script src="/report-refresh.js" defer></script>
+<script src="/open-pdf.js" defer></script>
+</head>
+<body>
+
+<div id="root"></div>
+
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+<script type="text/babel">
+/* ══════════════════════════════════════════════════════════════════════════
+   custom-report.html — the renderer for CUSTOM_REPORTS (server.js).
+
+   These are per-org Metabase cards served through this project so the reader
+   gets a REPORT rather than a grid: the provenance block, group headings,
+   subtotals at every level and a grand total — the shape every CivicRec export
+   has and a native Metabase card structurally cannot produce (a dashboard
+   filter binds to a template tag, and the visualisation is one flat table).
+
+   ONE PAGE FOR ALL OF THEM. The registry entry supplies the hierarchy, which
+   columns roll up and the location list; everything else — the column set, the
+   ORDER of the columns and their HEADERS — is READ FROM THE FEED. A transcribed
+   header is a copy that goes stale silently the day the card gains a column,
+   which is the mistake the wizard's guessed grain phrases already made once.
+   ══════════════════════════════════════════════════════════════════════════ */
+const { useState, useEffect, useMemo, useCallback, useRef } = React;
+
+const CFG = window.ORG_CONFIG || {};
+const SP = new URLSearchParams(window.location.search);
+const URL_TOKEN = SP.get('token') || '';
+function withToken(url) { if (!URL_TOKEN) return url; const sep = url.includes('?') ? '&' : '?'; return url + sep + 'token=' + encodeURIComponent(URL_TOKEN); }
+
+const parts = window.location.pathname.split('/').filter(Boolean);
+const orgSlug = parts[0] || CFG.slug || '';
+const basePath = '/' + parts.slice(0, 2).join('/');
+
+const GROUP_BY  = Array.isArray(CFG.groupBy) ? CFG.groupBy : [];
+const NUMERIC   = CFG.numeric || {};
+const LOCATIONS = Array.isArray(CFG.locations) ? CFG.locations : [];
+const REPORT_LABEL = CFG.reportLabel || 'Report';
+/* The tab, and therefore the filename a browser suggests when the reader prints
+   this to PDF. The static <title> sits above the injected ORG_CONFIG, so it
+   cannot be filled server-side without a second replacement. */
+document.title = REPORT_LABEL + ' · ' + (CFG.displayName || CFG.slug || '');
+
+/* ── Dates ─────────────────────────────────────────────────────────────────
+   Every date here is built from PARTS. `new Date("2026-08-01")` is UTC
+   midnight and renders as July 31 anywhere west of UTC — five separate
+   instances of that bug are recorded in this repo, so nothing on this page
+   passes a bare ISO date to the Date constructor. */
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+function pad2(n) { return String(n).padStart(2, '0'); }
+function isoOf(d) { return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()); }
+function monthStartISO(d) { return d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-01'; }
+function monthEndISO(d) { return isoOf(new Date(d.getFullYear(), d.getMonth() + 1, 0)); }
+/* "2026-08-19" -> "Aug 19, 2026"; "2026-08" -> "August 2026". Anything else is
+   handed back untouched rather than guessed at — a value we cannot parse is a
+   value the card meant literally. */
+function prettyDate(s) {
+  const t = String(s || '').trim();
+  let m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(t);
+  if (m) return MONTHS[+m[2] - 1].slice(0, 3) + ' ' + (+m[3]) + ', ' + m[1];
+  m = /^(\d{4})-(\d{2})$/.exec(t);
+  if (m) return MONTHS[+m[2] - 1] + ' ' + m[1];
+  return t;
+}
+function defaultRange() {
+  const now = new Date();
+  return { start: monthStartISO(now), end: monthEndISO(now) };
+}
+
+/* ── Numbers ───────────────────────────────────────────────────────────────
+   Accounting style, because that is what these sit beside: a negative is
+   ($26.00), not -$26.00. CivicRec writes User Credit that way and so does the
+   card (organization-credit really is negative on both sides). */
+function numOf(v) { const n = Number(v); return isNaN(n) ? 0 : n; }
+function fmtNum(v, dp) {
+  if (v == null || v === '') return '';
+  const n = Number(v);
+  if (isNaN(n)) return String(v);
+  const s = Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: dp || 0, maximumFractionDigits: dp || 0 });
+  return n < 0 ? '(' + s + ')' : s;
+}
+
+/* ── Columns ───────────────────────────────────────────────────────────────
+   The card's own column order and its own headers, taken from the rows. Keys
+   are collected across EVERY row rather than off the first: a column that is
+   null in row 1 is still a column, and Metabase's JSON omits nothing but a
+   defensive union costs nothing and cannot lose one. */
+function columnsOf(rows) {
+  const seen = [];
+  const have = new Set();
+  (rows || []).forEach(r => {
+    Object.keys(r || {}).forEach(k => { if (!have.has(k)) { have.add(k); seen.push(k); } });
+  });
+  return seen;
+}
+
+/* ── The grouping ──────────────────────────────────────────────────────────
+   Pure, and at module scope so a spec can RUN it: a regex over a reducer
+   passes on an inverted comparison.
+
+   Rows arrive in the card's own ORDER BY, which is the hierarchy — so this
+   walks them in order and never re-sorts. A group's totals are the sum of its
+   LEAF rows, so a parent always reconciles to its children by construction
+   rather than by a second pass that could disagree with the rows on screen. */
+function groupRows(rows, levels, numericKeys) {
+  const zero = () => { const t = {}; numericKeys.forEach(k => { t[k] = 0; }); return t; };
+  const addInto = (t, row) => { numericKeys.forEach(k => { t[k] += numOf(row[k]); }); };
+
+  function build(list, depth) {
+    if (depth >= levels.length) return { leaf: true, rows: list, totals: list.reduce((t, r) => (addInto(t, r), t), zero()), count: list.length };
+    const key = levels[depth];
+    const out = [];
+    let cur = null;
+    list.forEach(r => {
+      // Empty is its own group and is LABELLED as such, never dropped: a row
+      // the card could not attribute is still a row, and hiding it makes the
+      // grand total disagree with the CSV beside it.
+      const v = r[key] == null || r[key] === '' ? '' : String(r[key]);
+      if (!cur || cur.value !== v) { cur = { key, value: v, rows: [] }; out.push(cur); }
+      cur.rows.push(r);
+    });
+    return {
+      leaf: false,
+      groups: out.map(g => {
+        const child = build(g.rows, depth + 1);
+        return Object.assign({ key, value: g.value }, child);
+      }),
+      totals: list.reduce((t, r) => (addInto(t, r), t), zero()),
+      count: list.length,
+    };
+  }
+  return build(rows || [], 0);
+}
+
+/* ── The flat export ───────────────────────────────────────────────────────
+   Every column, including the group columns, in the card's own order, with the
+   card's own headers. DELIBERATELY NO SUBTOTAL ROWS: a data file gets
+   re-aggregated by whoever opens it, and a subtotal row indistinguishable from
+   a data row double-counts the moment anyone sums a column. The formatted
+   version of the report is the print/PDF one. */
+function flatTable(rows, cols) {
+  return [cols.slice()].concat((rows || []).map(r => cols.map(c => (r[c] == null ? '' : r[c]))));
+}
+
+/* ── Beacon ────────────────────────────────────────────────────────────────
+   `?event=` in the QUERY STRING, never a JSON body: the log route reads
+   req.query.event, and a body-only beacon comes back 400 and — being
+   fire-and-forget — never complains. That has cost this repo four silent
+   losses; see CLAUDE.md. */
+function logClientEvent(event, extra) {
+  try {
+    const qs = new URLSearchParams(Object.assign({ event }, extra || {}));
+    if (URL_TOKEN) qs.set('token', URL_TOKEN);
+    fetch(basePath + '/api/log?' + qs.toString(), { method: 'POST', keepalive: true }).catch(() => {});
+  } catch (e) { /* a beacon must never break the page */ }
+}
+
+/* ── Flatten the tree into display rows ───────────────────────────────────
+   ONE TABLE, not a table per group. A "Totals for X" row is only readable if
+   it sits under the columns it totals, and separate <table> elements do not
+   share column widths — the roll-up would drift out of line with the numbers
+   above it, which is the one thing this row exists to prevent.
+
+   Which subtotal a group gets is CivicRec's own rule, and it matters: the
+   DEEPEST group takes the unlabelled row directly under its rows, and every
+   outer level takes a labelled "Totals for <level>: <value>". Give both to the
+   deepest group and it prints the same numbers twice.
+
+   Pure and at module scope so a spec can RUN it. */
+function flattenTree(node, levels, depth) {
+  depth = depth || 0;
+  const out = [];
+  if (node.leaf) {
+    node.rows.forEach((r, i) => out.push({ kind: 'row', row: r, idx: i + 1 }));
+    return out;
+  }
+  const deepest = depth === levels.length - 1;
+  node.groups.forEach(g => {
+    out.push({ kind: 'head', depth, key: g.key, value: g.value });
+    flattenTree(g, levels, depth + 1).forEach(x => out.push(x));
+    out.push({
+      kind: 'sub',
+      depth,
+      totals: g.totals,
+      count: g.count,
+      label: deepest ? '' : 'Totals for ' + g.key + ': ' + (g.value === '' ? '(none)' : prettyDate(g.value)),
+    });
+  });
+  return out;
+}
+
+/* ══ Components ══════════════════════════════════════════════════════════ */
+
+function GroupedTable({ tree, levels, cols, rowCount }) {
+  // Text columns first, then the ones that roll up — a totals row has to line
+  // up under its own numbers, so the numeric block is always on the right.
+  const numCols  = cols.filter(c => NUMERIC[c]);
+  const textCols = cols.filter(c => !NUMERIC[c]);
+  const ordered  = textCols.concat(numCols);
+  const span     = 1 + ordered.length;
+  const items    = flattenTree(tree, levels);
+  const labelSpan = Math.max(1, 1 + textCols.length);
+
+  // The VALUE rides on the cell as well as the text. A roll-up that adds up
+  // wrongly renders a perfectly plausible number, so the render cases key on
+  // the computed figure rather than on "a totals row appeared".
+  const totalCells = (totals, kind) => numCols.map(c => (
+    <td key={c} className={'n' + (numOf(totals[c]) < 0 ? ' neg' : '')}
+        {...{ ['data-' + kind + '-col']: c,
+              ['data-' + kind + '-val']: numOf(totals[c]).toFixed(NUMERIC[c].dp || 0) }}>
+      {fmtNum(totals[c], NUMERIC[c].dp)}
+    </td>
+  ));
+
+  return (
+    <div className="scroller">
+      <table className="rep">
+        <thead>
+          <tr>
+            <th className="idx" />
+            {ordered.map(c => <th key={c} className={NUMERIC[c] ? 'n' : ''}>{c}</th>)}
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((it, i) => {
+            if (it.kind === 'head') {
+              return (
+                <tr key={i} className={'ghead gh' + Math.min(it.depth, 2)} data-group-level={it.depth} data-group-key={it.key}>
+                  <td colSpan={span}>
+                    <span className="gh-k">{it.key}</span>
+                    {it.value === '' ? '(none)' : prettyDate(it.value)}
+                  </td>
+                </tr>
+              );
+            }
+            if (it.kind === 'sub') {
+              return (
+                <tr key={i} className={'sub' + (it.label ? ' lbl' : '')} data-sub-level={it.depth}>
+                  <td className="sublabel" colSpan={labelSpan}>{it.label}</td>
+                  {textCols.length > 1 && <td colSpan={textCols.length - 1} />}
+                  {totalCells(it.totals, 'total')}
+                </tr>
+              );
+            }
+            const r = it.row;
+            return (
+              <tr key={i}>
+                {/* Numbering restarts inside each group, the way CivicRec's
+                    does — it is a position in this list, not an id. */}
+                <td className="idx">{it.idx}.</td>
+                {ordered.map(c => (
+                  <td key={c} data-cell={c}
+                      className={NUMERIC[c] ? ('n' + (numOf(r[c]) < 0 ? ' neg' : ''))
+                                            : (String(r[c] == null ? '' : r[c]).length > 32 ? 'txtwrap' : 'txt')}>
+                    {NUMERIC[c] ? fmtNum(r[c], NUMERIC[c].dp) : (r[c] == null || r[c] === '' ? '' : String(r[c]))}
+                  </td>
+                ))}
+              </tr>
+            );
+          })}
+          <tr className="grand">
+            <td colSpan={labelSpan}>Grand total · {rowCount.toLocaleString()} row{rowCount === 1 ? '' : 's'}</td>
+            {textCols.length > 1 && <td colSpan={textCols.length - 1} />}
+            {totalCells(tree.totals, 'grand')}
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function App() {
+  // The window opens on the current calendar MONTH — these are filed monthly on
+  // a July–June fiscal year, so a month is the unit the reader means.
+  const def = defaultRange();
+  const first = {
+    start: SP.get('start_date') || def.start,
+    end:   SP.get('end_date')   || def.end,
+    // A location not in this report's own list is dropped, not forwarded: it
+    // would return nothing and read as an empty report.
+    location: LOCATIONS.includes(SP.get('location') || '') ? SP.get('location') : '',
+  };
+  // TWO windows, and the distinction is the point. `applied` is what the rows on
+  // screen were fetched for; `pending` is what the toolbar currently says. The
+  // header reads `applied`, because a failed or unrun change leaves the previous
+  // window's numbers up and a header that had already moved would label them
+  // with a range nobody asked for (the Memberships 504 lesson).
+  const [applied, setApplied] = useState(first);
+  const [pending, setPending] = useState(first);
+  const [rows, setRows]     = useState(null);
+  const [meta, setMeta]     = useState({});
+  const [error, setError]   = useState(null);
+  const [loading, setLoading] = useState(true);
+  const runSeq = useRef(0);
+
+  const run = useCallback((sd, ed, loc) => {
+    const seq = ++runSeq.current;
+    setLoading(true); setError(null);
+    const qs = new URLSearchParams();
+    if (sd) qs.set('start_date', sd);
+    if (ed) qs.set('end_date', ed);
+    if (loc) qs.set('location', loc);
+    if (SP.get('_nocache') === '1' || SP.get('_refresh') === '1') qs.set('_nocache', '1');
+    fetch(withToken(basePath + '/api/data?' + qs.toString()))
+      // `throw await`, and therefore an ASYNC arrow: reportFetchError RETURNS
+      // an Error rather than throwing one, so `return reportFetchError(r)`
+      // resolves the chain with an Error object — `json.rows` is then undefined
+      // and a 504 renders as an EMPTY REPORT instead of the route's own
+      // sentence. A non-async arrow here is a SyntaxError that takes the whole
+      // babel block with it, which is the blank-page class this repo has
+      // shipped twice.
+      .then(async r => { if (!r.ok) throw await reportFetchError(r); return r.json(); })
+      .then(json => {
+        if (seq !== runSeq.current) return;   // a later run already won
+        setRows(json.rows || []);
+        setMeta(json.meta || {});
+        setApplied({ start: sd, end: ed, location: loc });
+      })
+      .catch(e => { if (seq === runSeq.current) setError(e.message); })
+      .finally(() => { if (seq === runSeq.current) setLoading(false); });
+  }, []);
+
+  useEffect(() => { run(first.start, first.end, first.location); }, []);   // eslint-disable-line
+
+  // The address bar mirrors what is on screen, so a link lands on the same
+  // report. Only these three keys are touched — ?token= rides on this URL.
+  useEffect(() => {
+    try {
+      const u = new URL(window.location.href);
+      applied.start ? u.searchParams.set('start_date', applied.start) : u.searchParams.delete('start_date');
+      applied.end   ? u.searchParams.set('end_date',   applied.end)   : u.searchParams.delete('end_date');
+      applied.location ? u.searchParams.set('location', applied.location) : u.searchParams.delete('location');
+      window.history.replaceState({}, '', u.toString());
+    } catch (e) { /* never break the page over a URL */ }
+  }, [applied]);
+
+  const cols = useMemo(() => columnsOf(rows), [rows]);
+  const bodyCols = useMemo(() => cols.filter(c => !GROUP_BY.includes(c)), [cols]);
+  const numericKeys = useMemo(() => cols.filter(c => NUMERIC[c]), [cols]);
+  // Only group on levels the feed actually carries. A registry naming a column
+  // the card no longer emits would otherwise put every row in one group called
+  // "(none)" — a report that looks fine and says nothing.
+  const levels = useMemo(() => GROUP_BY.filter(g => cols.includes(g)), [cols]);
+  const tree = useMemo(
+    () => (rows && rows.length ? groupRows(rows, levels, numericKeys) : null),
+    [rows, levels, numericKeys]
+  );
+
+  function downloadCsv() {
+    if (!rows || !rows.length) return;
+    const csv = csvFromRows(flatTable(rows, cols));
+    const stamp = (applied.end || isoOf(new Date())).replace(/-/g, '');
+    saveTextViaPopup(csv, orgSlug + '-' + (CFG.report || 'report') + '-' + stamp + '.csv', { bom: true });
+    logClientEvent('report-csv', { n: rows.length, location: applied.location || '' });
+  }
+
+  function downloadExcel() {
+    if (!rows || !rows.length) return;
+    const table = flatTable(rows, cols);
+    const ws = XLSX.utils.aoa_to_sheet(table);
+    ws['!cols'] = cols.map(c => ({ wch: Math.min(38, Math.max(11, c.length + 4)) }));
+    const wb = XLSX.utils.book_new();
+    // Excel refuses a sheet name over 31 chars or carrying : \ / ? * [ ]
+    XLSX.utils.book_append_sheet(wb, ws, REPORT_LABEL.replace(/[:\\/?*\[\]]/g, ' ').slice(0, 31));
+    saveWorkbookViaPopup(XLSX, wb, orgSlug + '-' + (CFG.report || 'report') + '.xlsx');
+    logClientEvent('excel', { n: rows.length, location: applied.location || '' });
+  }
+
+  function print() { logClientEvent('print', { n: (rows || []).length, location: applied.location || '' }); window.print(); }
+
+  const backHref = '/' + orgSlug + (URL_TOKEN ? '?token=' + encodeURIComponent(URL_TOKEN) : '');
+  const orgName = CFG.displayName || orgSlug;
+  const hasRows = !!(rows && rows.length);
+
+  return (
+    <div>
+      <div className="toolbar no-print">
+        <a className="toolbar-back" href={backHref}>←</a>
+        <span className="toolbar-title">{CFG.reportEmoji ? CFG.reportEmoji + ' ' : ''}{REPORT_LABEL}</span>
+        <span className="divider" />
+        <label>From
+          <input type="date" value={pending.start} onChange={e => setPending(p => ({ ...p, start: e.target.value }))} />
+        </label>
+        <label>To
+          <input type="date" value={pending.end} onChange={e => setPending(p => ({ ...p, end: e.target.value }))} />
+        </label>
+        {LOCATIONS.length > 0 && (
+          <label>Location
+            {/* The report's OWN locations, not the shared dashboard's. Card 1
+                has no city-wide bucket, and offering a value that returns zero
+                rows reads as a broken filter rather than as an empty answer. */}
+            <select data-loc-select value={pending.location} onChange={e => setPending(p => ({ ...p, location: e.target.value }))}>
+              <option value="">All locations</option>
+              {LOCATIONS.map(l => <option key={l} value={l}>{l}</option>)}
+            </select>
+          </label>
+        )}
+        <button className="btn-run" data-run onClick={() => run(pending.start, pending.end, pending.location)} disabled={loading}>
+          {loading ? 'Running…' : 'Run report'}
+        </button>
+        {hasRows && <span className="row-count" data-row-count={rows.length}>{rows.length.toLocaleString()} row{rows.length === 1 ? '' : 's'}</span>}
+        <span className="toolbar-spacer" />
+        {hasRows && <button onClick={downloadCsv} title="The rows as data — no subtotal rows">⬇ CSV</button>}
+        {hasRows && <button className="btn-excel" onClick={downloadExcel}>📊 Excel</button>}
+        <button onClick={print}>🖨️ Print / PDF</button>
+      </div>
+
+      <div className="page">
+        <div className="rep-head">
+          <div className="rep-head-top">
+            <div>
+              {CFG.logoUrl ? <img className="rep-logo" src={CFG.logoUrl} alt="" /> : null}
+              <div className="rep-org">{orgName}</div>
+              <div className="rep-title" data-report-title>{REPORT_LABEL}</div>
+            </div>
+            <div className="rep-facts">
+              <div><span className="k">Run On</span><span className="v">{new Date().toLocaleString()}</span></div>
+              <div><span className="k">From</span><span className="v" data-head-from>{applied.start ? prettyDate(applied.start) : 'the beginning'}</span></div>
+              <div><span className="k">To</span><span className="v" data-head-to>{applied.end ? prettyDate(applied.end) : 'today'}</span></div>
+              <div><span className="k">Location</span><span className="v" data-head-location>{applied.location || 'All locations'}</span></div>
+            </div>
+          </div>
+          {/* The card behind the number, named. A figure a reader can take back
+              to Metabase is checkable; one they have to trust is not. */}
+          <div className="rep-source">
+            Source: Metabase card {meta.card || CFG.cardId || '—'}
+            {meta.stale_cache ? ' · served from cache — Metabase did not answer this run' : ''}
+          </div>
+        </div>
+
+        {loading && <div className="loading-wrap"><ReportLoader label={'Running ' + REPORT_LABEL} /></div>}
+
+        {!loading && error && (
+          <div className="err"><strong>Couldn't run this report.</strong> {error}</div>
+        )}
+
+        {!loading && !error && !hasRows && (
+          <div className="empty" data-empty>
+            <b>No rows for this window.</b>{' '}
+            Nothing was booked between {applied.start ? prettyDate(applied.start) : 'the beginning'} and{' '}
+            {applied.end ? prettyDate(applied.end) : 'today'}
+            {applied.location ? ' at ' + applied.location : ''}. Widen the dates, or clear the location filter.
+          </div>
+        )}
+
+        {!loading && !error && hasRows && tree && (
+          <div className="grp" data-report-body>
+            <GroupedTable tree={tree} levels={levels} cols={bodyCols} rowCount={rows.length} />
+            <div className="note">
+              Subtotals roll up the rows above them; the grand total is every row in this window.
+              The CSV and Excel exports carry the rows only — no subtotal lines — so they can be re-summed safely.
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+<script src="/report-loader.js" defer></script>
+<script src="/feedback-widget.js" defer></script>
+</body>
+</html>
