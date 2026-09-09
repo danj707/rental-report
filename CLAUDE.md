@@ -3427,6 +3427,132 @@ from `getParams` fails only the deep-link case. The deep-link case carries the
 apostrophe (`?season=Fall%20%2726`) on purpose, since that is what a real season
 name has to survive.
 
+## The FIVE CivicRec exports Joseph actually runs (2026-09-09)
+
+Dan forwarded four CivicRec PDFs plus a reservations CSV, all **July 2026** —
+their last full month on the old system. These are more specific than the email
+and they settle two things the email left open. Same artifact:
+https://claude.ai/code/artifact/0a35b7c8-9fbf-4cf3-98b8-10f0cf624070
+
+**THE CUTOVER IS CLEAN, so these are a BASELINE and not a comparison.** Rec holds
+**10 aquatic lane reservations in July and 5,882 in August**. July lives in
+CivicRec, August lives in Rec. Never diff one against the other.
+
+**Read them with `pdftoppm`** — every one is a page image, `pypdf` extracts an
+empty string. `poppler-utils` is not in the sandbox image; `apt-get update` first
+or the install 404s on a stale package index.
+
+| | report | July figures | verdict |
+|---|---|---|---|
+| A | Facility Reservations by Date (CSV) | 7,782 lane rows · 7,861.0 h · $16,634 | **have it** |
+| B | Aquatics Drop In Numbers | 4,956 admissions · $17,786.50 | **have it** |
+| C | Rec ID Summary per month | 171 IDs · $2,040 | close |
+| D | Aquatic Passes by Date | $12,024 over four tender columns | close |
+| E | Instructor Transaction Summary by Session | 567 participants · $7,924 · 24.59 h | **furthest off** |
+
+### THE $0 ROWS ARE THE POINT — this corrects what I wrote on 2026-09-09
+
+I flagged that **8,261 of August's 20,201 transactions carry
+`transaction_method = 'free'`** and warned that counting rows overstates passes
+sold by ~40%. **That is right for the REVENUE column and wrong as a general
+rule.** CivicRec lists membership-holder swipes as their own line with a real
+Quantity and a $0.00 Total:
+
+```
+AC Lap Swim-Adult                       216   $1,720.00
+AC Lap Swim-Adult (Membership Holder)   179       $0.00
+```
+
+Those 179 are attendance Joseph reports on. **The drop-in report needs BOTH
+columns** — visits including the free ones, revenue excluding them — not one
+number with the judgement baked in.
+
+### RESIDENCY HAS A SECOND AND BETTER ANSWER: THE BUYER'S ZIP
+
+The Passes report carries a **Zip** column, and the negative lines on it
+(a $70.00 charge with a −$26.00 beside it on the SAME receipt) are the resident
+discount, appearing only on 90245 buyers.
+
+- **`users.zip_code` is populated for 2,719 of El Segundo's 2,990 buyers (91%)**,
+  and **1,346 are 90245**. So the Zip column is reproducible and residency is
+  computable from the BUYER rather than inferred from a product name. Note
+  `users` has **no `organization_id`** — scope it through the item log's
+  `customer_id`.
+- **`residency_zipcode_group` exists platform-wide — 820 zips across 46 orgs —
+  and EL SEGUNDO HAS ZERO ROWS.** The platform already has a zip-based residency
+  feature they have not switched on. Adding 90245 makes it a first-class flag.
+
+### THE TENDER SPLIT IS A ONE-TO-ONE MAP, and no report of ours has it
+
+Every CivicRec money report breaks out **Cash · Check · Credit/Debit · User
+Credit**. Measured at El Segundo, August:
+
+| CivicRec column | `transaction_method` | August |
+|---|---|---|
+| Cash | `cash` | $6,481 |
+| Check | `check` | $6,075 |
+| Credit/Debit | `card-online` + `card-present` | $131,188 |
+| User Credit | `organization-credit` | **−$2,185** |
+| (none) | `free` — the membership swipes above | $0 |
+
+User Credit is negative in both systems (CivicRec's Rec ID report shows
+`($5.00)`), so the mapping holds on sign as well as name. **It is columns on
+`item_log_report`, not a new card.**
+
+### Per report
+
+**A — Facility Reservations by Date.** Their columns are Date · Location/Facility
+· Rental Time · Description · User · Total Paid, **one row per lane**, which is
+Joseph's own lane-hours definition falling straight out. We produce this today,
+full lane names included (`siteLabel()` was fixed for these exact names). **69%
+of their rows are $0.00**, the same membership-holder pattern. The only column
+with no home is the free-text note in Description (*"All north lanes are taken by
+a team on the 8th"*) — **13 of 7,782 rows**, the reservation instruction field.
+
+**B — Aquatics Drop In Numbers.** Grouped by item name → Receipt Location →
+Quantity + Total. Item name already carries pool, category, tier and residency.
+**The open question is "Receipt Location" = the DESK**, and 72% of August rows
+have no desk because they were bought online — but drop-in is counter-sold, so
+coverage there is probably far better. **That measurement is unrun and it decides
+whether this report is finished.** Worth knowing: their own export has duplicate
+headings ("Plunge REC Swim - Senior" twice with different numbers), so the
+two-catalogue-entries-for-one-product problem is not ours.
+
+**C — Rec ID Summary per month.** The product family is already distinct
+(`El Segundo Resident ID Card` Adult/Senior/Youth/Infant, `Wiseburn Rec ID`) and
+quantity, tier and tender all derive. **The gap is the Category → Activity →
+Session HIERARCHY**, which is CivicRec's and not ours — we have flat item names
+and two grouping levels have to come from a name-prefix rule or a small org-
+supplied map. That is the SAME map report 1's program types need, so ask once.
+**Expect August to look like explosive growth and say it is not**: 171 Rec IDs in
+July against 2,635 in August is everyone re-registering at cutover.
+
+**D — Aquatic Passes by Date.** Transaction-grain with buyer, date, time and
+amount — `item_log_report`'s natural shape — plus the tender columns and the Zip
+above. **Receipt # will not match theirs**: we have a stable identity
+(`transaction_event_id`) but our own numbering, so it is fine going forward and
+no help reconciling history.
+
+**E — Instructor Transaction Summary by Session.** Columns: Activity · Session ·
+Participants · Instructor Applicable Total · Hours · Instructor % · Instructor
+Hourly · Instructor Fees · After Instructor Dues. Three separate gaps:
+
+1. **Naomi Gol is NAMED in CivicRec and blank in Rec.** The instructor-coverage
+   gap with a face on it — the old system holds the assignment and the migration
+   did not carry it. Still the cheapest fix on the list.
+2. **Per-SESSION grain.** Card 17295 gives one period figure per section, not
+   thirty dated rows. **Card 17755 is the right card to grow, not a new one** —
+   it is participant-grain, already carries the instructor, and already handles
+   drop-in bookings that carry only a `session_id`. Session hours are free: their
+   24.59 h is just the sum of session durations (0.83 h = a 50-minute class).
+3. **The payout economics have nowhere to live.** `instructor` carries
+   `is_contractor` and **`org_cut_bps_override`** (a revenue split, the analogue
+   of "Instructor %") but there is **no hourly rate and no flat-fee column**, so
+   Instructor Hourly / Fees / After Dues cannot be computed at all. **Every one of
+   those columns reads $0.00 in Naomi's own July report**, so it may be a template
+   El Segundo does not use — ask before building it, because without them report E
+   collapses to per-session participants, revenue and hours, which is close.
+
 ## Joseph's four aquatics reports, measured against live data (2026-09-09)
 
 Dan: *"revisit the el segundo reporting stuff, see how what we have compares to
