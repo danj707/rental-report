@@ -3507,6 +3507,29 @@ const CASES = [
     act: async p => { await openGlCodes(p); await p.click("[data-glcode-none]"); await p.click("[data-glcode-all]"); },
     needs: "[data-glcode-btn]", absent: "[data-glcode-badge]" },
 
+  // ── GL: Refund Detail is a MODE the URL can set ──────────────────────────
+  // Dan: "when I click to print the PDF, it prints the version without the
+  // refund detail." The PDF is this page under ?_print=1, rendered by Puppeteer
+  // with an EMPTY localStorage — so the mode could only ever be off, whatever
+  // was on screen. `refunds=1` in the URL is the only channel, and no source
+  // assertion can prove the page honours it.
+  //
+  // Keyed on the COMPUTED column count, not on a table existing: the fixture's
+  // tenders give the split view five refund columns against the single
+  // "Total Refunds" one, so a page that ignored the param renders a perfectly
+  // plausible table and this case still fails.
+  { name: "gl · refund detail is off by default", path: "/{org}/gl",
+    needs: '[data-gl-refund-mode="0"]', absent: "th.refund-group" },
+  { name: "gl · ?refunds=1 renders the split columns", path: "/{org}/gl?refunds=1",
+    needs: '[data-gl-refund-mode="1"]' },
+  // The print render is the one Dan was looking at.
+  { name: "gl · the PDF render honours the refund mode", path: "/{org}/gl?_print=1&refunds=1",
+    needs: '[data-gl-refund-mode="1"]' },
+  { name: "gl · the toolbar toggle still works", path: "/{org}/gl",
+    act: async p => { await p.waitForSelector('[data-gl-refund-btn]', { timeout: 30000 });
+                      await p.click('[data-gl-refund-btn]'); },
+    needs: '[data-gl-refund-mode="1"]' },
+
   // ── Waitlist: the auto tag, and a conversion rate that is not a lie ──────
   // This report had NO render case at all, and its central number — how many
   // claim links became registrations — was measuring the EXPIRY SWEEP until

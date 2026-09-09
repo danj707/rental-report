@@ -1,5 +1,117 @@
 # Project notes for Claude
 
+## THE REFUND VIEW COULD NOT BE SAVED OR PRINTED (2026-09-09)
+
+Dan, on needham's GL Code Rollup with the picker open on his own
+*"GL Code Rollup w refund detail"*: *"Looks like the 'save a view' isn't saving
+when the refund view is selected. If I save this view, it doesn't update the 'GL
+Code Rollup with refund detail'. Then, when I click to print the PDF, it prints
+the version without the refund detail."*
+
+**Both halves are one root cause, and it is a CLASSIFICATION mistake rather than
+a broken wire.** Refund Detail was filed as per-browser display state:
+
+```js
+const LS_REFUND = 'gl_refund_breakdown_v2';
+const [showRefunds, setShowRefunds] = useState(() => localStorage.getItem(LS_REFUND) === 'true');
+useEffect(() => { localStorage.setItem(LS_REFUND, showRefunds); }, [showRefunds]);
+```
+
+It never entered the URL, so:
+
+| surface | why it could not see the mode |
+|---|---|
+| the saved view | `SAVED_VIEW_PARAMS.gl` is the server's allowlist and had no `refunds` key, so `PUT /saved-views` **dropped it**. Re-saving the view really did change nothing. |
+| the PDF | the print page is this page under `?_print=1`, rendered by **Puppeteer with an empty localStorage** — so the mode could only ever be OFF, whatever was on screen |
+
+### IT IS A MODE, NOT A COLUMN PREFERENCE — a deliberate reversal, for this one control
+
+`SAVED_VIEW_PARAMS`'s own comment records the opposite rule for `roster`:
+display toggles stay OUT of shared views, because *"a shared view that overwrote
+them would take a colleague's chosen columns away."* That rule stands for
+`showLocations`, which collapses one column. It does not survive here:
+
+- Refund Detail restructures the **whole table** — a different column set under
+  different group headers — which is what `tyler` does, and `tyler` has been in
+  the allowlist and set unconditionally on apply all along.
+- Dan's view is **named after the mode**. The mode IS the view, and a view that
+  cannot carry it cannot reproduce itself, on screen or in the PDF.
+
+So `refunds` follows `tyler` exactly, with two guards that keep the roster
+objection paid for:
+
+- **Precedence is URL → applied view → this browser's preference.** localStorage
+  is still the no-view default, so nobody's current setting flips.
+- **The persist effect is gated on `activeViewId`.** A view SETS the mode; it
+  must not quietly rewrite the reader's own default the moment they open
+  somebody else's saved view. Clear back to Default view and their preference
+  returns on the next load.
+- **An apply sets it in BOTH directions** (`setShowRefunds(!!f.refunds)`). A
+  view that could only turn a mode on could never turn it off, so opening a
+  plain view after the refund one would still render refund columns — and
+  `clearView` turns it off, because *"no filters"* has to mean no mode either.
+
+### AND `gl_codes` WAS THE SAME BUG ONE FILTER OVER, in the OPPOSITE half
+
+Found by reading the whole path rather than the reported symptom.
+`public/gl.html` has SENT `gl_codes` on the PDF and share link since the
+multi-select shipped, and **`generatePdf`'s forward list silently dropped it** —
+so every GL-code PDF carried the codes the reader had excluded. This file
+asserted the opposite (*"rides both the share link and the export params"*),
+which is why nobody looked: the client half was right and the claim was
+therefore half true. It was also absent from `SAVED_VIEW_PARAMS.gl`, so a view
+could not store a code selection at all.
+
+**Generalise it: a param has FOUR gates on this report and passing three of them
+looks exactly like working** — `getParams()`'s explicit whitelist, the page's
+`currentFilterParams`, the server's saved-view allowlist, and `generatePdf`'s
+forward list. `refunds` failed all four; `gl_codes` failed two.
+
+**Key ORDER in the allowlist is load-bearing.** `cleanViewParams` emits in that
+order and the page builds `currentFilterParams` the same way, because the
+"edited" marker is a string comparison against the stored params — a different
+order makes every freshly-saved view read as dirty the instant it is applied.
+
+### THE SHARE-LINK EFFECT WAS READING ITS OWN DEPS AS `undefined`
+
+Found while adding `showRefunds` to it, and it is the Babel `const`→`var` trap
+in a form no runtime assertion here can see. The effect registering
+`window.recShareLink` sat ABOVE most of the state it names in its dependency
+array (`selectedDesks`, `availableMethods`, and now `showRefunds`). These pages
+compile JSX in the browser, so `const` becomes `var`: the deps array evaluated
+to `[..., undefined, undefined]` on **every** render instead of throwing, the
+effect only ever ran on mount, and the registered closure was from that first
+render — **so Copy Link was one change behind the screen, silently.**
+
+The effect moved below everything it reads. The guard is the general form: take
+that effect's dep array out of the source, and require every name in it to be
+declared before the effect. It fails by name on the move.
+
+Also fixed while in there: the print-mode desk branch tested `params.desks`,
+which `getParams()` never returned — dead code whose comment claimed to be
+belt-and-braces against the `#report-ready` race.
+
+### Guards
+
+`saved-views.spec.js` 51 → **65 assertions**. Its `ALLOW` list is now DERIVED
+from `SAVED_VIEW_PARAMS.gl` rather than a hand-copy, or every byte-for-byte
+assertion about the new keys is a comparison of two copies of the same guess.
+Mutation-tested thirteen ways, all failing by name: the allowlist reverted (the
+bug as it shipped), `generatePdf` dropping both again, an apply that only turns
+the mode on, Default view leaving it on, the PDF and the stored view each losing
+it, the URL leg dropped, the persist gate removed, `refunds` off the `getParams`
+whitelist, the picker row reading *"no filters"* again, a stale `refunds=`
+outliving its view, the PDF losing `gl_codes`, and the share-link effect moved
+back above its deps.
+
+**Four `ci-check-render.js` cases, keyed on the COMPUTED refund column count**
+(`data-gl-refunds` / `data-gl-refund-mode`) rather than on a table existing: the
+fixture's tenders give the split view five refund columns against the single
+*"Total Refunds"* one, so a page ignoring the param renders a perfectly
+plausible table. One of them drives `?_print=1&refunds=1` — the render Dan was
+actually looking at. Verified to discriminate: dropping the URL leg fails
+**exactly** the two URL-driven cases by name while the other eight keep passing.
+
 ## THE LOADING BAR PRINTED "usually about NaNm NaNs" (2026-09-09)
 
 Dan, on Windham's Program Schedule mid-load: *"err this looks like a bug when

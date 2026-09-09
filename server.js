@@ -5494,7 +5494,10 @@ async function generatePdf(orgSlug, reportType, startDate, endDate, filters = {}
   // server-side Metabase filters. The print page initializes its filter state
   // from these params before emitting #report-ready, so Puppeteer captures the
   // filtered render rather than the full dataset.
-  ["locations", "location", "sites", "location_name", "site_type", "desks", "methods", "by_desk", "by_item", "hide_zero", "chart_net", "metric", "programs", "closures", "hrs", "section_name", "section_id", "status", "questions", "cols", "search", "tab", "instructor", "split", "book_type", "addons", "participant", "view", "tyler", "glq", "quarter", "insights"].forEach(k => {
+  // gl_codes / refunds: the GL report has sent both since its multi-select and
+  // Refund Detail shipped, and this list silently dropped them — so the PDF
+  // rendered every GL code the reader had excluded, without the refund columns.
+  ["locations", "location", "sites", "location_name", "site_type", "desks", "methods", "by_desk", "by_item", "hide_zero", "chart_net", "metric", "programs", "closures", "hrs", "section_name", "section_id", "status", "questions", "cols", "search", "tab", "instructor", "split", "book_type", "addons", "participant", "view", "tyler", "glq", "gl_codes", "refunds", "quarter", "insights"].forEach(k => {
     if (filters[k]) qsObj[k] = filters[k];
   });
   if (orgTok) qsObj.token = orgTok;
@@ -9460,7 +9463,17 @@ const SAVED_VIEWS_FILE = path.join(DATA_DIR, "saved-views.json");
 // are NOT in here — they travel as a date intent (see normalizeViewInput), so
 // there is exactly one source of truth for a view's range.
 const SAVED_VIEW_PARAMS = {
-  gl: ["desks", "methods", "glq", "tyler"],
+  // Key ORDER is load-bearing: cleanViewParams emits in this order and gl.html
+  // builds `currentFilterParams` the same way, so string equality against a
+  // stored view is a valid "has anything changed?" test.
+  //
+  // `refunds` (Refund Detail) is a DELIBERATE EXCEPTION to the display-state
+  // rule stated for `roster` below. It is a MODE and not a column preference:
+  // like `tyler` it restructures the whole table — a different column set under
+  // different group headers — and Dan's own view is named "GL Code Rollup w
+  // refund detail", so the mode IS the view. A view that could not carry it
+  // could not reproduce itself, on screen or in the PDF.
+  gl: ["desks", "gl_codes", "methods", "glq", "tyler", "refunds"],
   // The Class Roster's FILTER state, and only that. Its column toggles and
   // question picker are display state, they live in localStorage per browser,
   // and a shared view that overwrote them would take a colleague's chosen

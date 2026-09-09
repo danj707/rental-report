@@ -241,7 +241,7 @@ test("viewFilterSummary reads as a sentence, and says so when empty", () => {
 
 // ── The dirty check is a string comparison, so encoding has to agree ──
 // Mirrors SAVED_VIEW_PARAMS.gl + cleanViewParams() in server.js.
-const ALLOW = ["desks", "methods", "glq", "tyler"];
+const ALLOW = REG.SAVED_VIEW_PARAMS.gl;
 function serverClean(raw) {
   const supplied = new URLSearchParams(String(raw || ""));
   const out = new URLSearchParams();
@@ -254,12 +254,14 @@ function serverClean(raw) {
   }
   return out.toString();
 }
-function clientBuild({ desks, methods, glq, tyler }) {
+function clientBuild({ desks, glCodes, methods, glq, tyler, refunds }) {
   const p = new URLSearchParams();          // same key order as ALLOW
   if (desks)   p.set("desks", desks.join(","));
+  if (glCodes) p.set("gl_codes", glCodes.join(","));
   if (methods) p.set("methods", methods.join(","));
   if (glq)     p.set("glq", glq);
   if (tyler)   p.set("tyler", "1");
+  if (refunds) p.set("refunds", "1");
   return p.toString();
 }
 
@@ -269,6 +271,9 @@ function clientBuild({ desks, methods, glq, tyler }) {
   { methods: ["cc_online"] },
   { glq: "4100 revenue" },
   { desks: ["Café & Pro Shop"], glq: "50%", tyler: true },
+  { refunds: true },
+  { desks: ["Ice Arena"], glCodes: ["4100", "4200"], methods: ["cash"], glq: "swim", refunds: true },
+  { glCodes: ["(no GL code)"] },
 ].forEach((sel, i) => {
   test(`filter string ${i + 1} survives the server allowlist byte-for-byte`, () => {
     const built = clientBuild(sel);
@@ -279,6 +284,148 @@ function clientBuild({ desks, methods, glq, tyler }) {
 test("the allowlist drops report plumbing a client might smuggle in", () => {
   const cleaned = serverClean("desks=A&token=secret&_print=1&_nocache=1&evil=1&start_date=2026-01-01");
   assert.strictEqual(cleaned, "desks=A");
+});
+
+
+// ── REFUND DETAIL IS VIEW STATE, and GL CODES reach the PDF ───────────────────
+// Dan: "the 'save a view' isn't saving when the refund view is selected... when
+// I click to print the PDF, it prints the version without the refund detail."
+// Both halves were the same root cause: `refunds` was localStorage-only display
+// state, so the server's allowlist could not store it and the print page — which
+// has no React state and an empty localStorage — could only ever render the
+// plain table. `gl_codes` was a second instance one filter over: the page has
+// always SENT it, and generatePdf's forward list dropped it.
+//
+// This deliberately reverses the display-state rule stated for `roster` above,
+// for this one control. Refund Detail is a MODE like `tyler` — a different
+// column set under different group headers — not a per-reader column
+// preference, and Dan's own view is named after it.
+const GL_HTML = fs.readFileSync(path.join(ROOT, "public", "gl.html"), "utf8");
+const SERVER_SRC = fs.readFileSync(path.join(ROOT, "server.js"), "utf8");
+
+// Slice a named function out of the page so an assertion is about the surface it
+// claims to be about — a file-wide match passes on any other caller.
+function glSlice(startMarker, endMarker) {
+  const i = GL_HTML.indexOf(startMarker);
+  assert.ok(i > 0, `gl.html should still contain ${startMarker}`);
+  const j = GL_HTML.indexOf(endMarker, i);
+  assert.ok(j > i, `gl.html should still contain ${endMarker} after ${startMarker}`);
+  return GL_HTML.slice(i, j);
+}
+
+test("the GL allowlist carries the refund mode and the GL codes, in build order", () => {
+  assert.deepStrictEqual(REG.SAVED_VIEW_PARAMS.gl,
+    ["desks", "gl_codes", "methods", "glq", "tyler", "refunds"],
+    "key ORDER is load-bearing: cleanViewParams emits in this order and the page "
+    + "builds currentFilterParams the same way, so the dirty check is a valid "
+    + "string comparison");
+});
+
+test("parseViewParams reads the refund mode BOTH ways", () => {
+  // Both directions matter: a view that could only turn the mode on could never
+  // turn it back off, so a plain view opened after the refund one would still
+  // render refund columns.
+  assert.strictEqual(H.parseViewParams("refunds=1").refunds, true);
+  assert.strictEqual(H.parseViewParams("desks=Ice+Arena").refunds, false, "absent means off");
+  assert.strictEqual(H.parseViewParams("refunds=0").refunds, false);
+  assert.deepStrictEqual(H.parseViewParams("gl_codes=4100,4200").glCodes, ["4100", "4200"]);
+});
+
+test("the picker row NAMES the refund mode instead of reading 'no filters'", () => {
+  // This is the row in Dan's screenshot. A view whose whole point is the refund
+  // columns describing itself as unfiltered is how you cannot tell two views
+  // apart.
+  const s = H.viewFilterSummary({ params: "refunds=1" }, {});
+  assert.ok(/refund detail/.test(s), `expected "refund detail", got "${s}"`);
+  assert.ok(!/no filters/.test(s), `a refund view is not unfiltered: "${s}"`);
+  assert.ok(/2 GL codes/.test(H.viewFilterSummary({ params: "gl_codes=4100,4200" }, {})));
+  assert.strictEqual(H.viewFilterSummary({ params: "" }, {}), "no filters");
+});
+
+test("currentFilterParams — what a view STORES — carries both", () => {
+  const src = glSlice("const currentFilterParams = useMemo", "const activeView = useMemo");
+  assert.ok(/p\.set\('refunds', '1'\)/.test(src), "the refund mode never reaches the stored view");
+  assert.ok(/p\.set\('gl_codes'/.test(src), "the GL code selection never reaches the stored view");
+  assert.ok(/showRefunds/.test(src.split("}, [")[1] || ""), "showRefunds must be in the memo's deps");
+});
+
+test("applying a view SETS the refund mode, unconditionally", () => {
+  const src = glSlice("function applyView(v, announce)", "function clearView()");
+  assert.ok(/setShowRefunds\(!!f\.refunds\)/.test(src),
+    "an apply must set the mode from the view in both directions, like tyler");
+  assert.ok(/glCodes: f\.glCodes/.test(src), "an apply must also reset the GL code selection");
+  ["gl_codes", "refunds"].forEach(k => assert.ok(
+    new RegExp(`'${k}'`).test(src.split("forEach(k => qs.delete(k))")[0]),
+    `applyView must clear '${k}' from the URL before re-setting it, or a stale `
+    + `value outlives the view that put it there`));
+});
+
+test("Default view clears the refund mode, like tyler", () => {
+  const src = glSlice("function clearView()", "async function submitView(form)");
+  assert.ok(/setShowRefunds\(false\)/.test(src), '"no filters" has to mean no mode either');
+  ["gl_codes", "refunds"].forEach(k => assert.ok(new RegExp(`'${k}'`).test(src), `clearView must drop '${k}'`));
+});
+
+test("the PDF is asked for both — Dan's second symptom", () => {
+  const src = glSlice("function downloadPdf()", "function downloadMunis(fmt)");
+  assert.ok(/qs\.set\('refunds', '1'\)/.test(src), "the PDF prints the plain table without this");
+  assert.ok(/qs\.set\('gl_codes'/.test(src), "the PDF carries codes the reader excluded without this");
+});
+
+test("generatePdf FORWARDS both to the print page", () => {
+  // The page has sent gl_codes since the multi-select shipped and this list
+  // silently dropped it, so the client half alone proves nothing.
+  const fwd = /\["locations", "location",[\s\S]*?\]\.forEach/.exec(SERVER_SRC);
+  assert.ok(fwd, "server.js should still declare generatePdf's forward list");
+  ["gl_codes", "refunds", "desks", "methods", "glq", "tyler"].forEach(k =>
+    assert.ok(fwd[0].includes(`"${k}"`), `generatePdf drops "${k}" — the print page never sees it`));
+});
+
+test("the print page reads the refund mode off the URL", () => {
+  // Puppeteer starts with an empty localStorage, so the URL is the only channel.
+  const src = glSlice("function getParams()", "function toISO(d)");
+  assert.ok(/refunds: p\.get\('refunds'\)/.test(src),
+    "getParams is an explicit whitelist — a param absent from it reads undefined "
+    + "and the deep link silently does nothing");
+  const init = glSlice("const [showRefunds,", "const [showLocations,");
+  assert.ok(/params\.refunds === '1'/.test(init), "the URL must win over this browser's preference");
+  assert.ok(/localStorage\.getItem\(LS_REFUND\)/.test(init),
+    "and localStorage must still be the fallback, or every reader's own default flips");
+});
+
+test("a view never rewrites the reader's own stored preference", () => {
+  // The persist effect, from its deps line back to the start of its body.
+  const end = GL_HTML.indexOf("}, [showRefunds, activeViewId]);");
+  assert.ok(end > 0, "the refund persist effect should still be keyed on the active view");
+  const body = GL_HTML.slice(GL_HTML.lastIndexOf("useEffect(() => {", end), end);
+  assert.ok(/localStorage\.setItem\(LS_REFUND/.test(body), "it should still persist the mode");
+  assert.ok(/if \(activeViewId\) return;/.test(body),
+    "persisting while a view is applied would quietly rewrite a colleague's own "
+    + "default the moment they opened somebody else's saved view — which is the "
+    + "objection the display-state rule was written about");
+});
+
+// ── THE BABEL const→var TRAP, which no runtime assertion here can see ─────────
+// These pages compile JSX in the browser and `const` becomes `var`, so a hook
+// whose dependency array names an identifier declared FURTHER DOWN the component
+// reads `undefined` on every render instead of throwing. The effect then only
+// ever runs on mount and window.recShareLink keeps a closure from that first
+// render — the copied link is one change behind the screen, and nothing errors.
+test("every dep of the share-link effect is declared before the effect", () => {
+  const at = GL_HTML.indexOf("window.recShareLink = () => {");
+  assert.ok(at > 0, "gl.html should still register window.recShareLink");
+  const deps = /\}, \[([^\]]*)\]\);/.exec(GL_HTML.slice(at));
+  assert.ok(deps, "the share-link effect should still declare a dependency array");
+  const names = deps[1].split(",").map(x => x.trim()).filter(Boolean);
+  assert.ok(names.length >= 10, `expected the effect's real deps, got ${names.length}`);
+  names.forEach(n => {
+    const decl = new RegExp(`const (?:\\[\\s*${n}\\b|${n}\\s*=)`).exec(GL_HTML);
+    assert.ok(decl, `could not find where ${n} is declared`);
+    assert.ok(decl.index < at,
+      `${n} is declared AFTER the share-link effect (${decl.index} > ${at}) — Babel `
+      + `turns that into undefined rather than a throw, so the effect never re-runs `
+      + `and the copied link goes stale`);
+  });
 });
 
 // ── The ROSTER's own filter vocabulary ────────────────────────────────────────
