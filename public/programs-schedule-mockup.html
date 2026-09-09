@@ -1,0 +1,963 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Weekly Program Schedule</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+</head>
+<body>
+
+<style>
+  /* ─────────────────────────────────────────────────────────────────
+     Design system copied from public/facility.html so this reads as
+     the SAME report, not a cousin of it. Only the program-specific
+     cells (fill count, grain chip, status pill) are new, and they are
+     scoped to their own class names.
+
+     Single light theme on purpose: this page is the print target for a
+     schedule that gets taped to an office wall, exactly like the rental
+     schedule. Ground and text are painted explicitly so it holds on any
+     host background.
+     ───────────────────────────────────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-size: 12px;
+    color: #1a1a1a;
+    background: #f5f4f1;
+    line-height: 1.35;
+  }
+
+  /* ── Toolbar ── */
+  .toolbar {
+    position: sticky; top: 0; z-index: 100;
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 20px;
+    background: #2c2c2c; color: #eee;
+    font-size: 13px; flex-wrap: wrap;
+  }
+  .toolbar-title { font-weight: 600; margin-right: 4px; }
+  .toolbar-spacer { flex: 1; }
+  .toolbar label {
+    font-size: 10px; text-transform: uppercase; letter-spacing: .5px;
+    color: #aaa; display: flex; flex-direction: column; gap: 2px;
+  }
+  .toolbar input[type="date"] {
+    padding: 4px 8px; border: 1px solid rgba(255,255,255,.2); border-radius: 4px;
+    background: rgba(255,255,255,.1); color: #fff;
+    font-size: 12px; font-family: inherit; outline: none;
+  }
+  .toolbar input[type="date"]:focus-visible { border-color: #3b82f6; outline: 2px solid #3b82f6; outline-offset: 1px; }
+  .toolbar input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(1); cursor: pointer; }
+  .toolbar button {
+    padding: 6px 14px; border: 1px solid rgba(255,255,255,.25); border-radius: 4px;
+    background: rgba(255,255,255,.08); color: #fff;
+    font-size: 12px; font-family: inherit; cursor: pointer;
+    transition: background .15s; white-space: nowrap;
+  }
+  .toolbar button:hover { background: rgba(255,255,255,.18); }
+  .toolbar button:focus-visible { outline: 2px solid #3b82f6; outline-offset: 1px; }
+  .toolbar .btn-run   { background: #16a34a; border-color: #16a34a; font-weight: 600; }
+  .toolbar .btn-run:hover { background: #15803d; }
+  .toolbar .btn-pdf   { background: #3b82f6; border-color: #3b82f6; font-weight: 600; }
+  .toolbar .btn-pdf:hover { background: #2563eb; }
+  .toolbar .btn-excel { background: #16803c; border-color: #16803c; font-weight: 600; }
+  .toolbar .btn-excel:hover { background: #15692f; }
+  .toolbar .btn-preset.active {
+    background: #f59e0b; border-color: #f59e0b; color: #1a1a1a; font-weight: 600;
+  }
+  .toolbar .row-count { font-size: 11px; color: #aaa; margin-left: 4px; }
+  .toolbar .divider { width: 1px; height: 28px; background: rgba(255,255,255,.15); margin: 0 4px; }
+  .sample-chip {
+    font-size: 9.5px; font-weight: 700; letter-spacing: .7px; text-transform: uppercase;
+    background: #f59e0b; color: #1a1a1a; border-radius: 3px; padding: 2px 6px;
+  }
+
+  /* ── Segmented control (registration grain) ── */
+  .seg { display: flex; border: 1px solid rgba(255,255,255,.25); border-radius: 4px; overflow: hidden; }
+  .seg button { border: none; border-radius: 0; padding: 5px 11px; font-size: 11px; font-weight: 500; }
+  .seg button + button { border-left: 1px solid rgba(255,255,255,.2); }
+  .seg button.active { background: #3b82f6; }
+
+  /* ── Multi-check dropdown ── */
+  .filter-wrap { position: relative; }
+  .btn-filter { display: flex; align-items: center; gap: 6px; }
+  .btn-filter .badge {
+    background: #f59e0b; color: #1a1a1a; border-radius: 10px;
+    font-size: 10px; font-weight: 700; padding: 1px 6px; line-height: 1.4;
+  }
+  .dropdown {
+    position: absolute; top: calc(100% + 6px); left: 0; z-index: 200;
+    background: #1e1e1e; border: 1px solid rgba(255,255,255,.15); border-radius: 6px;
+    min-width: 260px; max-height: 340px;
+    display: flex; flex-direction: column;
+    box-shadow: 0 8px 24px rgba(0,0,0,.5);
+  }
+  .dropdown[hidden] { display: none; }
+  .dropdown-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 8px 12px; border-bottom: 1px solid rgba(255,255,255,.1);
+    font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: #aaa;
+  }
+  .dropdown-header button {
+    padding: 2px 6px; font-size: 10px;
+    border-color: rgba(255,255,255,.15); background: rgba(255,255,255,.06);
+  }
+  .dropdown-header .hdr-actions { display: flex; gap: 8px; }
+  .dropdown-list { overflow-y: auto; padding: 4px 0; }
+  .dropdown-list::-webkit-scrollbar { width: 4px; }
+  .dropdown-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,.2); border-radius: 2px; }
+  .check-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 5px 12px; cursor: pointer; font-size: 12px; color: #ddd;
+  }
+  .check-item:hover { background: rgba(255,255,255,.07); }
+  .check-item input[type="checkbox"] { accent-color: #3b82f6; width: 13px; height: 13px; cursor: pointer; flex-shrink: 0; }
+  .check-item span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .check-item .cnt { flex: 0 0 auto; color: #777; font-size: 10px; font-family: 'IBM Plex Mono', monospace; }
+  .check-item.none-opt > span:first-of-type { font-style: italic; color: #b9b9b9; }
+
+  /* ── Column visibility ── */
+  .col-toggles { display: flex; align-items: center; gap: 10px; font-size: 11px; color: #ccc; flex-wrap: wrap; }
+  .col-toggles label {
+    display: flex; flex-direction: row; align-items: center; gap: 4px;
+    cursor: pointer; font-size: 11px; text-transform: none; letter-spacing: 0; color: #ccc;
+  }
+  .col-toggles input[type="checkbox"] { accent-color: #3b82f6; cursor: pointer; }
+
+  /* ── Report page ── */
+  .page {
+    max-width: 1400px; margin: 16px auto; padding: 24px 28px;
+    background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.08);
+  }
+
+  .report-header {
+    display: flex; justify-content: space-between; align-items: center;
+    border-bottom: 2.5px solid #111; padding-bottom: 10px; margin-bottom: 14px; gap: 16px;
+  }
+  .report-header-left { display: flex; align-items: center; gap: 14px; }
+  .report-header .org-label {
+    font-size: 10px; letter-spacing: 1.6px; text-transform: uppercase; color: #777; font-weight: 600;
+  }
+  .report-header .title { font-size: 17px; font-weight: 700; margin-top: 1px; color: #111827; }
+  .report-header-right { text-align: right; }
+  .report-header .rh-meta { font-size: 11px; color: #666; }
+
+  /* ── Legend: the one thing this report has to explain that the rental
+       schedule does not — "18/24" means a different thing on a
+       per-session row than on a per-section one. ── */
+  .legend {
+    display: flex; flex-wrap: wrap; gap: 8px 22px; align-items: baseline;
+    padding: 8px 10px; margin-bottom: 12px;
+    background: #f7f6f3; border-left: 3px solid #475569;
+    font-size: 10.5px; color: #555;
+  }
+  .legend b { color: #222; font-weight: 600; }
+
+  /* ── Column header row ── */
+  .col-header-row {
+    display: flex; gap: 6px; padding: 5px 8px;
+    background: #e4e4e4; border-top: 1px solid #bbb; border-bottom: 1px solid #bbb;
+    font-weight: 600; font-size: 10px; text-transform: uppercase; letter-spacing: .4px; color: #333;
+  }
+  .loc-section { break-inside: avoid; }
+  .section-header + .col-header-row { border-top: none; }
+
+  .section-header {
+    display: flex; align-items: baseline; gap: 10px;
+    padding: 7px 8px 4px; margin-top: 8px;
+    background: #edeae4; border-bottom: 1px solid #ccc;
+  }
+  .section-header .date-label { font-weight: 700; font-size: 12.5px; }
+  .section-header .loc-label { font-weight: 600; font-size: 11.5px; color: #444; }
+  .section-header .loc-meta {
+    margin-left: auto; font-size: 10px; color: #777;
+    font-family: 'IBM Plex Mono', monospace;
+  }
+
+  /* ── Data rows ── */
+  .data-row {
+    display: flex; gap: 6px; padding: 4px 8px;
+    border-bottom: 1px solid #eee; align-items: baseline; font-size: 11.5px;
+  }
+  .row-wrap:nth-child(even) .data-row { background: #fafaf8; }
+  .data-row .cell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .sub-row {
+    padding: 0 8px 3px; padding-left: 138px;
+    font-size: 10px; color: #888; font-family: 'IBM Plex Mono', monospace;
+  }
+
+  .report-footer {
+    display: flex; justify-content: space-between;
+    border-top: 2.5px solid #111; margin-top: 14px; padding-top: 6px;
+    font-size: 10px; color: #777;
+  }
+
+  .empty { text-align: center; padding: 40px 0; color: #888; }
+
+  .roster-peek {
+    margin-top: 10px; padding: 7px 10px;
+    background: #f4f1fa; border-left: 3px solid #7c3aed;
+    font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: #4c1d95;
+    overflow-x: auto; white-space: nowrap;
+  }
+  .roster-peek[hidden] { display: none; }
+  @media print { .roster-peek { display: none !important; } }
+
+  /* ── Column widths ── */
+  .col-begin { width: 64px; flex: 0 0 64px; }
+  .col-end   { width: 64px; flex: 0 0 64px; }
+  .col-site  { width: 152px; flex: 0 0 152px; font-weight: 500; white-space: normal !important; overflow: visible !important; line-height: 1.3; }
+  .col-prog  { flex: 1 1 220px; min-width: 200px; white-space: normal !important; overflow: visible !important; }
+  .col-instr { width: 132px; flex: 0 0 132px; white-space: normal !important; overflow: visible !important; line-height: 1.3; }
+  .col-cnt   { width: 82px; flex: 0 0 82px; text-align: center; }
+  .col-wait  { width: 46px; flex: 0 0 46px; text-align: center; }
+  .col-ages  { width: 82px; flex: 0 0 82px; }
+  .col-price { width: 58px; flex: 0 0 58px; text-align: right; font-variant-numeric: tabular-nums; }
+  .col-status{ width: 86px; flex: 0 0 86px; text-align: center; }
+  .col-roster{ width: 34px; flex: 0 0 34px; text-align: center; }
+  .col-link  { width: 26px; flex: 0 0 26px; text-align: center; }
+
+  /* ── Program cell ── */
+  .prog-name { font-weight: 600; color: #111827; }
+  .prog-sec  { display: block; font-size: 10.5px; color: #555; margin-top: 1px; }
+  /* The run callout mirrors the rental schedule's amber "Multi-Day Rental"
+     line — for a program the equivalent fact is which meeting of the run
+     this is, and what the run's dates are. */
+  .prog-run  { display: block; font-size: 10px; font-weight: 700; color: #d97706; margin-top: 2px; }
+  .prog-multi{ display: block; font-size: 10px; color: #7c3aed; margin-top: 1px; }
+
+  .instr-none { color: #c8ccd2; }
+
+  /* ── Enrolment count ── */
+  .fill { display: inline-flex; flex-direction: column; align-items: center; gap: 2px; width: 100%; }
+  .fill-num { font-family: 'IBM Plex Mono', monospace; font-size: 11.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .fill-bar { width: 52px; height: 4px; background: #e6e4df; border-radius: 2px; overflow: hidden; }
+  .fill-bar i { display: block; height: 100%; min-width: 2px; }
+  .fill-low  .fill-num { color: #9ca3af; } .fill-low  .fill-bar i { background: #b6bcc4; }
+  .fill-ok   .fill-num { color: #1f2937; } .fill-ok   .fill-bar i { background: #4b5563; }
+  .fill-full .fill-num { color: #b45309; } .fill-full .fill-bar i { background: #d97706; }
+  .fill-over .fill-num { color: #b91c1c; } .fill-over .fill-bar i { background: #dc2626; }
+  .fill-none .fill-num { color: #9ca3af; }
+
+  /* ── Grain chip: which unit the count is in ── */
+  .grain {
+    display: inline-block; font-size: 8.5px; font-weight: 700;
+    letter-spacing: .5px; text-transform: uppercase;
+    padding: 0 4px; border-radius: 2px; line-height: 1.5;
+  }
+  .grain-session { background: #e0f2f1; color: #0f766e; border: 1px solid #99cfc9; }
+  .grain-section { background: #eef1f5; color: #475569; border: 1px solid #c2cbd6; }
+
+  .wl { font-family: 'IBM Plex Mono', monospace; font-size: 10.5px; color: #7c3aed; font-weight: 600; }
+  .wl-zero { color: #d6d3cd; }
+
+  /* ── Status pill ── */
+  .pill {
+    display: inline-block; font-size: 9.5px; font-weight: 600;
+    padding: 1px 6px; border-radius: 9px; letter-spacing: .2px; white-space: nowrap;
+  }
+  .pill-inprog { background: #dcfce7; color: #15803d; }
+  .pill-upcoming { background: #dbeafe; color: #1d4ed8; }
+  .pill-cancel { background: #fee2e2; color: #b91c1c; }
+  .pill-ran    { background: #eee; color: #6b7280; }
+  .row-canceled .prog-name, .row-canceled .col-site { text-decoration: line-through; color: #9ca3af; }
+  .row-canceled { opacity: .72; }
+
+  .reclink { color: #2563eb; text-decoration: none; font-size: 13px; }
+  /* Violet, deliberately not the blue of the Rec link beside it: one opens a
+     report of ours, the other opens Rec. Two blues read as one control. */
+  .rosterlink { color: #7c3aed; text-decoration: none; font-size: 13px; cursor: pointer; }
+  .rosterlink:hover { filter: brightness(1.15); }
+  .rosterlink:focus-visible { outline: 2px solid #7c3aed; outline-offset: 1px; border-radius: 2px; }
+
+  /* ── Build notes (annotation, not part of the report) ── */
+  .notes {
+    max-width: 1400px; margin: 18px auto 40px; padding: 18px 22px;
+    background: #22252b; color: #cfd4dc; border-radius: 6px; font-size: 11.5px; line-height: 1.5;
+  }
+  .notes h2 {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 1.2px;
+    color: #8b93a1; font-weight: 700; margin-bottom: 12px;
+  }
+  .notes-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 18px 26px; }
+  .notes h3 { font-size: 11.5px; color: #f0f2f5; margin-bottom: 6px; font-weight: 600; }
+  .notes ul { list-style: none; display: flex; flex-direction: column; gap: 5px; }
+  .notes li { padding-left: 12px; position: relative; }
+  .notes li::before { content: '—'; position: absolute; left: 0; color: #5c6472; }
+  .notes code {
+    font-family: 'IBM Plex Mono', monospace; font-size: 10.5px;
+    background: rgba(255,255,255,.07); padding: 1px 4px; border-radius: 3px; color: #e3e7ed;
+  }
+  .notes .warn { color: #fbbf24; font-weight: 600; }
+  .notes .ok { color: #6ee7a8; font-weight: 600; }
+
+  @media print {
+    .toolbar, .notes { display: none !important; }
+    body { background: #fff; }
+    .page { margin: 0; padding: 0; box-shadow: none; max-width: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+  }
+</style>
+
+<div class="toolbar">
+  <span class="toolbar-title">Program Schedule</span>
+  <span class="sample-chip">Mockup &middot; sample data</span>
+
+  <label>Start<input type="date" value="2026-09-14" /></label>
+  <label>End<input type="date" value="2026-09-16" /></label>
+
+  <button class="btn-preset active" type="button">This Week</button>
+  <button class="btn-preset" type="button">Next Week</button>
+  <button class="btn-preset" type="button">This Month</button>
+  <button class="btn-preset" type="button">Next Month</button>
+
+  <button class="btn-run" type="button">&#9654; Run Report</button>
+
+  <div class="divider"></div>
+
+  <div class="filter-wrap" id="locWrap">
+    <button class="btn-filter" type="button" id="locBtn" aria-expanded="false">Locations <span class="badge" id="locBadge">All</span></button>
+    <div class="dropdown" id="locMenu" hidden>
+      <div class="dropdown-header">
+        <span>Location</span>
+        <span class="hdr-actions">
+          <button type="button" data-all="loc">All</button>
+          <button type="button" data-none="loc">None</button>
+        </span>
+      </div>
+      <div class="dropdown-list" id="locList"></div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <div class="filter-wrap" id="insWrap">
+    <button class="btn-filter" type="button" id="insBtn" aria-expanded="false">Instructors <span class="badge" id="insBadge">All</span></button>
+    <div class="dropdown" id="insMenu" hidden>
+      <div class="dropdown-header">
+        <span>Instructor</span>
+        <span class="hdr-actions">
+          <button type="button" data-all="ins">All</button>
+          <button type="button" data-none="ins">None</button>
+        </span>
+      </div>
+      <div class="dropdown-list" id="insList"></div>
+    </div>
+  </div>
+
+  <div class="divider"></div>
+
+  <div class="seg" id="grainSeg" role="group" aria-label="Registration type">
+    <button type="button" class="active" data-grain="all">All</button>
+    <button type="button" data-grain="section">Section-based</button>
+    <button type="button" data-grain="session">Session-based</button>
+  </div>
+
+  <div class="toolbar-spacer"></div>
+  <span class="row-count" id="rowCount"></span>
+  <div class="divider"></div>
+
+  <div class="col-toggles" id="colToggles">
+    <label><input type="checkbox" data-col="instr" checked /> Instructor</label>
+    <label><input type="checkbox" data-col="wait" checked /> Waitlist</label>
+    <label><input type="checkbox" data-col="ages" checked /> Ages</label>
+    <label><input type="checkbox" data-col="price" /> Price</label>
+    <label><input type="checkbox" data-col="status" checked /> Status</label>
+    <label><input type="checkbox" data-col="roster" checked /> Roster</label>
+    <label><input type="checkbox" data-col="notes" checked /> Notes</label>
+    <label><input type="checkbox" data-col="link" checked /> Rec link</label>
+  </div>
+
+  <div class="divider"></div>
+  <button class="btn-pdf" type="button">PDF</button>
+  <button class="btn-excel" type="button">Excel</button>
+  <button type="button" onclick="window.print()">Print</button>
+</div>
+
+<div class="page">
+  <div class="report-header">
+    <div class="report-header-left">
+      <div>
+        <div class="org-label">City of El Segundo &middot; Recreation, Parks &amp; Library</div>
+        <div class="title">Weekly Program Schedule</div>
+      </div>
+    </div>
+    <div class="report-header-right">
+      <div class="rh-meta" style="font-weight:600;margin-bottom:2px">September 14 &ndash; 16, 2026</div>
+      <div class="rh-meta">Sample data for layout review &mdash; not live figures</div>
+    </div>
+  </div>
+
+  <div class="legend">
+    <span><b>18/24</b> = confirmed participants / capacity.</span>
+    <span><span class="grain grain-session">Per-session</span> <b>counts that meeting's seats</b> &mdash; drop-ins and camps sold by the day.</span>
+    <span><span class="grain grain-section">Per-section</span> <b>counts the whole run</b>, repeated on every date it meets.</span>
+    <span>A section meeting Mon/Wed/Fri gets <b>a row on each of those dates</b> &mdash; see Learn to Swim Level 3, below, on all three days.</span>
+    <span><span class="rosterlink">&#128203;</span> opens the <b>class roster for that date</b>.</span>
+  </div>
+
+  <div id="report"></div>
+
+  <!-- Mockup only: the real page navigates. This proves which URL each
+       clipboard would open, which is the thing a mockup can otherwise
+       only assert. -->
+  <div id="rosterPeek" class="roster-peek" hidden></div>
+
+  <div class="report-footer">
+    <span>City of El Segundo &middot; Recreation, Parks &amp; Library</span>
+    <span>Run Date/Time: Sep 8, 2026, 9:14 AM</span>
+  </div>
+</div>
+
+<div class="notes">
+  <h2>Mockup notes &mdash; what it takes to make this real</h2>
+  <div class="notes-grid">
+    <div>
+      <h3>What the data already gives us</h3>
+      <ul>
+        <li><span class="ok">Card 17298</span> (calendar) is already <b>session grain</b>: date, day, begin, end, program, section, location, price, status.</li>
+        <li><span class="ok">Card 17295</span> (programs) already carries <code>instructor</code>, <code>instructor_count</code>, <code>location</code>, <code>location_count</code>, <code>enrolled</code>, <code>utilized</code>, <code>capacity</code> and <code>registration_mode</code> &mdash; but at <b>section grain</b>, so it has no per-date row to hang them on.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>The three columns nothing emits yet</h3>
+      <ul>
+        <li><b>Site.</b> <code>session.location_id</code> is either a court (site) id or a location id. 17298 already joins <code>court site</code> &mdash; and uses it only to resolve the location, throwing the site name away. One column.</li>
+        <li><b>Instructor</b> per session. The path is <code>section_facilitator &rarr; instructor &rarr; users</code> via <code>instructor.user_id</code>; the obvious <code>users.id</code> join matches 0 rows and, being a LEFT JOIN, would render an empty column rather than erroring.</li>
+        <li><b>Confirmed count</b> per session &mdash; the real work. See the two decisions.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Two decisions before anyone writes SQL</h3>
+      <ul>
+        <li><span class="warn">Which unit the count is in.</span> A per-session section has real per-meeting seats; a per-section one only has a run total. Printing both as a bare &ldquo;18/24&rdquo; makes them look comparable when they are not &mdash; hence the grain chip and the legend.</li>
+        <li><span class="warn">Whether a per-section run repeats.</span> Shown here on every date it meets, which is what &ldquo;a listed view by date&rdquo; means. The alternative is one row per section on its start date, which is a different report.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>The roster link: the UUID already exists</h3>
+      <ul>
+        <li><span class="ok">The programs side is already done.</span> Card 17295 emits <code>section_id</code> (<code>s.id AS section_id</code>) today, <code>programs.html</code> already maps it (<code>sectionId: raw['Section Id']</code>), and it already drives the section-detail drill-down. Card 17298 carries it too, inside <code>Section URL</code>. Nothing to add &mdash; the new session-grain card just carries it onto each session row.</li>
+        <li><span class="ok">The destination needs no work either.</span> Card 17296 already filters on <code>org_id</code>, <code>start_date</code>, <code>end_date</code>, <code>section_name</code>, is already session grain, and <code>roster.html</code> already reads all four off the URL and auto-runs.</li>
+        <li><span class="warn">The one gap is that the roster cannot RECEIVE an id.</span> Of card 17296's 22 output columns not one is an id (<code>Rec ID</code> is the participant's 6-character desk code), and it has no <code>section_id</code> template tag &mdash; so today the only key on offer is <code>section_name</code>, an <code>ILIKE '%name%'</code> with no program filter.</li>
+        <li><span class="warn">Which is why the name alone will not do.</span> Measured over a live 37-day window: <b>3,160 of 21,944 section-dates (14.4%) would open a roster carrying other sections' participants</b> &mdash; 432 spanning two or more programs, across <b>41 orgs</b>, worst case <b>31 sections</b> collapsed onto one link. Platform-wide, 14,833 of 24,739 live sections share their name exactly with another section in the same org.</li>
+        <li><b>So: one push to 17296, two additive changes.</b> The clause <code>[[ AND section.id = {{section_id}}::uuid ]]</code>, and <code>section.id AS "Section ID"</code> as an output column &mdash; same push, same date-tag flip, and the column makes the join checkable from the roster's own rows. Plus three lines in <code>roster.html</code> to read and forward <code>section_id</code>. The name still rides along, only so the roster's filter chip reads legibly.</li>
+        <li><b>Filter it server-side, not in the browser.</b> Emitting the id and cross-referencing client-side sounds equivalent and is not: apex's roster over a month is ~12,000 rows / 382 pages, so that pulls the whole window to throw nearly all of it away. The <code>[[ ]]</code> clause is what keeps the payload one section wide.</li>
+        <li><b>Section id plus date is exact for 98.7% of meetings.</b> The rest are sections that meet twice in one day: <b>290 of 21,945 section-dates (1.3%), 14 orgs, worst case 10 sessions</b> &mdash; there the link returns both of that day's meetings. Same enrolled people for a per-section run; genuinely different for a per-session drop-in. A <code>Session ID</code> on both cards closes it, and is worth doing only if one of those 14 orgs asks.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Choices worth arguing with</h3>
+      <ul>
+        <li><b>A blank instructor stays blank.</b> 155 of El Segundo's 286 live sections have nobody on file, holding 83% of enrolments &mdash; no nudge, no &ldquo;unassigned&rdquo;, per the earlier call. So the instructor filter needs its own <i>No instructor on file</i> option, or ticking any name silently drops half the schedule.</li>
+        <li><b>Cancelled sessions stay on the page</b>, struck through. Someone reading a wall schedule needs to know the room is free.</li>
+        <li><b>Location is the group, site is the column</b> &mdash; identical to the rental schedule, so the two reports print the same shape.</li>
+        <li><b>A run's dates ride in the program cell</b> in amber, where the rental schedule puts its multi-day callout.</li>
+        <li><b>No clipboard where there is nobody to list.</b> Absent, not greyed &mdash; the
+            same rule as the rental schedule's Forms column, which renders nothing where no
+            form was ever requested. A link to an empty roster is the dead end this is
+            meant to remove.</li>
+        <li><b>The roster link is scoped to the single date</b>, so it answers "who is in
+            this session". For a per-section run that is the same names on every date; for a
+            per-session camp it is that day's list, which is the one worth printing.</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<script>
+  // ── Sample week. Three days, five location groups, 22 rows.
+  //    Shaped after El Segundo's real programme mix: aquatics-heavy, a
+  //    lot of sections with no instructor on file, a couple of camps
+  //    sold per day, one cancelled session, one programme running at two
+  //    sites in the same week.
+  var ROWS = [
+    // ── Mon Sep 14 ──────────────────────────────────────────────────
+    { date:'2026-09-14', loc:'Wiseburn Aquatic Center', site:'Instructional Pool',
+      program:'Learn to Swim — Level 2', section:'Mon/Wed 4:00 PM', begin:'4:00 PM', end:'4:40 PM',
+      instructor:'Priya Raman', enrolled:8, capacity:8, wait:4, ages:'5–7 yrs', price:96,
+      status:'In Progress', grain:'section', seq:[5,16], run:'Sep 2 – Oct 21',
+      note:'Level 2 needs face-in-water comfort. Goggles recommended.' },
+
+    { date:'2026-09-14', loc:'Wiseburn Aquatic Center', site:'Instructional Pool',
+      program:'Parent & Me Swim', section:'Mon 4:45 PM', begin:'4:45 PM', end:'5:15 PM',
+      instructor:'Priya Raman', enrolled:6, capacity:10, wait:0, ages:'6–36 mo', price:80,
+      status:'In Progress', grain:'section', seq:[5,8], run:'Aug 17 – Oct 5', note:'' },
+
+    { date:'2026-09-14', loc:'Wiseburn Aquatic Center', site:'Competition Pool — Lanes 1–4',
+      program:"Naomi's HIIT Water Aerobics", section:'M/W/F 6:00 AM', begin:'6:00 AM', end:'7:00 AM',
+      instructor:'', enrolled:31, capacity:35, wait:0, ages:'18+', price:120,
+      status:'In Progress', grain:'section', seq:[19,36], run:'Jul 6 – Dec 18', note:'' },
+
+    { date:'2026-09-14', loc:'Wiseburn Aquatic Center', site:'Competition Pool — Lanes 5–8',
+      program:'Aqua Zumba', section:'Mon 6:00 PM Drop-In', begin:'6:00 PM', end:'6:50 PM',
+      instructor:'Dee Okafor', enrolled:9, capacity:30, wait:0, ages:'16+', price:12,
+      status:'In Progress', grain:'session', seq:null, run:'',
+      note:'Sold per class. The last four Mondays averaged 11.' },
+
+    { date:'2026-09-14', loc:'Wiseburn Aquatic Center', site:'Instructional Pool',
+      program:'Learn to Swim — Level 3', section:'Mon/Tue/Wed 5:45 PM', begin:'5:45 PM', end:'6:25 PM',
+      instructor:'Priya Raman', enrolled:7, capacity:10, wait:0, ages:'6–9 yrs', price:120,
+      status:'In Progress', grain:'section', seq:[13,36], run:'Sep 2 – Oct 21',
+      note:'Meets three days a week — one row per meeting date, same 7 enrolled on each.' },
+
+    { date:'2026-09-14', loc:'Joslyn Center', site:'Dance Studio',
+      program:'Cue the Tap Shoes with Jenna Lockwood', section:'Mon 5:30 PM — Beginner', begin:'5:30 PM', end:'6:30 PM',
+      instructor:'Jenna Lockwood', enrolled:14, capacity:18, wait:0, ages:'8–14 yrs', price:145,
+      status:'In Progress', grain:'section', seq:[3,10], run:'Aug 31 – Nov 2', note:'' },
+
+    { date:'2026-09-14', loc:'Joslyn Center', site:'Art Room',
+      program:'Tiny Tots Art', section:'Mon/Thu 9:30 AM', begin:'9:30 AM', end:'10:30 AM',
+      instructor:'Marisol Vega', enrolled:12, capacity:12, wait:6, ages:'3–5 yrs', price:110,
+      status:'In Progress', grain:'section', seq:[7,16], run:'Aug 24 – Oct 15',
+      note:'Waitlist has run 5+ deep all season — worth a second section.' },
+
+    { date:'2026-09-14', loc:'Joslyn Center', site:'Multipurpose Room A',
+      program:'Senior Social Bridge', section:'Mon 1:00 PM', begin:'1:00 PM', end:'3:00 PM',
+      instructor:'', enrolled:22, capacity:null, wait:0, ages:'55+', price:0,
+      status:'In Progress', grain:'session', seq:null, run:'',
+      note:'No capacity set on this section — the count is attendance, not fill.' },
+
+    { date:'2026-09-14', loc:'Recreation Park', site:'Gymnasium — Court 1',
+      program:'Youth Basketball Skills', section:'Mon/Wed 5:00 PM — Gr 3–5', begin:'5:00 PM', end:'6:15 PM',
+      instructor:'Terrence Bell, Ana Ruiz', enrolled:26, capacity:24, wait:0, ages:'Gr 3–5', price:135,
+      status:'In Progress', grain:'section', seq:[4,14], run:'Sep 7 – Oct 21',
+      note:'Over capacity by 2 — both promoted off the waitlist on Sep 3.' },
+
+    { date:'2026-09-14', loc:'Recreation Park', site:'Checkout Building',
+      program:'After School Club', section:'M–F 2:30 PM — Center Street', begin:'2:30 PM', end:'6:00 PM',
+      instructor:'Sam Whitfield', enrolled:38, capacity:45, wait:0, ages:'Gr K–5', price:24,
+      status:'In Progress', grain:'session', seq:[9,180], run:'Aug 26 – Jun 11',
+      note:'Sold per day. 38 confirmed for Monday; Fridays run nearer 45.' },
+
+    // ── Tue Sep 15 ──────────────────────────────────────────────────
+    { date:'2026-09-15', loc:'Urho Saari Swim Stadium', site:'Main Pool',
+      program:"Mary's Water Fitness", section:'Tue/Thu 8:00 AM', begin:'8:00 AM', end:'9:00 AM',
+      instructor:'', enrolled:24, capacity:30, wait:0, ages:'18+', price:115,
+      status:'In Progress', grain:'section', seq:[12,26], run:'Jul 7 – Dec 17', note:'' },
+
+    { date:'2026-09-15', loc:'Urho Saari Swim Stadium', site:'Main Pool',
+      program:'Junior Lifeguard Academy', section:'Tue 4:00 PM — Session B', begin:'4:00 PM', end:'6:00 PM',
+      instructor:'Kai Lindqvist', enrolled:18, capacity:20, wait:1, ages:'11–15 yrs', price:310,
+      status:'In Progress', grain:'section', seq:[2,8], run:'Sep 8 – Oct 27',
+      note:'Swim test required before session 3. Bring fins.' },
+
+    { date:'2026-09-15', loc:'Urho Saari Swim Stadium', site:'Deck / Dry Land',
+      program:'Masters Dryland Conditioning', section:'Tue 7:15 PM', begin:'7:15 PM', end:'8:00 PM',
+      instructor:'Kai Lindqvist', enrolled:0, capacity:16, wait:0, ages:'18+', price:75,
+      status:'Canceled', grain:'session', seq:null, run:'',
+      note:'Session canceled Sep 12 — deck resurfacing. The space is free.' },
+
+    { date:'2026-09-15', loc:'Wiseburn Aquatic Center', site:'Instructional Pool',
+      program:'Learn to Swim — Level 3', section:'Mon/Tue/Wed 5:45 PM', begin:'5:45 PM', end:'6:25 PM',
+      instructor:'Priya Raman', enrolled:7, capacity:10, wait:0, ages:'6–9 yrs', price:120,
+      status:'In Progress', grain:'section', seq:[14,36], run:'Sep 2 – Oct 21', note:'' },
+
+    { date:'2026-09-15', loc:'Recreation Park', site:'Field 2',
+      program:'Adult Coed Kickball', section:'Tue 6:30 PM — Fall League', begin:'6:30 PM', end:'9:30 PM',
+      instructor:'', enrolled:96, capacity:120, wait:0, ages:'18+', price:65,
+      status:'In Progress', grain:'section', seq:[3,9], run:'Sep 1 – Oct 27',
+      note:'Registration is per team; the count is rostered players.' },
+
+    { date:'2026-09-15', loc:'Recreation Park', site:'Gymnasium — Court 2',
+      program:'Adult Pickleball Clinic', section:'Tue 9:00 AM Drop-In', begin:'9:00 AM', end:'10:30 AM',
+      instructor:'Ana Ruiz', enrolled:14, capacity:16, wait:0, ages:'18+', price:15,
+      status:'In Progress', grain:'session', seq:null, run:'', note:'' },
+
+    { date:'2026-09-15', loc:'Recreation Park', site:'Checkout Building',
+      program:'After School Club', section:'M–F 2:30 PM — Center Street', begin:'2:30 PM', end:'6:00 PM',
+      instructor:'Sam Whitfield', enrolled:41, capacity:45, wait:0, ages:'Gr K–5', price:24,
+      status:'In Progress', grain:'session', seq:[10,180], run:'Aug 26 – Jun 11', note:'' },
+
+    // ── Wed Sep 16 ──────────────────────────────────────────────────
+    { date:'2026-09-16', loc:'Wiseburn Aquatic Center', site:'Instructional Pool',
+      program:'Learn to Swim — Level 2', section:'Mon/Wed 4:00 PM', begin:'4:00 PM', end:'4:40 PM',
+      instructor:'Priya Raman', enrolled:8, capacity:8, wait:4, ages:'5–7 yrs', price:96,
+      status:'In Progress', grain:'section', seq:[6,16], run:'Sep 2 – Oct 21', note:'' },
+
+    { date:'2026-09-16', loc:'Wiseburn Aquatic Center', site:'Instructional Pool',
+      program:'Learn to Swim — Level 4', section:'Wed 5:00 PM', begin:'5:00 PM', end:'5:40 PM',
+      instructor:'', enrolled:3, capacity:8, wait:0, ages:'7–10 yrs', price:96,
+      status:'In Progress', grain:'section', seq:[3,8], run:'Sep 2 – Oct 21',
+      note:'Under-enrolled two sessions running.' },
+
+    { date:'2026-09-16', loc:'Wiseburn Aquatic Center', site:'Competition Pool — Lanes 1–4',
+      program:"Naomi's HIIT Water Aerobics", section:'M/W/F 6:00 AM', begin:'6:00 AM', end:'7:00 AM',
+      instructor:'', enrolled:31, capacity:35, wait:0, ages:'18+', price:120,
+      status:'In Progress', grain:'section', seq:[20,36], run:'Jul 6 – Dec 18', note:'' },
+
+    { date:'2026-09-16', loc:'Wiseburn Aquatic Center', site:'Competition Pool — Lanes 5–8',
+      program:'Stroke Clinic', section:'Wed 7:30 PM', begin:'7:30 PM', end:'8:30 PM',
+      instructor:'Dee Okafor', enrolled:11, capacity:14, wait:0, ages:'13+', price:90,
+      status:'Upcoming', grain:'section', seq:[1,6], run:'Sep 16 – Oct 21',
+      note:'First meeting of the run.' },
+
+    { date:'2026-09-16', loc:'Wiseburn Aquatic Center', site:'Instructional Pool',
+      program:'Learn to Swim — Level 3', section:'Mon/Tue/Wed 5:45 PM', begin:'5:45 PM', end:'6:25 PM',
+      instructor:'Priya Raman', enrolled:7, capacity:10, wait:0, ages:'6–9 yrs', price:120,
+      status:'In Progress', grain:'section', seq:[15,36], run:'Sep 2 – Oct 21', note:'' },
+
+    { date:'2026-09-16', loc:'Joslyn Center', site:'Dance Studio',
+      program:'Cue the Tap Shoes with Jenna Lockwood', section:'Wed 5:30 PM — Intermediate', begin:'5:30 PM', end:'6:45 PM',
+      instructor:'Jenna Lockwood', enrolled:11, capacity:18, wait:0, ages:'10–16 yrs', price:145,
+      status:'In Progress', grain:'section', seq:[3,10], run:'Sep 2 – Nov 4',
+      multi:'Also meets at Recreation Park — Gymnasium (2 locations)', note:'' },
+
+    { date:'2026-09-16', loc:'Joslyn Center', site:'Multipurpose Room A',
+      program:'Preschool Playtime', section:'Wed 10:00 AM Drop-In', begin:'10:00 AM', end:'11:30 AM',
+      instructor:'Marisol Vega', enrolled:17, capacity:20, wait:0, ages:'2–5 yrs', price:8,
+      status:'In Progress', grain:'session', seq:null, run:'', note:'' }
+  ];
+
+  // A section ID per distinct (program, section) pair, stable across the
+  // dates that pair repeats on — which is exactly what makes the roster
+  // link exact where an ILIKE on the name is not. The real card supplies
+  // the real uuid.
+  (function () {
+    var ids = {};
+    var n = 0;
+    ROWS.forEach(function (r) {
+      var k = r.program + '||' + r.section;
+      if (!ids[k]) {
+        n += 1;
+        ids[k] = 'sec-' + ('0000' + n).slice(-4) + '-a1b2-4c3d-8e9f-0123456789ab';
+      }
+      r.sectionId = ids[k];
+    });
+  })();
+
+  // Its own filter option, never a dropped row. A sentinel rather than ''
+  // so it can carry a label and sort last.
+  var NO_INSTRUCTOR = '\u0000';
+
+  var state = {
+    locs: null,
+    instrs: null,
+    grain: 'all',
+    cols: { instr:true, wait:true, ages:true, price:false, status:true, roster:true, notes:true, link:true }
+  };
+
+  function esc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) {
+      return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c];
+    });
+  }
+
+  function instrKey(r) { return r.instructor ? r.instructor : NO_INSTRUCTOR; }
+  function uniq(a) { return Array.from(new Set(a)); }
+
+  var ALL_LOCS = uniq(ROWS.map(function (r) { return r.loc; })).sort();
+  var ALL_INSTRS = uniq(ROWS.map(instrKey)).sort(function (a, b) {
+    if (a === NO_INSTRUCTOR) return 1;      // "no instructor on file" sinks last
+    if (b === NO_INSTRUCTOR) return -1;
+    return a.localeCompare(b);
+  });
+
+  state.locs = new Set(ALL_LOCS);
+  state.instrs = new Set(ALL_INSTRS);
+
+  function countBy(keyFn) {
+    var m = {};
+    ROWS.forEach(function (r) { var k = keyFn(r); m[k] = (m[k] || 0) + 1; });
+    return m;
+  }
+  var LOC_COUNTS = countBy(function (r) { return r.loc; });
+  var INSTR_COUNTS = countBy(instrKey);
+
+  function fmtDate(d) {
+    // Built from parts, never new Date("YYYY-MM-DD") — that is UTC midnight
+    // and renders as the previous day west of UTC.
+    var p = d.split('-');
+    var dt = new Date(+p[0], +p[1] - 1, +p[2]);
+    return dt.toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric', year:'numeric' });
+  }
+
+  function fillClass(r) {
+    if (r.capacity == null) return 'fill-none';
+    if (r.enrolled > r.capacity) return 'fill-over';
+    if (r.enrolled >= r.capacity) return 'fill-full';
+    if (r.capacity > 0 && r.enrolled / r.capacity <= 0.40) return 'fill-low';
+    return 'fill-ok';
+  }
+
+  function fillCell(r) {
+    var num = r.capacity == null ? (r.enrolled + ' / —') : (r.enrolled + '/' + r.capacity);
+    var pct = r.capacity ? Math.min(100, Math.round(r.enrolled / r.capacity * 100)) : 0;
+    var bar = r.capacity == null ? '' : '<span class="fill-bar"><i style="width:' + pct + '%"></i></span>';
+    var chip = '<span class="grain grain-' + r.grain + '">'
+             + (r.grain === 'session' ? 'Per-session' : 'Per-section') + '</span>';
+    return '<span class="fill ' + fillClass(r) + '">'
+         +   '<span class="fill-num">' + num + '</span>' + bar + chip
+         + '</span>';
+  }
+
+  // ── The roster link ────────────────────────────────────────────
+  // Card 17296 already filters on org_id / start_date / end_date /
+  // section_name, and public/roster.html already reads all four off the
+  // URL and auto-runs — so the destination needs no new report.
+  //
+  // BUT section_name is an ILIKE '%name%' with no program filter, and
+  // section names are not unique: over a live 37-day window, 3,160 of
+  // 21,944 section-dates (14.4%, 41 orgs, worst case 31 sections) would
+  // open a roster carrying OTHER sections' participants. So the link is
+  // built on the section ID, with the name kept only so the roster's own
+  // filter chip reads legibly.
+  //
+  // The id itself costs nothing: card 17295 ALREADY emits section_id and
+  // programs.html already maps it. What is missing is on the roster side
+  // — 17296 emits no id column and has no section_id tag — so the work is
+  // one optional clause there plus three lines in roster.html.
+  //
+  // Date, not session: a (section, date) pair is one meeting for 98.7% of
+  // section-dates. The 1.3% that meet twice in a day (290 of 21,945, 14
+  // orgs) would open both of that day's rosters.
+  function rosterUrl(r) {
+    var qs = 'section_id=' + encodeURIComponent(r.sectionId)
+           + '&section_name=' + encodeURIComponent(r.section)
+           + '&start_date=' + r.date + '&end_date=' + r.date
+           + '&status=enrolled';
+    return '/el-segundo-recreation/roster?' + qs;
+  }
+
+  function rosterCell(r) {
+    // Nothing to open: a session with nobody enrolled has no roster, and a
+    // link to an empty one is the dead end this report is meant to avoid.
+    // Absent, not disabled — the same rule as the rental schedule's Forms
+    // column, which renders nothing where no form was ever requested.
+    if (!r.enrolled || !r.sectionId) return '';
+    var when = fmtDate(r.date);
+    return '<a class="rosterlink" href="#" data-roster="' + esc(rosterUrl(r)) + '"'
+         + ' title="' + esc('Class roster for this session \u2014 ' + when
+             + ' \u00b7 ' + r.enrolled + ' enrolled\n' + rosterUrl(r)) + '"'
+         + ' aria-label="' + esc('Class roster for ' + r.program + ' on ' + when) + '"'
+         + '>&#128203;</a>';
+  }
+
+  function statusPill(s) {
+    var map = { 'In Progress':'pill-inprog', 'Upcoming':'pill-upcoming', 'Canceled':'pill-cancel', 'Ran':'pill-ran' };
+    return '<span class="pill ' + (map[s] || 'pill-ran') + '">' + esc(s) + '</span>';
+  }
+
+  function filtered() {
+    return ROWS.filter(function (r) {
+      if (!state.locs.has(r.loc)) return false;
+      if (!state.instrs.has(instrKey(r))) return false;
+      if (state.grain !== 'all' && r.grain !== state.grain) return false;
+      return true;
+    });
+  }
+
+  function headerRow() {
+    var c = state.cols, h = [];
+    h.push('<span class="col-begin">Begin</span>');
+    h.push('<span class="col-end">End</span>');
+    h.push('<span class="col-site">Site</span>');
+    h.push('<span class="col-prog">Program / Section</span>');
+    if (c.instr)  h.push('<span class="col-instr">Instructor</span>');
+    h.push('<span class="col-cnt">Enrolled</span>');
+    if (c.wait)   h.push('<span class="col-wait" title="Active waitlist">WL</span>');
+    if (c.ages)   h.push('<span class="col-ages">Ages</span>');
+    if (c.price)  h.push('<span class="col-price">Price</span>');
+    if (c.status) h.push('<span class="col-status">Status</span>');
+    if (c.roster) h.push('<span class="col-roster" title="Class roster">&#128203;</span>');
+    if (c.link)   h.push('<span class="col-link">&#8599;</span>');
+    return '<div class="col-header-row">' + h.join('') + '</div>';
+  }
+
+  function dataRow(r) {
+    var c = state.cols, cells = [];
+    cells.push('<span class="cell col-begin">' + esc(r.begin) + '</span>');
+    cells.push('<span class="cell col-end">' + esc(r.end) + '</span>');
+    cells.push('<span class="cell col-site">' + esc(r.site) + '</span>');
+
+    var prog = '<span class="prog-name">' + esc(r.program) + '</span>'
+             + '<span class="prog-sec">' + esc(r.section) + '</span>';
+    if (r.seq && r.run) {
+      prog += '<span class="prog-run">Session ' + r.seq[0] + ' of ' + r.seq[1] + ' · ' + esc(r.run) + '</span>';
+    } else if (!r.seq) {
+      prog += '<span class="prog-run">Drop-in · registered per session</span>';
+    }
+    if (r.multi) prog += '<span class="prog-multi">' + esc(r.multi) + '</span>';
+    cells.push('<span class="cell col-prog">' + prog + '</span>');
+
+    if (c.instr) {
+      cells.push('<span class="cell col-instr">'
+        + (r.instructor ? esc(r.instructor) : '<span class="instr-none">—</span>')
+        + '</span>');
+    }
+    cells.push('<span class="cell col-cnt">' + fillCell(r) + '</span>');
+    if (c.wait) {
+      cells.push('<span class="cell col-wait"><span class="wl' + (r.wait ? '' : ' wl-zero') + '">'
+        + (r.wait ? r.wait : '·') + '</span></span>');
+    }
+    if (c.ages)   cells.push('<span class="cell col-ages">' + esc(r.ages) + '</span>');
+    if (c.price)  cells.push('<span class="cell col-price">' + (r.price ? '$' + r.price.toFixed(2) : '—') + '</span>');
+    if (c.status) cells.push('<span class="cell col-status">' + statusPill(r.status) + '</span>');
+    if (c.roster) cells.push('<span class="cell col-roster">' + rosterCell(r) + '</span>');
+    if (c.link)   cells.push('<span class="cell col-link"><a class="reclink" href="#" title="Open section in Rec">&#8599;</a></span>');
+
+    var html = '<div class="row-wrap' + (r.status === 'Canceled' ? ' row-canceled' : '') + '">'
+             + '<div class="data-row">' + cells.join('') + '</div>';
+    if (c.notes && r.note) html += '<div class="sub-row">' + esc(r.note) + '</div>';
+    return html + '</div>';
+  }
+
+  function toMin(t) {
+    var m = /^(\d+):(\d+)\s*(AM|PM)$/i.exec(String(t).trim());
+    if (!m) return 0;
+    var h = (+m[1] % 12) + (/pm/i.test(m[3]) ? 12 : 0);
+    return h * 60 + (+m[2]);
+  }
+
+  function setBadge(id, sel, all) {
+    document.getElementById(id).textContent =
+      sel.size === all.length ? 'All' : (sel.size + ' of ' + all.length);
+  }
+
+  function render() {
+    var rows = filtered();
+    var byDate = {};
+    rows.forEach(function (r) {
+      byDate[r.date] = byDate[r.date] || {};
+      (byDate[r.date][r.loc] = byDate[r.date][r.loc] || []).push(r);
+    });
+
+    var out = '';
+    Object.keys(byDate).sort().forEach(function (d) {
+      Object.keys(byDate[d]).sort().forEach(function (loc) {
+        var g = byDate[d][loc].slice().sort(function (a, b) {
+          return toMin(a.begin) - toMin(b.begin) || a.program.localeCompare(b.program);
+        });
+        var seats = g.reduce(function (s, r) { return s + r.enrolled; }, 0);
+        out += '<div class="loc-section">'
+            +    '<div class="section-header">'
+            +      '<span class="date-label">' + fmtDate(d) + '</span>'
+            +      '<span class="loc-label">—&nbsp; ' + esc(loc) + '</span>'
+            +      '<span class="loc-meta">' + g.length + ' session' + (g.length === 1 ? '' : 's')
+            +        ' · ' + seats + ' confirmed</span>'
+            +    '</div>'
+            +    headerRow()
+            +    g.map(dataRow).join('')
+            +  '</div>';
+      });
+    });
+
+    if (!rows.length) out = '<div class="empty">No program sessions match the current filters.</div>';
+    document.getElementById('report').innerHTML = out;
+
+    document.getElementById('rowCount').innerHTML =
+      rows.length + ' session' + (rows.length === 1 ? '' : 's')
+      + (rows.length !== ROWS.length
+          ? ' <span style="color:#f59e0b">(' + ROWS.length + ' total)</span>'
+          : '');
+
+    setBadge('locBadge', state.locs, ALL_LOCS);
+    setBadge('insBadge', state.instrs, ALL_INSTRS);
+  }
+
+  // ── Filter menus ────────────────────────────────────────────────
+  function buildList(listId, values, counts, sel) {
+    var el = document.getElementById(listId);
+    el.innerHTML = values.map(function (v, i) {
+      var isNone = v === NO_INSTRUCTOR;
+      return '<label class="check-item' + (isNone ? ' none-opt' : '') + '">'
+        + '<input type="checkbox" ' + (sel.has(v) ? 'checked' : '') + ' data-idx="' + i + '" />'
+        + '<span>' + (isNone ? 'No instructor on file' : esc(v)) + '</span>'
+        + '<span class="cnt">' + (counts[v] || 0) + '</span>'
+        + '</label>';
+    }).join('');
+    el.querySelectorAll('input').forEach(function (cb) {
+      cb.addEventListener('change', function () {
+        var v = values[+cb.getAttribute('data-idx')];
+        if (cb.checked) sel.add(v); else sel.delete(v);
+        render();
+      });
+    });
+  }
+
+  function wireMenu(btnId, menuId, wrapId) {
+    var btn = document.getElementById(btnId), menu = document.getElementById(menuId);
+    btn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      var open = menu.hidden;
+      document.querySelectorAll('.dropdown').forEach(function (m) { m.hidden = true; });
+      document.querySelectorAll('.btn-filter').forEach(function (b) { b.setAttribute('aria-expanded', 'false'); });
+      menu.hidden = !open;
+      btn.setAttribute('aria-expanded', String(open));
+    });
+    document.getElementById(wrapId).addEventListener('click', function (e) { e.stopPropagation(); });
+  }
+
+  document.addEventListener('click', function () {
+    document.querySelectorAll('.dropdown').forEach(function (m) { m.hidden = true; });
+    document.querySelectorAll('.btn-filter').forEach(function (b) { b.setAttribute('aria-expanded', 'false'); });
+  });
+
+  wireMenu('locBtn', 'locMenu', 'locWrap');
+  wireMenu('insBtn', 'insMenu', 'insWrap');
+  buildList('locList', ALL_LOCS, LOC_COUNTS, state.locs);
+  buildList('insList', ALL_INSTRS, INSTR_COUNTS, state.instrs);
+
+  document.querySelectorAll('[data-all], [data-none]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var which = b.getAttribute('data-all') || b.getAttribute('data-none');
+      var on = b.hasAttribute('data-all');
+      var isLoc = which === 'loc';
+      var sel = isLoc ? state.locs : state.instrs;
+      var all = isLoc ? ALL_LOCS : ALL_INSTRS;
+      sel.clear();
+      if (on) all.forEach(function (v) { sel.add(v); });
+      buildList(isLoc ? 'locList' : 'insList', all, isLoc ? LOC_COUNTS : INSTR_COUNTS, sel);
+      render();
+    });
+  });
+
+  // ── Grain segmented control ─────────────────────────────────────
+  document.querySelectorAll('#grainSeg button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.querySelectorAll('#grainSeg button').forEach(function (x) { x.classList.remove('active'); });
+      b.classList.add('active');
+      state.grain = b.getAttribute('data-grain');
+      render();
+    });
+  });
+
+  // ── Column toggles ──────────────────────────────────────────────
+  document.querySelectorAll('#colToggles input').forEach(function (cb) {
+    cb.addEventListener('change', function () {
+      state.cols[cb.getAttribute('data-col')] = cb.checked;
+      render();
+    });
+  });
+
+  // ── Roster link (mockup: shows the URL rather than navigating) ──
+  document.getElementById('report').addEventListener('click', function (e) {
+    var a = e.target.closest && e.target.closest('[data-roster]');
+    if (!a) return;
+    e.preventDefault();
+    var box = document.getElementById('rosterPeek');
+    box.textContent = a.getAttribute('data-roster');
+    box.hidden = false;
+  });
+
+  // ── Range presets (visual only in the mockup) ───────────────────
+  document.querySelectorAll('.btn-preset').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.querySelectorAll('.btn-preset').forEach(function (x) { x.classList.remove('active'); });
+      b.classList.add('active');
+    });
+  });
+
+  render();
+</script>
+
+</body>
+</html>

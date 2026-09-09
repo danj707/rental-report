@@ -532,6 +532,90 @@ function checkinRows() {
 // The Programs page had NO render case before 2026-08-26, so its Check-Ins band
 // was never driven in a browser. Two feeds: the section-grain programs card, and
 // the per-section attendance card.
+/* ── Card 21649, the Program Schedule (SESSION grain) ────────────────────────
+   One row per MEETING, so a section running Mon/Wed gets two rows a week and
+   the page groups them under date -> location.
+
+   EVERY ROW IS A DIFFERENT STATE, on purpose, because "a schedule rendered"
+   passes on almost any regression:
+     - Tot Lessons Mon    two sites on one session -> the "2 sites" chip, which
+                          is the aggregated-not-joined case. If the card ever
+                          JOINS reservation_court instead, this session
+                          multiplies and data-ps-rows moves.
+     - Tot Lessons Wed    the SAME section on a second date -> proves the run
+                          repeats, and that each roster link carries its OWN
+                          date rather than the run's.
+     - Adult Pottery      NO site at all (location required, site optional --
+                          62% of sessions platform-wide carry one) and NULL
+                          capacity, which must render "9 / --" and never "9/0".
+     - Yoga Basics        a per-session facilitator, i.e. a cover, where the
+                          section-level instructor would say someone else.
+     - Camp Red           CANCELED, and empty -> struck through, site kept
+                          (that is how staff know the room came free), and NO
+                          roster icon, since a link to nobody is a dead end.
+     - Swim Draft         an UNPUBLISHED section that still holds the room ->
+                          shown and MARKED, with a toggle to drop it.
+   Two live statuses (Scheduled + Canceled) so the status pill row renders at
+   all -- one status is not a filter.
+   Dates are the report's own default window, today + 7 days, so the fixture
+   does not go stale: they are built from LOCAL parts, never new Date(ymd). */
+function progSchedRows() {
+  const d = (n) => {
+    const t = new Date();
+    t.setDate(t.getDate() + n);
+    const p = (x) => String(x).padStart(2, "0");
+    return `${t.getFullYear()}-${p(t.getMonth() + 1)}-${p(t.getDate())}`;
+  };
+  const dow = (ymd) => {
+    const [y, m, dd] = ymd.split("-").map(Number);
+    return ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"][
+      new Date(y, m - 1, dd).getDay()];
+  };
+  const row = (o) => Object.assign({
+    Day: dow(o.Date), "Begin Sort": o.Begin, "Site Count": o.Site ? 1 : 0,
+    "Instructor Count": o.Instructor ? 1 : 0, "Instructor Level": o.Instructor ? "section" : "",
+    // 'section', NOT 'per-section'. The platform emits 'section' (138,802 of
+    // 160,825 live sessions) and 'per-session' (22,023); 'per-section' does
+    // not exist. This fixture used to say 'per-section', which matched a
+    // hardcoded filter button that could never match a real feed — the
+    // fixture and the bug agreed with each other and every case passed.
+    "Registration Mode": "section", Waitlist: 0, Eligibility: "6-12 yrs",
+    // Card 21649's run-first-session date. Defaults to the run's own start so
+    // a per-section row's roster link is exact; overridden per row below.
+    "Section First Session": d(-7),
+    Price: "$40.00", Status: "Scheduled", Published: true,
+  }, o);
+  return [
+    /* PER-SESSION, and that is load-bearing: only a per-session row may be
+       scoped to its own single date, because only its bookings belong to the
+       meeting. The two rows are the same section on two dates. */
+    row({ Date: d(0), Begin: "9:00 AM",  End: "10:00 AM", Location: "Urho Saari Swim Stadium",
+          Site: "Gym A, Gym Annex", "Site Count": 2, Program: "Tot Lessons", Section: "Tot Lessons AM",
+          "Section ID": "sec-tot", "Session ID": "ses-tot-1", Instructor: "Penny Finders",
+          "Registration Mode": "per-session", Enrolled: 22, Capacity: 30 }),
+    row({ Date: d(2), Begin: "9:00 AM",  End: "10:00 AM", Location: "Urho Saari Swim Stadium",
+          Site: "Gym A, Gym Annex", "Site Count": 2, Program: "Tot Lessons", Section: "Tot Lessons AM",
+          "Section ID": "sec-tot", "Session ID": "ses-tot-2", Instructor: "Penny Finders",
+          "Registration Mode": "per-session", Enrolled: 22, Capacity: 30 }),
+    row({ Date: d(1), Begin: "6:00 PM",  End: "8:00 PM",  Location: "Recreation Park",
+          Site: "", Program: "Adult Pottery", Section: "Pottery Eve",
+          "Section ID": "sec-pot", "Session ID": "ses-pot-1", Instructor: "Eric Stenberg",
+          Enrolled: 9, Capacity: null }),
+    row({ Date: d(1), Begin: "7:00 AM",  End: "8:00 AM",  Location: "Recreation Park",
+          Site: "Studio 2", Program: "Yoga Basics", Section: "Yoga AM",
+          "Section ID": "sec-yoga", "Session ID": "ses-yoga-1", Instructor: "Dana Cover",
+          "Instructor Level": "session", Enrolled: 14, Capacity: 20 }),
+    row({ Date: d(3), Begin: "8:00 AM",  End: "3:00 PM",  Location: "Hilltop Park",
+          Site: "Pavilion 1", Program: "Camp Red", Section: "Camp, Red",
+          "Section ID": "sec-camp", "Session ID": "ses-camp-1", Instructor: "",
+          Enrolled: 0, Capacity: 24, Status: "Canceled" }),
+    row({ Date: d(4), Begin: "10:00 AM", End: "11:00 AM", Location: "Hilltop Park",
+          Site: "Lap Lane 7", Program: "Swim Draft", Section: "Swim Unpublished",
+          "Section ID": "sec-swim", "Session ID": "ses-swim-1", Instructor: "Mary Waters",
+          Enrolled: 5, Capacity: 12, Published: false }),
+  ];
+}
+
 function programRows() {
   // stubMode "prev7" drops the four v7 payment-plan columns, i.e. a warm
   // pre-v7 cache entry. Both shapes are live at once for four hours after the
@@ -1187,6 +1271,26 @@ const STUBS = [
   // Must precede the catch-all /api/data. Community Intelligence, and Fast
   // Track's three chipped tabs, both read this feed.
   { match: /\/users\/api\/data/,      body: () => ({ rows: intelRows(), meta: { org_id: "org-uuid-1" } }) },
+  /* Card 21649. MUST SIT ABOVE THE GENERIC /api/data STUB — that one matches
+     this URL too, and it answered first: the page rendered six rows of a
+     different report's shape (every capacity "0 / --", every instructor
+     absent, the location reading "Topaz Lake"), so the row-COUNT case passed
+     while every case about a VALUE failed. Same fall-through that once left
+     the Facilities hub's own feed on `rows: []` with three lane cases
+     reporting green. */
+  { match: /\/programs-schedule\/api\/data/,
+    // `prefirst` is a feed from BEFORE card 21649 grew "Section First
+    // Session" — the shape a warm four-hour cache entry still holds after the
+    // push. It is a different state from a column present and empty, and the
+    // page must fall back rather than link to a date of "undefined".
+    // STUB_MODE, not a body parameter: the stub is called as body(url, org),
+    // so a `mode` argument would silently receive the URL and never match.
+    body: () => ({
+      rows: STUB_MODE === "prefirst"
+        ? progSchedRows().map((r) => { const c = Object.assign({}, r);
+                                       delete c["Section First Session"]; return c; })
+        : progSchedRows(),
+      meta: { org_id: "org-uuid-1", dataAt: new Date().toISOString() } }) },
   { match: /\/api\/data/,                   body: () => ({ rows: campsiteRows(),
       meta: { window: { start: "2026-08-19", end: "2026-08-26" } } }) },
   { match: /\/api\/pulse/,                  body: () => ({ items: [], generated: null }) },
@@ -1442,6 +1546,306 @@ const openPickableLoc = async page => {
 
 const CASES = [
   { name: "facilities · camping",  path: "/{org}/facilities?tab=camping", needs: ".camp-cal .cc-hd" },
+
+  /* ── The Program Schedule (card 21649) ───────────────────────────────────
+     This report shipped with NO render coverage at all, which is the state the
+     waitlist report was in while its central number stayed wrong for months.
+     Every case here keys on a COMPUTED value or on an ABSENCE, never on "a
+     schedule rendered" — six rows of markup look identical under most of the
+     regressions worth catching. */
+
+  // The baseline, and it is a NUMBER: six meetings, one of them the same
+  // section on a second date. If the card ever joined reservation_court
+  // instead of aggregating it, the two-site session multiplies and this moves.
+  { name: "programs-schedule · six meetings, one section twice",
+    path: "/{org}/programs-schedule",
+    needs: "[data-ready='true'][data-ps-rows='6']" },
+
+  // AGGREGATED, NEVER JOINED. 1,444 sessions platform-wide hold 2+ sites and
+  // one holds sixteen, so the chip is what stops "Gym A" being printed as
+  // though it were the whole answer.
+  { name: "programs-schedule · a two-site session gets a chip, not two rows",
+    path: "/{org}/programs-schedule",
+    needs: ".col-site .site-more" },
+
+  // NULL capacity is unlimited, not zero. A value test renders a confident
+  // "9/0" here, which reads as "no room" — the hasAbsent rule. Asserted on the
+  // rendered TEXT because the em dash is the whole point.
+  { name: "programs-schedule · null capacity renders an em dash, not zero",
+    path: "/{org}/programs-schedule",
+    needs: "[data-ps-nullcap='1']", absent: "[data-ps-zerocap='1']",
+    act: async (page) => {
+      await page.waitForSelector("[data-ready='true']", { timeout: 20000 });
+      await page.evaluate(() => {
+        const t = Array.from(document.querySelectorAll(".fill-num")).map(e => e.textContent.trim());
+        if (t.some(x => /^9\s*\/\s*\u2014$/.test(x))) document.body.setAttribute("data-ps-nullcap", "1");
+        if (t.some(x => /^\d+\/0$/.test(x)))            document.body.setAttribute("data-ps-zerocap", "1");
+      });
+    } },
+
+  /* THE ROSTER LINK IS THE FEATURE, and a link that renders is not a link that
+     works. Linking by section NAME would open the wrong roster for one
+     date-row in seven (60% of sections share a name platform-wide), and a link
+     carrying the RUN's dates rather than this meeting's would open a week.
+
+     A PER-SESSION row is the one kind that may be scoped to a single date —
+     its bookings belong to that meeting. This reads the two hrefs of the one
+     per-session section that meets twice and requires start == end on each,
+     and the two dates to DIFFER. */
+  { name: "programs-schedule · a per-session roster link carries its own date",
+    path: "/{org}/programs-schedule",
+    needs: "[data-ps-roster='ok']",
+    act: async (page) => {
+      await page.waitForSelector("[data-ready='true']", { timeout: 20000 });
+      await page.evaluate(() => {
+        const links = Array.from(document.querySelectorAll('a.rosterlink[data-roster-section="Tot Lessons AM"]'))
+          .map(a => new URL(a.getAttribute("href"), location.origin));
+        if (links.length !== 2) return;
+        const ok = links.every(u =>
+              u.pathname.endsWith("/roster") &&
+              u.searchParams.get("section_id") === "sec-tot" &&
+              u.searchParams.get("status") === "enrolled" &&
+              // the row's OWN single date, both ends
+              u.searchParams.get("start_date") === u.searchParams.get("end_date"))
+          && links[0].searchParams.get("start_date") !== links[1].searchParams.get("start_date");
+        if (ok) document.body.setAttribute("data-ps-roster", "ok");
+      });
+    } },
+
+  /* THE HEADER MUST MATCH EVERY OTHER REPORT. .report-header-logo was used on
+     the img and had no CSS rule at all, so the org logo rendered at its
+     natural size and dwarfed the page. A source assertion cannot see that —
+     the class is present either way — so this measures the rendered box.
+     Also pins that the roster column is NAMED rather than a bare glyph. */
+  { name: "programs-schedule · the header logo is report-sized, and Roster is named",
+    path: "/{org}/programs-schedule",
+    needs: "[data-ps-chrome='ok']",
+    act: async (page) => {
+      await page.waitForSelector("[data-ready='true']", { timeout: 20000 });
+      await page.evaluate(() => {
+        const img = document.getElementById("orgLogo");
+        // COMPUTED style, not the rendered box: this harness serves nothing
+        // off-origin, so the logo never loads and its box is 0 tall whether
+        // or not the rule exists. The rule is the thing under test.
+        const cs = img ? getComputedStyle(img) : null;
+        const h = cs ? parseFloat(cs.height) : 0;
+        const mw = cs ? parseFloat(cs.maxWidth) : 0;
+        const hdr = document.querySelector(".col-header-row .col-roster");
+        const named = hdr && /roster/i.test(hdr.textContent || "");
+        document.body.setAttribute("data-ps-logo-h", String(h));
+        if (h > 0 && h <= 42 && mw > 0 && mw <= 140 && named)
+          document.body.setAttribute("data-ps-chrome", "ok");
+      });
+    } },
+
+  /* A PER-SECTION ROW MUST BE SCOPED TO THE RUN'S FIRST SESSION — not to its
+     own date (the bug Dan hit: a roster reading "No participants found" over
+     a class with six people), and no longer to a three-year window either.
+     Card 17296 dates a section booking by the RUN'S FIRST SESSION, and card
+     21649 now ships that date, so the link is one exact day again.
+
+     THE ORIGINAL CASE PINNED THE BUG: every fixture row was per-section and
+     the assertion demanded start == end, so it passed on the broken link and
+     would have failed on the fix.
+
+     IT KEYS ON THE FIRST-SESSION DATE, NOT MERELY ON start == end. Requiring
+     equality alone passes on the ORIGINAL bug, where both ends were the row's
+     own date — so the assertion has to name which day, and that day must
+     differ from the row's. */
+  { name: "programs-schedule · a per-section roster link asks for the run's first session",
+    path: "/{org}/programs-schedule",
+    needs: "[data-ps-secroster='ok']",
+    act: async (page) => {
+      await page.waitForSelector("[data-ready='true']", { timeout: 20000 });
+      await page.evaluate(() => {
+        const a = document.querySelector('a.rosterlink[data-roster-section="Pottery Eve"]');
+        const row = Array.from(document.querySelectorAll(".row-wrap"))
+          .find(x => /Pottery Eve/.test(x.textContent));
+        if (!a || !row) return;
+        const u = new URL(a.getAttribute("href"), location.origin);
+        const st = u.searchParams.get("start_date"), en = u.searchParams.get("end_date");
+        // the fixture's run began a week before the window
+        const first = new Date(Date.now() - 7 * 86400000);
+        const p = (x) => String(x).padStart(2, "0");
+        const want = first.getFullYear() + "-" + p(first.getMonth() + 1) + "-" + p(first.getDate());
+        const own = row.closest("[data-ps-date]");
+        document.body.setAttribute("data-ps-secroster-win", st + ".." + en);
+        if (st === want && en === want && st !== (own && own.getAttribute("data-ps-date")) &&
+            u.searchParams.get("section_id") === "sec-pot")
+          document.body.setAttribute("data-ps-secroster", "ok");
+      });
+    } },
+
+  /* A PRE-COLUMN FEED MUST STILL LINK SOMEWHERE. Feeds cache four hours, so a
+     response without "Section First Session" and one with it are both live at
+     once. The page falls back to the lookback window rather than linking to a
+     date of "undefined" — the colPresence rule. Keyed on the window being
+     WIDE, which is the only thing that separates the fallback from the exact
+     link. */
+  { name: "programs-schedule · a pre-column feed falls back to the lookback window",
+    path: "/{org}/programs-schedule",
+    stubMode: "prefirst",
+    needs: "[data-ps-fallback='ok']",
+    act: async (page) => {
+      await page.waitForSelector("[data-ready='true']", { timeout: 20000 });
+      await page.evaluate(() => {
+        const a = document.querySelector('a.rosterlink[data-roster-section="Pottery Eve"]');
+        if (!a) return;
+        const u = new URL(a.getAttribute("href"), location.origin);
+        const st = u.searchParams.get("start_date"), en = u.searchParams.get("end_date");
+        if (!st || !en || /undefined|NaN/.test(st + en)) return;
+        const days = Math.round((new Date(en + "T12:00:00") - new Date(st + "T12:00:00")) / 86400000);
+        // KEYED ON THE BOUND, not on "wide". `days > 365` passes on the THREE
+        // YEARS this shipped with as well as on the 400 days that replaced it,
+        // so it could not tell the fix from the bug it was fixing. 400 is the
+        // p99.9 run span; three years was a guess off one quiet measurement.
+        document.body.setAttribute("data-ps-fallback-days", String(days));
+        if (days === 400) document.body.setAttribute("data-ps-fallback", "ok");
+      });
+    } },
+
+  /* THE SECTION-BASED FILTER EMPTIED THE TABLE FOR EVERY ORG. The buttons
+     were hardcoded ['all','per-section','per-session'] and the platform emits
+     'section', never 'per-section' — so the majority grain (138,802 of
+     160,825 live sessions) filtered on a string no row can match.
+
+     Nothing caught it because the FIXTURE said 'per-section' too, so the
+     button and the fixture agreed and every case passed. Keyed on the row
+     COUNT after the click: "a button rendered" and "a button that filters to
+     nothing" look identical otherwise. */
+  { name: "programs-schedule · the section-based filter keeps its rows",
+    path: "/{org}/programs-schedule",
+    needs: "[data-ps-grain='ok']",
+    act: async (page) => {
+      await page.waitForSelector("[data-ready='true']", { timeout: 20000 });
+      const before = await page.$eval("[data-ps-rows]", (e) => e.getAttribute("data-ps-rows"));
+      const clicked = await page.evaluate(() => {
+        const b = Array.from(document.querySelectorAll("[data-grain]"))
+          .find(x => x.getAttribute("data-grain") !== "all" &&
+                     /per-section/i.test(x.textContent || ""));
+        if (!b) return false;
+        b.click(); return true;
+      });
+      if (!clicked) return;
+      await page.waitForFunction(
+        (b) => { const e = document.querySelector("[data-ps-rows]");
+                 return e && e.getAttribute("data-ps-rows") !== b; },
+        { timeout: 5000 }, before).catch(() => {});
+      await page.evaluate((b) => {
+        const n = Number(document.querySelector("[data-ps-rows]").getAttribute("data-ps-rows"));
+        // 4 of the fixture's 6 rows are 'section' grain; the two Tot Lessons
+        // rows are 'per-session'. A filter matching nothing reads 0.
+        if (n > 0 && n < Number(b)) document.body.setAttribute("data-ps-grain", "ok");
+      }, before);
+    } },
+
+  // No link where nobody is enrolled — absent, not disabled, the rental
+  // schedule's Forms rule. Camp Red is cancelled AND empty, so it must render
+  // a struck row (that is how staff see the room came free) with no icon.
+  // Keyed on the ROW being present while the icon is not: an absence assertion
+  // with nothing proving the row rendered is vacuous.
+  { name: "programs-schedule · a cancelled empty session keeps its row, loses its roster icon",
+    path: "/{org}/programs-schedule",
+    needs: ".row-wrap.row-canceled .data-row",
+    absent: 'a.rosterlink[data-roster-section="Camp, Red"]' },
+
+  /* An unpublished section still holds the room, so it is shown and MARKED —
+     excluded is never hidden. Ticking the toggle DROPS it, and the row count is
+     what proves the toggle filters rather than merely rendering: 6 -> 5. A case
+     keyed on the checkbox existing passes on a toggle wired to nothing. */
+  { name: "programs-schedule · the unpublished toggle actually drops the row",
+    path: "/{org}/programs-schedule",
+    needs: "[data-ready='true'][data-ps-rows='5']",
+    act: async (page) => {
+      await page.waitForSelector(".prog-draft", { timeout: 20000 });
+      await page.waitForSelector("#chkDraft:not([disabled])", { timeout: 20000 });
+      await page.click("#chkDraft");
+      await new Promise(r => setTimeout(r, 400));
+    } },
+
+  /* THE WINDOW LABEL IS WHERE THE TIMEZONE BUG LIVES. The page derives its
+     default from LOCAL date parts; the server's own toISOString().slice(0,10)
+     is the UTC date, so from 5pm Pacific "today" is already tomorrow and a
+     FORWARD-looking schedule would open having dropped this evening's classes.
+
+     TWO THINGS MAKE THIS DISCRIMINATE, and neither is optional:
+       - tz puts the browser BEHIND UTC. In UTC — this harness and GitHub
+         Actions both — the two derivations are identical and the case passes
+         on the broken version.
+       - THE CLOCK IS PINNED. The zone alone only separates them between 5pm
+         and midnight local, so for seventeen hours a day the case would still
+         be decorative. 2026-09-09T05:00Z is 2026-09-08 22:00 Pacific: the UTC
+         date is Sep 9 and the local date is Sep 8, always.
+     So the label must read "Sep 8" and must NOT read "Sep 9" — asserting only
+     the first would pass on a label that somehow printed both. It must also
+     not print "Invalid Date NaN", which is what an unguarded formatter renders
+     between mount and the feed answering (the winLabel trap). */
+  { name: "programs-schedule · the window starts today LOCALLY, not in UTC",
+    path: "/{org}/programs-schedule", tz: "America/Los_Angeles",
+    needs: "[data-ps-win='local']", absent: "[data-ps-win='utc'], [data-ps-win='nan']",
+    pre: async (page) => {
+      await page.evaluateOnNewDocument(() => {
+        const FIXED = 1788930000000;         // 2026-09-09T05:00:00Z
+        const R = Date;
+        function D(...a) {
+          if (!(this instanceof D)) return new R(FIXED).toString();
+          return a.length ? new R(...a) : new R(FIXED);
+        }
+        D.prototype = R.prototype;
+        D.now = () => FIXED;
+        D.parse = R.parse.bind(R);
+        D.UTC = R.UTC.bind(R);
+        window.Date = D;
+      });
+    },
+    act: async (page) => {
+      await page.waitForSelector("[data-ready='true']", { timeout: 20000 });
+      await page.evaluate(() => {
+        const lbl = (document.querySelector("[data-ps-window]") || {}).getAttribute
+          ? document.querySelector("[data-ps-window]").getAttribute("data-ps-window") || "" : "";
+        // fmtRangeLabel writes the month in full: "September 8 - September 14,
+        // 2026". Asserting a short form here would report "other" on a
+        // perfectly good label and fail the case for the wrong reason.
+        const v = /Invalid|NaN/.test(lbl) ? "nan"
+                : /^September 8\b/.test(lbl) ? "local"
+                : /^September 9\b/.test(lbl) ? "utc" : "other";
+        document.body.setAttribute("data-ps-win", v);
+      });
+    } },
+
+  // The beacon is fire-and-forget, so nothing on screen changes and no source
+  // assertion has ever caught this class — a JSON body instead of ?event= has
+  // 400'd silently four times in this repo. Spied on fetch rather than read
+  // from resource timing, because keepalive requests do not reliably appear
+  // there. Asserts the event NAME and that the section rides along.
+  { name: "programs-schedule · the roster click beacons its section",
+    path: "/{org}/programs-schedule",
+    needs: "[data-ps-beacon='ok']",
+    pre: async (page) => {
+      await page.evaluateOnNewDocument(() => {
+        window.__ps = [];
+        const f = window.fetch;
+        window.fetch = function (u, o) { try { window.__ps.push(String(u)); } catch (e) {} return f.apply(this, arguments); };
+        window.open = function () { return { document: { write() {}, close() {} }, close() {} }; };
+      });
+    },
+    act: async (page) => {
+      await page.waitForSelector("a.rosterlink", { timeout: 20000 });
+      await page.evaluate(() => {
+        const a = document.querySelector('a.rosterlink[data-roster-section="Tot Lessons AM"]');
+        a.removeAttribute("target");
+        a.addEventListener("click", e => e.preventDefault(), true);
+        a.click();
+      });
+      await new Promise(r => setTimeout(r, 500));
+      await page.evaluate(() => {
+        const hit = (window.__ps || []).find(u => /\/programs-schedule\/api\/log\?/.test(u));
+        if (!hit) return;
+        const q = new URL(hit, location.origin).searchParams;
+        if (q.get("event") === "roster-open" && q.get("section") === "Tot Lessons AM" &&
+            q.get("enrolled") === "22") document.body.setAttribute("data-ps-beacon", "ok");
+      });
+    } },
 
   // ── The shared loading progress bar ──────────────────────────────────────
   // Dan retired the juice animation because "no one had any idea how long it
@@ -3804,6 +4208,13 @@ function waitForServer(started) {
     // Per-case viewport: a layout bug that only appears in a narrow column
     // cannot be reproduced at the default width.
     await page.setViewport(c.viewport || { width: 1280, height: 1000 });
+    /* PER-CASE TIMEZONE. This harness and GitHub Actions both run UTC, where a
+       date built with toISOString().slice(0,10) and one built from local parts
+       are IDENTICAL — so a case that means to pin the local-date derivation
+       proves nothing without this, and passes on the broken version. The zone
+       is chosen for the PROPERTY (behind UTC), not because an org is in it.
+       Same lesson as fasttrack-dates.spec.js and the campmap window spec. */
+    if (c.tz) await page.emulateTimezone(c.tz);
     const errs = [];
     page.on("pageerror", e => errs.push(String(e.message).split("\n")[0].slice(0, 200)));
     page.on("console", m => {
@@ -3943,7 +4354,11 @@ function waitForServer(started) {
       [...new Set(vendorMisses)].map(u => "  " + u).join("\n"));
   }
   if (failures.length) {
-    return stop(false, `${failures.length} of ${CASES.length} page(s) did not render`,
+    // running.length, NOT CASES.length. The success path was fixed for this
+    // and the FAILURE path was not, so a filtered run reported "1 of 281" —
+    // which reads as one flake in a full sweep rather than as the only case
+    // that ran having failed. Same lying-runner class, one branch over.
+    return stop(false, `${failures.length} of ${running.length} page(s) did not render`,
       failures.map((f, i) => `  ${i + 1}. ${f}`).join("\n"));
   }
   // Report what RAN, not CASES.length — a filtered run that matched nothing
