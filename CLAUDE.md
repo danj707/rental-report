@@ -3448,7 +3448,7 @@ or the install 404s on a stale package index.
 | B | Aquatics Drop In Numbers | 4,956 admissions · $17,786.50 | **have it** |
 | C | Rec ID Summary per month | 171 IDs · $2,040 | close |
 | D | Aquatic Passes by Date | $12,024 over four tender columns | close |
-| E | Instructor Transaction Summary by Session | 567 participants · $7,924 · 24.59 h | **furthest off** |
+| E | Instructor Transaction Summary by Session | 567 participants · $7,924 · 24.59 h | close at SECTION grain — see the correction |
 
 ### THE $0 ROWS ARE THE POINT — this corrects what I wrote on 2026-09-09
 
@@ -3545,13 +3545,61 @@ Hourly · Instructor Fees · After Instructor Dues. Three separate gaps:
    it is participant-grain, already carries the instructor, and already handles
    drop-in bookings that carry only a `session_id`. Session hours are free: their
    24.59 h is just the sum of session durations (0.83 h = a 50-minute class).
-3. **The payout economics have nowhere to live.** `instructor` carries
-   `is_contractor` and **`org_cut_bps_override`** (a revenue split, the analogue
-   of "Instructor %") but there is **no hourly rate and no flat-fee column**, so
-   Instructor Hourly / Fees / After Dues cannot be computed at all. **Every one of
-   those columns reads $0.00 in Naomi's own July report**, so it may be a template
-   El Segundo does not use — ask before building it, because without them report E
-   collapses to per-session participants, revenue and hours, which is close.
+3. **The payout split and the payout DOCUMENT are already built — I said they
+   were not, and that was wrong.** See the correction below.
+
+### CORRECTION: REPORT E IS NOT "FURTHEST OFF" — the Instructor Payout report is it
+
+Dan, with a screenshot of the report filtered to one instructor: *"here's a
+filtered instructor report for a single instructor by section, doesn't this get
+them to what they want at a slightly higher level?"* **He is right, and I had
+written the opposite twice** — in the row above and in the artifact — on the
+strength of reading `instructor.org_cut_bps_override` and finding no hourly-rate
+column. I looked at the SCHEMA and never looked at the REPORT. `public/instructor-payout.html` (card 17755)
+already covers six of CivicRec's nine columns and then goes further than they do:
+
+| CivicRec column | ours |
+|---|---|
+| Activity | Program |
+| Session | **Section** — theirs is one row per class DATE, ours per section |
+| Participants | Enrolled |
+| Instructor Applicable Total | Net Revenue (paid − refunded) |
+| Instructor % | the split control — 90/10 … 50/50 plus a free-entry pair |
+| Instructor Fees / After Instructor Dues | Instr (N%) and Org (100−N%) |
+| Hours | **absent** |
+| Instructor Hourly | absent |
+| (none) | **a printable pay slip per section and per period** |
+
+Grace Maxwell, El Segundo, September: 5 sections, 19 enrolments, $2,827.80 net,
+$1,979.46 to the instructor at 70/30, and a check-style voucher naming the pay
+period. CivicRec produces no such document.
+
+**So the gap is TWO columns, not a report:** per-session dated rows, and Hours.
+Both come off `session` (their 24.59 h is the sum of session durations, 0.83 h =
+a 50-minute class), and card 17755 is still the right card to grow — it is
+participant-grain, carries the instructor, and already handles drop-in bookings
+that arrive with only a `session_id`.
+
+**Instructor Hourly / Instructor Fees / After Instructor Dues all read $0.00 in
+Naomi's own July export**, so that half of their template may simply be unused at
+El Segundo. Ask before building it.
+
+**One honest nuance about the split:** ours is a TOOLBAR CHOICE applied to every
+row in view, not a rate stored per instructor — so a single-instructor filtered
+view (exactly what Dan showed) is right, and one pull across a roster on mixed
+splits would not be. `org_cut_bps_override` exists on `instructor` and nothing
+reads it; wiring it in is what would make a whole-roster pull correct.
+
+**And it does not move report 2 at El Segundo.** Grace Maxwell teaches dance
+(Hip Hop for Kids, Tutus & Taps, Thriller Workshop). Every aquatics section still
+has no facilitator on file, so this report is EMPTY for the programmes Joseph is
+reporting on. Instructor assignment stays the number-one blocker, and it is data
+entry rather than engineering.
+
+**Generalise it: do not measure a capability from the schema when a report that
+answers it already ships.** I searched `instructor` for a rate column, found
+none, and wrote "cannot be computed at all" about a number the platform prints on
+a voucher.
 
 ### THEIR REPORT → OUR REPORT, built side by side (2026-09-09)
 
@@ -3620,7 +3668,7 @@ one report's row set.**
 | B drop-in | 4,956 admissions · $17,786.50 | item × desk × qty × free × revenue, 100% desk |
 | C Rec ID | 171 IDs · $2,040 | 2,371 IDs · $1,875, four tender columns |
 | D passes | $12,024 over four tender columns | 793 rows · $10,386 · zip on 791 (99.7%) |
-| E instructor | 567 participants · $7,924 · 24.59 h | card 17755, instructor column empty |
+| E instructor | 567 participants · $7,924 · 24.59 h | **the Instructor Payout report** — per section, with a pay slip |
 
 **The passes comparison is the strongest single piece of evidence** that this is
 columns and not a rebuild: receipt · date · time · user · zip · cash · check ·
