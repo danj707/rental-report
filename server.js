@@ -182,14 +182,35 @@ async function enrichMetabaseCardUrl(url) {
     const byTag = await getCardParamMeta(mbUuid);
     if (!byTag) return url;
     let changed = false;
-    const stamped = params.map(p => {
-      if (!p || p.id) return p;
+    // AN UNSTAMPED PARAMETER IS FATAL, so a slug this card does not register is
+    // DROPPED rather than passed through. Measured 2026-09-09 against card
+    // 17296: the same request answers 200 with three stamped parameters and
+    // HTTP 400 the moment a fourth, unstamped one is added — Metabase rejects
+    // the whole query, it does not ignore the extra.
+    //
+    // That turns a card push into an ORDERING TRAP: server.js starts sending a
+    // new tag, and every request for that report fails until the card is saved
+    // with it. Dropping decouples the two — the parameter simply has no effect
+    // until the card advertises the tag, which is also the correct behaviour if
+    // a card is ever rolled back.
+    //
+    // It is strictly better than passing through even when the cause is a STALE
+    // id: dropping yields "missing-required-parameter", which _MB_STALE_ID_RE
+    // below catches and retries, where a pass-through yields a generic error
+    // that nothing recovers from.
+    const stamped = [];
+    for (const p of params) {
+      if (!p || p.id) { stamped.push(p); continue; }
       const tag = Array.isArray(p.target) && Array.isArray(p.target[1]) ? p.target[1][1] : p.slug;
       const id = tag ? byTag.get(tag) : null;
-      if (!id) return p;
+      if (!id) {
+        console.warn(`[mb-params] card ${String(mbUuid).slice(0, 8)} does not register "${tag}" — dropping it rather than sending a parameter that would fail the whole query`);
+        changed = true;
+        continue;
+      }
       changed = true;
-      return { id, ...p };
-    });
+      stamped.push({ id, ...p });
+    }
     if (!changed) return url;
     return `${url.slice(0, m.index)}/api/public/card/${mbUuid}/query/json?parameters=${encodeURIComponent(JSON.stringify(stamped))}`;
   } catch (e) {
