@@ -6990,10 +6990,28 @@ function buildMetabaseParams(query, reportType, orgId) {
       params.push({ type: "category", target: ["variable", ["template-tag", "site_type"]], value: query.site_type });
     }
   }
-  // NOTE: roster section filtering is client-side (substring match in the page),
-  // not a Metabase template tag. Passing section_name here would make Metabase
-  // reject the query (unknown parameter), so it is intentionally not forwarded.
-  if (reportType === "section-detail" && query.section_id) {
+  // CORRECTION (2026-09-09): the note that used to sit here said card 17296 has
+  // no section tag and would reject one. It has had a {{section_name}} tag with
+  // its own [[ ]] block all along — the comment was simply wrong, and it is why
+  // nobody went looking for the real problem underneath it.
+  //
+  // THE ROSTER WAS SCOPED BY THE DATE WINDOW ALONE, and the section was matched
+  // by NAME in the browser. A name is not an identity: measured at clarksville,
+  // "Hatha Yoga" is 4 separate sections holding 82 bookings between them and
+  // "Water Aerobics Drop-In" is 16 — so opening one class's roster returned
+  // every RUN of a class with that name. Platform-wide, 60% of sections share a
+  // name with another section.
+  //
+  // section_id is forwarded for `roster` now, so a link from the program
+  // schedule or the section drill-down asks Metabase for exactly one section.
+  // The card's clause is optional, so an unscoped roster is unchanged.
+  //
+  // section_name is deliberately NOT forwarded. It is the report's free-text
+  // search box, where a partial name is the whole point and the match must stay
+  // instant over rows already loaded; sending it would put a Metabase query
+  // behind every keystroke, and every search term would become its own feed
+  // cache entry.
+  if ((reportType === "section-detail" || reportType === "roster") && query.section_id) {
     params.push({ type: "string/=", target: ["variable", ["template-tag", "section_id"]], value: query.section_id });
   }
   return params;

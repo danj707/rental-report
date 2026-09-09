@@ -7,7 +7,22 @@
    Class Roster
    Grain: 1 row per PARTICIPANT per SESSION (or SECTION)
    Includes ENROLLED + CANCELLED participants
-   Variables: {{org_id}} Text, {{start_date}} Date, {{end_date}} Date, {{section_name}} Text
+   Variables: {{org_id}} Text, {{start_date}} Date, {{end_date}} Date,
+              {{section_name}} Text, {{section_id}} Text
+
+   SECTION_ID SCOPES THE QUERY; SECTION_NAME NEVER COULD.
+   Both filters are optional and both stay. They answer different questions:
+     - section_id is the roster of ONE section. It is what a link from the
+       program schedule or the section drill-down carries, and it is exact.
+     - section_name is the report's own free-text search box, where a
+       partial name is the point ("yoga").
+   Measured platform-wide: 60% of sections share their name with another
+   section, so a name match merges separate RUNS of the same class. At
+   clarksville on 2026-09-08 the name 'Hatha Yoga' returns 82 people across
+   several runs; the one section a reader clicked has 24.
+   The id is cast (::uuid) rather than typed, so it works whether the tag is
+   Text or not — an API push regenerates every tag as Text, and this one then
+   needs no re-flip. Only the two DATE tags do.
    ============================================================ */
 SELECT
   u_part.rec_id                                                          AS "Rec ID",
@@ -148,6 +163,11 @@ WHERE
       (first_session.starts_at AT TIME ZONE (org.config #>> '{general,primaryTimezone}')::text)::date
     ) <= {{end_date}} ]]
   [[ AND section.name ILIKE '%' || {{section_name}} || '%' ]]
+  -- Exact, and deliberately ANDed with the name filter above rather than
+  -- replacing it: a link carries both, where the name is then a no-op subset
+  -- of the id's own section. Dropping out when absent is what keeps an
+  -- unscoped roster identical to the pre-push card.
+  [[ AND section.id = {{section_id}}::uuid ]]
 
 ORDER BY
   section.name,
