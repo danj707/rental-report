@@ -3686,6 +3686,106 @@ card · total · item comes straight out of `item_log_report` joined to
 `users.zip_code`, and it is CivicRec's layout line for line apart from the
 receipt number being ours rather than theirs.
 
+## BUILT: Joseph's four aquatics cards (2026-09-09)
+
+Dan: *"lets build them - give me the four SQL reports directly in MB and I'll
+wire them up with any needed filters."* Built in collection **3994**
+(El Segundo, CA) and added to dashboard **3136**.
+
+| # | card | id | link |
+|---|---|---|---|
+| 1 | Aquatic Lane Hours | 21682 | https://rec.metabaseapp.com/question/21682 |
+| 2 | Aquatics Classes by Month and Instructor | 21683 | https://rec.metabaseapp.com/question/21683 |
+| 3 | Aquatics Drop-In Admissions | 21684 | https://rec.metabaseapp.com/question/21684 |
+| 4 | Aquatic Passes and Memberships | 21685 | https://rec.metabaseapp.com/question/21685 |
+
+### THE FLIP TAX DID NOT APPLY, and the reason is reusable
+
+Every card registered **exactly THREE** template tags, not six — because these
+were **created**, not updated. The six-parameter duplication this file records
+comes from *re-saving* a card that already had `date/single` tags; a brand-new
+card has nothing to duplicate against.
+
+All three tags came back **`type: "text"`**, as always. **But every date bound is
+written `{{start_date}}::date` and `{{end_date}}::date + 1`, so the cards run
+correctly under a Text tag** — the cast that `sql/facility-permits.sql` and
+`gl-account-detail.sql` have always used. Flipping to Date is therefore
+**optional here and only needed to attach a Metabase DATE dashboard filter**,
+which can only bind to a Date-typed tag. Nothing is broken until then.
+
+### WHAT EACH CARD READS, after Dan's *"use the materialized items log"*
+
+| card | source | why |
+|---|---|---|
+| 3, 4 | `materialized.item_log_report` only | ✔ |
+| 4 | + `users` for the buyer's zip | the item log carries `customer_id` but no zip; `users` has **no `organization_id`**, so it is scoped through `customer_id` |
+| 2 | `item_log_report` (money) + `booking_report` (participants) + base `session`/`section_facilitator` | **no materialized table carries a session schedule or a facilitator** |
+| 1 | base `reservation`/`reservation_court`/`court` | **`booking_report` is enrollment-grain — no court, no lane, no reservation range.** There is no materialized lane data at all |
+
+### THE DECISIONS INSIDE THE CARDS worth not re-deriving
+
+- **Card 1 has NO money column, on purpose.** A reservation spanning two lanes
+  emits two rows, so revenue at lane grain double-counts. Facility money stays
+  in the Facility Rental report.
+- **Card 1's CASE tests `Court Reservation:%` FIRST.** Otherwise a lane called
+  *"Court Reservation: Lap Lane 3"* files as Lap Swim programming — the
+  ordering-is-load-bearing rule, third instance.
+- **Card 2 FULL OUTER JOINs sessions to money**, because the month a class RAN
+  and the month its MONEY MOVED are different months and both are real. An inner
+  join would silently drop a term paid for in advance.
+- **Cards 3 and 4 PARTITION the org's `product` items** — 3 is Lap Swim + Rec
+  Swim, 4 is everything else — so there is no overlap and no gap between them.
+- **Card 3 emits admissions INCLUDING `free` and revenue EXCLUDING it**, in two
+  columns, which is the whole point of that report.
+- **Card 4 emits residency BOTH ways** (buyer zip and the product name's own
+  Non-Resident label). They should agree; a row where they disagree is a finding.
+
+### VERIFIED, and the one thing that is NOT
+
+Every query was run against production with literal values before being saved —
+card 1: 862 rows / 8,338.5 lane hours / 6.9% unmapped; card 2: 226 rows / 781
+sessions / 1,171.4 h / 123 of 226 with an instructor; card 3: 24 rows / 1,380
+admissions (335 free) / $6,061 / **zero rows without a desk**; card 4: 118 rows /
+3,213 sold / $19,557 net / **0.2% with no buyer zip**. Card 21682 was then read
+back and its SQL is byte-intact.
+
+**NOT done: the saved cards have not been executed through the parameterised
+path.** `execute_question` refuses parameterised cards and no public link exists
+yet, so the substitution itself is unproven. That is the last check and it is one
+click for Dan. **Do not record these as signed off until a card returns rows in
+the UI.**
+
+### TWO PLACEMENT GAPS
+
+- **The MCP `update_dashboard` tool has no tab parameter**, so the four cards
+  landed on the dashboard's default tab rather than its `aquatics` tab. They have
+  to be dragged across by hand.
+- **`create_question` HTML-escapes the name.** Card 2 saved as
+  `Aquatics Classes by Month &amp;amp; Instructor` and had to be renamed — the
+  same `Sales &amp;amp; Mix` escaping trap already recorded in this file, one API
+  over. **Do not put an ampersand in a card name passed through this tool.**
+
+### WHERE THIS IS HEADED (Dan, same session)
+
+Two notes worth keeping, neither of them acted on yet:
+
+1. *"Civic (and many orgs) just want data reports, not a fancy visualization. So
+   maybe it's worth retroactively building these types of Reports joseph is
+   looking for into a more cross functional set of 'data only' reports into the
+   org dashboard?"*
+2. *"once i can validate that the data looks similar, we'll consider flipping
+   these into a new 'custom reports' section in the reporting project. main
+   reasons are mb exporting->pdf looks terrible, and if we manage the report we
+   can control what the export looks like."*
+
+**These four cards are already the right shape for that flip.** Each takes
+`org_id` + optional `start_date`/`end_date`, which is exactly what
+`buildMetabaseParams` sends, so becoming a feed behind a reporting-project page
+is a `SHARED_UUIDS` entry and a table renderer — not a rewrite. The export
+argument is the strongest one on the list: this repo already owns CSV with the
+BOM (`csvFromRows` + `saveTextViaPopup`) and PDF via Puppeteer, both of which
+beat Metabase's PDF.
+
 ## SCOPED: Joseph's four reports as METABASE CARDS (2026-09-09)
 
 Dan: *"I suspect it's just easier to build all of these as custom metabase
