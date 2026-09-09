@@ -3553,6 +3553,81 @@ Hourly · Instructor Fees · After Instructor Dues. Three separate gaps:
    El Segundo does not use — ask before building it, because without them report E
    collapses to per-session participants, revenue and hours, which is close.
 
+### THEIR REPORT → OUR REPORT, built side by side (2026-09-09)
+
+Dan: *"give me a direct comparison of what el seg wants and how we can provide
+it. fine if it's a report from rec itself, like the transactions/items log …
+Screenshots for both would be great, something like their report->our report."*
+Built into the same artifact. Two things made it possible and are worth keeping.
+
+**A LOCAL INSTANCE SERVING A DYNAMIC ORG'S REAL DATA.** El Segundo is not in
+`server.js` and its token could not be read from here, so the reporting project
+could not be screenshotted against it. It can be run locally instead: a scratch
+`DATA_DIR` holding an `orgs.json` with the org's real `orgId`
+(`8ae77057-…`) and a throwaway local token, plus a
+`report-settings.json` carrying the `aquaticsScope` that could not be read from
+production. **Shared card UUIDs are hardcoded in `server.js` and the Metabase
+public endpoint needs no key, so a local boot serves REAL production data.**
+
+- **Write `prewarm-state.json` with a fresh `lastCompletedAt` BEFORE booting.**
+  `PREWARM_STARTUP_SKIP_MS` is 6h and the boot logs
+  *"Startup pre-warm skipped"* — otherwise the boot fans out across ~28 orgs
+  against production Metabase, which is the self-inflicted load this file already
+  records twice.
+- **`readReportSettingsStore()` memoises on first read**, so the settings file has
+  to exist before the server starts, not after.
+- **Chromium cannot reach cdnjs** — only `curl` honours the sandbox proxy — so a
+  Puppeteer run must intercept off-host requests and serve them from
+  `node_modules/.cache/render-check`, exactly as `ci-check-render.js` does.
+  Without it every page renders blank, which reads as a code defect.
+- **Puppeteer's default `protocolTimeout` (180s) is shorter than a cold card.**
+  The lane-hours panel fetches card 17294 and the first run died on the protocol
+  timeout, not on the selector. `protocolTimeout: 900000`, and the second run is
+  fast because the feed cache is warm.
+
+**AND I HIT THE pkill SELF-MATCH TRAP FOR THE FOURTH TIME IN THIS FILE.** A
+`grep -F "node server.js"` inside the kill pipeline matched the pipeline's own
+command line; every later command exited 144 with no output. The recorded remedy
+is the right one and I did not follow it: assemble the needle at runtime, or
+find the process another way. Note `ss -lptn` could NOT see the listener in this
+container, so the reliable route is reading `/proc/*/cmdline` — and the cmdline
+is the bare **`node server.js`**, not the absolute path, so a matcher requiring
+`rental-report` in it finds nothing.
+
+**THE RESULT: the Aquatics tab on El Segundo's real August data** — 6,770 pool
+bookings, $40,834 charged, 69 active sites, and **8,016 lane hours across 67
+lanes** with the hour-coverage heat grid and a CSV link on every panel. Note
+8,016 against the **8,406.7** this file records from raw SQL: the tab counts
+`oeIsArrival` timed bookings only (5,485 of them) and excludes multi-day rows
+that carry no per-day hours, which is the documented behaviour rather than a
+discrepancy — but the two numbers must not be quoted interchangeably.
+
+### DESK COVERAGE ON DROP-IN IS 100% — the open question is closed
+
+The previous section left this as *"the measurement that decides whether report B
+works"*. Measured: **1,375 of 1,375 drop-in rows carry a `desk_location_name`**.
+So CivicRec's "Receipt Location" column reproduces exactly, and **report B needs
+nothing further**. The org-wide 72%-without-a-desk figure is online *program*
+registrations dragging the average down; counter-sold drop-in is unaffected.
+Generalise it: **a coverage figure taken over the whole org is not evidence about
+one report's row set.**
+
+### What each side actually looks like, with the figures used
+
+| | theirs (CivicRec, July) | ours (Rec, August) |
+|---|---|---|
+| A lane hours | 7,782 lane rows · 7,861.0 h · $16,634 | 8,016 h · 67 lanes · 5,485 timed bookings |
+| B drop-in | 4,956 admissions · $17,786.50 | item × desk × qty × free × revenue, 100% desk |
+| C Rec ID | 171 IDs · $2,040 | 2,371 IDs · $1,875, four tender columns |
+| D passes | $12,024 over four tender columns | 793 rows · $10,386 · zip on 791 (99.7%) |
+| E instructor | 567 participants · $7,924 · 24.59 h | card 17755, instructor column empty |
+
+**The passes comparison is the strongest single piece of evidence** that this is
+columns and not a rebuild: receipt · date · time · user · zip · cash · check ·
+card · total · item comes straight out of `item_log_report` joined to
+`users.zip_code`, and it is CivicRec's layout line for line apart from the
+receipt number being ours rather than theirs.
+
 ## Joseph's four aquatics reports, measured against live data (2026-09-09)
 
 Dan: *"revisit the el segundo reporting stuff, see how what we have compares to
