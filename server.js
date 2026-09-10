@@ -2030,9 +2030,18 @@ const CUSTOM_REPORTS = {
     // per household, which is the report itself rendered as a dropdown.
     // The toolbar's free-text search is what replaces them, and it reaches
     // every column at once instead of making the reader pick one first.
+    // ZIP CODE KEEPS ITS MENU (Dan, 2026-09-10: "that's probably helpful
+    // information"), and it is the one dimension here that is a VOCABULARY
+    // rather than a directory - a zip is a place, which is exactly the family
+    // he named as filterable. Measured over a September window: 81 distinct
+    // values against 882 rows, comfortably inside the cardinality cap.
+    // It is absent from this list rather than forced on, so the cap still
+    // governs it: over a long enough window El Segundo's zips will pass 100 and
+    // the menu will drop out on its own. That is the rule working, not a bug -
+    // a 300-entry zip list is the directory the cap exists to refuse.
     noFilter: [
       "Household Role", "Rec ID", "First Name", "Last Name", "Email", "Phone",
-      "Street Number", "Street Name", "City", "State", "Zip Code",
+      "Street Number", "Street Name", "City", "State",
       "Created At", "Date Added to Residency Group",
     ],
   },

@@ -16,7 +16,7 @@
 -- The dashboard's date filter arrives EMPTY, so the first screen Joseph saw was
 -- 2026-04 and 2026-06 — El Segundo's pre-cutover configuration and test data,
 -- named Block / Swimlane / Hold for Reservation / "Pool Reservation:", every
--- one of them falling to "Unmapped - assign a category". A report whose landing
+-- one of them falling to "Unknown - Add User". A report whose landing
 -- view is test data telling the reader to go categorise it is worse than one
 -- that opens empty. Measured: everything before 2026-08-01 is 33 reservations
 -- and 35.0 lane hours across 2026-04 / 06 / 07, against 5,808 reservations and
@@ -124,7 +124,7 @@ SELECT
                                     OR fr.name ILIKE '%WP%'           THEN 'Youth Water Polo'
     WHEN fr.name ILIKE '%ESHS%' OR fr.name ILIKE '%high school%'      THEN 'High Schools'
     WHEN fr.name ILIKE '%Loyola%' OR fr.name ILIKE '%LMU%'            THEN 'College / University'
-    ELSE 'Unmapped - assign a category'
+    ELSE 'Unknown - Add User'
   END                                                                 AS "Program Type",
   fr.name                                                             AS "Rental Name",
   fr.booking_type                                                     AS "Booking Type",

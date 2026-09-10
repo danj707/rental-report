@@ -657,7 +657,7 @@ test("Rental Name gets no filter MENU, and keeps its column", () => {
     "and it is still a COLUMN — one tick in the picker brings it back");
 });
 
-test("All Users keeps ONE filter, and it is the one with two answers", () => {
+test("All Users keeps the two filters that are places or answers, not people", () => {
   const reg = srv.slice(srv.indexOf("const CUSTOM_REPORTS = {"), srv.indexOf("\n};", srv.indexOf("const CUSTOM_REPORTS = {")));
   const users = reg.slice(reg.indexOf('"all-users"'));
   const nf = /noFilter: \[([\s\S]*?)\]/.exec(users);
@@ -666,11 +666,20 @@ test("All Users keeps ONE filter, and it is the one with two answers", () => {
   // Every per-PERSON dimension. A menu per email address is the report itself
   // rendered as a dropdown.
   ["Household Role", "Rec ID", "First Name", "Last Name", "Email", "Phone",
-   "Street Number", "Street Name", "City", "State", "Zip Code",
+   "Street Number", "Street Name", "City", "State",
    "Created At", "Date Added to Residency Group"].forEach(c =>
     assert.ok(listed.includes(c), c + " must lose its menu"));
   assert.ok(!listed.includes("Residency?"),
-    "Residency? is the one that stays — two values, and staff ask it");
+    "Residency? stays — two values, and staff ask it");
+  // ZIP CODE STAYS TOO, and it is not forced on: it is simply absent from the
+  // denylist, so the cardinality cap still governs it. A zip is a PLACE, which
+  // is the family Dan named as filterable, and El Segundo runs 81 distinct
+  // values over a September window against a cap of 100. Over a wide enough
+  // window it will pass the cap and the menu drops out on its own — that is
+  // the cap doing its job, not a regression, so this asserts only that nothing
+  // suppresses it by hand.
+  assert.ok(!listed.includes("Zip Code"),
+    "Zip Code is left to the cardinality cap rather than denied a menu");
 });
 
 test("a filter is offered for a VOCABULARY, never for a directory", () => {
