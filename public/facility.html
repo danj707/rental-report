@@ -482,6 +482,7 @@
     .col-phone   { width: 120px; white-space: normal !important; overflow: visible !important; text-overflow: clip !important; word-break: break-word; }
     .col-email   { width: 190px; font-size: 10.5px; white-space: normal !important; overflow: visible !important; text-overflow: clip !important; word-break: break-word; }
     .col-purpose { width: 160px; white-space: normal; word-break: break-word; }
+    .col-sitetype{ width: 84px; text-align: center; font-size: 10px; }
     .col-resident{ width: 72px; text-align: center; }
     .col-booktype{ width: 72px; text-align: center; font-size: 10px; }
     .col-total   { width: 62px; text-align: right; }
@@ -1143,6 +1144,82 @@
     .metrics-toggle:hover { background: #eee; }
     .metrics-toggle.active { background: #2c2c2c; color: #fff; border-color: #2c2c2c; }
     body.print-mode .metrics-toggle { display: none; }
+
+    /* ── Saved views ── (same markup and classes as the GL report and the
+       Class Roster. The DATE half is shared code in /saved-views.js, because a
+       resolver that disagrees with the server's getDateRange is silent; the
+       chrome is duplicated, because a dropdown that disagrees is visible.) */
+    .view-wrap { position: relative; display: flex; align-items: center; gap: 6px; }
+    .btn-view {
+      display: flex; align-items: center; gap: 7px; white-space: nowrap;
+      font-weight: 600; max-width: 260px;
+    }
+    .btn-view .vname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .btn-view .vcaret { font-size: 9px; color: #aaa; }
+    .btn-view .vdirty { font-size: 10px; color: #fbbf24; font-weight: 400; }
+    .btn-save-view { font-size: 11px; padding: 4px 10px; }
+    .btn-save-view:disabled { opacity: .45; cursor: default; }
+    .view-dropdown {
+      position: absolute; top: calc(100% + 6px); left: 0; z-index: 250;
+      background: #1e1e1e; border: 1px solid rgba(255,255,255,.15); border-radius: 6px;
+      min-width: 300px; max-width: 380px; max-height: 400px; overflow-y: auto;
+      box-shadow: 0 8px 24px rgba(0,0,0,.5); padding: 4px 0;
+    }
+    .view-row {
+      display: flex; align-items: flex-start; gap: 8px; padding: 7px 12px;
+      cursor: pointer; font-size: 12.5px; color: #ddd;
+    }
+    .view-row:hover { background: rgba(255,255,255,.07); }
+    .view-row .vtick { width: 12px; flex-shrink: 0; color: #4ade80; font-size: 11px; line-height: 1.5; }
+    .view-row .vmain { flex: 1; min-width: 0; }
+    .view-row .vsub {
+      display: block; font-size: 10.5px; color: #888; margin-top: 1px;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .view-row .vmenu {
+      flex-shrink: 0; color: #888; padding: 0 3px; font-size: 13px;
+      background: none; border: none; cursor: pointer; font-family: inherit;
+    }
+    .view-row .vmenu:hover { color: #fff; }
+    .view-actions {
+      display: flex; flex-direction: column; padding: 2px 0 6px 32px;
+      border-bottom: 1px solid rgba(255,255,255,.07);
+    }
+    .view-actions button {
+      text-align: left; background: none; border: none; color: #93c5fd;
+      font-size: 11.5px; padding: 4px 12px; cursor: pointer; font-family: inherit;
+    }
+    .view-actions button:hover { color: #fff; }
+    .view-actions button.danger { color: #f87171; }
+    .view-add {
+      border-top: 1px solid rgba(255,255,255,.1); margin-top: 4px; padding-top: 8px;
+      color: #4ade80; font-weight: 600;
+    }
+    .view-empty { padding: 10px 12px; font-size: 11.5px; color: #888; }
+    .view-warn {
+      background: #78350f; border: 1px solid #b45309; color: #fde68a;
+      border-radius: 6px; padding: 9px 14px; margin: 0 0 14px;
+      font-size: 12.5px; display: flex; align-items: flex-start; gap: 10px;
+    }
+    .view-warn .vwtext { flex: 1; }
+    .view-warn button {
+      background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.3);
+      color: #fff; border-radius: 4px; padding: 3px 9px; font-size: 11px;
+      cursor: pointer; font-family: inherit; white-space: nowrap;
+    }
+    .view-toast {
+      position: fixed; left: 20px; bottom: 20px; z-index: 9998;
+      background: #1e1e1e; border: 1px solid rgba(255,255,255,.2); border-radius: 8px;
+      box-shadow: 0 8px 30px rgba(0,0,0,.5); padding: 11px 15px;
+      display: flex; align-items: center; gap: 14px; font-size: 12.5px; color: #ddd;
+    }
+    .view-toast button {
+      background: none; border: none; color: #93c5fd; font-size: 12.5px;
+      font-weight: 600; cursor: pointer; font-family: inherit; padding: 0;
+    }
+    .view-toast button:hover { color: #fff; }
+    @media print { .view-wrap, .view-toast, .view-warn { display: none !important; } }
+    body.print-mode .view-wrap, body.print-mode .view-toast, body.print-mode .view-warn { display: none !important; }
   </style>
   <script>
     // ── Token auth (injected) ────────────────────────────────────────
@@ -1153,6 +1230,7 @@
       return url + (url.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(URL_TOKEN);
     }
   </script>
+<script src="/saved-views.js" defer></script>
 <script src="/report-refresh.js" defer></script>
 <script src="/open-pdf.js" defer></script>
   <script src="/report-loader.js"></script>
@@ -1189,6 +1267,11 @@ function getParams() {
     sites:         p.get('sites'),      // comma-separated, from share URL
     book_type:     p.get('book_type'),  // instant | managed | all
     addons:        p.get('addons'),     // comma-separated, from share/PDF URL
+    // PLURAL, because `site_type` above is the LEGACY single-value Metabase
+    // filter and still forwards to the card. This one is the client-side
+    // multi-select over rows already loaded, like locations/sites/addons.
+    site_types:    p.get('site_types'), // comma-separated, from share/PDF URL
+    sitetype:      p.get('sitetype'),   // 1|0 - whether the Site Type COLUMN shows
     pii:           p.get('pii'),        // phone,email - which PII columns to show
   };
 }
@@ -1492,6 +1575,111 @@ function LocationFilter({ allLocations, selectedLocations, onChange }) {
 }
 
 // ── Site Filter Dropdown component ───────────────────────────────────
+/* ── SITE TYPE ────────────────────────────────────────────────────────────
+   Card 17294 has emitted "Site Type" all along and `normalizeRow` has mapped
+   it all along; NO surface read it. Fifth instance of the mapped-and-rendered-
+   nowhere pattern in this repo, so the render case keys on the CELL.
+
+   THE UNTYPED ROWS ARE THE WHOLE REASON THERE IS A KEY FUNCTION.
+   `court.type` is NULL on 40,718 reservations across 59 orgs in the last year
+   — the fourth largest bucket, ahead of pool. The mapper turns that into '',
+   so a naive `.filter(Boolean)` over the options would leave those rows with
+   no tickable option, and the funnel would then drop every one of them the
+   moment anybody narrows the filter, with nothing on screen saying so. That is
+   the LOC_NONE lesson from the Programs location filter, one report over.
+   So untyped gets its OWN option, and `siteTypeKey` is the single definition
+   read by the options builder, the funnel, the cell and the spreadsheet —
+   three copies is how a checkbox stops matching the word beside it.
+
+   Measured 2026-09-10 over 365 days of live reservations: 12 real types plus
+   NULL; 126 orgs have facility traffic and 26 of them run a single type.
+   court 381,021 · room 115,355 · field 68,697 · (none) 40,718 · pool 28,472 ·
+   gym 22,352 · outdoor-event-space 15,325 · picnic-table 11,844 · other 7,862 ·
+   rink 1,930 · bounce-house 1,056 · golf 668 · campsite 654 */
+const SITE_TYPE_NONE = '(no type)';
+
+function siteTypeKey(r) {
+  const v = String(r && r.siteType != null ? r.siteType : '').trim();
+  return v || SITE_TYPE_NONE;
+}
+
+/* NO LOOKUP TABLE, deliberately. Every one of the twelve live types title-cases
+   correctly ('outdoor-event-space' -> Outdoor Event Space, 'picnic-table' ->
+   Picnic Table), so a map would agree with this fallback on every input it has
+   and go stale the day a thirteenth type ships. Note 'other' is a REAL type
+   with 7,862 reservations and is not the same fact as no type at all. */
+function siteTypeLabel(t) {
+  if (t === SITE_TYPE_NONE) return 'No type on file';
+  const v = String(t == null ? '' : t).trim();
+  if (!v) return 'No type on file';
+  return v.split(/[-_\s]+/).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+}
+
+/* The site-type picker. Deliberately NOT SiteFilter with different props: that
+   one carries a search box and a "12/340" badge because an org can have
+   hundreds of sites, where the most any org runs is twelve types. A search box
+   over twelve checkboxes is furniture. It reuses SiteFilter's own CSS classes,
+   so the two read as one control family rather than two features. */
+function SiteTypeFilter({ allTypes, selected, onChange }) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const away = e => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false); };
+    const esc  = e => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', away);
+    document.addEventListener('keydown', esc);
+    return () => { document.removeEventListener('mousedown', away); document.removeEventListener('keydown', esc); };
+  }, [open]);
+  // ONE TYPE IS NOT A FILTER. 26 of the 126 orgs with facility traffic in the
+  // last year run a single site type, and a control that can only return
+  // everything or nothing is the dead end this repo keeps writing down.
+  if (!allTypes || allTypes.length < 2) return null;
+  const sel = selected || new Set();
+  const allSelected  = sel.size === allTypes.length;
+  const noneSelected = sel.size === 0;
+  const badgeCount   = allSelected ? null : sel.size;
+  function toggle(t) {
+    const next = new Set(sel);
+    next.has(t) ? next.delete(t) : next.add(t);
+    onChange(next);
+  }
+  return (
+    <div className="loc-filter-wrap" ref={wrapRef} data-sitetype-filter>
+      <button
+        className="btn-loc-filter"
+        data-sitetype-btn
+        onClick={() => setOpen(o => !o)}
+        style={!allSelected ? { borderColor: '#f59e0b', color: '#fde68a' } : {}}
+      >
+        🏷️ Type
+        {badgeCount !== null && (
+          <span className="badge">{badgeCount}/{allTypes.length}</span>
+        )}
+      </button>
+      {open && (
+        <div className="loc-dropdown" data-sitetype-menu>
+          <div className="loc-dropdown-header">
+            <span>Filter Site Types</span>
+            <div className="loc-dropdown-header-actions">
+              <button onClick={() => onChange(new Set(allTypes))} disabled={allSelected}>All</button>
+              <button onClick={() => onChange(new Set())} disabled={noneSelected}>None</button>
+            </div>
+          </div>
+          <div className="loc-dropdown-list">
+            {allTypes.map(t => (
+              <label key={t} className="loc-item" data-sitetype-opt={t}>
+                <input type="checkbox" checked={sel.has(t)} onChange={() => toggle(t)} />
+                <span>{siteTypeLabel(t)}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SiteFilter({ allSites, selectedSites, onChange }) {
   const [open, setOpen]     = useState(false);
   const [search, setSearch] = useState('');
@@ -1933,6 +2121,110 @@ function renderNotes(text) {
   return s;
 }
 
+// ── Saved views ──────────────────────────────────────────────────────────────
+// A saved view is a NAME + a validated filter query string + a date intent —
+// never a snapshot of rows. Applying one sets the same filter state a person
+// could set by hand, so the PDF, print, Excel and email paths inherit it
+// without needing to know saved views exist.
+//
+// WHAT A RENTAL-SCHEDULE VIEW CARRIES: the five toolbar filters, and only
+// those. The column toggles are NOT saved. They are display state, they
+// already persist per browser, and a shared view that overwrote them would
+// take a colleague's chosen columns away the moment they opened somebody
+// else's filter — the roster's rule, and it is sharper here because one of
+// those columns is contact details.
+//
+// Note `site_types` (the site-type FILTER) is carried while `sitetype` (the
+// site-type COLUMN) is not. Same line, one field apart.
+const LS_LAST_VIEW = 'facility_saved_view_last_v1_';
+
+// The date half lives in /saved-views.js, shared with the GL report and the
+// Class Roster: ONE mirror of the server's getDateRange(), because a resolver
+// that disagrees with the server is silent — a view named "Next 7 days" would
+// open on one week on screen and report another in the emailed PDF. Thin
+// wrappers so the reference resolves at CALL time; a deferred script has loaded
+// by the time Babel runs this block, but reading it at module scope would make
+// that an assumption rather than a fact.
+function resolveSavedRange(token) { return RecSavedViews.resolveSavedRange(token); }
+function fmtShortDate(iso)        { return RecSavedViews.fmtShortDate(iso); }
+function viewDateLabel(v)         { return RecSavedViews.viewDateLabel(v); }
+
+// Which ranges THIS report offers is the server's call — the rental schedule
+// reads FORWARD, a GL rollup only looks backwards — and it arrives as
+// ORG_CONFIG.savedViewRanges. A hardcoded list here is how gl.html came to
+// offer "Today", which the server has always refused to store.
+function savedViewRanges() {
+  const r = (window.ORG_CONFIG || {}).savedViewRanges;
+  return Array.isArray(r) ? r : [];
+}
+// The dialog's pre-selected range, taken from the offered list rather than
+// named here, so the default can never be a token this report does not offer.
+function defaultSavedRange() {
+  const r = savedViewRanges();
+  return r.length ? r[0][0] : '';
+}
+
+// The URL params a view owns. Mirrors SAVED_VIEW_PARAMS.facility in server.js,
+// IN THAT ORDER — cleanViewParams emits in the server's order and
+// currentFilterParams builds in this one, and the "edited" marker is a string
+// comparison between the two. A different order makes every freshly-saved view
+// read as dirty the instant it is applied.
+const FACILITY_VIEW_PARAMS = ['locations', 'sites', 'site_types', 'book_type', 'addons'];
+
+function parseViewParams(params) {
+  const p = new URLSearchParams(params || '');
+  const csv = k => { const v = p.get(k); return v ? v.split(',').map(x => x.trim()).filter(Boolean) : null; };
+  return { locations: csv('locations'), sites: csv('sites'), siteTypes: csv('site_types'),
+           bookType: p.get('book_type') || '', addons: csv('addons') };
+}
+
+const FAC_BOOK_TYPE_LABELS = { instant: 'Instant book only', managed: 'Staff-booked only' };
+
+function viewFilterSummary(v) {
+  const f = parseViewParams(v.params);
+  const bits = [];
+  const many = (list, one, plural) =>
+    list.length === 1 ? one(list[0]) : list.length + ' ' + plural;
+  if (f.locations)  bits.push(many(f.locations,  x => x, 'locations'));
+  if (f.sites)      bits.push(many(f.sites,      x => x, 'sites'));
+  if (f.siteTypes)  bits.push(many(f.siteTypes,  x => siteTypeLabel(x), 'site types'));
+  // `all` is the ABSENCE of a booking-type filter, so naming it would read as a
+  // filter where there is none and every unfiltered view would say "All".
+  if (f.bookType && f.bookType !== 'all') bits.push(FAC_BOOK_TYPE_LABELS[f.bookType] || f.bookType);
+  if (f.addons)     bits.push(many(f.addons,     x => x, 'add-ons'));
+  return bits.length ? bits.join(' · ') : 'no filters';
+}
+
+// Resolve ONE dimension of a view against what this window actually offers.
+// Pure, and at module scope, so a spec can RUN it — a regex over a reconciler
+// passes on an inverted comparison.
+//
+// TWO BRANCHES, and both are load-bearing:
+//
+//   - A view that names NOTHING for a dimension RESETS that dimension to
+//     everything. A view that could only narrow could never widen, so opening
+//     an unfiltered view after a filtered one would silently keep the old
+//     narrowing — the same reason gl.html sets its refund mode unconditionally.
+//   - A view naming only values this window has no rows for falls back to
+//     EVERYTHING rather than blanking the report. The caller says so on screen;
+//     it must not be silent, or a stale view reads as "this week is empty".
+function facViewSelection(available, requested) {
+  const all = Array.isArray(available) ? available : [];
+  if (!requested) return new Set(all);
+  const want = new Set(requested);
+  const valid = all.filter(v => want.has(v));
+  return new Set(valid.length ? valid : all);
+}
+
+// Whether a dimension of a view is unusable in this window — the input to the
+// warning above. Kept separate from facViewSelection so the message can name
+// which dimensions were dropped rather than saying something vague.
+function facViewMisses(available, requested) {
+  if (!requested) return [];
+  const have = new Set(Array.isArray(available) ? available : []);
+  return requested.filter(v => !have.has(v));
+}
+
 function App() {
   const params   = useMemo(() => getParams(), []);
   const defaults = useMemo(() => {
@@ -2061,6 +2353,21 @@ function App() {
   const [showLighting, setShowLighting] = useState(() => {
     try { return localStorage.getItem('col_lighting') === 'true'; } catch { return false; }
   });
+  // OPT-IN: this column is new to a report every org already prints, and
+  // defaulting it ON would widen all of their PDFs without anyone asking.
+  //
+  // URL FIRST, then this browser, then off — the piiInitial rule, and it is the
+  // reason the column can reach the PDF at all. The server-rendered PDF is this
+  // page under ?_print=1 in a browser with an EMPTY localStorage, so a column
+  // kept only in storage has no channel to it: the reader ticks Site Type, hits
+  // PDF, and the column is silently absent. Every other opt-in column on this
+  // page still has that gap; `pii` is the one that was fixed, and this follows
+  // it rather than widening the fix into columns nobody asked about.
+  const [showSiteType, setShowSiteType] = useState(() => {
+    const fromUrl = new URLSearchParams(window.location.search).get('sitetype');
+    if (fromUrl !== null) return fromUrl === '1';
+    try { return localStorage.getItem('col_sitetype') === 'true'; } catch { return false; }
+  });
   const [filterLighting, setFilterLighting] = useState(false);
   const [bookTypeFilter, setBookTypeFilter] = useState(params.book_type || 'all');
   const [showMetrics, setShowMetrics] = useState(() => {
@@ -2120,6 +2427,12 @@ function App() {
     try { localStorage.setItem('col_email', showEmail); } catch {}
   }, [showEmail, params.pii]);
   useEffect(() => { try { localStorage.setItem('col_link',      showLink);      } catch {} }, [showLink]);
+  // Gated like `pii`: opening somebody's shared link, or the print page, must
+  // not quietly rewrite this reader's own default.
+  useEffect(() => {
+    if (params.sitetype != null) return;
+    try { localStorage.setItem('col_sitetype', showSiteType); } catch {}
+  }, [showSiteType, params.sitetype]);
   useEffect(() => { try { localStorage.setItem('col_resident',  showResident);  } catch {} }, [showResident]);
   useEffect(() => { try { localStorage.setItem('col_booktype',  showBookType);  } catch {} }, [showBookType]);
   useEffect(() => { try { localStorage.setItem('col_lighting',   showLighting);   } catch {} }, [showLighting]);
@@ -2135,6 +2448,22 @@ function App() {
   const [selectedLocations, setSelectedLocations] = useState(null);
   const [selectedSites,     setSelectedSites]     = useState(null);
   const [selectedAddOns,    setSelectedAddOns]    = useState(null);
+  const [selectedSiteTypes, setSelectedSiteTypes] = useState(null);
+  const [allSiteTypes,      setAllSiteTypes]      = useState([]);
+
+  // ── Saved views ──────────────────────────────────────────────────
+  // Shared per org, like the Fast Track pins: auth is one token per org, so
+  // there is no per-user list to build yet.
+  const [views, setViews]               = useState([]);
+  const [activeViewId, setActiveViewId] = useState(null);
+  const [pickerOpen, setPickerOpen]     = useState(false);
+  const [rowMenu, setRowMenu]           = useState(null);   // id of the view whose ⋯ menu is open
+  const [saveForm, setSaveForm]         = useState(null);   // open save/rename dialog
+  const [viewBusy, setViewBusy]         = useState(false);
+  const [undoView, setUndoView]         = useState(null);   // { id, name } behind the Undo toast
+  const [viewWarn, setViewWarn]         = useState(null);   // a view named filters this window has no rows for
+  const [viewsRestored, setViewsRestored] = useState(false);
+  const pickerRef = useRef(null);
 
   // ── AI Insights state ────────────────────────────────────────────
 
@@ -2154,14 +2483,11 @@ function App() {
     }
     if (bookTypeFilter !== 'all') activeFilters.push('Booking: ' + bookTypeFilter);
 
-    function buildFilterParams() {
-      const p = new URLSearchParams();
-      if (selectedLocations && selectedLocations.size < allLocations.length) p.set('locations', [...selectedLocations].join(','));
-      if (selectedSites && selectedSites.size < allSites.length) p.set('sites', [...selectedSites].join(','));
-      if (selectedAddOns && selectedAddOns.size < allAddOns.length) p.set('addons', [...selectedAddOns].join(','));
-      if (bookTypeFilter !== 'all') p.set('book_type', bookTypeFilter);
-      return p.toString();
-    }
+    // ONE definition of "what is filtered right now", shared with the saved
+    // views. This used to build its own string and had already drifted: it
+    // predated the site-type filter and omitted it, so a subscriber's emailed
+    // PDF carried site types the reader had excluded from the screen.
+    function buildFilterParams() { return currentFilterParams; }
 
     // Send Test and Subscribe build ONE payload. If they built two, the test
     // email could be scoped differently from the subscription it is meant to
@@ -2326,13 +2652,19 @@ function App() {
       if (selectedSites)     { const a = [...selectedSites];     if (a.length) qs.set('sites',     a.join(',')); }
       if (bookTypeFilter && bookTypeFilter !== 'all') qs.set('book_type', bookTypeFilter);
       if (selectedAddOns)    { const a = [...selectedAddOns];    if (a.length) qs.set('addons',    a.join(',')); }
+      // Same condition and same empty-is-real rule as downloadPdf, so Copy Link
+      // and PDF cannot disagree about what the reader was looking at.
+      if (selectedSiteTypes && allSiteTypes.length > 0 && selectedSiteTypes.size < allSiteTypes.length) {
+        qs.set('site_types', [...selectedSiteTypes].join(','));
+      }
+      qs.set('sitetype', showSiteType ? '1' : '0');
       qs.set('pii', piiParam(showPhone, showEmail));
       if (URL_TOKEN) qs.set('token', URL_TOKEN);
       return `${window.location.pathname}?${qs.toString()}`;
     };
     return () => { try { delete window.recShareLink; } catch (e) { window.recShareLink = undefined; } };
   }, [loadedStart, loadedEnd, startDate, endDate, selectedLocations, selectedSites, selectedAddOns,
-      showPhone, showEmail]);
+      selectedSiteTypes, allSiteTypes, bookTypeFilter, showSiteType, showPhone, showEmail]);
 
   useEffect(() => {
     if (params._print === '1') document.body.classList.add('print-mode');
@@ -2421,6 +2753,39 @@ function App() {
           const sites = [...new Set(normalized.map(r => r.site).filter(Boolean))].sort();
           const next = new Set(prev);
           sites.forEach(s => { if (!next.has(s)) next.add(s); });
+          return next;
+        });
+
+        // Accumulate every site type seen, and never drop a historical one —
+        // the same rule as locations and sites above. Untyped sites carry the
+        // SITE_TYPE_NONE key, so they are tickable rather than unreachable.
+        {
+          const types = [...new Set(normalized.map(siteTypeKey))].sort();
+          setAllSiteTypes(prev => {
+            const merged = new Set(prev);
+            types.forEach(t => merged.add(t));
+            return [...merged].sort();
+          });
+        }
+
+        setSelectedSiteTypes(prev => {
+          const types = [...new Set(normalized.map(siteTypeKey))].sort();
+          if (prev === null) {
+            // PRESENCE, not truthiness. An EMPTY `site_types` is a real answer
+            // — the reader ticked None — and reading it as "no opinion" is how
+            // a PDF comes back carrying every type while the screen showed no
+            // rows. A parameter naming only types this window does not have is
+            // a different thing: that is a stale link, and blanking the report
+            // over it is the confusing way to say so, so it falls back to all.
+            if (params.site_types != null) {
+              if (params.site_types === '') return new Set();
+              const shared = params.site_types.split(',').map(t => t.trim()).filter(t => types.includes(t));
+              if (shared.length > 0) return new Set(shared);
+            }
+            return new Set(types);
+          }
+          const next = new Set(prev);
+          types.forEach(t => { if (!next.has(t)) next.add(t); });
           return next;
         });
 
@@ -2523,6 +2888,278 @@ function App() {
     return [...items].sort();
   }, [rows]);
 
+  // ── Saved views: what a view STORES, and what it does when applied ─────────
+  // ONE definition of "what is filtered right now", read by the view machinery
+  // AND by the email subscription. Two copies is how they drift, and they had:
+  // the subscription's own builder predated the site-type filter and omitted
+  // it, so an emailed PDF carried site types the reader had excluded.
+  //
+  // The tests are the FUNNEL'S own (`size < all.length`), so a view stores
+  // exactly what actually narrows the report. Anything else and an unfiltered
+  // view reads back as filtered — "locations=" with every location in it.
+  //
+  // KEY ORDER MIRRORS SAVED_VIEW_PARAMS.facility in server.js. cleanViewParams
+  // emits in the server's order and this builds in the same one, because the
+  // "edited" marker is a string comparison between the two: a different order
+  // makes every freshly-saved view read as dirty the instant it is applied.
+  const currentFilterParams = useMemo(() => {
+    const qs = new URLSearchParams();
+    if (selectedLocations && allLocations.length > 0 && selectedLocations.size < allLocations.length) {
+      qs.set('locations', [...selectedLocations].join(','));
+    }
+    if (selectedSites && allSites.length > 0 && selectedSites.size < allSites.length) {
+      qs.set('sites', [...selectedSites].join(','));
+    }
+    if (selectedSiteTypes && allSiteTypes.length > 0 && selectedSiteTypes.size < allSiteTypes.length) {
+      qs.set('site_types', [...selectedSiteTypes].join(','));
+    }
+    if (bookTypeFilter && bookTypeFilter !== 'all') qs.set('book_type', bookTypeFilter);
+    if (selectedAddOns && allAddOns.length > 0 && selectedAddOns.size < allAddOns.length) {
+      qs.set('addons', [...selectedAddOns].join(','));
+    }
+    return qs.toString();
+  }, [selectedLocations, allLocations, selectedSites, allSites, selectedSiteTypes,
+      allSiteTypes, bookTypeFilter, selectedAddOns, allAddOns]);
+
+  const activeView = useMemo(
+    () => views.find(v => v.id === activeViewId) || null,
+    [views, activeViewId]
+  );
+
+  // "Edited" = the filters, or the range for a view that carries one, have
+  // moved off what the view stores. The column toggles are deliberately
+  // excluded: ticking Site Type must not light up Save.
+  const viewDirty = useMemo(() => {
+    if (!activeView) return false;
+    if (activeView.params !== currentFilterParams) return true;
+    if (activeView.dateMode === 'fixed') {
+      return startDate !== activeView.fixedStart || endDate !== activeView.fixedEnd;
+    }
+    if (activeView.dateMode === 'relative') {
+      const r = resolveSavedRange(activeView.relativeRange);
+      return startDate !== r.start || endDate !== r.end;
+    }
+    return false;
+  }, [activeView, currentFilterParams, startDate, endDate]);
+
+  const viewsUrl = suffix => withToken('/' + orgSlug + '/facility/api/views' + (suffix || ''));
+
+  const loadViews = useCallback(() => {
+    return fetch(viewsUrl())
+      .then(r => (r.ok ? r.json() : null))
+      .then(j => { if (j) setViews(j.views || []); return j; })
+      .catch(() => null);
+  }, [orgSlug]);
+
+  // Put the view's filters on screen. `announce` is false for the automatic
+  // restore on page load — that is not a user action worth logging.
+  function applyView(v, announce) {
+    const f = parseViewParams(v.params);
+    setSelectedLocations(facViewSelection(allLocations, f.locations));
+    setSelectedSites(facViewSelection(allSites, f.sites));
+    setSelectedSiteTypes(facViewSelection(allSiteTypes, f.siteTypes));
+    setSelectedAddOns(facViewSelection(allAddOns, f.addons));
+    // Unconditional, like the multi-selects above: a view that could only turn
+    // a filter ON could never turn it off, so opening an unfiltered view after
+    // an instant-book one would silently keep the old narrowing.
+    setBookTypeFilter(f.bookType || 'all');
+
+    // EXCLUDED, NEVER HIDDEN. A view naming values this window has no rows for
+    // falls back to everything rather than blanking the report — and then says
+    // so, because a stale view showing every row reads as "the filter broke"
+    // and a stale view showing none reads as "this week is empty".
+    const missed = []
+      .concat(facViewMisses(allLocations, f.locations))
+      .concat(facViewMisses(allSites, f.sites))
+      .concat(facViewMisses(allSiteTypes, f.siteTypes).map(siteTypeLabel))
+      .concat(facViewMisses(allAddOns, f.addons));
+    setViewWarn(missed.length
+      ? '“' + v.name + '” names ' + (missed.length === 1 ? '' : missed.length + ' things ')
+        + 'this window has no bookings for' + (missed.length === 1 ? ' (' + missed[0] + ')' : '')
+        + ', so those filters were left off.'
+      : null);
+
+    setActiveViewId(v.id);
+    try { localStorage.setItem(LS_LAST_VIEW + orgSlug, v.id); } catch (_) {}
+
+    // Dates: a view either pins them, resolves a relative range, or leaves
+    // whatever range you are already on entirely alone. Every filter above is
+    // client-side over rows already loaded, so the RANGE is the only thing that
+    // needs the network — the same split as the GL report.
+    let range = null;
+    if (v.dateMode === 'fixed')    range = { start: v.fixedStart, end: v.fixedEnd };
+    if (v.dateMode === 'relative') range = resolveSavedRange(v.relativeRange);
+    if (range) {
+      setStartDate(range.start);
+      setEndDate(range.end);
+      if (range.start !== loadedStart || range.end !== loadedEnd) fetchData(range.start, range.end);
+    }
+
+    // Keep the URL honest: it reproduces the filters AND names the view.
+    try {
+      const qs = new URLSearchParams(window.location.search);
+      FACILITY_VIEW_PARAMS.forEach(k => qs.delete(k));
+      new URLSearchParams(v.params).forEach((val, k) => qs.set(k, val));
+      qs.set('view', v.id);
+      if (range) { qs.set('start_date', range.start); qs.set('end_date', range.end); }
+      window.history.replaceState(null, '', window.location.pathname + '?' + qs);
+    } catch (_) {}
+
+    if (announce) logClientEvent('view-apply', '&view=' + encodeURIComponent(v.name.slice(0, 60)));
+    setPickerOpen(false);
+    setRowMenu(null);
+  }
+
+  // "Default view" is the absence of a saved view: no filters at all. The date
+  // range is deliberately left alone — clearing a filter is not a request to
+  // jump back to the default week.
+  function clearView() {
+    setSelectedLocations(new Set(allLocations));
+    setSelectedSites(new Set(allSites));
+    setSelectedSiteTypes(new Set(allSiteTypes));
+    setSelectedAddOns(new Set(allAddOns));
+    setBookTypeFilter('all');
+    setActiveViewId(null);
+    setViewWarn(null);
+    try { localStorage.removeItem(LS_LAST_VIEW + orgSlug); } catch (_) {}
+    try {
+      const qs = new URLSearchParams(window.location.search);
+      FACILITY_VIEW_PARAMS.concat(['view']).forEach(k => qs.delete(k));
+      const q = qs.toString();
+      window.history.replaceState(null, '', window.location.pathname + (q ? '?' + q : ''));
+    } catch (_) {}
+    setPickerOpen(false);
+    setRowMenu(null);
+  }
+
+  async function submitView(form) {
+    setViewBusy(true);
+    try {
+      const payload = {
+        name: form.name.trim(),
+        dateMode: form.dateMode,
+        relativeRange: form.dateMode === 'relative' ? form.relativeRange : null,
+        fixedStart: form.dateMode === 'fixed' ? startDate : null,
+        fixedEnd:   form.dateMode === 'fixed' ? endDate   : null,
+      };
+      if (!form.renameOnly) payload.params = currentFilterParams;
+      const isPatch = !!form.targetId;
+      if (!isPatch) payload.replace = !!form.replace;
+      const resp = await fetch(viewsUrl(isPatch ? '/' + form.targetId : ''), {
+        method: isPatch ? 'PATCH' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (resp.status === 409 && data.existingId) {
+        // Same name, different view: ask before overwriting a colleague's.
+        if (!window.confirm('A view named "' + payload.name + '" already exists. Replace it?')) return;
+        return submitView(Object.assign({}, form, { replace: true }));
+      }
+      if (!resp.ok) { alert(data.error || 'Could not save the view.'); return; }
+      await loadViews();
+      setActiveViewId(data.view.id);
+      try { localStorage.setItem(LS_LAST_VIEW + orgSlug, data.view.id); } catch (_) {}
+      setSaveForm(null);
+    } catch (e) {
+      alert('Could not save the view: ' + e.message);
+    } finally {
+      setViewBusy(false);
+    }
+  }
+
+  // Soft delete on the server, so the Undo below is a restore rather than a
+  // re-save. The list is shared by the whole org — a mis-click has to be cheap.
+  async function deleteView(v) {
+    setRowMenu(null);
+    try {
+      const resp = await fetch(viewsUrl('/' + v.id), { method: 'DELETE', headers: { 'x-token': URL_TOKEN || '' } });
+      if (!resp.ok) { const d = await resp.json().catch(() => ({})); alert(d.error || 'Could not delete the view.'); return; }
+      if (activeViewId === v.id) setActiveViewId(null);
+      await loadViews();
+      setUndoView({ id: v.id, name: v.name });
+    } catch (e) {
+      alert('Could not delete the view: ' + e.message);
+    }
+  }
+
+  async function restoreView(id) {
+    setUndoView(null);
+    try {
+      const resp = await fetch(viewsUrl('/' + id), {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ restore: true }),
+      });
+      const d = await resp.json().catch(() => ({}));
+      if (!resp.ok) { alert(d.error || 'Could not restore the view.'); return; }
+      await loadViews();
+    } catch (e) {
+      alert('Could not restore the view: ' + e.message);
+    }
+  }
+
+  // The LIST loads at mount, so the picker is populated while the report is
+  // still fetching.
+  useEffect(() => { if (!isPrint) loadViews(); }, []);
+
+  // APPLYING waits for the feed, and that is not a nicety. Every filter here is
+  // a set of values taken FROM the rows — locations, sites, types, add-ons — so
+  // before the first response there is nothing to intersect a view against, and
+  // facViewSelection would correctly fall back to "everything" and leave the
+  // view looking as though it had done nothing. Same lesson as the roster's
+  // `loaded` argument: a feed that has not answered is not an empty answer.
+  //
+  // The print page is skipped entirely — generatePdf forwards the FILTERS, not
+  // the view id, so the PDF never needs to resolve one.
+  useEffect(() => {
+    if (isPrint || viewsRestored || !rows) return;
+    setViewsRestored(true);
+    loadViews().then(j => {
+      if (!j || !Array.isArray(j.views)) return;
+      const urlQs = new URLSearchParams(window.location.search);
+      const named = urlQs.get('view');
+      const hit = named && j.views.find(v => v.id === named);
+      if (hit) { applyView(hit, false); return; }
+      // A URL carrying its own filters is a deliberate link; it must not be
+      // overridden by whatever this browser last looked at.
+      if (FACILITY_VIEW_PARAMS.some(k => urlQs.get(k))) return;
+      let lastId = null;
+      try { lastId = localStorage.getItem(LS_LAST_VIEW + orgSlug); } catch (_) {}
+      const last = lastId && j.views.find(v => v.id === lastId);
+      if (last) applyView(last, false);
+    });
+  }, [rows, viewsRestored]);
+
+  // The Undo window is short on purpose — it is an undo, not a trash can.
+  useEffect(() => {
+    if (!undoView) return;
+    const t = setTimeout(() => setUndoView(null), 10000);
+    return () => clearTimeout(t);
+  }, [undoView]);
+
+  useEffect(() => {
+    if (!pickerOpen) return;
+    function onDown(e) {
+      if (pickerRef.current && !pickerRef.current.contains(e.target)) { setPickerOpen(false); setRowMenu(null); }
+    }
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [pickerOpen]);
+
+  // Something is worth saving when a filter is active, or when the applied view
+  // has drifted off what it stores. Otherwise Save stays greyed out.
+  const canSaveView = !!currentFilterParams || (activeView && viewDirty);
+
+  function openSaveDialog() {
+    setPickerOpen(false);
+    setRowMenu(null);
+    setSaveForm(activeView && viewDirty
+      ? { name: activeView.name, targetId: activeView.id, dateMode: activeView.dateMode,
+          relativeRange: activeView.relativeRange || defaultSavedRange() }
+      : { name: '', targetId: null, dateMode: 'current', relativeRange: defaultSavedRange() });
+  }
+
   const hasLighting = useMemo(() => rows && rows.some(r => r.lighting === 'Yes'), [rows]);
 
   // The column only exists where forms do, so an org that collects none never
@@ -2552,6 +3189,9 @@ function App() {
     if (selectedSites && selectedSites.size < allSites.length) {
       result = result.filter(r => selectedSites.has(r.site));
     }
+    if (selectedSiteTypes && allSiteTypes.length > 0 && selectedSiteTypes.size < allSiteTypes.length) {
+      result = result.filter(r => selectedSiteTypes.has(siteTypeKey(r)));
+    }
     if (bookTypeFilter !== 'all') {
       result = result.filter(r => (r.bookingType || '').trim().toLowerCase() === bookTypeFilter);
     }
@@ -2565,7 +3205,8 @@ function App() {
       result = result.filter(r => r.lighting === 'Yes');
     }
     return result;
-  }, [rows, selectedLocations, allLocations, selectedSites, allSites, bookTypeFilter, selectedAddOns, allAddOns, filterLighting]);
+  }, [rows, selectedLocations, allLocations, selectedSites, allSites, selectedSiteTypes, allSiteTypes,
+      bookTypeFilter, selectedAddOns, allAddOns, filterLighting]);
 
   const grouped = useMemo(() => {
     if (!filteredRows) return null;
@@ -2627,6 +3268,9 @@ function App() {
     // these back into selectedLocations/selectedSites on load.
     if (selectedLocations && selectedLocations.size < allLocations.length) { qs.set('locations', [...selectedLocations].join(',')); }
     if (selectedSites && selectedSites.size < allSites.length) { qs.set('sites', [...selectedSites].join(',')); }
+    if (selectedSiteTypes && allSiteTypes.length > 0 && selectedSiteTypes.size < allSiteTypes.length) {
+      qs.set('site_types', [...selectedSiteTypes].join(','));
+    }
     if (bookTypeFilter && bookTypeFilter !== 'all') qs.set('book_type', bookTypeFilter);
     if (selectedAddOns)    { const a = [...selectedAddOns];    if (a.length) qs.set('addons',    a.join(',')); }
     // ALWAYS SET, even when neither is on. The print page has no localStorage,
@@ -2634,6 +3278,11 @@ function App() {
     // explicit empty value is therefore the ONLY way a reader who switched both
     // columns off gets a PDF that agrees with their screen.
     qs.set('pii', piiParam(showPhone, showEmail));
+    // Same reason, and it is the ONLY channel the Site Type column has: the
+    // print page's localStorage is empty, so an omitted parameter resolves to
+    // the default (off) and a reader who ticked the column gets a PDF without
+    // it. '0' is a real answer here, not an absent one.
+    qs.set('sitetype', showSiteType ? '1' : '0');
 
     const pathParts = window.location.pathname.replace(/\/$/, '').split('/');
     const pdfBase = pathParts.length >= 3
@@ -2726,6 +3375,7 @@ function App() {
     if (showAddons) headers.push('Add-On Fees');
     if (showPaid)      headers.push('Paid?');
     if (showNotes)     headers.push('Instructions', 'Notes', 'Add-ons');
+    if (showSiteType)  headers.push('Site Type');
     if (showResident)  headers.push('Resident?');
     if (showBookType)  headers.push('Booking Type');
     if (showLighting)  headers.push('Lighting', 'Lit From', 'Lit Until');
@@ -2744,6 +3394,7 @@ function App() {
       if (showAddons) { const n = parseFloat(r.addonFees); row.push(!isNaN(n) && n !== 0 ? n : ''); }
       if (showPaid) row.push(r.paid || '');
       if (showNotes) { row.push(r.instructions || ''); row.push(r.notes || ''); row.push(r.addons || ''); }
+      if (showSiteType) row.push(siteTypeLabel(siteTypeKey(r)));
       if (showResident) row.push(r.resident || '');
       if (showBookType) row.push(r.bookingType || '');
       if (showLighting) { row.push(r.lighting || ''); row.push(r.litFrom || ''); row.push(r.litUntil || ''); }
@@ -2767,6 +3418,7 @@ function App() {
       ...(showAddons?[{wch:12}]:[]),
       ...(showPaid?[{wch:8}]:[]),
       ...(showNotes?[{wch:30},{wch:30},{wch:30}]:[]),
+      ...(showSiteType?[{wch:14}]:[]),
       ...(showResident?[{wch:10}]:[]),
       ...(showBookType?[{wch:14}]:[]),
       ...(showLighting?[{wch:8},{wch:14},{wch:14}]:[]),
@@ -2794,14 +3446,195 @@ function App() {
     logClientEvent('excel');
   }
 
-  function logClientEvent(event) {
+  // `extra` is an already-encoded query tail ("&view=Main%20pools"). The
+  // convention on this platform is ?event=<name> in the QUERY STRING — a JSON
+  // body is read by nothing on the server, comes back 400, and a
+  // fire-and-forget beacon never complains. That has now bitten this repo four
+  // times.
+  function logClientEvent(event, extra) {
     try {
       const parts = window.location.pathname.split('/').filter(Boolean);
-      if (parts.length >= 2) fetch(withToken(`/${parts[0]}/${parts[1]}/api/log?event=${event}`), { method: 'POST' }).catch(() => {});
+      if (parts.length >= 2) fetch(withToken(`/${parts[0]}/${parts[1]}/api/log?event=${event}${extra || ''}`), { method: 'POST' }).catch(() => {});
     } catch {}
   }
 
   const isPrint = params._print === '1';
+
+  function renderViewPicker() {
+    return (
+      <div className="view-wrap" ref={pickerRef} data-view-wrap>
+        <button
+          className={'btn-view' + (activeView ? ' active' : '')}
+          data-view-btn
+          onClick={() => { setPickerOpen(o => !o); setRowMenu(null); }}
+          title="Saved views — named filter sets shared across this organization"
+        >
+          <span className="vname">{activeView ? activeView.name : 'Default view'}</span>
+          {activeView && viewDirty && <span className="vdirty">· edited</span>}
+          <span className="vcaret">▾</span>
+        </button>
+
+        <button
+          className="btn-save-view"
+          data-view-save
+          disabled={!canSaveView}
+          onClick={openSaveDialog}
+          title={canSaveView
+            ? 'Save the current filters as a named view'
+            : 'Set a filter first — there is nothing to save yet'}
+        >Save view</button>
+
+        {pickerOpen && (
+          <div className="view-dropdown" data-view-menu>
+            <div className="view-row" data-view-default onClick={clearView}>
+              <span className="vtick">{activeView ? '' : '✓'}</span>
+              <span className="vmain">Default view<span className="vsub">no filters</span></span>
+            </div>
+
+            {views.length === 0 && (
+              <div className="view-empty">No saved views yet. Narrow to a location or a site type, then hit “Save view”.</div>
+            )}
+
+            {views.map(v => (
+              <div key={v.id}>
+                <div className="view-row" data-view-row={v.name} onClick={() => applyView(v, true)}>
+                  <span className="vtick">{v.id === activeViewId ? '✓' : ''}</span>
+                  <span className="vmain">
+                    {v.name}
+                    <span className="vsub" data-view-sub={v.name}>{viewDateLabel(v)} · {viewFilterSummary(v)}</span>
+                  </span>
+                  <button
+                    className="vmenu"
+                    onClick={e => { e.stopPropagation(); setRowMenu(rowMenu === v.id ? null : v.id); }}
+                    title="Rename, update or delete this view"
+                  >⋯</button>
+                </div>
+                {rowMenu === v.id && (
+                  <div className="view-actions">
+                    <button onClick={() => { setRowMenu(null); setSaveForm({ name: v.name, targetId: v.id, renameOnly: true, dateMode: v.dateMode, relativeRange: v.relativeRange || defaultSavedRange() }); }}>
+                      Rename…
+                    </button>
+                    <button
+                      onClick={() => submitView({ name: v.name, targetId: v.id, dateMode: v.dateMode, relativeRange: v.relativeRange })}
+                      disabled={!currentFilterParams && !activeView}
+                      title="Replace this view's filters with what is on screen now"
+                    >Update to current filters</button>
+                    <button className="danger" onClick={() => deleteView(v)}>Delete</button>
+                  </div>
+                )}
+              </div>
+            ))}
+
+            <div className="view-row view-add" onClick={openSaveDialog}>
+              <span className="vtick">＋</span>
+              <span className="vmain">Save current view…</span>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  function renderSaveDialog() {
+    const f = saveForm;
+    if (!f) return null;
+    const ranges = savedViewRanges();
+    const radio = (mode, label, hint) => (
+      <label style={{display:'flex',alignItems:'flex-start',gap:8,fontSize:13,color:'#333',cursor:'pointer',marginBottom:6}}>
+        <input type="radio" checked={f.dateMode === mode} onChange={() => setSaveForm(x => ({...x, dateMode: mode}))} style={{marginTop:3}} />
+        <span>{label}<br/><span style={{fontSize:11,color:'#888'}}>{hint}</span></span>
+      </label>
+    );
+    return (
+      <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.5)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center'}}
+           onClick={e => { if (e.target === e.currentTarget) setSaveForm(null); }}>
+        <div style={{background:'#fff',borderRadius:12,padding:'26px 30px',width:440,maxWidth:'92vw',boxShadow:'0 20px 60px rgba(0,0,0,0.3)'}} data-view-dialog>
+          <h3 style={{margin:'0 0 4px',fontSize:18,color:'#111'}}>
+            {f.renameOnly ? 'Rename view' : f.targetId ? 'Update view' : 'Save view'}
+          </h3>
+          <p style={{margin:'0 0 16px',fontSize:12,color:'#777'}}>
+            Saved views are shared with everyone who has this report's link.
+          </p>
+
+          <label style={{display:'block',fontSize:11,textTransform:'uppercase',letterSpacing:'.5px',color:'#888',marginBottom:4}}>Name</label>
+          <input
+            autoFocus
+            data-view-name
+            value={f.name}
+            maxLength={60}
+            onChange={e => setSaveForm(x => ({...x, name: e.target.value}))}
+            onKeyDown={e => { if (e.key === 'Enter' && f.name.trim()) submitView(f); }}
+            placeholder="Pools this week"
+            style={{width:'100%',padding:'7px 10px',border:'1px solid #ddd',borderRadius:6,fontSize:14,fontFamily:'inherit',marginBottom:16,color:'#111'}}
+          />
+
+          {!f.renameOnly && (
+            <div style={{background:'#f6f7f8',border:'1px solid #eee',borderRadius:8,padding:'10px 12px',marginBottom:16,fontSize:12,color:'#444'}}>
+              <strong>Filters saved:</strong>{' '}
+              <span data-view-preview>{viewFilterSummary({ params: currentFilterParams })}</span>
+              <div style={{marginTop:4,fontSize:11,color:'#888'}}>
+                Columns aren’t saved — which ones you show stays per person.
+              </div>
+            </div>
+          )}
+
+          <label style={{display:'block',fontSize:11,textTransform:'uppercase',letterSpacing:'.5px',color:'#888',marginBottom:6}}>Dates</label>
+          {radio('current', "Don't save dates", 'Opens on whatever range you are already looking at. Best for a set of sites you check every week.')}
+          {radio('relative', 'Save a relative range', 'Recalculated every time the view is opened.')}
+          {f.dateMode === 'relative' && (
+            <select
+              value={f.relativeRange}
+              data-view-range
+              onChange={e => setSaveForm(x => ({...x, relativeRange: e.target.value}))}
+              style={{margin:'0 0 8px 26px',padding:'5px 8px',border:'1px solid #ddd',borderRadius:6,fontSize:13,fontFamily:'inherit',color:'#111'}}
+            >
+              {ranges.map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+            </select>
+          )}
+          {radio('fixed', 'Pin these exact dates', 'Stays on ' + fmtShortDate(startDate) + ' – ' + fmtShortDate(endDate) + ' forever. For a season that has finished.')}
+
+          <div style={{display:'flex',gap:10,justifyContent:'flex-end',marginTop:20}}>
+            <button
+              onClick={() => setSaveForm(null)}
+              style={{padding:'7px 14px',border:'1px solid #ddd',borderRadius:6,background:'#fff',fontSize:13,fontFamily:'inherit',cursor:'pointer',color:'#555'}}
+            >Cancel</button>
+            {f.targetId && !f.renameOnly && (
+              <button
+                onClick={() => setSaveForm(x => ({...x, targetId: null}))}
+                style={{padding:'7px 14px',border:'1px solid #ddd',borderRadius:6,background:'#fff',fontSize:13,fontFamily:'inherit',cursor:'pointer',color:'#555'}}
+              >Save as new instead</button>
+            )}
+            <button
+              data-view-submit
+              disabled={!f.name.trim() || viewBusy}
+              onClick={() => submitView(f)}
+              style={{padding:'7px 16px',border:'none',borderRadius:6,background:!f.name.trim()||viewBusy?'#9db6e8':'#2563eb',color:'#fff',fontSize:13,fontWeight:600,fontFamily:'inherit',cursor:!f.name.trim()||viewBusy?'default':'pointer'}}
+            >{viewBusy ? 'Saving…' : f.targetId ? (f.renameOnly ? 'Rename' : 'Update “' + f.name.trim() + '”') : 'Save view'}</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  function renderViewWarn() {
+    if (!viewWarn) return null;
+    return (
+      <div className="view-warn" data-view-warn>
+        <span className="vwtext">{viewWarn}</span>
+        <button onClick={() => setViewWarn(null)}>Dismiss</button>
+      </div>
+    );
+  }
+
+  function renderUndoToast() {
+    if (!undoView) return null;
+    return (
+      <div className="view-toast">
+        <span>Deleted “{undoView.name}”</span>
+        <button onClick={() => restoreView(undoView.id)}>Undo</button>
+      </div>
+    );
+  }
 
   // ── Toolbar ──────────────────────────────────────────────────────
   function renderToolbar() {
@@ -2809,6 +3642,9 @@ function App() {
     return (
       <div className="toolbar">
         <span className="toolbar-title">Rental Schedule</span>
+
+        {renderViewPicker()}
+        <div className="divider" />
 
         <label>
           Start
@@ -2869,6 +3705,17 @@ function App() {
               allSites={allSites}
               selectedSites={selectedSites}
               onChange={setSelectedSites}
+            />
+          </>
+        )}
+
+        {allSiteTypes.length > 1 && selectedSiteTypes && (
+          <>
+            <div className="divider" />
+            <SiteTypeFilter
+              allTypes={allSiteTypes}
+              selected={selectedSiteTypes}
+              onChange={setSelectedSiteTypes}
             />
           </>
         )}
@@ -2972,6 +3819,10 @@ function App() {
                 Rec Link
               </label>
               <label>
+                <input type="checkbox" data-col-sitetype checked={showSiteType} onChange={e => setShowSiteType(e.target.checked)} />
+                Site Type
+              </label>
+              <label>
                 <input type="checkbox" checked={showResident} onChange={e => setShowResident(e.target.checked)} />
                 Resident?
               </label>
@@ -3043,6 +3894,8 @@ function App() {
     return (
       <div>
         {renderToolbar()}
+        {renderSaveDialog()}
+        {renderUndoToast()}
         <StaleCacheBanner meta={meta} />
         <div className="page">
           <div className="error" style={{textAlign:'center',padding:'3rem 1rem'}}>
@@ -3059,6 +3912,8 @@ function App() {
     return (
       <div>
         {renderToolbar()}
+        {renderSaveDialog()}
+        {renderUndoToast()}
         <div className="page">
           <ReportLoader />
         </div>
@@ -3080,6 +3935,8 @@ function App() {
   return (
     <div>
       {renderToolbar()}
+      {renderSaveDialog()}
+      {renderUndoToast()}
 
       {showEmailModal && EmailSubscribeModal()}
 
@@ -3089,6 +3946,7 @@ function App() {
 
 
       <div className="page" style={loading ? {opacity:0.5,pointerEvents:'none'} : {}}>
+        {!isPrint && renderViewWarn()}
         {/* Report header */}
         <div className="report-header">
           <div className="report-header-left">
@@ -3235,6 +4093,7 @@ function App() {
                           {showPhone && <span className="col-phone">Phone #</span>}
                           {showEmail && <span className="col-email">Email</span>}
                           <span className="col-purpose">Purpose</span>
+                          {showSiteType  && <span className="col-sitetype">Type</span>}
                           {showResident  && <span className="col-resident">Resident?</span>}
                           {showBookType  && <span className="col-booktype">Book Type</span>}
                           {showHeadCount && <span className="col-hcnt">Cnt</span>}
@@ -3270,6 +4129,7 @@ function App() {
                                   : ''}
                               </span>}
                               <span className="cell col-purpose">{r.resName}</span>
+                              {showSiteType  && <span className="cell col-sitetype" data-sitetype={siteTypeKey(r)}>{siteTypeLabel(siteTypeKey(r))}</span>}
                               {showResident  && <span className="cell col-resident">{r.resident}</span>}
                               {showBookType  && <span className="cell col-booktype">{r.bookingType}</span>}
                               {showHeadCount && <span className="cell col-hcnt">{r.headCount}</span>}
