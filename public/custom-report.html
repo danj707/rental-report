@@ -186,6 +186,7 @@ const HIDDEN_DEFAULT = Array.isArray(CFG.hiddenColumns) ? CFG.hiddenColumns : []
 // It never affects the COLUMN — a column with no menu is still toggleable, and
 // the free-text search below still reaches it.
 const NO_FILTER = Array.isArray(CFG.noFilter) ? CFG.noFilter : [];
+const COLUMN_ORDER = Array.isArray(CFG.columnOrder) ? CFG.columnOrder : [];
 /* -- A FILTER IS A VOCABULARY, NOT A DIRECTORY ----------------------------
    Dan, 2026-09-10: "don't add filters for data sets that are huge, like names,
    emails, etc. Some of the filters on the users report were thousands of lines,
@@ -276,7 +277,34 @@ function prettyDate(s) {
   if (m) return MONTHS[+m[2] - 1].slice(0, 3) + ' ' + (+m[3]) + ', ' + m[1];
   m = /^(\d{4})-(\d{2})$/.exec(t);
   if (m) return MONTHS[+m[2] - 1] + ' ' + m[1];
+  // A full timestamp: "2026-09-09T22:58:30.270278-07:00" -> "Sep 9, 2026 10:58 PM".
+  //
+  // READ OFF THE STRING'S OWN PARTS, and never through `new Date()`. The card
+  // has already stamped these in the org's own timezone (that -07:00 is
+  // El Segundo's), so parsing to an instant and re-formatting would re-render
+  // every one of them in whatever zone the READER is in — which moves a late
+  // evening signup onto the next day for anyone east of the org. Five separate
+  // instances of that bug are recorded in CLAUDE.md. The offset is deliberately
+  // ignored rather than applied: the wall clock the card wrote is the answer.
+  m = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/.exec(t);
+  if (m) {
+    const h24 = +m[4];
+    const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
+    return MONTHS[+m[2] - 1].slice(0, 3) + ' ' + (+m[3]) + ', ' + m[1] +
+           ' ' + h12 + ':' + m[5] + ' ' + (h24 < 12 ? 'AM' : 'PM');
+  }
   return t;
+}
+
+/* ONE reader for what a non-numeric cell SAYS, because three surfaces have to
+   agree on it: the cell, the search box, and the print/PDF render of both. A
+   reader who can see "Sep 9, 2026" has to be able to search for it, so
+   searchRows reads through this too rather than over the raw ISO underneath.
+   Exports deliberately do NOT — a data file wants the raw timestamp, which is
+   sortable and parseable, exactly as it carries raw numbers rather than $. */
+function cellText(v) {
+  if (v == null || v === '') return '';
+  return prettyDate(String(v));
 }
 function defaultRange() {
   const now = new Date();
@@ -288,26 +316,57 @@ function defaultRange() {
    ($26.00), not -$26.00. CivicRec writes User Credit that way and so does the
    card (organization-credit really is negative on both sides). */
 function numOf(v) { const n = Number(v); return isNaN(n) ? 0 : n; }
-function fmtNum(v, dp) {
+function fmtNum(v, dp, money) {
   if (v == null || v === '') return '';
   const n = Number(v);
   if (isNaN(n)) return String(v);
   const s = Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: dp || 0, maximumFractionDigits: dp || 0 });
-  return n < 0 ? '(' + s + ')' : s;
+  // The sign goes OUTSIDE the currency mark: ($50.00), which is how a finance
+  // office reads a credit and how CivicRec prints one. `money` comes from the
+  // registry's own `numeric` entry, so a count (Admissions, Sessions in Month,
+  // People) never grows a dollar sign it has no business carrying.
+  const body = money ? '$' + s : s;
+  return n < 0 ? '(' + body + ')' : body;
 }
 
 /* ── Columns ───────────────────────────────────────────────────────────────
-   The card's own column order and its own headers, taken from the rows. Keys
-   are collected across EVERY row rather than off the first: a column that is
-   null in row 1 is still a column, and Metabase's JSON omits nothing but a
-   defensive union costs nothing and cannot lose one. */
-function columnsOf(rows) {
+   The card's own column order and its own headers.
+
+   `meta.columns` IS THE ORDER, and the row keys are only the fallback. The
+   feed cache is a Postgres jsonb column, and jsonb sorts an object's keys by
+   length then bytes rather than keeping insertion order — so on a cached load
+   (which, at a four-hour TTL, is nearly every load) the row keys arrive
+   shuffled. The server now sends the order as an ARRAY, which jsonb does keep.
+
+   The fallback still unions across EVERY row rather than reading the first:
+   a column that is null in row 1 is still a column. And `meta.columns` is
+   itself intersected with what the rows carry and then topped up from them,
+   so a stale array cannot invent a column or lose one. */
+function columnsOf(rows, meta) {
   const seen = [];
   const have = new Set();
-  (rows || []).forEach(r => {
-    Object.keys(r || {}).forEach(k => { if (!have.has(k)) { have.add(k); seen.push(k); } });
-  });
+  const push = k => { if (!have.has(k)) { have.add(k); seen.push(k); } };
+  const inRows = new Set();
+  (rows || []).forEach(r => Object.keys(r || {}).forEach(k => inRows.add(k)));
+  const declared = meta && Array.isArray(meta.columns) ? meta.columns : [];
+  declared.forEach(k => { if (inRows.has(k)) push(k); });
+  (rows || []).forEach(r => { Object.keys(r || {}).forEach(push); });
   return seen;
+}
+
+/* A per-report ORDER OVERRIDE, and a prefix rather than a full list: the
+   columns named here lead, in this order, and everything else keeps the card's
+   own order behind them. A full list would be a transcription that goes stale
+   the day the card gains a column — this way a name that no longer exists just
+   matches nothing, the same safe direction as `noFilter`.
+
+   It is applied BEFORE the table splits text from numeric, and that split is
+   stable, so naming two numeric columns reorders them within the numeric block
+   without dragging them across it. */
+function orderCols(cols, order) {
+  const want = (order || []).filter(c => (cols || []).indexOf(c) !== -1);
+  if (!want.length) return (cols || []).slice();
+  return want.concat((cols || []).filter(c => want.indexOf(c) === -1));
 }
 
 /* ── The grouping ──────────────────────────────────────────────────────────
@@ -432,10 +491,28 @@ function searchRows(rows, q) {
   const terms = String(q || '').toLowerCase().split(/\s+/).filter(Boolean);
   if (!terms.length) return rows || [];
   return (rows || []).filter(r => {
-    const hay = Object.keys(r || {}).map(k => (r[k] == null ? '' : String(r[k]))).join(' \u0001 ').toLowerCase();
+    // Both the RAW value and what the cell SAYS, so "Sep 9" finds a row
+    // whose stored value is 2026-09-09T22:58 and "2026-09-09" still does too.
+    const hay = Object.keys(r || {}).map(k => {
+      const raw = r[k] == null ? '' : String(r[k]);
+      const shown = cellText(r[k]);
+      return shown === raw ? raw : raw + ' ' + shown;
+    }).join(' \u0001 ').toLowerCase();
     return terms.every(t => hay.indexOf(t) !== -1);
   });
 }
+
+/* An IDENTIFIER is never a vocabulary, whatever its cardinality.
+   `Section ID` is 45 uuids in a September window — comfortably under the
+   cardinality cap below, so the cap let it through and the report offered a
+   dropdown of 45 uuids. Nobody has ever narrowed a report by typing a uuid.
+
+   This is a shape test rather than a name test on purpose: a `noFilter` entry
+   would fix this one column on this one report, and every id column on every
+   future report would arrive with the same useless menu. A value that IS a
+   uuid cannot be anything else, so there is no legitimate column this can take
+   a filter away from. */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /* Is this column a vocabulary or a directory? Counts distinct values and
    BAILS OUT the moment it passes the cap — on a 6,500-row user report the
@@ -446,10 +523,17 @@ function searchRows(rows, q) {
 function isFilterable(rows, col, cap) {
   const seen = new Set();
   const list = rows || [];
+  let ids = 0, nonBlank = 0;
   for (let i = 0; i < list.length; i++) {
-    seen.add(list[i][col] == null ? '' : String(list[i][col]));
+    const v = list[i][col] == null ? '' : String(list[i][col]);
+    seen.add(v);
+    if (v !== '') { nonBlank++; if (UUID_RE.test(v)) ids++; }
     if (seen.size > cap) return false;
   }
+  // Judged over the values that HAVE one, so a column that is a uuid where it
+  // is populated at all is still an identifier — a handful of blanks must not
+  // hand it a menu back.
+  if (nonBlank > 0 && ids === nonBlank) return false;
   return true;
 }
 
@@ -585,7 +669,7 @@ function GroupedTable({ tree, levels, cols, rowCount }) {
     <td key={c} className={'n' + (numOf(totals[c]) < 0 ? ' neg' : '')}
         {...{ ['data-' + kind + '-col']: c,
               ['data-' + kind + '-val']: numOf(totals[c]).toFixed(NUMERIC[c].dp || 0) }}>
-      {fmtNum(totals[c], NUMERIC[c].dp)}
+      {fmtNum(totals[c], NUMERIC[c].dp, NUMERIC[c].money)}
     </td>
   ));
 
@@ -628,7 +712,7 @@ function GroupedTable({ tree, levels, cols, rowCount }) {
                   <td key={c} data-cell={c}
                       className={NUMERIC[c] ? ('n' + (numOf(r[c]) < 0 ? ' neg' : ''))
                                             : (String(r[c] == null ? '' : r[c]).length > 32 ? 'txtwrap' : 'txt')}>
-                    {NUMERIC[c] ? fmtNum(r[c], NUMERIC[c].dp) : (r[c] == null || r[c] === '' ? '' : String(r[c]))}
+                    {NUMERIC[c] ? fmtNum(r[c], NUMERIC[c].dp, NUMERIC[c].money) : cellText(r[c])}
                   </td>
                 ))}
               </tr>
@@ -733,7 +817,7 @@ function App() {
     } catch (e) { /* never break the page over a URL */ }
   }, [applied, filters, q]);
 
-  const cols = useMemo(() => columnsOf(rows), [rows]);
+  const cols = useMemo(() => orderCols(columnsOf(rows, meta), COLUMN_ORDER), [rows, meta]);
   const bodyCols = useMemo(() => cols.filter(c => !GROUP_BY.includes(c)), [cols]);
   const numericKeys = useMemo(() => cols.filter(c => NUMERIC[c]), [cols]);
   // Toggleable and filterable are the same set: the body's non-numeric columns.
