@@ -1,5 +1,146 @@
 # Project notes for Claude
 
+## MIDLAND'S RENTAL SHOWED MUSCO LIGHTING IT DOES NOT HAVE (2026-09-10)
+
+Dan, with the rental open in Rec: *"the midland rental schedule shows this
+facility rental with musco lighting. but the rental itself doesn't have musco
+lighting on it, where did this come from?"* Then, on the diagnosis: *"do both,
+that lighting should be gone and fix the timezone for the lighting."*
+
+**Two bugs, and the second is the one nobody reported** — because a wrong time
+reads as a time.
+
+### A REMOVED SCHEDULE IS STILL A ROW
+
+`reservation_lighting_schedule` is append-only in the way that matters: taking
+Musco off a rental writes `sync_status = 'removed'` rather than deleting the
+row. Midland's was **created 13:24 and updated 13:27 the same afternoon** — put
+on and taken off inside three minutes.
+
+**Card 17294 SELECTED `sync_status` all along and then tested only whether the
+ROW EXISTED:**
+
+```sql
+CASE WHEN b.lighting_schedule_id IS NOT NULL THEN 'Yes' ELSE NULL END AS "Lighting"
+```
+
+So the column it needed was already on the card and already unread — the
+mapped-and-never-read pattern, in its sharpest form: the value was not merely
+mapped and rendered nowhere, it was selected *and sitting beside the test that
+should have used it*.
+
+**MEASURED: all 9 lighting schedules on the platform are `removed`.** So this
+column has never been right for anybody, on either of the two orgs that have
+ever used Musco — it was simply too rare to be noticed until Midland asked. The
+💡 also kept those rentals inside the *"Lit Only"* toolbar filter, which is the
+half that would have sent someone to a dark field.
+
+**It is a DENYLIST on the one status observed, not an allowlist.** An unknown or
+NULL `sync_status` still shows: a schedule we cannot classify is more likely
+live than removed, and the failure direction has to be *"tell someone"* rather
+than *"hide it"*. `IS DISTINCT FROM`, never `!=` — a `!=` against NULL is NULL,
+so the plain comparison drops the unclassifiable case as well as the removed
+one, which is exactly backwards.
+
+**Filtered in the JOIN, not the WHERE.** In the `WHERE` it would drop the whole
+rental row from the schedule; at the output it would leave a row **half-lit**,
+with a `Lit From` beside a blank `Lighting`. In the join, all five lighting
+columns go NULL together. Verified on the real window: Midland September is
+**1,488 rows before and 1,488 after**, with `Lighting`, `Lit Window`,
+`Lit From`, `Lit Until` and `Lighting Sync` all at 0 non-null.
+
+**It cannot fan out** — 0 reservations on the platform carry more than one
+schedule, measured before the join condition was written rather than after.
+
+### THE LIT TIME WAS THE READER'S CLOCK, UNDER A ROW THAT WAS NOT
+
+`lit_from`/`lit_until` are **timestamptz**. The page parsed them with
+`new Date(s).getHours()`, i.e. whatever zone the browser sits in — so Dan, in
+Eastern, read Midland's **6:00pm Central as 7:00pm**, on a row whose `Begin` and
+`End` two columns over said 6:00pm and 7:00pm correctly. Those come off
+`reservation_timestamp_range`, a **tsrange** — timestamp WITHOUT time zone, i.e.
+already local — which is why one half of the row was right and the other was
+not. Same table, same row, two different notions of what a clock is.
+
+Card 17294 now emits **`Lit Window`** pre-formatted, exactly the way it already
+emits Begin and End, so nothing downstream parses an instant.
+
+**THE CONVERSION IS PROVEN, NOT ARGUED.** Converting with the schedule's own
+`timezone` column reproduces the reservation's own wall clock **to the minute on
+8 of the 9 rows** — the ninth is a `set_time` 23:00 end, which correctly does
+*not* match its reservation. `rls.timezone` equals `location.timezone` on all
+nine, which is what makes the location a safe fallback for a schedule carrying
+none.
+
+**Additive, deliberately.** `Lit From` / `Lit Until` stay: they are in the Excel
+export, and feeds cache four hours, so a pre-push response and a post-push one
+are both live at once. `litWindowLabel()` prefers the column and falls back to
+the old browser parse only for that one TTL — rendering nothing there would look
+like a rental with no lighting, which is a different and worse lie than being an
+offset out.
+
+### THE RENDER CASE FOUND A THIRD DEFECT, IN MY OWN FIX
+
+The card's `to_char(..., 'HH12:MIam')` gives **`06:00pm`**, and every Begin/End
+cell on the page goes through `formatTime`, which strips the leading zero to
+**`6:00pm`**. So the note I had just written would have printed *"Lit: 06:00pm -
+07:00pm"* beside a Begin cell reading *"6:00pm"* — inconsistent on one row,
+which is the exact complaint being fixed one field over.
+
+`litWindowLabel` routes both paths through **`formatTime`**, the page's one
+definition of how a time is displayed. That also folds the fallback's `6:00 PM`
+into the same shape, so a feed expiring mid-session cannot restyle the note.
+Found by writing the case, not by reading the diff.
+
+### Guards
+
+`scripts/facility-lighting.spec.js` (**38 assertions, in CI**), which LIFTS AND
+RUNS `litWindowLabel` **together with `formatTime`** — lifting it alone would
+have proved the wrong thing, since the normalisation is the half that was
+missing. Mutation-tested seventeen ways, all failing by name: the gate reverted
+(the bug as it shipped), the gate written as `!=`, the gate turned into an
+allowlist, the gate moved into the base `WHERE`, `Lit Window` dropped, only one
+end converted, the timezone fallback dropped, the ends concatenated with `||`
+instead of `CONCAT_WS` (which makes the whole string NULL the moment one end is
+missing — two of the nine live rows), `Lit From` dropped, the note back on the
+browser clock, the window preferred behind the raw instants, the column never
+mapped, the `isNaN` guard removed, a one-sided window printing a dangling
+separator, the fallback dropped entirely, the Excel export re-deriving its own
+clock, and a header column with no cell under it.
+
+**Two of my own assertions did not discriminate at first.** The `!=` and
+allowlist checks both fell over the same literal as the catch-all above them, so
+each mutation was caught by a name that did not describe it; they are scoped to
+the join clause and ordered ahead of the catch-all now. *A mutation that is
+caught by the wrong assertion has not shown that assertion works.*
+
+**Two `ci-check-render.js` cases, and the lit note had NO render coverage at
+all** — which is part of why it read the wrong clock for as long as it did: the
+column rendered a plausible time either way and no source assertion can tell a
+right time from a wrong one. The fixture's lit row makes the two derivations
+**deliberately disagree**: `Lit Window` says 6:00pm while the raw instants land
+on 11:00 PM in UTC, which is what this harness and GitHub Actions both run. A
+fixture where they agreed could not tell the two implementations apart. The
+second case requires the note to agree with its own row's Begin and End, which
+is the disagreement Dan actually spotted.
+
+### The card was handed over as a PASTE, not pushed
+
+Card 17294 registers `start_date`/`end_date` as **Date**, which is what the app
+sends and what a `date/single` parameter binds to. An `update_question` push
+regenerates every tag as Text, and the rental schedule is then down for **all 29
+orgs** until a human re-flips them — on the most-used card on the platform. The
+recorded rule applies: *once a human has configured a card's parameters, a
+programmatic save costs more than the change is worth.* Mirror rebuilt at
+`sql/report-cards/17294-facility-rental-report.sql`; flip link
+https://rec.metabaseapp.com/question/17294
+
+**AND THE MIRROR WAS STALE AGAIN — second time on this card.** It carried
+`COALESCE(finalCents, addon.price)` where the live card has
+`COALESCE(finalCents, finalCents)`, and **`order_item` has no `price` column at
+all**, so pasting the repo copy to make a two-line change would have broken the
+card outright. Read the live card first; the mirror is a mirror.
+
 ## PINNED: "Happening Today" belongs on the org DASHBOARD (Dan, 2026-09-10)
 
 *"the 'Happening today' is an awesome thought for a new card on the dashboard.

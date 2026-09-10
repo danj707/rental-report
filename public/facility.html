@@ -1444,6 +1444,7 @@ function normalizeRow(raw) {
     litFrom:      raw['Lit From']       || '',
     litUntil:     raw['Lit Until']      || '',
     lightingSync: raw['Lighting Sync']  || '',
+    litWindow:    raw['Lit Window']     || '',
     multiDayDays: raw['Multi-Day Days'] || null,
     multiDayNum:  raw['Multi-Day Day#'] || null,
   };
@@ -1811,6 +1812,52 @@ function addonItemsTotalLabel(items) {
     if (p != null) total = (total == null ? 0 : total) + p;
   });
   return total == null ? undefined : formatMoney(total);
+}
+
+/* The lit window, in the FACILITY'S timezone rather than the reader's.
+
+   Card 17294 emits "Lit Window" pre-formatted (2026-09-10), the same way it
+   already emits Begin/End, so the common path does no date arithmetic at all.
+   That is the whole fix: `Lit From`/`Lit Until` are timestamptz, and the old
+   `new Date(s).getHours()` rendered them in whatever zone the BROWSER sits in
+   — Dan read Midland's 6:00pm Central as 7:00pm Eastern, on a row whose Begin
+   and End two columns over were correctly Central.
+
+   The legacy path is kept as a FALLBACK and nothing more. Feeds cache four
+   hours, so a pre-push response is still live after the card changes and its
+   rows carry no "Lit Window"; falling back to the reader's clock is wrong by
+   an offset, where rendering nothing would look like a rental that has no
+   lighting at all. It ages out on its own within one TTL. */
+function litWindowLabel(r) {
+  if (!r) return '';
+  // ONE display rule for a time on this page. formatTime is what every Begin
+  // and End cell already goes through, and the card emits Lit Window in the
+  // same 'HH12:MIam' shape it emits those in — so without this the note would
+  // read "06:00pm" beside a Begin cell reading "6:00pm", on the same row. It
+  // also folds the fallback's "6:00 PM" into the same shape, so the two paths
+  // cannot render one booking two ways.
+  var a, b;
+  if (r.litWindow) {
+    var parts = String(r.litWindow).split(' - ');
+    a = formatTime((parts[0] || '').trim());
+    b = formatTime((parts[1] || '').trim());
+  } else {
+    var raw = function (s) {
+      if (!s) return '';
+      try {
+        var d = new Date(s);
+        if (isNaN(d.getTime())) return '';
+        var h = d.getHours(), m = d.getMinutes();
+        var ap = h >= 12 ? 'pm' : 'am';
+        h = h % 12 || 12;
+        return h + ':' + String(m).padStart(2, '0') + ap;
+      } catch (e) { return ''; }
+    };
+    a = formatTime(raw(r.litFrom));
+    b = formatTime(raw(r.litUntil));
+  }
+  if (a && b) return a + ' - ' + b;
+  return a || b || '';
 }
 
 function addonNoteFragment(items) {
@@ -3378,7 +3425,7 @@ function App() {
     if (showSiteType)  headers.push('Site Type');
     if (showResident)  headers.push('Resident?');
     if (showBookType)  headers.push('Booking Type');
-    if (showLighting)  headers.push('Lighting', 'Lit From', 'Lit Until');
+    if (showLighting)  headers.push('Lighting', 'Lit Window', 'Lit From', 'Lit Until');
 
     const dataRows = filteredRows.map(r => {
       const dp = (r.date || '').split('T')[0].split('-');
@@ -3397,7 +3444,7 @@ function App() {
       if (showSiteType) row.push(siteTypeLabel(siteTypeKey(r)));
       if (showResident) row.push(r.resident || '');
       if (showBookType) row.push(r.bookingType || '');
-      if (showLighting) { row.push(r.lighting || ''); row.push(r.litFrom || ''); row.push(r.litUntil || ''); }
+      if (showLighting) { row.push(r.lighting || ''); row.push(litWindowLabel(r)); row.push(r.litFrom || ''); row.push(r.litUntil || ''); }
       return row;
     });
 
@@ -3421,7 +3468,7 @@ function App() {
       ...(showSiteType?[{wch:14}]:[]),
       ...(showResident?[{wch:10}]:[]),
       ...(showBookType?[{wch:14}]:[]),
-      ...(showLighting?[{wch:8},{wch:14},{wch:14}]:[]),
+      ...(showLighting?[{wch:8},{wch:20},{wch:14},{wch:14}]:[]),
     ];
     if (showTotal) {
       const totalColIdx = headers.indexOf('Total');
@@ -4177,8 +4224,8 @@ function App() {
                               if (showNotes) {
                                 var litStr = '';
                                 if (r.lighting === 'Yes') {
-                                  var _fmt = function(s) { if (!s) return ''; try { var d = new Date(s); var h = d.getHours(); var m = d.getMinutes(); var ap = h >= 12 ? 'PM' : 'AM'; h = h % 12 || 12; return h + ':' + String(m).padStart(2,'0') + ' ' + ap; } catch(e) { return s; } };
-                                  litStr = '💡 Lit: ' + _fmt(r.litFrom) + ' – ' + _fmt(r.litUntil);
+                                  var litWin = litWindowLabel(r);
+                                  litStr = litWin ? '💡 Lit: ' + litWin : '💡 Lit';
                                 }
                                 if (litStr) parts.push(litStr);
                                 if (r.instructions) parts.push("📝 " + r.instructions);

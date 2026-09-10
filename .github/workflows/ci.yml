@@ -246,6 +246,9 @@ jobs:
       - name: Saved views on the rental schedule (key order, and a stale view warns instead of blanking)
         run: node scripts/facility-saved-views.spec.js
 
+      - name: Musco lighting (a removed schedule is not lighting; the window is the facility's clock)
+        run: node scripts/facility-lighting.spec.js
+
       - name: Retired reports (overview + annual-report off, and they page nobody)
         run: node scripts/retired-reports.spec.js
 

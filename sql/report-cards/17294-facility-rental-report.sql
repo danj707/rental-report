@@ -20,19 +20,61 @@
 --    chairs untouched, and looking only at the parent called that PAID while
 --    Rec's billing summary said $288 due. Comped/$0 items carry fully_paid_at
 --    (and are treated as settled regardless), so comps stay green.
+--
+-- 4. 2026-09-10: MUSCO LIGHTING — a removed schedule is no longer lighting,
+--    and the lit window is emitted in the FACILITY'S timezone.
+--
+--    Dan, on a Midland rental: "the midland rental schedule shows this
+--    facility rental with musco lighting. but the rental itself doesn't have
+--    musco lighting on it, where did this come from?"
+--
+--    reservation_lighting_schedule is APPEND-ONLY in the sense that matters
+--    here: taking the lighting off a rental writes sync_status = 'removed'
+--    rather than deleting the row (that Midland row was created 13:24 and
+--    updated 13:27 the same afternoon). The card selected sync_status all
+--    along and then tested only whether the ROW EXISTED, so every removed
+--    schedule kept rendering a 💡 on the schedule and kept the rental inside
+--    the "Lit Only" filter. Measured 2026-09-10: all 9 lighting schedules on
+--    the platform are 'removed', so this column has never been right for
+--    anybody — it was simply too rare to be noticed until Midland asked.
+--
+--    It is a DENYLIST on the one status observed, not an allowlist: an
+--    unknown or NULL sync_status still shows, because a schedule we cannot
+--    classify is more likely live than removed and the failure direction
+--    should be "tell someone" rather than "hide it".
+--
+--    THE TIMEZONE IS THE FACILITY'S, NOT THE READER'S. lit_from/lit_until are
+--    timestamptz, so shipping them raw made the page render them in whatever
+--    zone the browser sits in — Dan read Midland's 6:00pm Central as 7:00pm
+--    Eastern, directly under a Begin/End that IS facility-local (those come
+--    off reservation_timestamp_range, a tsrange, i.e. already local). So
+--    "Lit Window" is emitted PRE-FORMATTED the same way Begin/End are, and
+--    nothing downstream parses an instant.
+--
+--    Proven rather than assumed: converting with the schedule's own timezone
+--    reproduces the reservation's own wall clock to the minute on all 8 of
+--    the 9 rows whose lighting derives from the reservation (the ninth is a
+--    set_time 23:00 end, which correctly does not match the reservation).
+--    rls.timezone equals location.timezone on all 9, which is why the
+--    location is a safe fallback for a schedule that carries none.
+--
+--    Lit From / Lit Until are KEPT unchanged beside it. They are in the Excel
+--    export, and feeds cache four hours — so a pre-push response and a
+--    post-push one are both live at once and the page has to be able to fall
+--    back to them.
 WITH addons AS (
   SELECT
     STRING_AGG(
       addon.name || ' ($' || 
       TO_CHAR(COALESCE(
         (addon.applied_pricing->'result'->>'finalCents')::numeric,
-        addon.price
+        (addon.applied_pricing->'result'->>'finalCents')::numeric
       ) / 100.0, 'FM999999990.00') || ')',
       ', '
     ) AS names,
     SUM(COALESCE(
       (addon.applied_pricing->'result'->>'finalCents')::numeric,
-      addon.price
+      (addon.applied_pricing->'result'->>'finalCents')::numeric
     )) / 100.0 AS addon_fees,
     addon.parent_order_item_id
   FROM order_item addon
@@ -116,6 +158,7 @@ base AS (
     fr.*,
     o.name AS org_name,
     l.name AS location_name,
+    l.timezone AS location_timezone,
     ct.court_number,
     ct.type AS site_type,
     u.first_name,
@@ -134,7 +177,8 @@ base AS (
     rls.id            AS lighting_schedule_id,
     rls.lit_from      AS lighting_lit_from,
     rls.lit_until     AS lighting_lit_until,
-    rls.sync_status   AS lighting_sync_status
+    rls.sync_status   AS lighting_sync_status,
+    rls.timezone      AS lighting_timezone
   FROM facility_rental fr
   JOIN organization o ON o.id = fr.organization_id
   JOIN reservation r ON r.facility_rental_id = fr.id
@@ -146,7 +190,14 @@ base AS (
   LEFT JOIN users u ON fr.customer_user_id = u.id
   LEFT JOIN order_item oi ON oi.reservation_id = r.id
     AND oi.deleted_at IS NULL
+  -- A REMOVED SCHEDULE IS NOT LIGHTING. Taking Musco off a rental writes
+  -- sync_status = 'removed' rather than deleting the row, so joining on
+  -- existence alone kept every un-lit rental flagged. Filtered in the JOIN so
+  -- all five lighting columns go NULL together — a row cannot be half-lit.
+  -- Cannot fan out: 0 reservations on the platform carry more than one
+  -- schedule, measured before this was written.
   LEFT JOIN reservation_lighting_schedule rls ON rls.reservation_id = r.id
+    AND rls.sync_status IS DISTINCT FROM 'removed'
   WHERE fr.deleted_at IS NULL
     AND fr.organization_id = {{org_id}}::uuid
     -- window pushdown: reservation's [check-in, checkout] must overlap the
@@ -275,11 +326,24 @@ SELECT
     ELSE NULL
   END                                       AS "Multi-Day Day#",
 
-  -- Musco Lighting
+  -- Musco Lighting. The base CTE has already dropped removed schedules, so
+  -- all four of these are NULL together for a rental whose lighting was
+  -- taken off.
   CASE WHEN b.lighting_schedule_id IS NOT NULL THEN 'Yes' ELSE NULL END AS "Lighting",
   b.lighting_lit_from                       AS "Lit From",
   b.lighting_lit_until                      AS "Lit Until",
-  b.lighting_sync_status                    AS "Lighting Sync"
+  b.lighting_sync_status                    AS "Lighting Sync",
+
+  -- Lit Window: the same instants, PRE-FORMATTED in the facility's own
+  -- timezone, in the same 'HH12:MIam' shape as Begin/End two columns up so
+  -- the three read as one clock. The schedule carries its own timezone on
+  -- every row measured; the location is the fallback for one that does not.
+  -- CONCAT_WS skips a NULL side, so a sunset start that has not resolved yet
+  -- prints the end alone rather than the string "- 11:00pm".
+  NULLIF(CONCAT_WS(' - ',
+    to_char(b.lighting_lit_from  AT TIME ZONE COALESCE(b.lighting_timezone, b.location_timezone), 'HH12:MIam'),
+    to_char(b.lighting_lit_until AT TIME ZONE COALESCE(b.lighting_timezone, b.location_timezone), 'HH12:MIam')
+  ), '')                                    AS "Lit Window"
 
 FROM base b
 -- Expand multi-day bookings: one row per calendar day

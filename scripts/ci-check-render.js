@@ -96,6 +96,23 @@ function campsiteRows() {
   push("Site 02", d(3), 1, 1, "", 45);
   push("Site 02", d(20), 1, 2, "Firewood ($10.00)", 60);
   push("Site 02", d(19), 2, 2, "Firewood ($10.00)", 0);
+  // A LIT booking, and the two clocks are made to DISAGREE on purpose.
+  // "Lit Window" is the card's own pre-formatted string in the facility's
+  // timezone; "Lit From"/"Lit Until" are the same instants, and this harness
+  // (like GitHub Actions) runs UTC, where the old browser-side parse renders
+  // them as 11:00 PM / 12:00 AM. So a page that reads the raw instants prints
+  // a different time from one that reads the window, and only the second is
+  // right — which is exactly the gap Dan hit reading Midland's 6:00pm Central
+  // as 7:00pm Eastern. A fixture where the two agree could not tell them apart.
+  const litRow = rows[rows.length - 1];
+  rows.push(Object.assign({}, litRow, {
+    "Reservation ID": "Site 03-lit", "Date": d(5), "Multi-Day Days": null, "Multi-Day Day#": null,
+    "Facility": "Topaz Lake Recreation Area - Site 03", "Add Ons": "", "Add-On Fees": 0, "Total": 75,
+    "Begin": "06:00pm", "End": "07:00pm",
+    "Lighting": "Yes", "Lighting Sync": "synced",
+    "Lit From": "2026-09-11T23:00:00Z", "Lit Until": "2026-09-12T00:00:00Z",
+    "Lit Window": "06:00pm - 07:00pm",
+  }));
   return rows;
 }
 
@@ -2134,6 +2151,44 @@ const CASES = [
     needs: "[data-addon-total=\"$40.50\"]" },
   // ...with its icons, which is the structure Dan asked to keep.
   { name: "facility · add-on icons",  path: "/{org}/facility",            needs: "[data-addon-icons=\"2\"]" },
+
+  // ── Musco lighting (Dan, 2026-09-10, on Midland: "the midland rental
+  // schedule shows this facility rental with musco lighting. but the rental
+  // itself doesn't have musco lighting on it") ─────────────────────────────
+  //
+  // The lit note has never had render coverage, which is part of why it read
+  // the READER'S clock for as long as it did: the column rendered a perfectly
+  // plausible time either way, and no source assertion can tell a right time
+  // from a wrong one. So this keys on the TEXT, over a fixture whose two
+  // derivations deliberately differ (see facilityRows).
+  { name: "facility · the lit note reads the facility's clock", path: "/{org}/facility",
+    act: async page => {
+      const txt = await page.evaluate(() => {
+        const el = Array.from(document.querySelectorAll('.sub-row'))
+          .find(n => n.textContent.indexOf('Lit:') >= 0);
+        return el ? el.textContent : '';
+      });
+      await page.evaluate(t => {
+        document.body.setAttribute('data-lit-note', t.indexOf('6:00pm - 7:00pm') >= 0 ? 'facility' : 'other');
+        document.body.setAttribute('data-lit-browser', /11:00 PM|12:00 AM/.test(t) ? '1' : '0');
+      }, txt);
+    },
+    needs: "body[data-lit-note=\"facility\"][data-lit-browser=\"0\"]" },
+  // ...and it reads it through the note, on the same row whose Begin and End
+  // say the same thing. A lit window that disagreed with the row it sits on is
+  // how this bug was spotted in the first place.
+  { name: "facility · the lit window agrees with Begin and End", path: "/{org}/facility",
+    act: async page => {
+      await page.evaluate(() => {
+        const note = Array.from(document.querySelectorAll('.sub-row'))
+          .find(n => n.textContent.indexOf('Lit:') >= 0);
+        const row = note && note.previousElementSibling;
+        const cells = row ? Array.from(row.querySelectorAll('.cell')).map(c => c.textContent.trim()) : [];
+        const hasBegin = cells.indexOf('6:00pm') >= 0, hasEnd = cells.indexOf('7:00pm') >= 0;
+        document.body.setAttribute('data-lit-agrees', hasBegin && hasEnd ? '1' : '0');
+      });
+    },
+    needs: "body[data-lit-agrees=\"1\"]" },
   // The Forms column links to the rental's Required Information tab.
   { name: "facility · forms link",    path: "/{org}/facility",
     needs: "a[href$=\"tab=requiredInformation\"]" },
