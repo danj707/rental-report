@@ -66,11 +66,16 @@ function liftFn(text, name) {
 /* The renderer's pure half, RUN rather than regexed. `prettyDate` is pulled in
    because flattenTree's labels go through it. */
 const NUMERIC_FIXTURE = { Reservations: { dp: 0 }, "Lane Hours": { dp: 2 } };
+const UUID_RE_SRC = /const UUID_RE = [^\n]+/.exec(page);
+assert.ok(UUID_RE_SRC, "the identifier test is where this expects it");
 const lifted = new Function("NUMERIC", "MONTHS", `
+  ${UUID_RE_SRC[0]}
   ${liftFn(page, "numOf")}
   ${liftFn(page, "fmtNum")}
   ${liftFn(page, "prettyDate")}
+  ${liftFn(page, "cellText")}
   ${liftFn(page, "columnsOf")}
+  ${liftFn(page, "orderCols")}
   ${liftFn(page, "groupRows")}
   ${liftFn(page, "flattenTree")}
   ${liftFn(page, "flatTable")}
@@ -80,12 +85,12 @@ const lifted = new Function("NUMERIC", "MONTHS", `
   ${liftFn(page, "valueCountsFor")}
   ${liftFn(page, "searchRows")}
   ${liftFn(page, "isFilterable")}
-  return { numOf, fmtNum, prettyDate, columnsOf, groupRows, flattenTree, flatTable,
-           levelsSafe, collapseRows, filterRows, valueCountsFor, searchRows, isFilterable };
+  return { numOf, fmtNum, prettyDate, cellText, columnsOf, orderCols, groupRows, flattenTree,
+           flatTable, levelsSafe, collapseRows, filterRows, valueCountsFor, searchRows, isFilterable };
 `)(NUMERIC_FIXTURE,
    ['January','February','March','April','May','June','July','August','September','October','November','December']);
-const { fmtNum, prettyDate, columnsOf, groupRows, flattenTree, flatTable, searchRows, isFilterable,
-        levelsSafe, collapseRows, filterRows, valueCountsFor } = lifted;
+const { fmtNum, prettyDate, cellText, columnsOf, orderCols, groupRows, flattenTree, flatTable,
+        searchRows, isFilterable, levelsSafe, collapseRows, filterRows, valueCountsFor } = lifted;
 
 /* ── The fixture ───────────────────────────────────────────────────────────
    Deliberately shaped so a WRONG roll-up cannot look right:
@@ -853,6 +858,176 @@ test("every registered report names a card, a uuid and its org", () => {
 test("an out-of-date run cannot overwrite a newer one", () => {
   assert.match(page, /const seq = \+\+runSeq\.current/);
   assert.match(page, /if \(seq !== runSeq\.current\) return;/);
+});
+
+/* ── 12. The column order survives the cache ───────────────────────────────
+   `feed_cache.v` is a Postgres jsonb column, and jsonb sorts an object's keys
+   by length then bytes rather than keeping insertion order. So the row keys
+   arrive SHUFFLED on any cached load, which at a four-hour TTL is nearly every
+   load. Measured against production on card 21683, the same request:
+     fresh   ... Sessions in Month, Session Hours, Collected, Refunded, Net Revenue
+     cached  ... Refunded, Collected, Instructor, Section ID, Net Revenue, ...
+   The server sends the order as an array, which jsonb does keep. */
+
+test("the column order comes from meta, not from the shuffled row keys", () => {
+  // Exactly the jsonb shuffle: (length, alphabetical) over the real card's headers.
+  const shuffled = [
+    { Month: "2026-09", Program: "P", Section: "S", Location: "L",
+      Refunded: 1, Collected: 2, Instructor: "I", "Net Revenue": 3 },
+  ];
+  const declared = ["Month", "Location", "Program", "Section", "Instructor",
+                    "Collected", "Refunded", "Net Revenue"];
+  assert.deepStrictEqual(columnsOf(shuffled, { columns: declared }), declared,
+    "the card's own order, off meta");
+  // The pre-fix cache entry: no meta.columns, so it still renders — shuffled,
+  // and self-healing on the next miss. Degrading, never blank.
+  assert.deepStrictEqual(columnsOf(shuffled, {}), Object.keys(shuffled[0]),
+    "an entry written before this shipped still renders");
+  assert.deepStrictEqual(columnsOf(shuffled, null), Object.keys(shuffled[0]));
+});
+
+test("a stale meta.columns can neither invent a column nor lose one", () => {
+  const rows = [{ A: 1, B: 2, C: 3 }];
+  assert.deepStrictEqual(columnsOf(rows, { columns: ["C", "A", "GONE"] }), ["C", "A", "B"],
+    "a name the card no longer emits is dropped; one it gained is kept");
+  assert.deepStrictEqual(columnsOf(rows, { columns: [] }), ["A", "B", "C"]);
+});
+
+test("the server sends the order as an ARRAY", () => {
+  assert.match(srv, /columns: safeRows\.length \? Object\.keys\(safeRows\[0\]\) : \[\]/,
+    "taken from the first row, so it is still the card's order and not a transcription");
+});
+
+test("columnOrder is a PREFIX, and it survives the text/numeric split", () => {
+  const cols = ["Household Role", "Rec ID", "First Name", "Last Name", "Email", "People"];
+  assert.deepStrictEqual(orderCols(cols, ["First Name", "Last Name", "Email"]),
+    ["First Name", "Last Name", "Email", "Household Role", "Rec ID", "People"],
+    "what is named leads; everything else keeps the card's order behind it");
+  assert.deepStrictEqual(orderCols(cols, []), cols, "no override is no change");
+  assert.deepStrictEqual(orderCols(cols, ["Nope"]), cols, "a stale name matches nothing");
+  // The table filters text and numeric out of this list, and both filters are
+  // stable — so naming two numerics reorders them WITHIN the numeric block
+  // rather than dragging them in front of the text columns.
+  const mixed = ["Section", "Sessions in Month", "Refunded", "Collected", "Net Revenue"];
+  const NUM = { "Sessions in Month": 1, Refunded: 1, Collected: 1, "Net Revenue": 1 };
+  const ordered = orderCols(mixed, ["Collected", "Refunded", "Net Revenue"]);
+  assert.deepStrictEqual(ordered.filter(c => !NUM[c]).concat(ordered.filter(c => NUM[c])),
+    ["Section", "Collected", "Refunded", "Net Revenue", "Sessions in Month"],
+    "collected, refunded, net — and the text column is still first");
+});
+
+test("All Users leads with the name", () => {
+  const e = /"all-users": \{[\s\S]*?\n  \},/.exec(srv)[0];
+  assert.match(e, /columnOrder: \["First Name", "Last Name", "Email"\]/);
+  assert.match(srv, /columnOrder: spec\.columnOrder \|\| \[\]/, "and it reaches the page");
+});
+
+/* ── 13. Money reads as money ─────────────────────────────────────────────── */
+
+test("a money column carries a dollar sign and a count does not", () => {
+  assert.strictEqual(fmtNum(1234.5, 2, true), "$1,234.50");
+  assert.strictEqual(fmtNum(1234.5, 2, false), "1,234.50");
+  assert.strictEqual(fmtNum(1234, 0), "1,234", "a count is untouched");
+  // Accounting style, and the sign goes OUTSIDE the currency mark — which is
+  // how a finance office reads a credit and how CivicRec prints one.
+  assert.strictEqual(fmtNum(-50, 2, true), "($50.00)");
+  assert.strictEqual(fmtNum(-50, 2), "(50.00)");
+  assert.strictEqual(fmtNum(null, 2, true), "", "an absent value is not $0.00");
+  assert.strictEqual(fmtNum("", 2, true), "");
+});
+
+test("both the cell and the totals row read the money flag", () => {
+  assert.match(page, /fmtNum\(r\[c\], NUMERIC\[c\]\.dp, NUMERIC\[c\]\.money\)/, "the cell");
+  assert.match(page, /fmtNum\(totals\[c\], NUMERIC\[c\]\.dp, NUMERIC\[c\]\.money\)/, "the subtotal and grand total");
+});
+
+test("every money column in the registry is declared money, and no count is", () => {
+  const reg = /const CUSTOM_REPORTS = \{[\s\S]*?\n\};/.exec(srv)[0];
+  // Named one by one rather than pattern-matched: a column that IS money and
+  // is not flagged renders a bare number beside flagged ones, which reads as a
+  // count. These are the four cards' own headers.
+  ["Collected", "Refunded", "Net Revenue", "Revenue \\(net of refunds\\)",
+   "Cash", "Check", "Credit / Debit", "User Credit"].forEach(c => {
+    const m = new RegExp('"' + c + '": \\{[^}]*money: true');
+    assert.match(reg, m, c + " is money");
+  });
+  // ...and the counts beside them are not. "Refunds" is a COUNT on cards 21684
+  // and 21685 while "Refunded" is money on 21683 — one letter apart.
+  ["Admissions", "Sold", "Refunds", "Reservations", "Lane Hours", "People",
+   "Sessions in Month", "Session Hours"].forEach(c => {
+    const m = new RegExp('"' + c + '": \\{[^}]*money');
+    assert.doesNotMatch(reg, m, c + " is a count, not money");
+  });
+});
+
+test("exports carry the raw number, never the formatted one", () => {
+  // A data file gets re-aggregated by whoever opens it, so "$1,234.50" is a
+  // string that will not sum. Same argument that keeps the raw timestamp in it.
+  const ft = liftFn(page, "flatTable");
+  assert.doesNotMatch(ft, /fmtNum|cellText/, "flatTable formats nothing");
+  const out = flatTable([{ A: 1234.5, B: "2026-09-09T22:58:30-07:00" }], ["A", "B"]);
+  assert.strictEqual(out[1][0], 1234.5);
+  assert.strictEqual(out[1][1], "2026-09-09T22:58:30-07:00");
+});
+
+/* ── 14. A timestamp a person can read ─────────────────────────────────────── */
+
+test("a timestamp reads as a date and a time", () => {
+  assert.strictEqual(prettyDate("2026-09-09T22:58:30.270278-07:00"), "Sep 9, 2026 10:58 PM");
+  assert.strictEqual(prettyDate("2026-09-10T05:37:47.97003-07:00"),  "Sep 10, 2026 5:37 AM");
+  assert.strictEqual(prettyDate("2026-09-10T00:04:00-07:00"), "Sep 10, 2026 12:04 AM", "midnight is 12 AM");
+  assert.strictEqual(prettyDate("2026-09-10T12:04:00-07:00"), "Sep 10, 2026 12:04 PM", "noon is 12 PM");
+  // The forms that were already handled must not move.
+  assert.strictEqual(prettyDate("2026-08-19"), "Aug 19, 2026");
+  assert.strictEqual(prettyDate("2026-08"), "August 2026");
+  assert.strictEqual(prettyDate("Lego Club (library)"), "Lego Club (library)",
+    "a value we cannot parse is one the card meant literally");
+});
+
+test("the timestamp is read off the string, never through new Date()", () => {
+  // The card has already stamped these in the ORG's timezone. Parsing to an
+  // instant and re-formatting renders them in the READER's zone, which moves a
+  // late-evening signup onto the next day for anyone east of the org. Five
+  // instances of that bug are recorded in CLAUDE.md. Comments are stripped
+  // first: this one quotes the broken form on purpose.
+  const fn = liftFn(page, "prettyDate").replace(/\/\/[^\n]*/g, "");
+  assert.doesNotMatch(fn, /new Date|Date\.parse|toLocale/,
+    "no instant parsing anywhere in it");
+  // The proof, not the shape: an offset the reader is not in must not shift it.
+  assert.strictEqual(prettyDate("2026-09-09T23:30:00+13:00"), "Sep 9, 2026 11:30 PM",
+    "the wall clock the card wrote is the answer, whatever the offset says");
+});
+
+test("the cell and the search box read the same text", () => {
+  // A reader who can SEE "Sep 9, 2026" has to be able to search for it.
+  assert.match(page, /: cellText\(r\[c\]\)/, "the cell goes through it");
+  const rows = [{ Name: "Ellen", "Created At": "2026-09-09T22:58:30-07:00" }];
+  assert.strictEqual(searchRows(rows, "sep 9").length, 1, "what is on screen");
+  assert.strictEqual(searchRows(rows, "2026-09-09").length, 1, "and the raw value still");
+  assert.strictEqual(searchRows(rows, "sep 11").length, 0);
+});
+
+/* ── 15. An identifier is never a vocabulary ───────────────────────────────── */
+
+test("a uuid column gets no filter menu, whatever its cardinality", () => {
+  // Section ID is 45 uuids in a September window — under the cap, so the cap
+  // let it through and the report offered a dropdown of 45 uuids.
+  const ids = Array.from({ length: 45 }, (_, i) =>
+    ({ "Section ID": "3b8c2479-1a22-4d34-b98a-" + String(i).padStart(12, "0"), Program: "P" }));
+  assert.strictEqual(isFilterable(ids, "Section ID", 100), false, "45 uuids is not a vocabulary");
+  assert.strictEqual(isFilterable(ids, "Program", 100), true, "the column beside it still gets one");
+  // Judged over the values that HAVE one: a handful of blanks must not hand a
+  // menu back to an id column.
+  const withBlanks = ids.concat([{ "Section ID": "", Program: "P" }, { "Section ID": null, Program: "P" }]);
+  assert.strictEqual(isFilterable(withBlanks, "Section ID", 100), false);
+  // ...and a real vocabulary that merely LOOKS long is untouched.
+  assert.strictEqual(isFilterable([{ L: "Urho Saari Swim Stadium" }], "L", 100), true);
+});
+
+test("the cardinality cap still does its own job", () => {
+  const many = Array.from({ length: 150 }, (_, i) => ({ Email: "a" + i + "@x.com" }));
+  assert.strictEqual(isFilterable(many, "Email", 100), false, "a directory");
+  assert.strictEqual(isFilterable(many.slice(0, 40), "Email", 100), true);
 });
 }
 

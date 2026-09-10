@@ -1240,7 +1240,8 @@ const STUBS = [
               "Rental Name": "Rental " + i, "Booking Type": "managed",
               Reservations: 1, "Lane Hours": 1 }))
           : [])),
-      meta: { card: 21682, window: { start: "2026-07-01", end: "2026-08-31" }, location: null },
+      meta: { card: 21682, window: { start: "2026-07-01", end: "2026-08-31" }, location: null,
+              columns: ["Month", "Location", "Lane", "Program Type", "Rental Name", "Booking Type", "Reservations", "Lane Hours"] },
     }) },
   /* All Users and Households. Grouped by Household, `People` 1 per row, so a
      household subtotal is its SIZE. Two households of two and one of one, and
@@ -1248,15 +1249,52 @@ const STUBS = [
      that scoped to the household rather than the person would read the same
      either way. The Turing row is the only "90245" on the sheet, which is what
      lets the search case key on a value no column header carries. */
-  { match: /\/all-users\/api\/data/, body: () => ({
-      rows: [
-        { Household: "Lovelace", "Household Role": "Head of Household", "Rec ID": "AAA111", "First Name": "Ada",  "Last Name": "Lovelace", Email: "ada@example.com",  Phone: "310-555-0101", "Street Number": "1",  "Street Name": "Main St",  City: "El Segundo", State: "CA", "Zip Code": "90245", "Residency?": "Yes", "Created At": "2026-01-04", "Date Added to Residency Group": "2026-01-05", People: 1 },
-        { Household: "Lovelace", "Household Role": "Member",            "Rec ID": "AAA112", "First Name": "Byron","Last Name": "Lovelace", Email: "byron@example.com","Phone": "310-555-0102", "Street Number": "1",  "Street Name": "Main St",  City: "El Segundo", State: "CA", "Zip Code": "90245", "Residency?": "No",  "Created At": "2026-01-04", "Date Added to Residency Group": "", People: 1 },
-        { Household: "Turing",   "Household Role": "Head of Household", "Rec ID": "BBB221", "First Name": "Alan", "Last Name": "Turing",   Email: "alan@example.com", Phone: "310-555-0201", "Street Number": "9",  "Street Name": "Grand Ave", City: "Torrance",  State: "CA", "Zip Code": "90501", "Residency?": "No",  "Created At": "2026-02-11", "Date Added to Residency Group": "", People: 1 },
-        { Household: "Hopper",   "Household Role": "Head of Household", "Rec ID": "CCC331", "First Name": "Grace","Last Name": "Hopper",   Email: "grace@example.com",Phone: "310-555-0301", "Street Number": "44", "Street Name": "Pine St",  City: "El Segundo", State: "CA", "Zip Code": "90245", "Residency?": "Yes", "Created At": "2026-03-02", "Date Added to Residency Group": "2026-03-03", People: 1 },
-      ],
-      meta: { card: 21715, window: { start: "2026-01-01", end: "2026-12-31" } },
-    }) },
+  { match: /\/all-users\/api\/data/, body: () => {
+      const rows = [
+        { Household: "Lovelace", "Household Role": "Head of Household", "Rec ID": "AAA111", "First Name": "Ada",  "Last Name": "Lovelace", Email: "ada@example.com",  Phone: "310-555-0101", "Street Number": "1",  "Street Name": "Main St",  City: "El Segundo", State: "CA", "Zip Code": "90245", "Created At": "2026-01-04T22:58:30.270278-07:00", "Residency?": "Yes", "Date Added to Residency Group": "2026-01-05T09:12:00-07:00", People: 1 },
+        { Household: "Lovelace", "Household Role": "Member",            "Rec ID": "AAA112", "First Name": "Byron","Last Name": "Lovelace", Email: "byron@example.com","Phone": "310-555-0102", "Street Number": "1",  "Street Name": "Main St",  City: "El Segundo", State: "CA", "Zip Code": "90245", "Created At": "2026-01-04T22:59:10-07:00", "Residency?": "No", "Date Added to Residency Group": "", People: 1 },
+        { Household: "Turing",   "Household Role": "Head of Household", "Rec ID": "BBB221", "First Name": "Alan", "Last Name": "Turing",   Email: "alan@example.com", Phone: "310-555-0201", "Street Number": "9",  "Street Name": "Grand Ave", City: "Torrance",  State: "CA", "Zip Code": "90501", "Created At": "2026-02-11T08:00:00-07:00", "Residency?": "No", "Date Added to Residency Group": "", People: 1 },
+        { Household: "Hopper",   "Household Role": "Head of Household", "Rec ID": "CCC331", "First Name": "Grace","Last Name": "Hopper",   Email: "grace@example.com",Phone: "310-555-0301", "Street Number": "44", "Street Name": "Pine St",  City: "El Segundo", State: "CA", "Zip Code": "90245", "Created At": "2026-03-02T13:45:00-07:00", "Residency?": "Yes", "Date Added to Residency Group": "2026-03-03T10:00:00-07:00", People: 1 },
+      ];
+      /* THE CARD'S OWN ORDER, sent as an array — the page must read this and
+         not the row keys, because `feed_cache.v` is a Postgres jsonb column and
+         jsonb sorts an object's keys by length then bytes. */
+      const columns = Object.keys(rows[0]);
+      /* `jsonb` reproduces that shuffle exactly, while meta.columns stays
+         correct: a page reading the row keys renders City / Email / Phone /
+         Rec ID / Zip Code / ... which is what production actually showed.
+         `prevcols` is the other half — a cache entry written before the order
+         was carried, which must still RENDER rather than come up blank. */
+      const shuffle = r => {
+        const out = {};
+        Object.keys(r).sort((a, b) => (a.length - b.length) || (a < b ? -1 : a > b ? 1 : 0))
+          .forEach(k => { out[k] = r[k]; });
+        return out;
+      };
+      const shuffled = STUB_MODE === "jsonb" || STUB_MODE === "prevcols";
+      return {
+        rows: shuffled ? rows.map(shuffle) : rows,
+        meta: Object.assign(
+          { card: 21715, window: { start: "2026-01-01", end: "2026-12-31" } },
+          STUB_MODE === "prevcols" ? {} : { columns }),
+      };
+    } },
+  /* Card 21683 (Aquatics Classes), and it is here for the MONEY: it is the only
+     one of the four whose registry marks columns `money: true`, and nothing but
+     a browser proves that flag survives registry -> ORG_CONFIG -> NUMERIC ->
+     the cell. Refunded is deliberately NEGATIVE-signed money on one row and
+     Session Hours / Sessions in Month are counts beside it, so a page that put
+     a dollar sign on everything fails just as hard as one that put it nowhere.
+     Section ID is 3 uuids: under the cardinality cap, so it is the cap letting
+     an identifier through that this proves is now caught. */
+  { match: /\/aquatic-classes\/api\/data/, body: () => {
+      const rows = [
+        { Month: "2026-09", Location: "Urho Saari Swim Stadium", Program: "Level 1- Tadpoles", Section: "Mon/Wed 4:00pm", "Section ID": "3b8c2479-1a22-4d34-b98a-b2141d53d71c", Instructor: "(no instructor on file)", "Participants (section total)": 5, "Sessions in Month": 7, "Session Hours": 2.92, Collected: 1250.5, Refunded: 0,   "Net Revenue": 1250.5 },
+        { Month: "2026-09", Location: "Urho Saari Swim Stadium", Program: "Level 1- Tadpoles", Section: "Mon/Wed 4:30pm", "Section ID": "0fc71484-3be5-454b-ab3c-55989f171ddc", Instructor: "(no instructor on file)", "Participants (section total)": 4, "Sessions in Month": 7, "Session Hours": 2.92, Collected: 0,      Refunded: 50,  "Net Revenue": -50 },
+        { Month: "2026-09", Location: "El Segundo Wiseburn Aquatic Center", Program: "Water Aerobics", Section: "Tue/Thurs 9:00am", "Section ID": "15de20ec-46b8-472f-845f-59cf3d99e256", Instructor: "Saul Gonzalez", "Participants (section total)": 9, "Sessions in Month": 8, "Session Hours": 3.33, Collected: 300, Refunded: 0, "Net Revenue": 300 },
+      ];
+      return { rows, meta: { card: 21683, window: { start: "2026-09-01", end: "2026-09-30" }, location: null, columns: Object.keys(rows[0]) } };
+    } },
   { match: /\/facilities\/api\/campsites/, body: () => campsitesGeo },
   { match: /\/waitlist\/api\/data/, body: () => ({ rows: waitlistRows(), meta: { org_id: "org-uuid-1" } }) },
   { match: /\/gl\/api\/data/, body: () => ({ rows: glRows(), meta: { org_id: "org-uuid-1" } }) },
@@ -4667,6 +4705,142 @@ const CASES = [
       });
     },
     needs: 'body[data-lane="1"] [data-row-count="1"]' },
+
+  /* ── The jsonb column shuffle ────────────────────────────────────────────
+     The bug Dan reported as "the order you have them in there is odd". It was
+     not the card and not a design choice: the feed cache is a Postgres jsonb
+     column, and jsonb sorts an object's keys by length then bytes. Measured
+     against production on card 21683, the same request — fresh came back in
+     the card's order, cached came back (length, alphabetical). */
+  { name: "all-users · the column order survives a jsonb-shuffled feed",
+    path: "/" + AQ_ORG + "/all-users", token: AQ_TOKEN, stubMode: "jsonb",
+    // The row keys arrive shuffled while meta.columns is right, so this passes
+    // only if the page reads meta. A page reading the keys renders
+    // City / Email / Phone / Rec ID / Zip Code / ... — production's own screen.
+    act: async page => {
+      await page.waitForSelector("[data-report-body]", { timeout: 15000 });
+      await page.evaluate(() => {
+        document.body.dataset.hdrs = [...document.querySelectorAll("table.rep thead th")]
+          .map(t => t.textContent.trim()).filter(Boolean).join("|");
+      });
+    },
+    // Dan's ask: first name, last name, email, THEN the rest. `Household` is
+    // the group heading and `People` is numeric, so it sits last.
+    needs: 'body[data-hdrs="First Name|Last Name|Email|Household Role|Rec ID|Phone|City|Zip Code|Created At|Residency?|People"]' },
+
+  { name: "all-users · a pre-order cache entry still renders",
+    path: "/" + AQ_ORG + "/all-users", token: AQ_TOKEN, stubMode: "prevcols",
+    // Feeds cache four hours, so an entry written before the order was carried
+    // is live alongside one that has it. It renders — shuffled, and healing on
+    // the next miss — rather than coming up blank. Degrading, never absent.
+    act: async page => {
+      await page.waitForSelector("[data-report-body]", { timeout: 15000 });
+      await page.evaluate(() => {
+        document.body.dataset.n = String(document.querySelectorAll("table.rep thead th").length - 1);
+      });
+    },
+    needs: 'body[data-n="11"] [data-row-count="4"]' },
+
+  { name: "all-users · a timestamp reads as a date and a time",
+    path: "/" + AQ_ORG + "/all-users", token: AQ_TOKEN,
+    // The feed carries 2026-01-04T22:58:30.270278-07:00. The raw ISO must be
+    // gone from the sheet and the readable form present — asserting only the
+    // second passes on a page printing both.
+    act: async page => {
+      await page.waitForSelector("[data-report-body]", { timeout: 15000 });
+      await page.evaluate(() => {
+        const t = document.querySelector("table.rep").innerText;
+        document.body.dataset.pretty = t.indexOf("Jan 4, 2026 10:58 PM") !== -1 ? "1" : "0";
+        document.body.dataset.raw    = /\d{4}-\d{2}-\d{2}T\d{2}:/.test(t) ? "1" : "0";
+      });
+    },
+    needs: 'body[data-pretty="1"][data-raw="0"]' },
+
+  { name: "all-users · the search finds what the cell says",
+    path: "/" + AQ_ORG + "/all-users", token: AQ_TOKEN,
+    pre: async page => { await page.evaluateOnNewDocument(() => { try { localStorage.clear(); } catch (e) {} }); },
+    // A reader who can SEE "Feb 11, 2026" has to be able to search it. The
+    // stored value is an ISO timestamp, so a search over the raw rows alone
+    // finds nothing and this fails.
+    act: async page => {
+      await page.waitForSelector("[data-report-body]", { timeout: 15000 });
+      const box = await page.$("input[data-search]");
+      await box.focus();
+      await page.keyboard.type("Feb 11");
+      await page.waitForFunction(() => {
+        const c = document.querySelector("[data-row-count]");
+        return c && c.getAttribute("data-row-count") === "1";
+      }, { timeout: 15000 });
+    },
+    needs: '[data-row-count="1"]' },
+
+  /* ── Money reads as money ──────────────────────────────────────────────── */
+  { name: "aquatic-classes · money carries a dollar sign and counts do not",
+    path: "/" + AQ_ORG + "/aquatic-classes", token: AQ_TOKEN,
+    // The registry's `money: true` has to survive ORG_CONFIG -> NUMERIC -> the
+    // cell, and no source assertion can see the rendered string. Session Hours
+    // is a count sitting in the same numeric block, so a page that dollared
+    // everything fails here too.
+    act: async page => {
+      await page.waitForSelector("[data-report-body]", { timeout: 15000 });
+      await page.evaluate(() => {
+        const cell = (col, sel) => {
+          const el = document.querySelector('[data-' + sel + '-col="' + col + '"]');
+          return el ? el.textContent.trim() : "";
+        };
+        const t = document.querySelector("table.rep").innerText;
+        document.body.dataset.money = t.indexOf("$1,250.50") !== -1 ? "1" : "0";
+        // Accounting style, with the sign OUTSIDE the currency mark.
+        document.body.dataset.neg = t.indexOf("($50.00)") !== -1 ? "1" : "0";
+        // A count must not grow one. Session Hours totals 9.17 across the three
+        // rows; Sessions in Month totals 22.
+        document.body.dataset.count = cell("Session Hours", "grand") === "9.17" ? "1" : "0";
+        document.body.dataset.grand = cell("Net Revenue", "grand");
+      });
+    },
+    needs: 'body[data-money="1"][data-neg="1"][data-count="1"][data-grand="$1,500.50"]' },
+
+  { name: "aquatic-classes · collected, refunded, net — in that order",
+    path: "/" + AQ_ORG + "/aquatic-classes", token: AQ_TOKEN,
+    // Dan: "flip the collected and refunded columns, so it reads, collected,
+    // refunded, net". The CARD already emits them that way; the cache was
+    // reordering them. Keyed on the three together, since one pair swapping is
+    // exactly the regression.
+    act: async page => {
+      await page.waitForSelector("[data-report-body]", { timeout: 15000 });
+      await page.evaluate(() => {
+        const h = [...document.querySelectorAll("table.rep thead th")].map(t => t.textContent.trim());
+        document.body.dataset.money3 = h.filter(x => /Collected|Refunded|Net Revenue/.test(x)).join("|");
+      });
+    },
+    needs: 'body[data-money3="Collected|Refunded|Net Revenue"]' },
+
+  { name: "aquatic-classes · Section ID gets no menu but keeps its column",
+    path: "/" + AQ_ORG + "/aquatic-classes", token: AQ_TOKEN,
+    pre: async page => { await page.evaluateOnNewDocument(() => { try { localStorage.clear(); } catch (e) {} }); },
+    // Three uuids — well under the cardinality cap, so the cap let this through
+    // and the report offered a dropdown of uuids. It is refused on SHAPE now.
+    // The column itself is still one tick away in the picker, because it is
+    // what separates two sections sharing a name.
+    act: async page => {
+      await page.waitForSelector("[data-report-body]", { timeout: 15000 });
+      await page.evaluate(() => {
+        document.body.dataset.menu =
+          document.querySelector('[data-cm-btn="f_Section_ID"]') ? "1" : "0";
+        document.body.dataset.sec =
+          document.querySelector('[data-cm-btn="f_Section"]') ? "1" : "0";
+      });
+      // The COLUMN is untouched: losing a menu must not lose the data. Open the
+      // Columns picker and look for it there — it is hidden by default on this
+      // report, so it is reachable rather than gone.
+      await page.click('[data-cm-btn="columns"]');
+      await page.waitForSelector('[data-cm-menu="columns"]', { timeout: 5000 });
+      await page.evaluate(() => {
+        document.body.dataset.pick =
+          document.querySelector('[data-cm-opt="columns"][data-cm-value="Section ID"]') ? "1" : "0";
+      });
+    },
+    needs: 'body[data-menu="0"][data-sec="1"][data-pick="1"]' },
 
   { name: "all-users · only Residency keeps a filter menu",
     path: "/" + AQ_ORG + "/all-users", token: AQ_TOKEN,

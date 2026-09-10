@@ -1899,6 +1899,12 @@ const CUSTOM_REPORTS = {
     // A uuid on a printed report is noise, but it is what separates two
     // sections sharing a name (49 names against 52 ids at El Segundo), so it is
     // hidden rather than dropped - and unhiding it splits them apart again.
+    //
+    // It gets no filter MENU either, and that needs no entry here: 45 uuids in
+    // a September window sits under the cardinality cap, so the cap let it
+    // through and the report offered a dropdown of uuids. isFilterable now
+    // refuses a column whose populated values are all uuids, which covers every
+    // id column on every report rather than this one.
     hiddenColumns: ["Section ID"],
     // Hilltop runs no aquatic programme sections, so it is NOT offered here.
     // A filter value that returns zero rows on the card it is applied to reads
@@ -2004,6 +2010,11 @@ const CUSTOM_REPORTS = {
     // ORDER BY already emits the owner first within each block, which is the
     // property groupRows walks and never re-sorts.
     groupBy: ["Household"],
+    // A PERSON IS THEIR NAME FIRST. The card emits Household Role and Rec ID
+    // ahead of the name, which is the right order for a file and the wrong one
+    // for a page — a reader scanning a household block is looking for who is
+    // in it, not for their role code. Everything else keeps the card's order.
+    columnOrder: ["First Name", "Last Name", "Email"],
     // `People` is 1 per row, so the household subtotal is the household's SIZE
     // and the grand total is the head count. Without it the roll-up machinery
     // has nothing to say on a report with no money in it.
@@ -7562,6 +7573,11 @@ Object.keys(CUSTOM_REPORTS).forEach((key) => {
       // entry does nothing where a stale allowlist would silently lose a
       // filter; and it never hides the COLUMN, only its dropdown.
       noFilter: spec.noFilter || [],
+      // An ORDER OVERRIDE, and a PREFIX rather than a full list: what is named
+      // leads, everything else keeps the card's own order behind it. A full
+      // list would be a transcription that goes stale the day the card gains a
+      // column; a name that no longer exists here simply matches nothing.
+      columnOrder: spec.columnOrder || [],
     };
     const html = fs.readFileSync(path.join(__dirname, "public", "custom-report.html"), "utf8");
     res.type("html").send(html.replace("</head>", () => orgConfigInject(orgConfig, req) + "</head>"));
@@ -7646,14 +7662,38 @@ Object.keys(CUSTOM_REPORTS).forEach((key) => {
       // rather than recomputed: a recomputed one can disagree with what
       // Metabase was actually asked, which is exactly what makes a report
       // uncheckable (the wizard's meta.window lesson).
+      const safeRows = Array.isArray(rows) ? rows : [];
       const payload = {
-        rows: Array.isArray(rows) ? rows : [],
+        rows: safeRows,
         meta: {
           card: spec.card,
           generated_at: new Date().toISOString(),
           window: { start: start || null, end: end || null },
           location: loc && spec.locations.includes(loc) ? loc : null,
           logo_url: org.logoUrl || "",
+          // THE CARD'S OWN COLUMN ORDER, CARRIED AS AN ARRAY — and it has to
+          // be, because the object keys cannot carry it past the cache.
+          // `feed_cache.v` is a Postgres **jsonb** column, and jsonb does not
+          // store an object's keys in insertion order: it sorts them by LENGTH
+          // and then bytewise. So a feed served from cache came back with its
+          // columns shuffled, and since feeds cache for four hours that is
+          // nearly every load. Measured on card 21683, the same request:
+          //   fresh   Month, Location, Program, Section, Section ID, ...,
+          //           Sessions in Month, Session Hours, Collected, Refunded
+          //   cached  Month, Program, Section, Location, Refunded, Collected,
+          //           Instructor, Section ID, Net Revenue, Session Hours
+          // — which is exactly (length, alphabetical), on both this card and
+          // card 21715. The renderer reads its columns and headers from the
+          // feed precisely so a card that gains a column needs no edit here;
+          // that property was silently false in production.
+          //
+          // An ARRAY survives, because jsonb preserves array order. Taken from
+          // the first row rather than declared, so it is still the card's
+          // order and not a transcription. The page falls back to the row keys
+          // when this is absent, so a cache entry written before this shipped
+          // still renders — it just renders in the shuffled order until the
+          // entry expires.
+          columns: safeRows.length ? Object.keys(safeRows[0]) : [],
         },
       };
       setCache(cacheKey, payload, key);
