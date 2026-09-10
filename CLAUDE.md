@@ -1,5 +1,221 @@
 # Project notes for Claude
 
+## PINNED: "Happening Today" belongs on the org DASHBOARD (Dan, 2026-09-10)
+
+*"the 'Happening today' is an awesome thought for a new card on the dashboard.
+Pin that thought for the weekend."*
+
+**It is the single most-copied card in the org survey — 5 of 5 collections
+sampled** (Apex, Clarksville, Norman, Watertown/Torrance, Brookline), which is
+the strongest demand signal in that whole exercise. It is deliberately NOT in
+this project: it is live data, and the rule already recorded here is that a
+dashboard is the place for a live trend while a report answers a question about
+a window somebody chose. Same line that moved Laurel's Coffee Chart out.
+
+**It belongs in rec-dashboard's Live Widgets section**, beside the coffee
+counter — and that section already has the shape (a per-card feed, a refresh
+tick), so this is a query plus a card rather than a new surface.
+
+Three things to settle before building it, all of which this file has already
+paid for elsewhere:
+
+- **"Today" is the ORG's today, not UTC.** `toISOString().slice(0,10)` is the
+  UTC date, and from 5pm Pacific that is already tomorrow — a "happening today"
+  card would drop the evening's programming, which is most of what it is for.
+  Build the date from local parts against the org's own timezone
+  (`location.timezone` is populated on all 3,099 locations; `organization.config
+  #>> '{general,primaryTimezone}'` is populated on all 168 live orgs, and the two
+  disagree for 22 of them).
+- **It spans sessions AND facility reservations**, which are different tables
+  with different grains — a class meeting is a `session`, a rental is a
+  `reservation`. One of the two alone is half the day.
+- **An empty day is a real answer** and must not read as a broken card. A
+  Monday in January genuinely has nothing on it.
+
+## THE THREE BASE DATA REPORTS (2026-09-10)
+
+Dan, on the survey: *"Let's do these as 'base data reports' and scope them so
+they can live cross org. Build them out in el segundo first, so they are all in
+the same spot, then we'll look into moving them to all orgs."*
+
+| report | card | El Segundo | platform |
+|---|---|---|---|
+| Account Credit Balances | [21781](https://rec.metabaseapp.com/question/21781) | 45 accounts | 7,664 accounts / $3,948,975 across 83 orgs |
+| Account Credit Ledger | [21782](https://rec.metabaseapp.com/question/21782) | 407 entries | 80,951 entries across 90 orgs |
+| Facility Rental Refunds Due | [21783](https://rec.metabaseapp.com/question/21783) | 114 bookings / $1,160.00 | 11,761 bookings / $97,893.76 across 54 orgs |
+
+**THESE ARE A DIFFERENT KIND OF ENTRY FROM THE FOUR AQUATICS REPORTS, and the
+difference is the point.** Cards 21682-21685 hardcode El Segundo's location
+names and GL-code ladders, so they are org-gated by NECESSITY. These three take
+`{{org_id}}` and nothing else, so the `orgIds` gate is a ROLLOUT decision:
+adding an org's uuid to the list is the whole of what it takes to give it the
+report. `custom-reports.spec.js` reads the SQL mirrors and fails on a hardcoded
+GL code, a named El Segundo facility or a literal uuid — because that claim rots
+SILENTLY otherwise: a card that grows one location name still renders perfectly
+here and returns nothing for everybody else.
+
+### ALL THREE TAKE THE SAME DATE RANGE — and a POSITION still is not windowed
+
+I built the first two **undated**, on the argument that a credit balance and an
+unrefunded cancellation are both *"what is outstanding RIGHT NOW"* and that a
+From/To pair changing nothing is the dead control this file keeps writing down.
+**Dan overruled it** — *"those reports should have the same date range filters
+as the others for consistency"* — and consistency across the Data Reports card
+is the better call, so the `undated` flag and every line of page code behind it
+were **removed rather than left unread**: a registry key nothing honours is the
+same dead end one level up, and that is why `aquaticsExtraTypes` was deleted
+too.
+
+**What could not follow is the arithmetic.** A balance is a POSITION, so it is
+current whatever the toolbar says, and the window moves the LEDGER columns only.
+The two bases are separated by the COLUMN NAMES — `Balance` against
+`Issued in Period` / `Used in Period` / `Entries in Period` — which is exactly
+the treatment the Programs summary needed after *"NET REVENUE"* sat lifetime
+beside a period figure under one date range and read as a bug for weeks. The
+lesson there was that the arithmetic was fine and the labels were the defect, so
+the labels do that work here from the start. **The grand total of `Balance` does
+not move when the window does**, and that is correct: it is the org's whole
+credit liability, which is the number the report exists to produce.
+
+**`Ledger Difference` KEEPS AN ALL-TIME CTE OF ITS OWN, and that is the
+load-bearing line.** It compares the live balance against the WHOLE ledger, so
+windowing it would make every account with no activity in range falsely read as
+drifted. Verified against real data rather than argued: El Segundo over
+September reads **1** drifted account, not 27. The spec fails by name on that
+mutation.
+
+**On refunds due the window has a real cost, and the report says so.** It is a
+WORK QUEUE, and the oldest unrefunded items are the ones most likely to have
+been missed — so the default month is precisely the range that hides them.
+Measured: September alone returns **52 rows / $691.00** against **114 /
+$1,160.00** with the dates cleared. Clearing them is the reading it is for; the
+window answers *"what did we cancel in March"*, which is a different and also
+real question. Dated on the CANCELLATION rather than the booking, because the
+cancellation is the event that creates the obligation.
+
+### `credit` IS A FULL LEDGER, and the sign convention is perfectly consistent
+
+Measured platform-wide over 80,951 rows — **0 of them soft-deleted**, so
+`deleted_at IS NULL` is a no-op there today and is kept anyway:
+
+| source | rows | sign |
+|---|---|---|
+| `refund_id` — refunded as credit | 37,079 | **all positive** |
+| `payment_id` — spent on a purchase | 33,061 | **all negative** |
+| `order_adjustment_id` — applied to an order | 4,250 | **all negative** |
+| none of the three — a staff grant or clawback | 6,561 | mixed (5,627 + / 934 −) |
+
+So `Direction` is read from the SIGN and `Source` from the link, and the CASE is
+ordered most-specific first because a row can carry more than one link.
+**`Amount` stays SIGNED**, so the monthly subtotal is the net movement and
+reconciles against the balances report; splitting it into two unsigned columns
+would read more tidily and would stop it adding up. The spec fails on that split.
+
+### THE BALANCE AND ITS OWN LEDGER DO NOT ALWAYS AGREE — 487 accounts, $76,672.79
+
+`credit_account.balance` is the live figure the product spends against; the
+ledger is the history. They differ on **487 accounts across 36 orgs**, and only
+**139** of those carry a non-zero balance. Including soft-deleted ledger rows
+does not close it (there are none), so it is real drift and not a filtering
+artifact. The report ships both and their difference: the balance leads because
+it is what a customer can actually spend, and `Ledger Difference` is hidden by
+default — one tick away, never presented as the point. It earned its place
+immediately: El Segundo reads 0 on 44 of 45 accounts and **$118 on one**.
+
+**NEGATIVE BALANCES ARE KEPT** — 49 platform-wide, where the org has let more out
+than it granted. Filtering them away hides the one state that certainly needs a
+human. Zero-balance accounts are excluded: 143,118 of 160,224 have never carried
+a credit.
+
+**And read El Segundo's own numbers with care**: their top five accounts are
+$1,099,641 / $1,000,000 / $50,000 / $49,960 / $25,000, all `@elsegundo.org`
+staff, all granted before go-live — **98.7% of their apparent book is
+pre-launch test data**. The report does not editorialise about it; the email
+column makes it obvious, which is the right way for it to show.
+
+### THE REFUNDS REPORT — what "owed" means, and the join that nearly broke it
+
+**It is money COLLECTED AND NOT REFUNDED on a cancelled booking. It is NOT a
+claim that the org owes it** — a retained cancellation fee is legitimate and
+looks identical in the data. Hence the column is `Unrefunded`, never
+`Refund Due`. The report surfaces the position; a human decides.
+
+**The grain is the RESERVATION**, because `order_item.reservation_id` links the
+money to the individual date — so a recurring rental that lost one Tuesday
+reports that Tuesday rather than the whole run. **Both cancellation paths
+count**: a reservation cancelled on its own, and a rental cancelled without its
+reservations being marked (measured, the second adds 12 rows / $934.75
+platform-wide — small, real, and invisible if you test only
+`reservation.canceled_at`).
+
+**I WROTE `reservation.court_id` AND EVERY ROW CAME BACK "(no site on file)"** —
+the exact trap this file already records for SF's 557,367 reservations. It is
+legacy-NULL on all 24,415 of El Segundo's too. The site is
+`reservation_court` → `court.court_number`; the LOCATION is
+`reservation.location_id` (populated 24,415 of 24,415), so the two come from
+different places. **AGGREGATED, NEVER JOINED**: a reservation may occupy more
+than one court and joining would multiply the row *and its money*. El Segundo is
+1:1 today, which is exactly why it had to be written for the general case — SF
+has multi-court reservations, and a report that double-counts a refund is worse
+than one that does not exist.
+
+**EXCLUDING `credit_id` TRANSACTIONS WAS CHECKED, NOT ASSUMED**, because it cuts
+both ways: a refund paid out as store credit would be invisible and the report
+would tell staff to refund somebody already made whole. Measured — `credit_id`
+is set on 2,205 of 2,744,498 transactions (0.08%) and on **ZERO** of those
+touching a cancelled facility reservation; and separately **all 11,122** refund
+rows on cancelled-rental items have a matching transaction, `organization-credit`
+ones included. Nothing is missed by reading transactions alone.
+
+**The scale is modest and that is the honest headline**: 70,702 cancelled
+reservations are ALREADY fully refunded. The product handles most of this; the
+report is the residue.
+
+### Two of my own probes returned confident zeros, both mine
+
+Recorded because it is the third and fourth instance in this file of *a
+measurement rules out the place you looked, not the fact*:
+
+- `section.pricing_policy` has **no `prices` array** — the shape is
+  `{"default":{"type":"fixed","cents":11000}}` — so my first GL probe reported
+  *"0 paid sections lack a GL code"* by reading a key that does not exist. The
+  true figure is **17,351 across 81 orgs**.
+- `facility_rental.status` holds exactly **two** values, `confirmed` and
+  `in-progress`. My pending-applications probe filtered on
+  `pending`/`requested`/`submitted` and returned **0 rows across 0 orgs**, which
+  reads as "nobody uses this feature" and was a statement about my WHERE clause.
+  The real figure is **1,791 across 56 orgs**.
+
+### Guards, and what is left
+
+`custom-reports.spec.js` 72 → **79 assertions**, and it now **LIFTS AND RUNS the
+registry** (supplying the two names it closes over) rather than regexing the
+literal — a regex over `numeric: { … }` passes on a key that is present and
+wrong. Mutation-tested: a hardcoded El Segundo location in the SQL, and the
+all-time CTE getting windowed; both fail by name.
+
+**THEY LIVE IN COLLECTION 3532, "Base Reports for Ninja Project"** — not in El
+Segundo's folder, where they were created. Dan: *"are we building them in El
+Segundo, or in our ninja reporting base project folder?"* 3532 is where all
+fifteen shared cards already sit (17294, 17295, 21649…), and these three are
+cross-org by construction, so that is their home. **Moving a card is safe**:
+`update_question` has patch semantics, and only a `query` save regenerates the
+template tags — which is also why the two SQL updates were safe here and are NOT
+safe on 21682-21685, where a human has already flipped the tags and set the
+`org_id` default.
+
+**THE THREE REPORTS ARE DARK UNTIL SOMEONE CREATES THE PUBLIC LINKS**, and that
+is deliberate rather than unfinished: `customReportEnabled` already refuses an
+entry with no uuid, so the card is simply not offered instead of rendering a
+Metabase error that reads as broken. Paste each card's public uuid into its
+registry entry (or set `MB_CREDIT_BALANCES_UUID` / `MB_CREDIT_LEDGER_UUID` /
+`MB_RENTAL_REFUNDS_UUID`) and all three light up with no other change.
+
+**No manifest rows yet.** These cards are not in `REPORT_TYPES`, so the health
+check does not probe them — the same gap already recorded for
+`aquatic-lane-hours`. Worth a row each once the links exist.
+
+
 ## THE REFUND VIEW COULD NOT BE SAVED OR PRINTED (2026-09-09)
 
 Dan, on needham's GL Code Rollup with the picker open on his own

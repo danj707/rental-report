@@ -2045,6 +2045,127 @@ const CUSTOM_REPORTS = {
       "Created At", "Date Added to Residency Group",
     ],
   },
+
+  // ── The base data reports ──────────────────────────────────────────────
+  // Dan, 2026-09-10: "Let's do these as 'base data reports' and scope them so
+  // they can live cross org. Build them out in El Segundo first, so they are
+  // all in the same spot, then we'll look into moving them to all orgs."
+  //
+  // SO THESE THREE ARE DELIBERATELY DIFFERENT FROM THE FOUR ABOVE. The aquatics
+  // cards hardcode El Segundo's own locations and GL codes, which is why they
+  // are org-gated by necessity. These take {{org_id}} and nothing else, so the
+  // gate below is a ROLLOUT decision rather than a limitation: adding an orgId
+  // to the list is the whole of what it takes to give another org the report.
+  //
+  // Cards created 2026-09-10, in El Segundo's collection so all seven sit
+  // together. They were CREATED and not re-saved, so each registers its tags
+  // once and there is no six-parameter duplication to flip away — and the date
+  // bounds on the ledger are written ::date, so it runs under a Text tag too.
+  //
+  // THEY ARE DARK UNTIL SOMEONE MAKES THE PUBLIC LINK, on purpose:
+  // customReportEnabled refuses an entry with no uuid, so the card is simply
+  // not offered rather than rendering a Metabase error that reads as broken.
+
+  // Card 21781. https://rec.metabaseapp.com/question/21781
+  "credit-balances": {
+    label: "Account Credit Balances",
+    chip: "Credit", chipIcon: "\u{1F4B3}",
+    emoji: "\u{1F4B3}",
+    desc: "Every account holding credit the organisation owes, with the ledger it reconciles to",
+    card: 21781,
+    uuid: process.env.MB_CREDIT_BALANCES_UUID || "",
+    orgIds: [CUSTOM_REPORT_ORG_IDS.elSegundo],
+    // IT HAS THE SAME DATE RANGE AS EVERY OTHER REPORT (Dan, 2026-09-10: "those
+    // reports should have the same date range filters as the others for
+    // consistency"), and the window moves the LEDGER columns only. A balance is
+    // a position rather than a flow, so `Balance` is current and all-time
+    // whatever the toolbar says — which is why every windowed column carries
+    // "in Period" in its own name. Two bases under one date range is exactly
+    // what made the Programs summary read as a bug for weeks; there the
+    // arithmetic was right and the labels were the defect, so the labels do
+    // that work here from the start.
+    //
+    // The grand total of `Balance` is therefore the org's whole credit
+    // liability and does not move with the window. That is the number the
+    // report exists to produce.
+    //
+    // NO GROUPING. The report IS the list, ordered by what is owed. A group
+    // level here would be an invented dimension rather than one the data
+    // carries.
+    groupBy: [],
+    numeric: {
+      "Balance": { dp: 2, money: true },
+      "Issued in Period": { dp: 2, money: true },
+      "Used in Period": { dp: 2, money: true },
+      "Entries in Period": { dp: 0 },
+      "Ledger Difference": { dp: 2, money: true },
+      "Accounts": { dp: 0 },
+    },
+    // The cross-check, not the point. It is zero on all but 139 accounts
+    // platform-wide, so it is one tick away rather than a column of noughts
+    // beside the figures people came for.
+    hiddenColumns: ["Ledger Difference"],
+  },
+
+  // Card 21782. https://rec.metabaseapp.com/question/21782
+  "credit-ledger": {
+    label: "Account Credit Ledger",
+    chip: "Credit Log", chipIcon: "\u{1F9FE}",
+    emoji: "\u{1F9FE}",
+    desc: "Every credit granted or spent, by month, with the staff member who did it and their note",
+    card: 21782,
+    uuid: process.env.MB_CREDIT_LEDGER_UUID || "",
+    orgIds: [CUSTOM_REPORT_ORG_IDS.elSegundo],
+    // This one IS a flow, so it keeps its window.
+    groupBy: ["Month"],
+    numeric: { "Amount": { dp: 2, money: true }, "Entries": { dp: 0 } },
+    // `Amount` is SIGNED, so the monthly subtotal is the net movement and the
+    // grand total reconciles against the balances report. Splitting it into two
+    // unsigned columns would read more tidily and would stop it adding up.
+    //
+    // Direction and Source keep their menus — two and four values, exactly the
+    // vocabulary-not-directory rule. Everything else here is per-PERSON or
+    // per-DAY, so its menu would be one checkbox per row.
+    noFilter: ["Date", "Member", "Email", "Granted By", "Note"],
+  },
+
+  // Card 21783. https://rec.metabaseapp.com/question/21783
+  "rental-refunds-due": {
+    label: "Facility Rental Refunds Due",
+    chip: "Refunds Due", chipIcon: "\u{1F4B8}",
+    emoji: "\u{1F4B8}",
+    desc: "Cancelled bookings where money was collected and never refunded, date by date",
+    card: 21783,
+    uuid: process.env.MB_RENTAL_REFUNDS_UUID || "",
+    orgIds: [CUSTOM_REPORT_ORG_IDS.elSegundo],
+    // The window is on the CANCELLATION date, and the tradeoff is worth knowing
+    // rather than discovering: this is a WORK QUEUE, and the oldest unrefunded
+    // items are the ones most likely to have been missed — so the default month
+    // is the range that hides them. Measured at El Segundo, September alone
+    // returns 52 rows / $691.00 against 114 / $1,160.00 with the dates cleared.
+    // Clearing them is the reading the report is for; the window answers "what
+    // did we cancel in March", which is a different and also real question.
+    groupBy: ["Location"],
+    numeric: {
+      "Collected": { dp: 2, money: true },
+      "Refunded": { dp: 2, money: true },
+      "Unrefunded": { dp: 2, money: true },
+      "Bookings": { dp: 0 },
+    },
+    // `Sites` is DELIBERATELY NOT in `numeric`: it is a count of courts on one
+    // booking, so summing it down the column adds up nothing anybody wants. It
+    // exists to make a multi-court booking legible, and it is hidden because it
+    // reads 1 on almost every row.
+    //
+    // A uuid is noise on a printed work queue and necessary in the file that
+    // comes off it, so `Rental ID` is hidden rather than dropped.
+    hiddenColumns: ["Sites", "Rental ID"],
+    // Location and Site are exactly the family Dan named as filterable — a
+    // place, and a court or lane name. The rest is a directory of people,
+    // dates and one-off rental names.
+    noFilter: ["Sites", "Booking Date", "Cancelled", "Rental", "Customer", "Email",
+               "Last Refund", "Rental ID"],
+  },
 };
 
 // The friendly directory is DERIVED, never transcribed: label and emoji have one
