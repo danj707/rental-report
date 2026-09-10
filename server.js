@@ -5755,9 +5755,24 @@ async function generatePdf(orgSlug, reportType, startDate, endDate, filters = {}
   // gl_codes / refunds: the GL report has sent both since its multi-select and
   // Refund Detail shipped, and this list silently dropped them — so the PDF
   // rendered every GL code the reader had excluded, without the refund columns.
+  // THIRD INSTANCE, 2026-09-09: `pii` on the rental schedule. Passing the three
+  // CLIENT gates (the page's getParams whitelist, its state, its export paths)
+  // looks exactly like working — the screen and the browser's own Print are
+  // both correct — and the SERVER-rendered PDF still carried the columns.
   ["locations", "location", "sites", "location_name", "site_type", "desks", "methods", "by_desk", "by_item", "hide_zero", "chart_net", "metric", "programs", "closures", "hrs", "section_name", "section_id", "status", "questions", "cols", "search", "tab", "instructor", "split", "book_type", "addons", "participant", "view", "tyler", "glq", "gl_codes", "refunds", "quarter", "insights"].forEach(k => {
     if (filters[k]) qsObj[k] = filters[k];
   });
+  // `pii` CANNOT RIDE THE LOOP ABOVE, and that is the whole bug this line fixes.
+  // Every other parameter there is meaningful only when non-empty, so the loop
+  // tests truthiness — but `pii` is a LIST, and its empty value is its most
+  // important one: "" means the reader switched BOTH contact columns off. The
+  // truthy test drops it, the print page then finds no parameter, falls back to
+  // its default (ON), and the PDF prints the phone numbers and emails that are
+  // not on the reader's screen.
+  //
+  // So it is forwarded on PRESENCE, not truthiness. Absent still means "the
+  // caller is not speaking about PII"; empty means "neither".
+  if (filters.pii !== undefined) qsObj.pii = filters.pii;
   if (orgTok) qsObj.token = orgTok;
   const qs = new URLSearchParams(qsObj);
   const url = `http://localhost:${PORT}/${orgSlug}/${reportType}?${qs}`;
