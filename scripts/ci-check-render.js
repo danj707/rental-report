@@ -411,9 +411,21 @@ function fasttrackRows() {
      section as v18 describes it, and the render case requires both to print
      Early Access. Nothing but a browser proves the two agree once the value has
      been through normalizeRow, ftEffectiveStatus and the table cell. */
+  /* GO-LIVE IS iso(-2), NOT iso(-1), AND THAT IS LOAD-BEARING. This section
+     carries the SAME 62 holds as launchedEarly, and `justLaunched` sorts by FT
+     stake with the go-live INSTANT as the tie-break — so with both on iso(-1)
+     the order was decided by whether a millisecond boundary happened to fall
+     between these two fixture lines. Same millisecond: a tie, and the stable
+     sort keeps launchedEarly first. One millisecond later: this row wins
+     recency and `fasttrack · launch order` fails. It did, once, in CI, on a
+     tree where it passed locally and on the previous run of the same commit.
+     A day earlier makes the tie-break deterministic and changes nothing else:
+     it is still inside the 3-day just-launched window, still an open early
+     window with general registration a week out, which is all its own case
+     asserts. A flaky assertion is not a guard. */
   const launchedEarlyV18 = Object.assign(table("Premier Table Early v18", 62, 37, 25, -1), {
     "Section ID": "sec-premier-early-v18",
-    "Early Access Opens": iso(-1), "Reg Opens": iso(6), "Reg Closes": iso(45),
+    "Early Access Opens": iso(-2), "Reg Opens": iso(6), "Reg Closes": iso(45),
     "Reg Status": "early-access",   // what the v18 card reports for this shape
     "FT Converted": 25, "FT Pending": 37, "Capacity": 25,
     "Direct Enrolled": 0, "Total Enrolled": 25, "Fill %": 100, "Conversion %": 40.3,
@@ -1212,8 +1224,38 @@ const STUBS = [
         { Month: "2026-07", Location: "Urho",     Lane: "C", "Program Type": "Masters",         "Rental Name": "SCAQ",         "Booking Type": "managed", Reservations: 8,  "Lane Hours": 21.25 },
         { Month: "2026-08", Location: "Wiseburn", Lane: "A", "Program Type": "Lap Swim",        "Rental Name": "Lap Swim",     "Booking Type": "managed", Reservations: 20, "Lane Hours": 40.5 },
         { Month: "2026-08", Location: "Hilltop",  Lane: "D", "Program Type": "Open / Rec Swim", "Rental Name": "Drop In Lanes","Booking Type": "managed", Reservations: 1,  "Lane Hours": 2 },
-      ].map(r => (STUB_MODE === "prevloc" ? (({ Location, ...rest }) => rest)(r) : r))),
+      ].map(r => (STUB_MODE === "prevloc" ? (({ Location, ...rest }) => rest)(r) : r))
+        /* `hicard` is what proves the cardinality cap in a browser: 130 rows
+           with 130 distinct Lane values against two Program Types. A menu is a
+           vocabulary, and no unit fixture can show that the PAGE offers one
+           set of menus and not the other.
+           130 IS CHOSEN AGAINST THE CAP, not for roundness — the cap is set
+           between 55 measured membership names and 145 measured rental names,
+           so a fixture under it proves nothing and would pass on a page with
+           no cap at all. */
+        .concat(STUB_MODE === "hicard"
+          ? Array.from({ length: 130 }, (_, i) => ({
+              Month: "2026-09", Location: "Wiseburn", Lane: "Lane " + i,
+              "Program Type": i % 2 ? "Lap Swim" : "Masters",
+              "Rental Name": "Rental " + i, "Booking Type": "managed",
+              Reservations: 1, "Lane Hours": 1 }))
+          : [])),
       meta: { card: 21682, window: { start: "2026-07-01", end: "2026-08-31" }, location: null },
+    }) },
+  /* All Users and Households. Grouped by Household, `People` 1 per row, so a
+     household subtotal is its SIZE. Two households of two and one of one, and
+     the residency answers deliberately DIFFER inside a household — a filter
+     that scoped to the household rather than the person would read the same
+     either way. The Turing row is the only "90245" on the sheet, which is what
+     lets the search case key on a value no column header carries. */
+  { match: /\/all-users\/api\/data/, body: () => ({
+      rows: [
+        { Household: "Lovelace", "Household Role": "Head of Household", "Rec ID": "AAA111", "First Name": "Ada",  "Last Name": "Lovelace", Email: "ada@example.com",  Phone: "310-555-0101", "Street Number": "1",  "Street Name": "Main St",  City: "El Segundo", State: "CA", "Zip Code": "90245", "Residency?": "Yes", "Created At": "2026-01-04", "Date Added to Residency Group": "2026-01-05", People: 1 },
+        { Household: "Lovelace", "Household Role": "Member",            "Rec ID": "AAA112", "First Name": "Byron","Last Name": "Lovelace", Email: "byron@example.com","Phone": "310-555-0102", "Street Number": "1",  "Street Name": "Main St",  City: "El Segundo", State: "CA", "Zip Code": "90245", "Residency?": "No",  "Created At": "2026-01-04", "Date Added to Residency Group": "", People: 1 },
+        { Household: "Turing",   "Household Role": "Head of Household", "Rec ID": "BBB221", "First Name": "Alan", "Last Name": "Turing",   Email: "alan@example.com", Phone: "310-555-0201", "Street Number": "9",  "Street Name": "Grand Ave", City: "Torrance",  State: "CA", "Zip Code": "90501", "Residency?": "No",  "Created At": "2026-02-11", "Date Added to Residency Group": "", People: 1 },
+        { Household: "Hopper",   "Household Role": "Head of Household", "Rec ID": "CCC331", "First Name": "Grace","Last Name": "Hopper",   Email: "grace@example.com",Phone: "310-555-0301", "Street Number": "44", "Street Name": "Pine St",  City: "El Segundo", State: "CA", "Zip Code": "90245", "Residency?": "Yes", "Created At": "2026-03-02", "Date Added to Residency Group": "2026-03-03", People: 1 },
+      ],
+      meta: { card: 21715, window: { start: "2026-01-01", end: "2026-12-31" } },
     }) },
   { match: /\/facilities\/api\/campsites/, body: () => campsitesGeo },
   { match: /\/waitlist\/api\/data/, body: () => ({ rows: waitlistRows(), meta: { org_id: "org-uuid-1" } }) },
@@ -4479,6 +4521,188 @@ const CASES = [
     token: AQ_TOKEN,
     // Otherwise the reader widens the dates when the fix is to clear a filter.
     needs: "[data-empty-filtered]", absent: "[data-empty]" },
+
+  /* ── The subtotal rows line up with the headers ───────────────────────────
+     THE EXISTING CASES CANNOT SEE THIS AND NEVER COULD. Every one of them keys
+     on [data-total-col="X"][data-total-val="N"], which is on the cell wherever
+     the cell happens to sit — so all of them passed while the subtotal and
+     grand-total rows pushed their numbers `textCols.length - 1` columns to the
+     RIGHT of the headers they belong under. The rows emitted a label cell
+     spanning the index column plus every text column AND a filler cell
+     spanning the text columns again.
+     It rendered correctly on the one shape nobody could see it in: with a
+     single text column the filler was suppressed by its own `> 1` guard. So
+     report 1 with Rental Name hidden looked right, and drop-in and passes —
+     three text columns each — were shifted by two.
+     The assertion is therefore POSITIONAL: walk the row summing colSpans and
+     require each total to land on its own header's index. */
+  { name: "aquatic-lane-hours · subtotal numbers sit under their own headers",
+    path: "/" + AQ_ORG + "/aquatic-lane-hours", token: AQ_TOKEN,
+    pre: async page => {
+      await page.evaluateOnNewDocument(() => { try { localStorage.clear(); } catch (e) {} });
+    },
+    act: async page => {
+      await page.waitForSelector("[data-report-body]", { timeout: 15000 });
+      await page.evaluate(() => {
+        const t = document.querySelector("table.rep");
+        const heads = [...t.querySelectorAll("thead th")].map(th => th.textContent.trim());
+        // Column index of each cell, by summing the colSpans before it.
+        const idxOf = (row, sel) => {
+          let i = 0, hit = null;
+          [...row.children].forEach(td => {
+            if (td.matches(sel)) hit = i;
+            i += td.colSpan || 1;
+          });
+          return hit;
+        };
+        const check = row => [...row.querySelectorAll("[data-total-col],[data-grand-col]")].every(td => {
+          const col = td.getAttribute("data-total-col") || td.getAttribute("data-grand-col");
+          const want = heads.indexOf(col);
+          const got = idxOf(row, '[data-total-col="' + col + '"],[data-grand-col="' + col + '"]');
+          return want >= 0 && want === got;
+        });
+        const rows = [...t.querySelectorAll("tr.sub"), ...t.querySelectorAll("tr.grand")];
+        // A single text column is the shape the bug hid in, so the case has to
+        // prove it is looking at a row that could show it.
+        const textCols = heads.length - 1 -
+          t.querySelectorAll("tr.grand [data-grand-col]").length;
+        document.body.dataset.aligned = rows.length && rows.every(check) ? "1" : "0";
+        document.body.dataset.textcols = String(textCols);
+      });
+    },
+    // textcols=3 (Lane, Program Type, Booking Type — Rental Name is hidden by
+    // default), which is exactly the shape the filler cell broke.
+    needs: 'body[data-aligned="1"][data-textcols="3"]' },
+
+  { name: "aquatic-lane-hours · Rental Name has no filter menu, only a toggle",
+    path: "/" + AQ_ORG + "/aquatic-lane-hours", token: AQ_TOKEN,
+    // 145 distinct values in a real September window: a checkbox list that long
+    // is a list, not a filter. The COLUMN survives — absence of the menu must
+    // not mean absence of the column, or the picker case above breaks with it.
+    needs: '[data-cm-btn="f_Program_Type"]',
+    absent: '[data-cm-btn="f_Rental_Name"]' },
+
+  { name: "aquatic-lane-hours · Print and PDF are two buttons",
+    path: "/" + AQ_ORG + "/aquatic-lane-hours", token: AQ_TOKEN,
+    act: async page => {
+      await page.waitForSelector("[data-report-body]", { timeout: 15000 });
+      await page.evaluate(() => {
+        const t = [...document.querySelectorAll(".toolbar button")].map(b => b.textContent.trim());
+        document.body.dataset.print = t.some(x => /^\S*\s*Print$/.test(x)) ? "1" : "0";
+        document.body.dataset.pdf   = t.some(x => /PDF$/.test(x)) ? "1" : "0";
+        // The combined button read "Print / PDF" — one control for two things
+        // that fail differently. It must be gone, not merely joined by a second.
+        document.body.dataset.combined = t.some(x => /Print \/ PDF/.test(x)) ? "1" : "0";
+      });
+    },
+    needs: 'body[data-print="1"][data-pdf="1"][data-combined="0"] .btn-pdf' },
+
+  { name: "aquatic-lane-hours · the card id is off the report",
+    path: "/" + AQ_ORG + "/aquatic-lane-hours", token: AQ_TOKEN,
+    act: async page => {
+      await page.waitForSelector("[data-report-body]", { timeout: 15000 });
+      await page.evaluate(() => {
+        document.body.dataset.card = /Metabase card|21682/.test(document.querySelector(".rep-head").innerText) ? "1" : "0";
+      });
+    },
+    // Keyed on the TEXT, not on the .rep-source element: the stale-cache
+    // warning still uses that class and must keep working.
+    needs: 'body[data-card="0"] [data-head-from]' },
+
+  { name: "aquatic-lane-hours · the search narrows the table and says so",
+    path: "/" + AQ_ORG + "/aquatic-lane-hours", token: AQ_TOKEN,
+    pre: async page => {
+      await page.evaluateOnNewDocument(() => { try { localStorage.clear(); } catch (e) {} });
+    },
+    act: async page => {
+      await page.waitForSelector("[data-report-body]", { timeout: 15000 });
+      const box = await page.$("input[data-search]");
+      await box.focus();
+      // "SCAQ" lives ONLY in Rental Name, which this report opens with HIDDEN —
+      // so a search restricted to the visible columns finds nothing and this
+      // case fails. That is the point of picking it.
+      await page.keyboard.type("SCAQ");
+      await page.waitForFunction(() => {
+        const c = document.querySelector("[data-row-count]");
+        return c && c.getAttribute("data-row-count") === "1";
+      }, { timeout: 15000 });
+      await page.evaluate(() => {
+        document.body.dataset.note =
+          /search/i.test((document.querySelector("[data-scope-note]") || {}).innerText || "") ? "1" : "0";
+      });
+    },
+    needs: 'body[data-note="1"] [data-row-count="1"]' },
+
+  { name: "aquatic-lane-hours · a 130-value column gets no menu, a 2-value one does",
+    path: "/" + AQ_ORG + "/aquatic-lane-hours", token: AQ_TOKEN, stubMode: "hicard",
+    // Dan: "don't add filters for data sets that are huge... only for items
+    // like locations, sites, membership names, lane or court names, groups,
+    // residency status." Lane is 130 distinct here and Program Type is 2, and
+    // NEITHER is in the registry's noFilter list — so this passes only if the
+    // page decided it from the rows.
+    act: async page => {
+      await page.waitForSelector("[data-report-body]", { timeout: 15000 });
+      await page.evaluate(() => {
+        const has = s => !!document.querySelector('[data-cm-btn="' + s + '"]');
+        document.body.dataset.lane = has("f_Lane") ? "1" : "0";
+        document.body.dataset.prog = has("f_Program_Type") ? "1" : "0";
+        // The COLUMN is untouched — losing a menu must not lose the data.
+        document.body.dataset.col =
+          [...document.querySelectorAll("table.rep thead th")].some(t => t.textContent.trim() === "Lane") ? "1" : "0";
+      });
+    },
+    needs: 'body[data-lane="0"][data-prog="1"][data-col="1"]' },
+
+  { name: "aquatic-lane-hours · a filtered column keeps its menu, so it can be cleared",
+    path: "/" + AQ_ORG + "/aquatic-lane-hours?f_Lane=" + encodeURIComponent("Lane 3"),
+    token: AQ_TOKEN, stubMode: "hicard",
+    // Same 60-value column as above, and the case above proves it normally has
+    // no menu. A deep link can narrow on anything; a filter with no control to
+    // clear it is a dead end, and the scope note would name a filter the reader
+    // cannot undo.
+    act: async page => {
+      await page.waitForSelector("[data-report-body]", { timeout: 15000 });
+      await page.evaluate(() => {
+        document.body.dataset.lane = document.querySelector('[data-cm-btn="f_Lane"]') ? "1" : "0";
+      });
+    },
+    needs: 'body[data-lane="1"] [data-row-count="1"]' },
+
+  { name: "all-users · only Residency keeps a filter menu",
+    path: "/" + AQ_ORG + "/all-users", token: AQ_TOKEN,
+    act: async page => {
+      await page.waitForSelector("[data-report-body]", { timeout: 15000 });
+      await page.evaluate(() => {
+        const slugs = [...document.querySelectorAll("[data-cm-btn]")]
+          .map(b => b.getAttribute("data-cm-btn")).filter(x => x.indexOf("f_") === 0);
+        document.body.dataset.menus = slugs.sort().join("|");
+      });
+    },
+    // Thirteen per-person menus came off. A menu per email address is the
+    // report itself rendered as a dropdown.
+    needs: 'body[data-menus="f_Residency_"] input[data-search]' },
+
+  { name: "all-users · the search reaches a column with no menu",
+    path: "/" + AQ_ORG + "/all-users?q=90245", token: AQ_TOKEN,
+    // Zip Code has no filter menu and — like every address part — is not what
+    // a reader would think to open first. Three of the four fixture rows carry
+    // 90245, and the deep link proves ?q= is read back rather than only typed.
+    act: async page => {
+      await page.waitForFunction(() => {
+        const c = document.querySelector("[data-row-count]");
+        return c && c.getAttribute("data-row-count") === "3";
+      }, { timeout: 15000 });
+      await page.evaluate(() => {
+        // Stamped on <body> rather than asserted as a selector pair: `needs` is
+        // ONE querySelector, so '[data-row-count="3"] [data-scope-note]' asks
+        // for a scope note INSIDE the row counter — which nothing has ever
+        // rendered, on any build. The case failed on correct code until this
+        // was fixed, which is the descendant-selector trap in a `needs`.
+        document.body.dataset.q = (document.querySelector("input[data-search]") || {}).value || "";
+        document.body.dataset.note = document.querySelector("[data-scope-note]") ? "1" : "0";
+      });
+    },
+    needs: 'body[data-q="90245"][data-note="1"] [data-row-count="3"]' },
 
   { name: "wizard · feed date window", path: "/{org}/report-wizard",
     needs: "[data-rw-window=\"Aug 19 \u2013 Aug 26\"]",

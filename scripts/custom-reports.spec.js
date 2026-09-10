@@ -78,11 +78,13 @@ const lifted = new Function("NUMERIC", "MONTHS", `
   ${liftFn(page, "collapseRows")}
   ${liftFn(page, "filterRows")}
   ${liftFn(page, "valueCountsFor")}
+  ${liftFn(page, "searchRows")}
+  ${liftFn(page, "isFilterable")}
   return { numOf, fmtNum, prettyDate, columnsOf, groupRows, flattenTree, flatTable,
-           levelsSafe, collapseRows, filterRows, valueCountsFor };
+           levelsSafe, collapseRows, filterRows, valueCountsFor, searchRows, isFilterable };
 `)(NUMERIC_FIXTURE,
    ['January','February','March','April','May','June','July','August','September','October','November','December']);
-const { fmtNum, prettyDate, columnsOf, groupRows, flattenTree, flatTable,
+const { fmtNum, prettyDate, columnsOf, groupRows, flattenTree, flatTable, searchRows, isFilterable,
         levelsSafe, collapseRows, filterRows, valueCountsFor } = lifted;
 
 /* ── The fixture ───────────────────────────────────────────────────────────
@@ -598,6 +600,230 @@ test("report 2 does NOT roll up a per-section total", () => {
     "a per-section total must not be additive");
   assert.ok(num.indexOf('"Session Hours"') !== -1 && num.indexOf('"Net Revenue"') !== -1,
     "while the genuinely additive columns still roll up");
+});
+
+test("the subtotal rows span the index column plus the text columns, ONCE", () => {
+  // The bug this exists for: the row emitted a label cell spanning
+  // 1 + textCols AND a filler cell spanning textCols - 1, so every subtotal
+  // and the grand total pushed their numbers that many columns to the RIGHT of
+  // their own headers. It was invisible on the one shape it rendered
+  // correctly — a single text column suppressed the filler by its own `> 1`
+  // guard — which is why report 1 looked fine while drop-in and passes did not.
+  //
+  // The positional proof is the render case; this is the source form of it, so
+  // the guard survives a rewrite that stops going through those two rows.
+  const tbl = page.slice(page.indexOf("function GroupedTable"), page.indexOf("function App()"));
+  assert.ok(!/colSpan=\{textCols\.length - 1\}/.test(tbl),
+    "no second leading cell may span the text columns again");
+  assert.strictEqual((tbl.match(/colSpan=\{labelSpan\}/g) || []).length, 2,
+    "the subtotal row and the grand total row each take exactly one label span");
+  assert.ok(/const labelSpan = Math\.max\(1, 1 \+ textCols\.length\)/.test(tbl),
+    "and that span is the index column plus every text column");
+});
+
+test("the search reads EVERY column, including the hidden ones", () => {
+  // "SCAQ" lives only in Rental Name, which report 1 opens with hidden. A
+  // search restricted to the visible columns would find nothing — and a reader
+  // hunting a name should not first have to work out which column it is in.
+  const rows = [
+    { Month: "2026-07", "Rental Name": "SCAQ", Zip: "90245", Reservations: 8 },
+    { Month: "2026-08", "Rental Name": "Lap Swim", Zip: "90501", Reservations: 3 },
+  ];
+  assert.strictEqual(searchRows(rows, "scaq").length, 1, "case-insensitive, and it reaches a hidden column");
+  assert.strictEqual(searchRows(rows, "90245").length, 1, "and a value no header carries");
+  assert.strictEqual(searchRows(rows, "").length, 2, "an empty box is not a filter");
+  assert.strictEqual(searchRows(rows, "   ").length, 2, "nor is whitespace");
+  // AND, not a substring of the joined row: every word must appear somewhere,
+  // so the reader need not type them in the card's own column order.
+  assert.strictEqual(searchRows(rows, "scaq 90245").length, 1, "both terms, in either order");
+  assert.strictEqual(searchRows(rows, "90245 scaq").length, 1, "order does not matter");
+  assert.strictEqual(searchRows(rows, "scaq 90501").length, 0,
+    "terms from two different rows match neither");
+  // The separator between columns must not let a term straddle two of them.
+  assert.strictEqual(searchRows([{ a: "foo", b: "bar" }], "foobar").length, 0,
+    "a term may not span a column boundary");
+});
+
+test("Rental Name gets no filter MENU, and keeps its column", () => {
+  const reg = srv.slice(srv.indexOf("const CUSTOM_REPORTS = {"), srv.indexOf("\n};", srv.indexOf("const CUSTOM_REPORTS = {")));
+  const lane = reg.slice(reg.indexOf('"aquatic-lane-hours"'), reg.indexOf('"aquatic-classes"'));
+  assert.ok(/noFilter: \["Rental Name"\]/.test(lane), "no menu for 145 distinct values");
+  assert.ok(/hiddenColumns: \["Rental Name"\]/.test(lane),
+    "and it is still a COLUMN — one tick in the picker brings it back");
+});
+
+test("All Users keeps ONE filter, and it is the one with two answers", () => {
+  const reg = srv.slice(srv.indexOf("const CUSTOM_REPORTS = {"), srv.indexOf("\n};", srv.indexOf("const CUSTOM_REPORTS = {")));
+  const users = reg.slice(reg.indexOf('"all-users"'));
+  const nf = /noFilter: \[([\s\S]*?)\]/.exec(users);
+  assert.ok(nf, "all-users declares a noFilter list");
+  const listed = (nf[1].match(/"([^"]+)"/g) || []).map(x => x.slice(1, -1));
+  // Every per-PERSON dimension. A menu per email address is the report itself
+  // rendered as a dropdown.
+  ["Household Role", "Rec ID", "First Name", "Last Name", "Email", "Phone",
+   "Street Number", "Street Name", "City", "State", "Zip Code",
+   "Created At", "Date Added to Residency Group"].forEach(c =>
+    assert.ok(listed.includes(c), c + " must lose its menu"));
+  assert.ok(!listed.includes("Residency?"),
+    "Residency? is the one that stays — two values, and staff ask it");
+});
+
+test("a filter is offered for a VOCABULARY, never for a directory", () => {
+  // Dan, 2026-09-10: "don't add filters for data sets that are huge, like names,
+  // emails, etc... only for items like locations, sites, membership names, lane
+  // or court names, groups, residency status."
+  //
+  // Derived from the ROWS rather than from a list, so a new report inherits it
+  // and a card that gains a column gets the right answer the day it ships.
+  const many = Array.from({ length: 60 }, (_, i) =>
+    ({ Email: "p" + i + "@example.com", Location: i % 2 ? "Wiseburn" : "Urho", "Residency?": i % 3 ? "Yes" : "No" }));
+  assert.strictEqual(isFilterable(many, "Location", 40), true, "two locations is a filter");
+  assert.strictEqual(isFilterable(many, "Residency?", 40), true, "and two residency answers");
+  assert.strictEqual(isFilterable(many, "Email", 40), false, "sixty emails is a directory");
+  // The cap is inclusive, and one past it is not.
+  const exact = Array.from({ length: 60 }, (_, i) => ({ c: "v" + (i % 40) }));
+  assert.strictEqual(isFilterable(exact, "c", 40), true, "exactly at the cap is still a filter");
+  assert.strictEqual(isFilterable(Array.from({ length: 60 }, (_, i) => ({ c: "v" + (i % 41) })), "c", 40), false,
+    "one past it is not");
+  // Blank is a value like any other — it is an option on the menus that survive.
+  assert.strictEqual(isFilterable([{ c: "" }, { c: null }, { c: "x" }], "c", 40), true);
+  assert.strictEqual(isFilterable([], "c", 40), true, "an unanswered feed is not a directory");
+  // The CAP ITSELF is bounded by two measured numbers rather than picked: card
+  // 21685 emits 55 pass and membership names (which Dan named as something that
+  // SHOULD have a filter) and card 21682 emits 145 rental names (the menu he
+  // asked to remove). A cap outside that range gets one of the two wrong.
+  const cap = Number(/const FILTER_MAX_OPTIONS = (\d+);/.exec(page)[1]);
+  assert.ok(cap > 55, "55 membership names must keep their menu, got cap " + cap);
+  assert.ok(cap < 145, "145 rental names must lose theirs, got cap " + cap);
+});
+
+test("a column already being filtered KEEPS its menu, whatever its cardinality", () => {
+  // A deep link can narrow on anything. A filter with no control to clear it is
+  // a dead end — the scope note would read "Email: ada@example.com" with
+  // nothing on screen able to undo it.
+  assert.ok(/\(filters\[c\] \|\| \[\]\)\.length \|\|/.test(page),
+    "an active filter is the first branch of filterCols");
+});
+
+test("the page reads the noFilter list rather than hard-coding one", () => {
+  assert.ok(/const NO_FILTER = Array\.isArray\(CFG\.noFilter\)/.test(page),
+    "it comes from the registry, injected");
+  assert.ok(/NO_FILTER\.indexOf\(c\) === -1 && isFilterable\(/.test(page),
+    "and it gates the FILTER menus, alongside the cardinality cap");
+  assert.ok(/\{filterCols\.map\(c => \(/.test(page),
+    "the menus are rendered from that set, not from every dimension");
+  // It must NOT gate the column picker: absence of a menu is not absence of a
+  // column, and conflating them would silently drop Rental Name from the picker
+  // the render case ticks.
+  assert.ok(/options=\{dimCols\.map\(c => \(\{ value: c, label: c \}\)\)\}/.test(page),
+    "the column picker still offers every dimension");
+});
+
+test("Print and PDF are two controls, and only one of them is the server's", () => {
+  assert.ok(!/Print \/ PDF/.test(page), "the combined button is gone");
+  assert.ok(/onClick=\{print\}>🖨️ Print</.test(page), "Print is the browser's own");
+  assert.ok(/onClick=\{downloadPdf\}>📄 PDF</.test(page), "PDF is the server's");
+  assert.ok(/openReportPdf\(withToken\(basePath \+ '\/api\/pdf\?'/.test(page),
+    "through the popup, because a download from a sandboxed iframe is dropped");
+  // The marker Puppeteer waits on. Without it the PDF route sits at the
+  // 120s waitForSelector on a page that rendered instantly.
+  assert.ok(/id="report-ready"/.test(page), "and the page says when it has resolved");
+  assert.ok(/\{!loading && <div id="report-ready"/.test(page),
+    "once it has RESOLVED — a marker present while loading captures a spinner");
+});
+
+test("the PDF route is registered above the generic one, and gated", () => {
+  const custom = srv.indexOf("app.get(`/:org/${key}/api/pdf`");
+  const generic = srv.indexOf('app.get("/:org/:report/api/pdf"');
+  assert.ok(custom > -1, "the custom reports have their own PDF route");
+  assert.ok(generic > -1 && custom < generic,
+    "ABOVE the generic one — Express matches in registration order, and " +
+    "resolveOrg 404s any report outside REPORT_TYPES, which these are not");
+  const block = srv.slice(custom, custom + 1400);
+  assert.ok(/customReportEnabled\(slug, key\)/.test(block), "an org without the report is refused");
+  assert.ok(/deliberate404/.test(block),
+    "and that refusal is MARKED, or every stale link posts a DEAD LINK alert");
+});
+
+test("generatePdf carries this report's whole filter vocabulary", () => {
+  // THE GUARD HAS TO CROSS THE BOUNDARY THE BUG CROSSES. A render case drives
+  // the PAGE at ?_print=1 and proves it READS these; it says nothing about
+  // whether the server SENDS them, which is exactly how five green render cases
+  // sat over a PDF that ignored `pii`. So this lifts generatePdf's own query
+  // builder and runs it.
+  const gp = srv.slice(srv.indexOf("async function generatePdf("));
+  const start = gp.indexOf("const qsObj = {");
+  // Bounded by the line that CONSUMES the query string, not by the forwarding
+  // itself: an end marker naming the code under test means deleting that code
+  // breaks the SLICE, and the mutation then dies with "the builder is not where
+  // this expects it" instead of failing on the parameter it dropped. That is
+  // the guard-dies-instead-of-failing trap, recorded four times in CLAUDE.md.
+  const end = gp.indexOf("const url = `http://localhost:");
+  assert.ok(start > -1 && end > start, "the query builder is where this expects it");
+  const buildQs = new Function("startDate", "endDate", "orgTok", "filters",
+    gp.slice(start, end).replace(/const orgTok = [^\n]*\n/, "") + "\nreturn qs.toString();");
+
+  const qs = buildQs("2026-09-01", "2026-09-30", "tok", {
+    location: "Urho Saari Swim Stadium",
+    f_Program_Type: ["Lap Swim", "Masters"],
+    f_Rental_Name: "Court Reservation: Lane 2 - B, Court Reservation: Lane 3 - A",
+    q: "90245",
+    hide: ["Rental Name", "Booking Type"],
+  });
+  const p = new URLSearchParams(qs);
+  assert.deepStrictEqual(p.getAll("f_Program_Type"), ["Lap Swim", "Masters"],
+    "REPEATED, never comma-joined — a rental name legitimately contains a comma");
+  assert.deepStrictEqual(p.getAll("f_Rental_Name"),
+    ["Court Reservation: Lane 2 - B, Court Reservation: Lane 3 - A"],
+    "and a value carrying one survives whole");
+  assert.strictEqual(p.get("q"), "90245", "the search travels");
+  assert.deepStrictEqual(p.getAll("hide"), ["Rental Name", "Booking Type"],
+    "and the column picker, which lives in localStorage and has NO other way " +
+    "to reach a Puppeteer render");
+
+  // THE EMPTY VALUE IS THE ONE THAT BREAKS. `hide=` means the reader unhid
+  // everything; dropped, the print page falls back to the report's own
+  // hiddenColumns and the PDF hides columns that are on the reader's screen.
+  const off = new URLSearchParams(buildQs("2026-09-01", "2026-09-30", "tok", { q: "", hide: "" }));
+  assert.ok(/(^|&)hide=(&|$)/.test(off.toString()), "an EMPTY hide is forwarded, not dropped");
+  assert.ok(/(^|&)q=(&|$)/.test(off.toString()), "and an empty search with it");
+
+  // Absent still means "the caller is not speaking about this".
+  const none = new URLSearchParams(buildQs("2026-09-01", "2026-09-30", "tok", {}));
+  assert.strictEqual(none.has("hide"), false, "absent stays absent");
+  assert.strictEqual(none.has("q"), false, "absent stays absent");
+});
+
+test("a ?hide= link SETS the columns and does not rewrite the reader's default", () => {
+  assert.ok(/const HIDE_IN_URL = SP\.has\('hide'\)/.test(page),
+    "presence decides, not truthiness — an empty hide is a real answer");
+  assert.ok(/if \(HIDE_IN_URL\) return SP\.getAll\('hide'\)/.test(page),
+    "the URL wins over this browser's preference");
+  assert.ok(/function saveHidden\(v\) \{\s*\n\s*if \(HIDE_IN_URL\) return;/.test(page),
+    "and a link must not quietly become the reader's own default");
+});
+
+test("the exports and the print view all follow the search", () => {
+  // The standing rule: a filter is not finished when the screen is right. Every
+  // export reads shownRows, and shownRows is searched BEFORE it is collapsed —
+  // subtotals for rows that are not on screen is the same defect one level up.
+  assert.ok(/const kept = searchRows\(filterRows\(rows \|\| \[\], filters\), q\);/.test(page),
+    "search then filter, then collapse");
+  ["downloadCsv", "downloadExcel"].forEach(fn => {
+    const body = page.slice(page.indexOf("function " + fn), page.indexOf("}", page.indexOf("function " + fn) + 200));
+    assert.ok(/shownRows/.test(body), fn + " exports the narrowed rows");
+  });
+  assert.ok(/q \? u\.searchParams\.set\('q', q\)/.test(page), "and it is in the URL, so a link lands on it");
+  // Excluded is never hidden: whoever prints this has no toolbar to look at.
+  assert.ok(/q\.trim\(\) \? ' · search: "' \+ q\.trim\(\) \+ '"' : ''/.test(page),
+    "the scope note names the search on the page");
+});
+
+test("the Metabase card id is off the report, and the cache warning is not", () => {
+  const head = page.slice(page.indexOf('<div className="rep-head">'), page.indexOf("{loading &&"));
+  assert.ok(!/Metabase card/.test(head), "internal plumbing on a report an org prints and files");
+  assert.ok(/meta\.stale_cache && \(/.test(head),
+    "the stale-cache warning STAYS — that is a fact about the figures");
 });
 
 test("a report with no public link yet is NOT offered", () => {

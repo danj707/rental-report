@@ -7117,6 +7117,282 @@ Plus a browser check that the KPI **opens** the panel and closes again, and that
 sorting on the new column works — `ci-check-admin-js` proves the handler exists
 and parses, which is not the same claim.
 
+## THE SUBTOTAL NUMBERS WERE UNDER THE WRONG HEADERS (2026-09-10)
+
+Dan, with four screenshots across the custom data reports: *"remove the
+'metabase card' info / remove the 'rental name' filter / split out the print and
+pdf buttons... drop in admissions — misaligned columns and row totals / Aquatic
+passes — similar misalignment / Users and HH — report too wide with cut off
+columns — remove [thirteen] filters, leave ONLY an open text search field and
+residency yes/no"*.
+
+### IT RENDERED CORRECTLY ON THE ONE SHAPE NOBODY COULD SEE IT IN
+
+`GroupedTable`'s subtotal and grand-total rows emitted **two** leading blocks
+that both covered the text columns:
+
+```jsx
+<td className="sublabel" colSpan={labelSpan}>{it.label}</td>   // 1 + textCols
+{textCols.length > 1 && <td colSpan={textCols.length - 1} />}  // ...again
+```
+
+so the leading span was `2 x textCols.length` against a header's
+`1 + textCols.length`, and every total was pushed `textCols.length - 1` columns
+to the RIGHT of its own heading. On Aquatic Passes that put `Sold / Refunds /
+Net Revenue` under Cash / Check / Credit.
+
+**The `> 1` guard is why report 1 looked fine.** Lane Hours opens with Rental
+Name hidden, which leaves ONE text column, which suppresses the filler — so the
+report Dan checked first was the only one that could not show the bug.
+
+**NO EXISTING CASE COULD SEE IT, and there were twelve.** Every one keys on
+`[data-total-col="X"][data-total-val="N"]`, and those attributes are on the cell
+wherever the cell happens to sit. *An attribute assertion is not a position
+assertion.* The new case walks the row summing `colSpan` and requires each total
+to land on its own header's index — and it also stamps `data-textcols`, so it
+fails rather than passing vacuously on the single-column shape.
+
+### THE PDF DID NOT EXIST — and it is the standing rule's own first customer
+
+There was one **Print / PDF** button calling `window.print()`. Splitting it is
+not cosmetic: **print and PDF fail differently.** Print hands the reader's own
+browser the page it is already showing and is right by construction. The PDF is
+Puppeteer driving this same page under `?_print=1` in a browser that has never
+seen this reader — **no localStorage, no state, the URL is the only channel** —
+so it needs its own route, `#report-ready` (absent from this page entirely), and
+every narrowing written into the query string.
+
+**`hide` IS THE LOAD-BEARING ONE.** The column picker lives in localStorage by
+deliberate design (*"which columns you like looking at is a display
+preference"*), which means it has **no other way to reach the render**. So
+`?hide=` is read on this page, `saveHidden` is gated on it (a shared link must
+not rewrite the reader's own default), and `generatePdf` forwards it.
+
+**Three of these CANNOT ride `generatePdf`'s named list**, and both reasons are
+new: the per-column filters are `f_<column>` — one key per column, named by the
+card's own headers, so there is no fixed list to enumerate — and `f_` and `hide`
+are **repeated keys**, where `new URLSearchParams({k: [a, b]})` comma-joins and
+a rental name legitimately contains a comma. They are appended after the object
+is built. And, as with `pii`, they travel on **presence**: an empty `hide` means
+*"the reader unhid everything"*, which is not the report's default.
+
+**`reportLabel`'s CASE ladder ends in `: "Facility Rental Schedule"`**, so every
+one of these PDFs would have carried that in its own footer. Read from
+`CUSTOM_REPORTS` ahead of the ladder, so a fifth report is named on the day it
+is registered rather than added to a chain nobody remembers.
+
+### THE FILTER MENUS WERE THE REPORT RENDERED AS A DROPDOWN
+
+`noFilter` is a per-report **denylist** — a stale entry does nothing, where a
+stale allowlist loses a filter silently. It never touches the COLUMN, only its
+menu.
+
+- **Rental Name**: 145 distinct values in a real September window. A checkbox
+  list that long is a list, not a filter.
+- **All Users**: thirteen menus removed, one kept. Residency? has two answers
+  and staff ask it; every other dimension there is per-PERSON — a name, an
+  email, an address part — so its menu is one checkbox per household.
+
+### A FILTER IS A VOCABULARY, NOT A DIRECTORY — and it is derived, not listed
+
+Dan, on the shell: *"don't add filters for data sets that are huge, like names,
+emails, etc. Some of the filters on the users report were thousands of lines,
+that makes no sense. we should only be adding filters for items like locations,
+sites, membership names, lane or court names, groups, residency status."*
+
+That is a statement about **cardinality**, so it is answered from the ROWS.
+`isFilterable(rows, col, cap)` counts distinct values and **bails out the
+moment it passes the cap** — on a 6,500-row user report the answer for Email is
+known after 101 rows, and building the whole map to throw it away is the cost
+this pays on every render.
+
+**`FILTER_MAX_OPTIONS` IS SET BETWEEN TWO MEASURED NUMBERS, not picked.** Card
+21685 emits **55** distinct pass and membership names at El Segundo, and Dan
+named membership names as exactly the kind of thing that should have a filter;
+card 21682 emits **145** rental names, which is the menu he asked to remove. So
+the line has to fall between 55 and 145 — it is **100** — and the spec asserts
+that range rather than the literal, so moving it costs a measurement. The first
+draft was 40, which would have taken the membership-name filter with it.
+
+**Deriving it rather than listing it is the whole point:** a new report inherits
+the rule with no registry entry, and a card that GAINS a column gets the right
+answer the day it ships, where a hand-kept list is only ever as current as the
+last person to edit it. `noFilter` stays as the explicit override for a
+LOW-cardinality column a report still does not want a menu for — Household Role
+has three values and Dan asked for it gone anyway.
+
+**A COLUMN ALREADY BEING FILTERED KEEPS ITS MENU, whatever its cardinality.** A
+deep link can narrow on anything, and a filter with no control to clear it is
+the dead end this file keeps recording: the scope note would read
+*"Email: ada@example.com"* with nothing on screen able to undo it.
+
+Neither rule touches the COLUMN. It is still shown, still exported, and still
+reachable by the search.
+
+**What replaces them is ONE box across every column, hidden ones included.**
+`searchRows` is AND over whitespace-separated terms, so *"smith 90245"* works in
+either order, and it joins columns with a `\u0001` separator so a term cannot
+straddle two of them. It runs BEFORE the collapse — subtotals for rows that are
+not on screen is the same defect one level up — and the scope note names it on
+the page, because whoever prints this has no toolbar to look at.
+
+**The discriminating render case searches for `SCAQ`, which lives ONLY in Rental
+Name — the column this report opens with hidden.** A search restricted to the
+visible columns finds nothing and fails; that is the entire reason for the
+choice of term.
+
+### Guards
+
+`custom-reports.spec.js` 45 → **56 assertions**, lifting and RUNNING
+`searchRows` and **`generatePdf`'s own query builder**. Mutation-tested ten
+ways, all failing by name: the filler cell restored (the bug as it shipped, in
+both the source assertion and the positional render case), the search reading
+only the visible columns, `noFilter` ignored, the buttons recombined, the card
+id put back, the forwarding removed, and — the important one — `hide`/`q` folded
+into `generatePdf`'s **truthy** loop, which is the plausible half-fix that
+passes every populated-value assertion and fails only on empty.
+
+**A guard of mine DIED instead of failing, and the fix generalises.** The
+generatePdf lift ended at the forwarding line it was testing, so deleting that
+code broke the SLICE and the mutation reported *"the query builder is not where
+this expects it"* — naming nothing. It is bounded by the line that CONSUMES the
+query string now. Fifth instance in this file.
+
+**And one of my own cases asserted a descendant that has never existed on any
+build**: `needs` is ONE `querySelector`, so `'[data-row-count="3"]
+[data-scope-note]'` asks for a scope note INSIDE the row counter. It failed on
+correct code. Stamp on `<body>` and assert `body[...] [target]`.
+
+`ci-check-render.js` gained an **all-users stub and seven cases**, and the
+fixture's residency answers deliberately DIFFER inside one household — a filter
+scoped to the household rather than the person would read the same either way.
+
+### THE END-TO-END PDF COULD NOT BE PROVEN BY THE PDF ROUTE, and that is the sandbox
+
+`/api/pdf` timed out at 120s on `#report-ready`: **Chromium here cannot reach
+cdnjs** (only `curl` honours the proxy), so React and Babel never load and the
+page is blank — which reads exactly like a missing marker. The proof is the
+render check's own trick, applied by hand: drive the SERVED print page with the
+CDN bundles served from `node_modules/.cache/render-check`. Note they must carry
+**`access-control-allow-origin: *`** or the `crossorigin` script tags are
+CORS-blocked and it fails the same way for a second reason.
+
+Proven that way, against the real served page:
+
+| URL | what came back |
+|---|---|
+| `f_Program_Type=Masters&hide=&q=` | **1 of 3 rows**, and `Rental Name` IS in the header — the empty `hide` overrode the report's own default |
+| `hide=Rental+Name&hide=Booking+Type&q=scaq` | both columns gone, 1 row, the scope note naming all three |
+
+plus `#report-ready` in the DOM and a real 41KB `%PDF-` either way.
+
+### Still El Segundo, and the answer already exists
+
+The RENDERER is portable — columns, headers, hierarchy and filter values all
+come from the feed, and everything added here is registry-driven. `all-users` is
+the proof: a non-aquatics report on the same page with no page change, and card
+21715 takes `org_id` and nothing else.
+
+**The CARDS are not.** Card 21682's `aquatic_sites` CTE names El Segundo's three
+locations literally, and 21684/21685 partition on their GL codes. **Card 1 does
+not dodge the courts-as-lanes problem, it hardcodes past it** — it never filters
+on site type at all, so it picks up their court-typed lanes by accident of the
+location list. The replacement is `aquaticsScope`, already built for the
+Facilities Aquatics tab and already the org's own answer to *which sites count
+as aquatic*; the cards do not read it.
+
+## EXPORTS MUST RESPECT THE FILTERS (STANDING RULE, Dan 2026-09-09)
+
+Dan, after the rental schedule's PDF printed phone numbers the reader had
+switched off: *"any time we make an adjustment to a filter, that it needs to be
+picked up by an export/pdf/excel, whatever. exports need to respect filters."*
+
+**So: a filter, toggle, column picker or chip is not finished when the screen is
+right. It is finished when the PDF, the print view, Excel, CSV and the emailed
+copy all show the same thing the reader is looking at.** An export quietly
+carrying rows or columns somebody excluded is worse than one that fails, because
+it looks correct.
+
+### A PARAMETER HAS FOUR GATES, AND PASSING THREE LOOKS EXACTLY LIKE WORKING
+
+This is the shape every instance has taken. Three of the gates are on the client
+and one is on the server, so the screen and the browser's own Print can both be
+perfect while the server-rendered PDF is wrong:
+
+| gate | where | what it costs to miss |
+|---|---|---|
+| `getParams()`'s explicit whitelist | the page | the deep link silently does nothing — the value reads `undefined` |
+| the page's own state / `currentFilterParams` | the page | the share link and the export params drop it |
+| the page's export paths (`downloadExcel`, `downloadCsv`, the print branch) | the page | the file carries what the screen excluded |
+| **`generatePdf`'s forward list** | **server.js** | **the PDF and the emailed PDF carry it, and nothing on the client can tell** |
+
+**Recorded instances: `gl_codes`, `refunds`, and `pii`.** All three cleared the
+client gates and failed the server one. The third happened while its author was
+reading the comment describing the first two.
+
+### CLIENT-SIDE AND SERVER-SIDE EXPORTS FAIL DIFFERENTLY
+
+Know which kind you are touching before you reason about it:
+
+- **Client-side — Excel, CSV, the browser's Print.** These read component state
+  directly, so they are right the moment the screen is. What breaks here is a
+  handler reading the UNSCOPED rows (`rows` instead of `filteredRows`) — already
+  recorded for the Programs Excel export and the Aquatics sheets.
+- **Server-side — the Puppeteer PDF, and the emailed PDF.** These re-render the
+  page under `?_print=1` **with an empty localStorage**, in a browser that has
+  never seen the reader's session. **The URL is the only channel.** A preference
+  kept only in storage cannot reach them, whatever it looks like on screen.
+
+### THE EMPTY VALUE IS THE ONE THAT BREAKS
+
+`generatePdf`'s forward list is a `forEach` testing `if (filters[k])`. That is
+right for every parameter whose empty value is meaningless — and **wrong for any
+parameter that is a LIST**, because for a list the empty string is a real answer:
+*"the reader excluded everything."*
+
+`pii` shipped broken twice for this reason. Adding it to the truthy list fixes
+the case where the columns are ON and leaves the OFF case — the reported bug —
+untouched: the empty string is dropped, the print page finds no parameter, falls
+back to its default, and prints what the reader hid. **A list parameter is
+forwarded on PRESENCE:**
+
+```js
+if (filters.pii !== undefined) qsObj.pii = filters.pii;
+```
+
+Absent means *"the caller is not speaking about this"*; empty means *"none"*.
+They are different answers and the page reads them differently.
+
+### THE GUARD HAS TO CROSS THE BOUNDARY THE BUG CROSSES
+
+`ci-check-render.js` drives the PAGE. A case at `?_print=1&<param>=` proves the
+page READS the parameter and says nothing about whether the server SENDS it —
+which is why five green render cases sat over a broken PDF. **Lift and run
+`generatePdf`'s own query builder** (`facility-addons-forms.spec.js` does this:
+slice from `const qsObj = {` to the `URLSearchParams` line and `new Function` it)
+so the assertion is about the URL that actually gets built.
+
+And mutation-test the *plausible* fix, not only the absence: folding a list
+parameter into the truthy loop passes every populated-value assertion and fails
+only on empty.
+
+### THE CHECKLIST
+
+When adding or changing any filter:
+
+1. Is it in `getParams()`'s whitelist?
+2. Does the share link carry it — and is every name in that effect's dependency
+   array declared ABOVE the effect? (Babel turns `const` into `var`, so a name
+   read early is `undefined` in the deps rather than a throw, and the effect then
+   only runs on mount.)
+3. Do Excel and CSV read the SCOPED rows?
+4. Is it in `generatePdf`'s forward list — and if it is a list, forwarded on
+   presence rather than truthiness?
+5. Does a render case drive the real `?_print=1` URL, and a spec assert the
+   server's forwarding?
+6. If it persists per browser, is the persist gated so a shared link cannot
+   rewrite the reader's own default?
+
 ## Slack activity notifications — wire every new surface (IMPORTANT)
 
 Standing rule (see Working preferences): any new button, export, download, or
