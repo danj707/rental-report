@@ -32,7 +32,7 @@ paid for elsewhere:
 - **An empty day is a real answer** and must not read as a broken card. A
   Monday in January genuinely has nothing on it.
 
-## THE THREE BASE DATA REPORTS (2026-09-10)
+## THE BASE DATA REPORTS (2026-09-10) — TWO BUILT, ONE HANDED TO PRODUCT
 
 Dan, on the survey: *"Let's do these as 'base data reports' and scope them so
 they can live cross org. Build them out in el segundo first, so they are all in
@@ -42,7 +42,7 @@ the same spot, then we'll look into moving them to all orgs."*
 |---|---|---|---|
 | Account Credit Balances | [21781](https://rec.metabaseapp.com/question/21781) | 45 accounts | 7,664 accounts / $3,948,975 across 83 orgs |
 | Account Credit Ledger | [21782](https://rec.metabaseapp.com/question/21782) | 407 entries | 80,951 entries across 90 orgs |
-| Facility Rental Refunds Due | [21783](https://rec.metabaseapp.com/question/21783) | 114 bookings / $1,160.00 | 11,761 bookings / $97,893.76 across 54 orgs |
+| ~~Facility Rental Refunds Due~~ | 21783, **ARCHIVED** | — | see the hand-off below |
 
 **THESE ARE A DIFFERENT KIND OF ENTRY FROM THE FOUR AQUATICS REPORTS, and the
 difference is the point.** Cards 21682-21685 hardcode El Segundo's location
@@ -84,123 +84,70 @@ drifted. Verified against real data rather than argued: El Segundo over
 September reads **1** drifted account, not 27. The spec fails by name on that
 mutation.
 
-### THE REFUND LIST IS NOT A WORK QUEUE UNTIL IT CARRIES AN AGE
+### FACILITY RENTAL REFUNDS DUE — BUILT, MEASURED, AND HANDED TO PRODUCT
 
-Dan, before merging: *"would it help to work on a facility rental refund report
-before merging this into the main reporting system?"* Yes — and the useful work
-turned out to be a MEASUREMENT rather than a build.
+Dan, after seeing it render against real data: *"lets drop this facility rental
+refunds due report, this should be in product, and I'm hesitant to build it out
+here."*
 
-**When a refund happens, it happens fast.** Over the 11,022 cancelled
-reservations that WERE refunded: **62.7% the same day, 84.0% within three days,
-95.0% within SEVEN, 98.9% within thirty**, median 0.5 days, p95 7.0 days. So
-**seven days is a measured threshold rather than a guess** — past it, the normal
-process was never going to catch the item.
+**He is right, and the measurements are why** — they are kept here in full
+because they were expensive, they are the specification if product picks it up,
+and nobody should re-derive them. Card **21783 is ARCHIVED, not deleted**, so
+the SQL survives in Metabase; the registry entry, the SQL mirror and the
+report's spec assertions are gone, and `custom-reports.spec.js` now fails if it
+drifts back in as a report without the decision being revisited.
 
-**And almost nothing outstanding is inside it.** Of the 11,761 items: only
-**377 ($3,831.75)** are under a week old, **947** are 8-30 days,
-**2,175** are 31-90, **8,184 ($62,888.27)** are 3-12 months and **82** are over
-a year. **Median age 155 days.** So this is not staff work-in-flight; it is
-genuinely aged.
+**THE SHAPE, for whoever builds it properly.** Grain is the RESERVATION, because
+`order_item.reservation_id` links money to the individual date — so a recurring
+rental that lost one Tuesday reports that Tuesday. Both cancellation paths count
+(`reservation.canceled_at`, and `facility_rental.canceled_at` with the
+reservations unmarked — the second adds 12 rows / $934.75 platform-wide). The
+site is `reservation_court` → `court.court_number`, **aggregated never joined**,
+since `reservation.court_id` is legacy-NULL and a multi-court reservation would
+otherwise multiply the row *and its money*.
 
-**But the median outstanding amount is $5.00**, which is the other half of the
-picture and the reason the report must not shout. It **cannot separate money
-deliberately retained** — a cancellation fee, a de-minimis policy on a $5 court
-booking — **from money somebody missed.** Both look identical, and there is no
-cancellation-policy signal on the reservation to read. Without an age column the
-report hands an org 11,761 mostly-$5 rows averaging five months old and calls it
-*"$97,894 outstanding"*, which is how a report gets distrusted on first contact.
+**THE SCALE, and the first thing to know: the product already handles most of
+it.** 70,702 cancelled reservations are already fully refunded. The residue is
+**11,761 reservations across 54 orgs holding $97,893.76**.
 
-So the card ships **`Days Waiting`** and is **ordered biggest-first within each
-location** — a refund queue is worked by amount, not by date — and the age is
-deliberately NOT additive (summing an age adds up nothing), the same treatment as
-`Sites`. That turns the list into the short one worth a human: old AND large.
+**WHEN A REFUND HAPPENS, IT HAPPENS FAST.** Over the 11,022 refunded
+cancellations: **62.7% the same day, 84.0% within three days, 95.0% within
+SEVEN, 98.9% within thirty**; median 0.5 days, p95 7.0 days. So **seven days is
+a measured threshold rather than a guess** — past it the normal process was
+never going to catch the item.
 
-**On refunds due the window has a real cost, and the report says so.** It is a
-WORK QUEUE, and the oldest unrefunded items are the ones most likely to have
-been missed — so the default month is precisely the range that hides them.
-Measured: September alone returns **52 rows / $691.00** against **114 /
-$1,160.00** with the dates cleared. Clearing them is the reading it is for; the
-window answers *"what did we cancel in March"*, which is a different and also
-real question. Dated on the CANCELLATION rather than the booking, because the
-cancellation is the event that creates the obligation.
+**And almost nothing outstanding is inside it**: only **377 ($3,831.75)** are
+under a week old, **947** are 8-30 days, **2,175** are 31-90, **8,184
+($62,888.27)** are 3-12 months and **82** are over a year. **Median age 155
+days.** So it is genuinely aged rather than work-in-flight.
 
-### `credit` IS A FULL LEDGER, and the sign convention is perfectly consistent
+**WHY IT WANTS TO BE A PRODUCT SURFACE AND NOT A REPORT — the median outstanding
+amount is $5.00, and nothing in the data separates money DELIBERATELY RETAINED
+from money somebody missed.** A cancellation fee and an oversight look
+identical; there is no cancellation-policy signal on the reservation to read.
+A report can only ever hand an org the list and shrug. The product knows which
+cancellations were charged a fee and which were not, and it is the place that
+can *act* — so this is a queue with a button, not a page with a total.
 
-Measured platform-wide over 80,951 rows — **0 of them soft-deleted**, so
-`deleted_at IS NULL` is a no-op there today and is kept anyway:
+**Two smaller findings worth carrying over:**
 
-| source | rows | sign |
-|---|---|---|
-| `refund_id` — refunded as credit | 37,079 | **all positive** |
-| `payment_id` — spent on a purchase | 33,061 | **all negative** |
-| `order_adjustment_id` — applied to an order | 4,250 | **all negative** |
-| none of the three — a staff grant or clawback | 6,561 | mixed (5,627 + / 934 −) |
+- **Excluding `credit_id` transactions cuts both ways** — a refund paid out as
+  store credit would be invisible and the report would tell staff to refund
+  somebody already made whole. Checked: `credit_id` is set on 2,205 of 2,744,498
+  transactions (0.08%) and on **ZERO** of those touching a cancelled facility
+  reservation, and all 11,122 refund rows on cancelled-rental items have a
+  matching transaction, `organization-credit` ones included.
+- **The card emits no reservation-level id**, so two identical reservations on
+  one rental are indistinguishable and collapse into one display row. Found by
+  RENDERING it, not by reading the SQL: El Segundo's live 114 rows drew as 113
+  with `Bookings` 114, one genuine merge. For a queue where each row is a
+  separate refund to action, that is a real gap — one more column fixes it.
 
-So `Direction` is read from the SIGN and `Source` from the link, and the CASE is
-ordered most-specific first because a row can carry more than one link.
-**`Amount` stays SIGNED**, so the monthly subtotal is the net movement and
-reconciles against the balances report; splitting it into two unsigned columns
-would read more tidily and would stop it adding up. The spec fails on that split.
-
-### THE BALANCE AND ITS OWN LEDGER DO NOT ALWAYS AGREE — 487 accounts, $76,672.79
-
-`credit_account.balance` is the live figure the product spends against; the
-ledger is the history. They differ on **487 accounts across 36 orgs**, and only
-**139** of those carry a non-zero balance. Including soft-deleted ledger rows
-does not close it (there are none), so it is real drift and not a filtering
-artifact. The report ships both and their difference: the balance leads because
-it is what a customer can actually spend, and `Ledger Difference` is hidden by
-default — one tick away, never presented as the point. It earned its place
-immediately: El Segundo reads 0 on 44 of 45 accounts and **$118 on one**.
-
-**NEGATIVE BALANCES ARE KEPT** — 49 platform-wide, where the org has let more out
-than it granted. Filtering them away hides the one state that certainly needs a
-human. Zero-balance accounts are excluded: 143,118 of 160,224 have never carried
-a credit.
-
-**And read El Segundo's own numbers with care**: their top five accounts are
-$1,099,641 / $1,000,000 / $50,000 / $49,960 / $25,000, all `@elsegundo.org`
-staff, all granted before go-live — **98.7% of their apparent book is
-pre-launch test data**. The report does not editorialise about it; the email
-column makes it obvious, which is the right way for it to show.
-
-### THE REFUNDS REPORT — what "owed" means, and the join that nearly broke it
-
-**It is money COLLECTED AND NOT REFUNDED on a cancelled booking. It is NOT a
-claim that the org owes it** — a retained cancellation fee is legitimate and
-looks identical in the data. Hence the column is `Unrefunded`, never
-`Refund Due`. The report surfaces the position; a human decides.
-
-**The grain is the RESERVATION**, because `order_item.reservation_id` links the
-money to the individual date — so a recurring rental that lost one Tuesday
-reports that Tuesday rather than the whole run. **Both cancellation paths
-count**: a reservation cancelled on its own, and a rental cancelled without its
-reservations being marked (measured, the second adds 12 rows / $934.75
-platform-wide — small, real, and invisible if you test only
-`reservation.canceled_at`).
-
-**I WROTE `reservation.court_id` AND EVERY ROW CAME BACK "(no site on file)"** —
-the exact trap this file already records for SF's 557,367 reservations. It is
-legacy-NULL on all 24,415 of El Segundo's too. The site is
-`reservation_court` → `court.court_number`; the LOCATION is
-`reservation.location_id` (populated 24,415 of 24,415), so the two come from
-different places. **AGGREGATED, NEVER JOINED**: a reservation may occupy more
-than one court and joining would multiply the row *and its money*. El Segundo is
-1:1 today, which is exactly why it had to be written for the general case — SF
-has multi-court reservations, and a report that double-counts a refund is worse
-than one that does not exist.
-
-**EXCLUDING `credit_id` TRANSACTIONS WAS CHECKED, NOT ASSUMED**, because it cuts
-both ways: a refund paid out as store credit would be invisible and the report
-would tell staff to refund somebody already made whole. Measured — `credit_id`
-is set on 2,205 of 2,744,498 transactions (0.08%) and on **ZERO** of those
-touching a cancelled facility reservation; and separately **all 11,122** refund
-rows on cancelled-rental items have a matching transaction, `organization-credit`
-ones included. Nothing is missed by reading transactions alone.
-
-**The scale is modest and that is the honest headline**: 70,702 cancelled
-reservations are ALREADY fully refunded. The product handles most of this; the
-report is the residue.
+**The live review is what made the decision informed rather than theoretical.**
+The real page over El Segundo's real 114 rows rolled up to
+**$563.00 + $508.00 + $89.00 = $1,160.00** across three locations, ties to the
+independent measurement, and rendered the one partial refund correctly ($42
+collected, $20 back, $22 out). It works. It is just the wrong home for it.
 
 ### Two of my own probes returned confident zeros, both mine
 
@@ -235,16 +182,33 @@ template tags — which is also why the two SQL updates were safe here and are N
 safe on 21682-21685, where a human has already flipped the tags and set the
 `org_id` default.
 
-**THE THREE REPORTS ARE DARK UNTIL SOMEONE CREATES THE PUBLIC LINKS**, and that
-is deliberate rather than unfinished: `customReportEnabled` already refuses an
-entry with no uuid, so the card is simply not offered instead of rendering a
-Metabase error that reads as broken. Paste each card's public uuid into its
-registry entry (or set `MB_CREDIT_BALANCES_UUID` / `MB_CREDIT_LEDGER_UUID` /
-`MB_RENTAL_REFUNDS_UUID`) and all three light up with no other change.
+**BOTH PUBLIC LINKS ARE LIVE AND HARDCODED**, so these are on for El Segundo
+the moment this deploys — hardcoded rather than env-gated for the reason every
+other entry is: the report then works on deploy with no Railway variable to
+remember. Balances `45b7a450-c2f8-4b46-88a2-bb879056c4b1`, ledger
+`e51352ad-b20f-4cc3-9966-b90e5c37928d`.
 
-**No manifest rows yet.** These cards are not in `REPORT_TYPES`, so the health
-check does not probe them — the same gap already recorded for
-`aquatic-lane-hours`. Worth a row each once the links exist.
+**Signed off cache-independently through the public endpoint with the app's own
+parameter shape**, which is the rule this file keeps: balances **45 rows in
+24.6s**, ledger **247 rows in 2.2s** over Aug-Sep 2026. Both were CREATED rather
+than re-saved, so each registers its tags once and there was no six-parameter
+duplication to flip away.
+
+The no-uuid path still exists and still matters: `customReportEnabled` refuses
+an entry without one, so a future entry is simply not offered rather than
+rendering a Metabase error that reads as broken.
+
+**MANIFEST ROWS ADDED — 34 → 36.** These cards are not in `REPORT_TYPES`, so the
+health check does not probe them and prewarm does not warm them; a re-Texted tag
+or a lost column would take the report down for the orgs it serves with nothing
+else noticing. Same gap already recorded for `aquatic-lane-hours`.
+
+**The two rows are deliberately different shapes**, which is the
+dateless-manifest-row lesson applied rather than repeated: the ledger row
+carries **`days: 365`** because a ledger is a BACKWARD flow and an unwindowed
+probe would ask for the org's whole history; the balances row sends **no dates
+at all**, on purpose — its window moves only the *"in Period"* columns and its
+row set is identical either way, so dateless is the honest worst case there.
 
 
 ## THE REFUND VIEW COULD NOT BE SAVED OR PRINTED (2026-09-09)

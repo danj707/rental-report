@@ -2062,9 +2062,11 @@ const CUSTOM_REPORTS = {
   // once and there is no six-parameter duplication to flip away — and the date
   // bounds on the ledger are written ::date, so it runs under a Text tag too.
   //
-  // THEY ARE DARK UNTIL SOMEONE MAKES THE PUBLIC LINK, on purpose:
-  // customReportEnabled refuses an entry with no uuid, so the card is simply
-  // not offered rather than rendering a Metabase error that reads as broken.
+  // Both public links are live and hardcoded below, so these are ON for El
+  // Segundo the moment this deploys. The no-uuid path still exists and still
+  // matters: customReportEnabled refuses an entry without one, so a future
+  // entry is simply not offered rather than rendering a Metabase error that
+  // reads as broken.
 
   // Card 21781. https://rec.metabaseapp.com/question/21781
   "credit-balances": {
@@ -2073,7 +2075,11 @@ const CUSTOM_REPORTS = {
     emoji: "\u{1F4B3}",
     desc: "Every account holding credit the organisation owes, with the ledger it reconciles to",
     card: 21781,
-    uuid: process.env.MB_CREDIT_BALANCES_UUID || "",
+    // Public link live 2026-09-10. Hardcoded like every other entry so the
+    // report works on deploy with no Railway variable to remember.
+    // Signed off cache-independently through the public endpoint with the app's
+    // own parameter shape: El Segundo, 45 rows in 24.6s.
+    uuid: process.env.MB_CREDIT_BALANCES_UUID || "45b7a450-c2f8-4b46-88a2-bb879056c4b1",
     orgIds: [CUSTOM_REPORT_ORG_IDS.elSegundo],
     // IT HAS THE SAME DATE RANGE AS EVERY OTHER REPORT (Dan, 2026-09-10: "those
     // reports should have the same date range filters as the others for
@@ -2114,7 +2120,9 @@ const CUSTOM_REPORTS = {
     emoji: "\u{1F9FE}",
     desc: "Every credit granted or spent, by month, with the staff member who did it and their note",
     card: 21782,
-    uuid: process.env.MB_CREDIT_LEDGER_UUID || "",
+    // Public link live 2026-09-10. Signed off through the public endpoint:
+    // El Segundo, 247 rows in 2.2s over Aug-Sep 2026.
+    uuid: process.env.MB_CREDIT_LEDGER_UUID || "e51352ad-b20f-4cc3-9966-b90e5c37928d",
     orgIds: [CUSTOM_REPORT_ORG_IDS.elSegundo],
     // This one IS a flow, so it keeps its window.
     groupBy: ["Month"],
@@ -2127,52 +2135,6 @@ const CUSTOM_REPORTS = {
     // vocabulary-not-directory rule. Everything else here is per-PERSON or
     // per-DAY, so its menu would be one checkbox per row.
     noFilter: ["Date", "Member", "Email", "Granted By", "Note"],
-  },
-
-  // Card 21783. https://rec.metabaseapp.com/question/21783
-  "rental-refunds-due": {
-    label: "Facility Rental Refunds Due",
-    chip: "Refunds Due", chipIcon: "\u{1F4B8}",
-    emoji: "\u{1F4B8}",
-    desc: "Cancelled bookings where money was collected and never refunded, date by date",
-    card: 21783,
-    uuid: process.env.MB_RENTAL_REFUNDS_UUID || "",
-    orgIds: [CUSTOM_REPORT_ORG_IDS.elSegundo],
-    // The window is on the CANCELLATION date, and the tradeoff is worth knowing
-    // rather than discovering: this is a WORK QUEUE, and the oldest unrefunded
-    // items are the ones most likely to have been missed — so the default month
-    // is the range that hides them. Measured at El Segundo, September alone
-    // returns 52 rows / $691.00 against 114 / $1,160.00 with the dates cleared.
-    // Clearing them is the reading the report is for; the window answers "what
-    // did we cancel in March", which is a different and also real question.
-    groupBy: ["Location"],
-    numeric: {
-      "Collected": { dp: 2, money: true },
-      "Refunded": { dp: 2, money: true },
-      "Unrefunded": { dp: 2, money: true },
-      "Bookings": { dp: 0 },
-    },
-    // `Sites` and `Days Waiting` are DELIBERATELY NOT in `numeric`: a court
-    // count and an age are both properties of ONE booking, so summing either
-    // down the column adds up nothing anybody wants.
-    //
-    // `Days Waiting` IS THE COLUMN THAT MAKES THIS LIST WORKABLE, and it is
-    // there because of a measurement. When a refund does happen it happens
-    // fast — over 11,022 refunded cancellations: 62.7% same day, 95.0% within
-    // SEVEN days, p95 7.0 days. So seven days is a measured threshold rather
-    // than a guess, and almost nothing here is inside it: of 11,761 items only
-    // 377 are under a week old, while 8,184 are three months to a year and the
-    // median age is 155 days. Sorted biggest-first, the old LARGE rows are the
-    // ones worth a human — a much shorter list than "$97,894 outstanding".
-    //
-    // A uuid is noise on a printed work queue and necessary in the file that
-    // comes off it, so `Rental ID` is hidden rather than dropped.
-    hiddenColumns: ["Sites", "Rental ID"],
-    // Location and Site are exactly the family Dan named as filterable — a
-    // place, and a court or lane name. The rest is a directory of people,
-    // dates and one-off rental names.
-    noFilter: ["Sites", "Days Waiting", "Booking Date", "Cancelled", "Rental",
-               "Customer", "Email", "Last Refund", "Rental ID"],
   },
 };
 

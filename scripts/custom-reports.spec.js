@@ -1050,7 +1050,8 @@ test("the cardinality cap still does its own job", () => {
    else. The assertion below reads the SQL mirrors and fails on an org-specific
    literal, so "ready to turn on for another org" stays a fact rather than an
    intention. */
-const BASE_DATA_REPORTS = ["credit-balances", "credit-ledger", "rental-refunds-due"];
+const BASE_DATA_REPORTS = ["credit-balances", "credit-ledger"];
+
 
 /* LIFT AND RUN the registry rather than regexing it. A regex over
    `numeric: { ... }` passes on a key that is present and wrong; evaluating the
@@ -1070,6 +1071,20 @@ test("the registry evaluates, and holds every report the server serves", () => {
     .forEach(k => assert.ok(registry[k], k + " missing from the lifted registry"));
 });
 
+/* THE FACILITY RENTAL REFUNDS REPORT IS NOT HERE, and that is a decision rather
+   than an omission (Dan, 2026-09-10: "lets drop this facility rental refunds
+   due report, this should be in product, and I'm hesitant to build it out
+   here"). It was built, measured and rendered against real data before being
+   dropped — the findings are in CLAUDE.md and the card is archived, not
+   deleted. The assertion below is what stops it drifting back in as a report
+   without that decision being revisited. */
+test("the dropped refunds report has not crept back in", () => {
+  assert.ok(!registry["rental-refunds-due"],
+    "rental-refunds-due is a product surface, not a report here");
+  assert.ok(!fs.existsSync(path.join(root, "sql", "report-cards", "rental-refunds-due.sql")),
+    "a SQL mirror for a card this project does not serve is a dead end");
+});
+
 test("the base data reports are registered, and each names its card", () => {
   BASE_DATA_REPORTS.forEach(k => {
     const spec = registry[k];
@@ -1086,7 +1101,6 @@ test("their SQL carries NO org-specific literal — the portability claim", () =
   const mirrors = {
     "credit-balances": "credit-balances.sql",
     "credit-ledger": "credit-ledger.sql",
-    "rental-refunds-due": "rental-refunds-due.sql",
   };
   // Org-specific shapes: a GL code ladder, a named El Segundo facility, or a
   // bare organisation uuid standing in for the parameter.
@@ -1117,7 +1131,6 @@ test("every base data report takes the same date range as the others", () => {
   const mirrors = {
     "credit-balances": "credit-balances.sql",
     "credit-ledger": "credit-ledger.sql",
-    "rental-refunds-due": "rental-refunds-due.sql",
   };
   BASE_DATA_REPORTS.forEach(k => {
     assert.ok(!registry[k].undated, k + " opts out of the shared date range");
@@ -1168,34 +1181,10 @@ test("a signed Amount column is never split into two unsigned ones", () => {
   assert.ok(!n["Issued"] && !n["Used"], "Amount was split and no longer nets");
 });
 
-test("the refund queue carries an AGE, and the age never rolls up", () => {
-  // The measurement that decides how the whole report reads: refunds that DO
-  // happen are 95% done within seven days (median 0.5d, p95 7.0d over 11,022
-  // refunded cancellations), so past a week the normal process was never going
-  // to catch the item. Only 377 of 11,761 outstanding are inside that window;
-  // median age is 155 days and median amount $5.00. Without the age column the
-  // report hands an org 11,761 mostly-$5 rows and calls it a work queue.
-  const sql = fs.readFileSync(path.join(root, "sql", "report-cards", "rental-refunds-due.sql"), "utf8");
-  const body = sql.replace(/^\s*--.*$/gm, "");
-  assert.ok(/AS "Days Waiting"/.test(body), "the age column is gone");
-  assert.ok(/CURRENT_DATE - cx\.canceled_at::date/.test(body),
-    "the age is not measured from the cancellation");
-  // An age is a property of ONE booking. Summing it down the column adds up
-  // nothing anyone wants — the same treatment as Sites.
-  assert.ok(!registry["rental-refunds-due"].numeric["Days Waiting"],
-    "Days Waiting must not roll up");
-  // Worked by amount, not by date: the old LARGE rows are the actionable ones.
-  assert.ok(/ORDER BY 1, \(m\.paid_cents - m\.refunded_cents\) DESC/.test(body),
-    "the queue is no longer ordered biggest-first");
-});
-
-test("Sites is NOT additive, and Ledger Difference is not the headline", () => {
-  // Summing a per-booking court count down the column adds up nothing anyone
-  // wants — the same trap as the wizard summing Number of Payments.
-  assert.ok(!registry["rental-refunds-due"].numeric["Sites"],
-    "Sites must not roll up");
-  assert.ok(registry["rental-refunds-due"].hiddenColumns.includes("Sites"));
-  // The reconciliation is available and is not the point of the report.
+test("Ledger Difference is available and is not the headline", () => {
+  // The reconciliation is one tick away and never presented as the point:
+  // it is zero on all but 139 accounts platform-wide, so shown by default it
+  // would be a column of noughts beside the figures people came for.
   assert.ok(registry["credit-balances"].hiddenColumns.includes("Ledger Difference"));
   assert.ok(registry["credit-balances"].numeric["Ledger Difference"],
     "it still has to roll up once someone unhides it");
