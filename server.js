@@ -2045,6 +2045,97 @@ const CUSTOM_REPORTS = {
       "Created At", "Date Added to Residency Group",
     ],
   },
+
+  // ── The base data reports ──────────────────────────────────────────────
+  // Dan, 2026-09-10: "Let's do these as 'base data reports' and scope them so
+  // they can live cross org. Build them out in El Segundo first, so they are
+  // all in the same spot, then we'll look into moving them to all orgs."
+  //
+  // SO THESE THREE ARE DELIBERATELY DIFFERENT FROM THE FOUR ABOVE. The aquatics
+  // cards hardcode El Segundo's own locations and GL codes, which is why they
+  // are org-gated by necessity. These take {{org_id}} and nothing else, so the
+  // gate below is a ROLLOUT decision rather than a limitation: adding an orgId
+  // to the list is the whole of what it takes to give another org the report.
+  //
+  // Cards created 2026-09-10, in El Segundo's collection so all seven sit
+  // together. They were CREATED and not re-saved, so each registers its tags
+  // once and there is no six-parameter duplication to flip away — and the date
+  // bounds on the ledger are written ::date, so it runs under a Text tag too.
+  //
+  // Both public links are live and hardcoded below, so these are ON for El
+  // Segundo the moment this deploys. The no-uuid path still exists and still
+  // matters: customReportEnabled refuses an entry without one, so a future
+  // entry is simply not offered rather than rendering a Metabase error that
+  // reads as broken.
+
+  // Card 21781. https://rec.metabaseapp.com/question/21781
+  "credit-balances": {
+    label: "Account Credit Balances",
+    chip: "Credit", chipIcon: "\u{1F4B3}",
+    emoji: "\u{1F4B3}",
+    desc: "Every account holding credit the organisation owes, with the ledger it reconciles to",
+    card: 21781,
+    // Public link live 2026-09-10. Hardcoded like every other entry so the
+    // report works on deploy with no Railway variable to remember.
+    // Signed off cache-independently through the public endpoint with the app's
+    // own parameter shape: El Segundo, 45 rows in 24.6s.
+    uuid: process.env.MB_CREDIT_BALANCES_UUID || "45b7a450-c2f8-4b46-88a2-bb879056c4b1",
+    orgIds: [CUSTOM_REPORT_ORG_IDS.elSegundo],
+    // IT HAS THE SAME DATE RANGE AS EVERY OTHER REPORT (Dan, 2026-09-10: "those
+    // reports should have the same date range filters as the others for
+    // consistency"), and the window moves the LEDGER columns only. A balance is
+    // a position rather than a flow, so `Balance` is current and all-time
+    // whatever the toolbar says — which is why every windowed column carries
+    // "in Period" in its own name. Two bases under one date range is exactly
+    // what made the Programs summary read as a bug for weeks; there the
+    // arithmetic was right and the labels were the defect, so the labels do
+    // that work here from the start.
+    //
+    // The grand total of `Balance` is therefore the org's whole credit
+    // liability and does not move with the window. That is the number the
+    // report exists to produce.
+    //
+    // NO GROUPING. The report IS the list, ordered by what is owed. A group
+    // level here would be an invented dimension rather than one the data
+    // carries.
+    groupBy: [],
+    numeric: {
+      "Balance": { dp: 2, money: true },
+      "Issued in Period": { dp: 2, money: true },
+      "Used in Period": { dp: 2, money: true },
+      "Entries in Period": { dp: 0 },
+      "Ledger Difference": { dp: 2, money: true },
+      "Accounts": { dp: 0 },
+    },
+    // The cross-check, not the point. It is zero on all but 139 accounts
+    // platform-wide, so it is one tick away rather than a column of noughts
+    // beside the figures people came for.
+    hiddenColumns: ["Ledger Difference"],
+  },
+
+  // Card 21782. https://rec.metabaseapp.com/question/21782
+  "credit-ledger": {
+    label: "Account Credit Ledger",
+    chip: "Credit Log", chipIcon: "\u{1F9FE}",
+    emoji: "\u{1F9FE}",
+    desc: "Every credit granted or spent, by month, with the staff member who did it and their note",
+    card: 21782,
+    // Public link live 2026-09-10. Signed off through the public endpoint:
+    // El Segundo, 247 rows in 2.2s over Aug-Sep 2026.
+    uuid: process.env.MB_CREDIT_LEDGER_UUID || "e51352ad-b20f-4cc3-9966-b90e5c37928d",
+    orgIds: [CUSTOM_REPORT_ORG_IDS.elSegundo],
+    // This one IS a flow, so it keeps its window.
+    groupBy: ["Month"],
+    numeric: { "Amount": { dp: 2, money: true }, "Entries": { dp: 0 } },
+    // `Amount` is SIGNED, so the monthly subtotal is the net movement and the
+    // grand total reconciles against the balances report. Splitting it into two
+    // unsigned columns would read more tidily and would stop it adding up.
+    //
+    // Direction and Source keep their menus — two and four values, exactly the
+    // vocabulary-not-directory rule. Everything else here is per-PERSON or
+    // per-DAY, so its menu would be one checkbox per row.
+    noFilter: ["Date", "Member", "Email", "Granted By", "Note"],
+  },
 };
 
 // The friendly directory is DERIVED, never transcribed: label and emoji have one

@@ -1038,6 +1038,157 @@ test("the cardinality cap still does its own job", () => {
   assert.strictEqual(isFilterable(many, "Email", 100), false, "a directory");
   assert.strictEqual(isFilterable(many.slice(0, 40), "Email", 100), true);
 });
+
+/* ── The base data reports ────────────────────────────────────────────────
+   Dan, 2026-09-10: "Let's do these as 'base data reports' and scope them so
+   they can live cross org. Build them out in El Segundo first."
+
+   THE PORTABILITY CLAIM IS THE ONE WORTH GUARDING, because it is the whole
+   difference between these three and the four aquatics reports beside them,
+   and because it rots SILENTLY: a card that grows one hardcoded location name
+   still renders perfectly for El Segundo and returns nothing for everybody
+   else. The assertion below reads the SQL mirrors and fails on an org-specific
+   literal, so "ready to turn on for another org" stays a fact rather than an
+   intention. */
+const BASE_DATA_REPORTS = ["credit-balances", "credit-ledger"];
+
+
+/* LIFT AND RUN the registry rather than regexing it. A regex over
+   `numeric: { ... }` passes on a key that is present and wrong; evaluating the
+   literal lets these assertions ask what the server will actually read. The two
+   names it closes over are supplied, so the slice cannot reach past its own
+   inputs — the failure this file has already recorded three times. */
+const registry = (() => {
+  const orgIds = /const CUSTOM_REPORT_ORG_IDS = \{[\s\S]*?\n\};/.exec(srv)[0];
+  return new Function("process", orgIds + "\n" + spec + "\nreturn CUSTOM_REPORTS;")({ env: {} });
+})();
+
+test("the registry evaluates, and holds every report the server serves", () => {
+  // Guards the lift itself: if this stopped returning the real map, every
+  // assertion below would be checking an empty object and passing vacuously.
+  assert.ok(Object.keys(registry).length >= 5, "the lifted registry looks empty");
+  ["aquatic-lane-hours", "all-users"].concat(BASE_DATA_REPORTS)
+    .forEach(k => assert.ok(registry[k], k + " missing from the lifted registry"));
+});
+
+/* THE FACILITY RENTAL REFUNDS REPORT IS NOT HERE, and that is a decision rather
+   than an omission (Dan, 2026-09-10: "lets drop this facility rental refunds
+   due report, this should be in product, and I'm hesitant to build it out
+   here"). It was built, measured and rendered against real data before being
+   dropped — the findings are in CLAUDE.md and the card is archived, not
+   deleted. The assertion below is what stops it drifting back in as a report
+   without that decision being revisited. */
+test("the dropped refunds report has not crept back in", () => {
+  assert.ok(!registry["rental-refunds-due"],
+    "rental-refunds-due is a product surface, not a report here");
+  assert.ok(!fs.existsSync(path.join(root, "sql", "report-cards", "rental-refunds-due.sql")),
+    "a SQL mirror for a card this project does not serve is a dead end");
+});
+
+test("the base data reports are registered, and each names its card", () => {
+  BASE_DATA_REPORTS.forEach(k => {
+    const spec = registry[k];
+    assert.ok(spec, k + " is missing from CUSTOM_REPORTS");
+    assert.ok(Number.isInteger(spec.card) && spec.card > 0, k + " has no card id");
+    assert.ok(spec.label && spec.desc, k + " needs a label and a description");
+  });
+});
+
+test("their SQL carries NO org-specific literal — the portability claim", () => {
+  // The aquatics cards hardcode El Segundo's three location names and its GL
+  // code ladder, which is exactly why they are org-gated by necessity. These
+  // must not: {{org_id}} is the only thing that scopes them.
+  const mirrors = {
+    "credit-balances": "credit-balances.sql",
+    "credit-ledger": "credit-ledger.sql",
+  };
+  // Org-specific shapes: a GL code ladder, a named El Segundo facility, or a
+  // bare organisation uuid standing in for the parameter.
+  const banned = [
+    [/'001-\d{3}-/, "a hardcoded GL code"],
+    [/Urho Saari|Wiseburn|Hilltop Park|El Segundo/i, "a named El Segundo facility"],
+    [/'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'/, "a literal uuid"],
+  ];
+  BASE_DATA_REPORTS.forEach(k => {
+    const file = path.join(root, "sql", "report-cards", mirrors[k]);
+    assert.ok(fs.existsSync(file), "no SQL mirror for " + k);
+    const sql = fs.readFileSync(file, "utf8");
+    // Strip the comment header: it QUOTES the measurements, El Segundo included,
+    // and the claim is about the query rather than about the prose above it.
+    const body = sql.replace(/^\s*--.*$/gm, "");
+    assert.ok(/\{\{org_id\}\}/.test(body), k + " does not scope on org_id at all");
+    banned.forEach(([re, why]) => {
+      assert.ok(!re.test(body), k + " carries " + why + " — it is not cross-org");
+    });
+  });
+});
+
+test("every base data report takes the same date range as the others", () => {
+  // Dan, 2026-09-10: "those reports should have the same date range filters as
+  // the others for consistency." So all three carry the window, and none of
+  // them opts out of the toolbar — a report whose From/To did nothing would be
+  // the dead control this repo keeps writing down.
+  const mirrors = {
+    "credit-balances": "credit-balances.sql",
+    "credit-ledger": "credit-ledger.sql",
+  };
+  BASE_DATA_REPORTS.forEach(k => {
+    assert.ok(!registry[k].undated, k + " opts out of the shared date range");
+    const sql = fs.readFileSync(path.join(root, "sql", "report-cards", mirrors[k]), "utf8");
+    const body = sql.replace(/^\s*--.*$/gm, "");
+    // OPTIONAL is load-bearing: the reports open unwindowed, and on refunds-due
+    // the unwindowed read is the one the report is actually for.
+    assert.ok(/\[\[[^\]]*\{\{start_date\}\}/.test(body), k + " has no optional start bound");
+    assert.ok(/\[\[[^\]]*\{\{end_date\}\}/.test(body), k + " has no optional end bound");
+    // Cast, so the card runs under a Date tag or a Text one — an API save
+    // regenerates every tag as Text, and this is what makes that survivable.
+    assert.ok(/\{\{start_date\}\}::date/.test(body), k + " does not cast start_date");
+    assert.ok(/\{\{end_date\}\}::date/.test(body), k + " does not cast end_date");
+  });
+});
+
+test("a POSITION is never windowed, and says so in its own column names", () => {
+  // The balance report has two bases under one date range, which is precisely
+  // what made the Programs summary read as a bug for weeks. There the
+  // arithmetic was right and the LABELS were the defect, so every windowed
+  // column here carries "in Period" and `Balance` does not.
+  const n = registry["credit-balances"].numeric;
+  assert.ok(n["Balance"], "Balance must still roll up");
+  ["Issued in Period", "Used in Period", "Entries in Period"].forEach(c =>
+    assert.ok(n[c], c + " is missing — a windowed column lost its label"));
+  assert.ok(!n["Credit Issued"] && !n["Credit Used"],
+    "a windowed column is named as though it were all-time");
+
+  const sql = fs.readFileSync(path.join(root, "sql", "report-cards", "credit-balances.sql"), "utf8");
+  const body = sql.replace(/^\s*--.*$/gm, "");
+  // THE LOAD-BEARING ONE. Ledger Difference compares the live balance against
+  // the WHOLE ledger; windowing that CTE makes every account with no activity
+  // in range falsely read as drifted. Verified against real data: El Segundo
+  // reads 1 drifted account over September, not 27.
+  assert.ok(/all_time AS \(/.test(body), "the all-time CTE is gone");
+  assert.ok(!/all_time AS \([\s\S]*?\{\{start_date\}\}[\s\S]*?\n\),/.test(body),
+    "the all-time CTE got windowed — Ledger Difference would manufacture drift");
+  assert.ok(/COALESCE\(t\.net_cents, 0\)/.test(body),
+    "Ledger Difference no longer reads the all-time net");
+});
+
+test("a signed Amount column is never split into two unsigned ones", () => {
+  // The ledger's monthly subtotal is the NET movement, which is what
+  // reconciles against the balances report. Two unsigned columns would read
+  // more tidily and would stop adding up.
+  const n = registry["credit-ledger"].numeric;
+  assert.ok(n["Amount"], "the ledger must roll up Amount");
+  assert.ok(!n["Issued"] && !n["Used"], "Amount was split and no longer nets");
+});
+
+test("Ledger Difference is available and is not the headline", () => {
+  // The reconciliation is one tick away and never presented as the point:
+  // it is zero on all but 139 accounts platform-wide, so shown by default it
+  // would be a column of noughts beside the figures people came for.
+  assert.ok(registry["credit-balances"].hiddenColumns.includes("Ledger Difference"));
+  assert.ok(registry["credit-balances"].numeric["Ledger Difference"],
+    "it still has to roll up once someone unhides it");
+});
 }
 
 /* ══ LIVE HALF ═══════════════════════════════════════════════════════════
