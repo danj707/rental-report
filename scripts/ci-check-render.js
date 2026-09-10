@@ -4854,7 +4854,7 @@ const CASES = [
     },
     needs: 'body[data-menu="0"][data-sec="1"][data-pick="1"]' },
 
-  { name: "all-users · only Residency keeps a filter menu",
+  { name: "all-users · only the place and the answer keep a filter menu",
     path: "/" + AQ_ORG + "/all-users", token: AQ_TOKEN,
     act: async page => {
       await page.waitForSelector("[data-report-body]", { timeout: 15000 });
@@ -4864,9 +4864,11 @@ const CASES = [
         document.body.dataset.menus = slugs.sort().join("|");
       });
     },
-    // Thirteen per-person menus came off. A menu per email address is the
-    // report itself rendered as a dropdown.
-    needs: 'body[data-menus="f_Residency_"] input[data-search]' },
+    // Twelve per-person menus came off — a menu per email address is the report
+    // itself rendered as a dropdown. Two survive, and they are the two that are
+    // not a person: Residency? (two answers) and Zip Code (a PLACE, and the
+    // fixture's four rows carry two distinct zips, well inside the cap).
+    needs: 'body[data-menus="f_Residency_|f_Zip_Code"] input[data-search]' },
 
   { name: "all-users · the search reaches a column with no menu",
     path: "/" + AQ_ORG + "/all-users?q=90245", token: AQ_TOKEN,
