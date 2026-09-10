@@ -1058,16 +1058,24 @@ function directorsQuarter() {
 }
 
 // ── Add-ons in the note line, and the Forms link ────────────────────────────
-// Site Type is deliberately "gym": the facilities-hub tabs count campsite,
-// field and the three outdoor types, so these rows stay invisible to them and
-// cannot shift [data-oe-peak] / [data-fld-peak].
+// Site Types here are gym / room / NULL, deliberately: the facilities-hub tabs
+// count campsite, field, pool and the three outdoor types, so these rows stay
+// invisible to them and cannot shift [data-oe-peak] / [data-fld-peak].
+//
+// THE THREE ARE ALSO THE SITE-TYPE FILTER'S OWN FIXTURE, and the shape is
+// load-bearing twice over. A single type renders no control at all (one type is
+// not a filter), so there have to be two; and the NULL one is the case that
+// matters most — `court.type` is null on 40,718 live reservations across 59
+// orgs, and a filter that drops those rows the moment anyone narrows it is the
+// bug this fixture exists to catch.
 function addonFormRows() {
   const d = n => { const t = new Date(Date.now() - n * 86400000); return t.toISOString().slice(0, 10); };
-  const mk = (resId, site, addOns, addonFees) => ({
+  const mk = (resId, site, addOns, addonFees, siteType) => ({
     "Org Name": "Test Parks", "Reservation ID": resId, "Date": d(3),
     "Day": "Sunday", "Begin": "10:00am", "End": "02:00pm",
     "Location": "Arsenal Park", "Facility": "Arsenal Park - " + site,
-    "Site Type": "gym", "Purpose": "Birthday party", "Head Cnt": 30,
+    "Site Type": siteType === undefined ? "gym" : siteType,
+    "Purpose": "Birthday party", "Head Cnt": 30,
     "Reservee": "Test Renter", "Email": "t@example.com", "Phone": null, "Resident?": "Yes",
     "Booking Type": "Managed", "Instructions": null, "Notes": null,
     "Add Ons": addOns, "Add-On Fees": addonFees, "Total": 50, "Paid?": "Paid",
@@ -1076,9 +1084,9 @@ function addonFormRows() {
   });
   return [
     // Two add-ons, so the note line has a total to sum: 25 + 15.50 = $40.50.
-    mk("res-addons", "Pavilion B", "Alcohol Permit ($25.00), Field Light Fee ($15.50)", 40.5),
-    mk("res-forms",  "Pavilion C", "", 0),
-    mk("res-plain",  "Picnic Table 11", "", 0),
+    mk("res-addons", "Pavilion B", "Alcohol Permit ($25.00), Field Light Fee ($15.50)", 40.5, "gym"),
+    mk("res-forms",  "Pavilion C", "", 0, "room"),
+    mk("res-plain",  "Picnic Table 11", "", 0, null),
   ];
 }
 
@@ -2170,6 +2178,57 @@ const CASES = [
       try { localStorage.setItem('col_phone', 'false'); localStorage.setItem('col_email', 'false'); } catch (e) {}
     }); },
     needs: ".cell.col-phone" },
+
+  // ── Site Type: the column and its multi-select (Dan, 2026-09-10) ─────────
+  // Card 17294 has emitted "Site Type" since it shipped and normalizeRow has
+  // mapped it since; nothing displayed it. Fifth instance of the mapped-and-
+  // rendered-nowhere pattern, so every case here keys on the CELL rather than
+  // on the column heading or the control existing.
+  //
+  // OFF by default — this column is new to a report every org already prints.
+  { name: "facility · no Site Type column until asked",
+    path: "/{org}/facility",
+    pre: async page => { await page.evaluateOnNewDocument(() => {
+      try { localStorage.removeItem('col_sitetype'); } catch (e) {}
+    }); },
+    needs: ".data-row", absent: "[data-sitetype]" },
+  // Ticked, it renders the LABEL a person reads, not the slug.
+  { name: "facility · Site Type reads as a label",
+    path: "/{org}/facility?sitetype=1",
+    needs: "[data-sitetype=\"room\"]" },
+  // THE UNTYPED BUCKET. `court.type` is NULL on 40,718 live reservations, and
+  // the mapper turns that into ''. Without its own key those rows would have no
+  // option to tick and would be dropped by the funnel the moment anybody
+  // narrowed the filter. Both halves are asserted: the untyped row survives the
+  // narrowing, and the typed ones are actually gone (a filter that filtered
+  // nothing would pass on presence alone).
+  { name: "facility · untyped sites are their own option",
+    path: "/{org}/facility?sitetype=1&site_types=%28no%20type%29",
+    needs: "[data-sitetype=\"(no type)\"]", absent: "[data-sitetype=\"gym\"]" },
+  { name: "facility · the type filter narrows",
+    path: "/{org}/facility?sitetype=1&site_types=room",
+    needs: "[data-sitetype=\"room\"]", absent: "[data-sitetype=\"gym\"]" },
+  // THE URL IS THE PDF'S ONLY CHANNEL, exactly as for `pii`. The print page is
+  // this page under ?_print=1 with an EMPTY localStorage, so a column kept only
+  // in storage cannot reach it: the reader ticks Site Type, hits PDF, and the
+  // column is silently absent. Storage says OFF here so only the URL can be
+  // producing the column.
+  { name: "facility · the PDF's sitetype param brings the column",
+    path: "/{org}/facility?_print=1&sitetype=1",
+    pre: async page => { await page.evaluateOnNewDocument(() => {
+      try { localStorage.setItem('col_sitetype', 'false'); } catch (e) {}
+    }); },
+    needs: "[data-sitetype]" },
+  // ...and the other direction, which is what fails if `sitetype` stops being
+  // read: storage says ON, the URL says off, and the PDF must agree with the
+  // URL. Without this case a page that ignored the parameter entirely would
+  // still pass the one above.
+  { name: "facility · and takes it away again",
+    path: "/{org}/facility?_print=1&sitetype=0",
+    pre: async page => { await page.evaluateOnNewDocument(() => {
+      try { localStorage.setItem('col_sitetype', 'true'); } catch (e) {}
+    }); },
+    needs: ".data-row", absent: "[data-sitetype]" },
 
   { name: "facilities · summary",  path: "/{org}/facilities?tab=summary", needs: ".sum-cards, .aqua-sec, .fac-banner" },
   { name: "org landing",           path: "/{org}",                        needs: ".card" },

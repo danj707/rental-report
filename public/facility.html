@@ -482,6 +482,7 @@
     .col-phone   { width: 120px; white-space: normal !important; overflow: visible !important; text-overflow: clip !important; word-break: break-word; }
     .col-email   { width: 190px; font-size: 10.5px; white-space: normal !important; overflow: visible !important; text-overflow: clip !important; word-break: break-word; }
     .col-purpose { width: 160px; white-space: normal; word-break: break-word; }
+    .col-sitetype{ width: 84px; text-align: center; font-size: 10px; }
     .col-resident{ width: 72px; text-align: center; }
     .col-booktype{ width: 72px; text-align: center; font-size: 10px; }
     .col-total   { width: 62px; text-align: right; }
@@ -1189,6 +1190,11 @@ function getParams() {
     sites:         p.get('sites'),      // comma-separated, from share URL
     book_type:     p.get('book_type'),  // instant | managed | all
     addons:        p.get('addons'),     // comma-separated, from share/PDF URL
+    // PLURAL, because `site_type` above is the LEGACY single-value Metabase
+    // filter and still forwards to the card. This one is the client-side
+    // multi-select over rows already loaded, like locations/sites/addons.
+    site_types:    p.get('site_types'), // comma-separated, from share/PDF URL
+    sitetype:      p.get('sitetype'),   // 1|0 - whether the Site Type COLUMN shows
     pii:           p.get('pii'),        // phone,email - which PII columns to show
   };
 }
@@ -1492,6 +1498,111 @@ function LocationFilter({ allLocations, selectedLocations, onChange }) {
 }
 
 // ── Site Filter Dropdown component ───────────────────────────────────
+/* ── SITE TYPE ────────────────────────────────────────────────────────────
+   Card 17294 has emitted "Site Type" all along and `normalizeRow` has mapped
+   it all along; NO surface read it. Fifth instance of the mapped-and-rendered-
+   nowhere pattern in this repo, so the render case keys on the CELL.
+
+   THE UNTYPED ROWS ARE THE WHOLE REASON THERE IS A KEY FUNCTION.
+   `court.type` is NULL on 40,718 reservations across 59 orgs in the last year
+   — the fourth largest bucket, ahead of pool. The mapper turns that into '',
+   so a naive `.filter(Boolean)` over the options would leave those rows with
+   no tickable option, and the funnel would then drop every one of them the
+   moment anybody narrows the filter, with nothing on screen saying so. That is
+   the LOC_NONE lesson from the Programs location filter, one report over.
+   So untyped gets its OWN option, and `siteTypeKey` is the single definition
+   read by the options builder, the funnel, the cell and the spreadsheet —
+   three copies is how a checkbox stops matching the word beside it.
+
+   Measured 2026-09-10 over 365 days of live reservations: 12 real types plus
+   NULL; 126 orgs have facility traffic and 26 of them run a single type.
+   court 381,021 · room 115,355 · field 68,697 · (none) 40,718 · pool 28,472 ·
+   gym 22,352 · outdoor-event-space 15,325 · picnic-table 11,844 · other 7,862 ·
+   rink 1,930 · bounce-house 1,056 · golf 668 · campsite 654 */
+const SITE_TYPE_NONE = '(no type)';
+
+function siteTypeKey(r) {
+  const v = String(r && r.siteType != null ? r.siteType : '').trim();
+  return v || SITE_TYPE_NONE;
+}
+
+/* NO LOOKUP TABLE, deliberately. Every one of the twelve live types title-cases
+   correctly ('outdoor-event-space' -> Outdoor Event Space, 'picnic-table' ->
+   Picnic Table), so a map would agree with this fallback on every input it has
+   and go stale the day a thirteenth type ships. Note 'other' is a REAL type
+   with 7,862 reservations and is not the same fact as no type at all. */
+function siteTypeLabel(t) {
+  if (t === SITE_TYPE_NONE) return 'No type on file';
+  const v = String(t == null ? '' : t).trim();
+  if (!v) return 'No type on file';
+  return v.split(/[-_\s]+/).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+}
+
+/* The site-type picker. Deliberately NOT SiteFilter with different props: that
+   one carries a search box and a "12/340" badge because an org can have
+   hundreds of sites, where the most any org runs is twelve types. A search box
+   over twelve checkboxes is furniture. It reuses SiteFilter's own CSS classes,
+   so the two read as one control family rather than two features. */
+function SiteTypeFilter({ allTypes, selected, onChange }) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const away = e => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false); };
+    const esc  = e => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', away);
+    document.addEventListener('keydown', esc);
+    return () => { document.removeEventListener('mousedown', away); document.removeEventListener('keydown', esc); };
+  }, [open]);
+  // ONE TYPE IS NOT A FILTER. 26 of the 126 orgs with facility traffic in the
+  // last year run a single site type, and a control that can only return
+  // everything or nothing is the dead end this repo keeps writing down.
+  if (!allTypes || allTypes.length < 2) return null;
+  const sel = selected || new Set();
+  const allSelected  = sel.size === allTypes.length;
+  const noneSelected = sel.size === 0;
+  const badgeCount   = allSelected ? null : sel.size;
+  function toggle(t) {
+    const next = new Set(sel);
+    next.has(t) ? next.delete(t) : next.add(t);
+    onChange(next);
+  }
+  return (
+    <div className="loc-filter-wrap" ref={wrapRef} data-sitetype-filter>
+      <button
+        className="btn-loc-filter"
+        data-sitetype-btn
+        onClick={() => setOpen(o => !o)}
+        style={!allSelected ? { borderColor: '#f59e0b', color: '#fde68a' } : {}}
+      >
+        🏷️ Type
+        {badgeCount !== null && (
+          <span className="badge">{badgeCount}/{allTypes.length}</span>
+        )}
+      </button>
+      {open && (
+        <div className="loc-dropdown" data-sitetype-menu>
+          <div className="loc-dropdown-header">
+            <span>Filter Site Types</span>
+            <div className="loc-dropdown-header-actions">
+              <button onClick={() => onChange(new Set(allTypes))} disabled={allSelected}>All</button>
+              <button onClick={() => onChange(new Set())} disabled={noneSelected}>None</button>
+            </div>
+          </div>
+          <div className="loc-dropdown-list">
+            {allTypes.map(t => (
+              <label key={t} className="loc-item" data-sitetype-opt={t}>
+                <input type="checkbox" checked={sel.has(t)} onChange={() => toggle(t)} />
+                <span>{siteTypeLabel(t)}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SiteFilter({ allSites, selectedSites, onChange }) {
   const [open, setOpen]     = useState(false);
   const [search, setSearch] = useState('');
@@ -2061,6 +2172,21 @@ function App() {
   const [showLighting, setShowLighting] = useState(() => {
     try { return localStorage.getItem('col_lighting') === 'true'; } catch { return false; }
   });
+  // OPT-IN: this column is new to a report every org already prints, and
+  // defaulting it ON would widen all of their PDFs without anyone asking.
+  //
+  // URL FIRST, then this browser, then off — the piiInitial rule, and it is the
+  // reason the column can reach the PDF at all. The server-rendered PDF is this
+  // page under ?_print=1 in a browser with an EMPTY localStorage, so a column
+  // kept only in storage has no channel to it: the reader ticks Site Type, hits
+  // PDF, and the column is silently absent. Every other opt-in column on this
+  // page still has that gap; `pii` is the one that was fixed, and this follows
+  // it rather than widening the fix into columns nobody asked about.
+  const [showSiteType, setShowSiteType] = useState(() => {
+    const fromUrl = new URLSearchParams(window.location.search).get('sitetype');
+    if (fromUrl !== null) return fromUrl === '1';
+    try { return localStorage.getItem('col_sitetype') === 'true'; } catch { return false; }
+  });
   const [filterLighting, setFilterLighting] = useState(false);
   const [bookTypeFilter, setBookTypeFilter] = useState(params.book_type || 'all');
   const [showMetrics, setShowMetrics] = useState(() => {
@@ -2120,6 +2246,12 @@ function App() {
     try { localStorage.setItem('col_email', showEmail); } catch {}
   }, [showEmail, params.pii]);
   useEffect(() => { try { localStorage.setItem('col_link',      showLink);      } catch {} }, [showLink]);
+  // Gated like `pii`: opening somebody's shared link, or the print page, must
+  // not quietly rewrite this reader's own default.
+  useEffect(() => {
+    if (params.sitetype != null) return;
+    try { localStorage.setItem('col_sitetype', showSiteType); } catch {}
+  }, [showSiteType, params.sitetype]);
   useEffect(() => { try { localStorage.setItem('col_resident',  showResident);  } catch {} }, [showResident]);
   useEffect(() => { try { localStorage.setItem('col_booktype',  showBookType);  } catch {} }, [showBookType]);
   useEffect(() => { try { localStorage.setItem('col_lighting',   showLighting);   } catch {} }, [showLighting]);
@@ -2135,6 +2267,8 @@ function App() {
   const [selectedLocations, setSelectedLocations] = useState(null);
   const [selectedSites,     setSelectedSites]     = useState(null);
   const [selectedAddOns,    setSelectedAddOns]    = useState(null);
+  const [selectedSiteTypes, setSelectedSiteTypes] = useState(null);
+  const [allSiteTypes,      setAllSiteTypes]      = useState([]);
 
   // ── AI Insights state ────────────────────────────────────────────
 
@@ -2326,13 +2460,19 @@ function App() {
       if (selectedSites)     { const a = [...selectedSites];     if (a.length) qs.set('sites',     a.join(',')); }
       if (bookTypeFilter && bookTypeFilter !== 'all') qs.set('book_type', bookTypeFilter);
       if (selectedAddOns)    { const a = [...selectedAddOns];    if (a.length) qs.set('addons',    a.join(',')); }
+      // Same condition and same empty-is-real rule as downloadPdf, so Copy Link
+      // and PDF cannot disagree about what the reader was looking at.
+      if (selectedSiteTypes && allSiteTypes.length > 0 && selectedSiteTypes.size < allSiteTypes.length) {
+        qs.set('site_types', [...selectedSiteTypes].join(','));
+      }
+      qs.set('sitetype', showSiteType ? '1' : '0');
       qs.set('pii', piiParam(showPhone, showEmail));
       if (URL_TOKEN) qs.set('token', URL_TOKEN);
       return `${window.location.pathname}?${qs.toString()}`;
     };
     return () => { try { delete window.recShareLink; } catch (e) { window.recShareLink = undefined; } };
   }, [loadedStart, loadedEnd, startDate, endDate, selectedLocations, selectedSites, selectedAddOns,
-      showPhone, showEmail]);
+      selectedSiteTypes, allSiteTypes, bookTypeFilter, showSiteType, showPhone, showEmail]);
 
   useEffect(() => {
     if (params._print === '1') document.body.classList.add('print-mode');
@@ -2421,6 +2561,39 @@ function App() {
           const sites = [...new Set(normalized.map(r => r.site).filter(Boolean))].sort();
           const next = new Set(prev);
           sites.forEach(s => { if (!next.has(s)) next.add(s); });
+          return next;
+        });
+
+        // Accumulate every site type seen, and never drop a historical one —
+        // the same rule as locations and sites above. Untyped sites carry the
+        // SITE_TYPE_NONE key, so they are tickable rather than unreachable.
+        {
+          const types = [...new Set(normalized.map(siteTypeKey))].sort();
+          setAllSiteTypes(prev => {
+            const merged = new Set(prev);
+            types.forEach(t => merged.add(t));
+            return [...merged].sort();
+          });
+        }
+
+        setSelectedSiteTypes(prev => {
+          const types = [...new Set(normalized.map(siteTypeKey))].sort();
+          if (prev === null) {
+            // PRESENCE, not truthiness. An EMPTY `site_types` is a real answer
+            // — the reader ticked None — and reading it as "no opinion" is how
+            // a PDF comes back carrying every type while the screen showed no
+            // rows. A parameter naming only types this window does not have is
+            // a different thing: that is a stale link, and blanking the report
+            // over it is the confusing way to say so, so it falls back to all.
+            if (params.site_types != null) {
+              if (params.site_types === '') return new Set();
+              const shared = params.site_types.split(',').map(t => t.trim()).filter(t => types.includes(t));
+              if (shared.length > 0) return new Set(shared);
+            }
+            return new Set(types);
+          }
+          const next = new Set(prev);
+          types.forEach(t => { if (!next.has(t)) next.add(t); });
           return next;
         });
 
@@ -2552,6 +2725,9 @@ function App() {
     if (selectedSites && selectedSites.size < allSites.length) {
       result = result.filter(r => selectedSites.has(r.site));
     }
+    if (selectedSiteTypes && allSiteTypes.length > 0 && selectedSiteTypes.size < allSiteTypes.length) {
+      result = result.filter(r => selectedSiteTypes.has(siteTypeKey(r)));
+    }
     if (bookTypeFilter !== 'all') {
       result = result.filter(r => (r.bookingType || '').trim().toLowerCase() === bookTypeFilter);
     }
@@ -2565,7 +2741,8 @@ function App() {
       result = result.filter(r => r.lighting === 'Yes');
     }
     return result;
-  }, [rows, selectedLocations, allLocations, selectedSites, allSites, bookTypeFilter, selectedAddOns, allAddOns, filterLighting]);
+  }, [rows, selectedLocations, allLocations, selectedSites, allSites, selectedSiteTypes, allSiteTypes,
+      bookTypeFilter, selectedAddOns, allAddOns, filterLighting]);
 
   const grouped = useMemo(() => {
     if (!filteredRows) return null;
@@ -2627,6 +2804,9 @@ function App() {
     // these back into selectedLocations/selectedSites on load.
     if (selectedLocations && selectedLocations.size < allLocations.length) { qs.set('locations', [...selectedLocations].join(',')); }
     if (selectedSites && selectedSites.size < allSites.length) { qs.set('sites', [...selectedSites].join(',')); }
+    if (selectedSiteTypes && allSiteTypes.length > 0 && selectedSiteTypes.size < allSiteTypes.length) {
+      qs.set('site_types', [...selectedSiteTypes].join(','));
+    }
     if (bookTypeFilter && bookTypeFilter !== 'all') qs.set('book_type', bookTypeFilter);
     if (selectedAddOns)    { const a = [...selectedAddOns];    if (a.length) qs.set('addons',    a.join(',')); }
     // ALWAYS SET, even when neither is on. The print page has no localStorage,
@@ -2634,6 +2814,11 @@ function App() {
     // explicit empty value is therefore the ONLY way a reader who switched both
     // columns off gets a PDF that agrees with their screen.
     qs.set('pii', piiParam(showPhone, showEmail));
+    // Same reason, and it is the ONLY channel the Site Type column has: the
+    // print page's localStorage is empty, so an omitted parameter resolves to
+    // the default (off) and a reader who ticked the column gets a PDF without
+    // it. '0' is a real answer here, not an absent one.
+    qs.set('sitetype', showSiteType ? '1' : '0');
 
     const pathParts = window.location.pathname.replace(/\/$/, '').split('/');
     const pdfBase = pathParts.length >= 3
@@ -2726,6 +2911,7 @@ function App() {
     if (showAddons) headers.push('Add-On Fees');
     if (showPaid)      headers.push('Paid?');
     if (showNotes)     headers.push('Instructions', 'Notes', 'Add-ons');
+    if (showSiteType)  headers.push('Site Type');
     if (showResident)  headers.push('Resident?');
     if (showBookType)  headers.push('Booking Type');
     if (showLighting)  headers.push('Lighting', 'Lit From', 'Lit Until');
@@ -2744,6 +2930,7 @@ function App() {
       if (showAddons) { const n = parseFloat(r.addonFees); row.push(!isNaN(n) && n !== 0 ? n : ''); }
       if (showPaid) row.push(r.paid || '');
       if (showNotes) { row.push(r.instructions || ''); row.push(r.notes || ''); row.push(r.addons || ''); }
+      if (showSiteType) row.push(siteTypeLabel(siteTypeKey(r)));
       if (showResident) row.push(r.resident || '');
       if (showBookType) row.push(r.bookingType || '');
       if (showLighting) { row.push(r.lighting || ''); row.push(r.litFrom || ''); row.push(r.litUntil || ''); }
@@ -2767,6 +2954,7 @@ function App() {
       ...(showAddons?[{wch:12}]:[]),
       ...(showPaid?[{wch:8}]:[]),
       ...(showNotes?[{wch:30},{wch:30},{wch:30}]:[]),
+      ...(showSiteType?[{wch:14}]:[]),
       ...(showResident?[{wch:10}]:[]),
       ...(showBookType?[{wch:14}]:[]),
       ...(showLighting?[{wch:8},{wch:14},{wch:14}]:[]),
@@ -2873,6 +3061,17 @@ function App() {
           </>
         )}
 
+        {allSiteTypes.length > 1 && selectedSiteTypes && (
+          <>
+            <div className="divider" />
+            <SiteTypeFilter
+              allTypes={allSiteTypes}
+              selected={selectedSiteTypes}
+              onChange={setSelectedSiteTypes}
+            />
+          </>
+        )}
+
         {allAddOns.length > 0 && selectedAddOns && (
           <>
             <div className="divider" />
@@ -2970,6 +3169,10 @@ function App() {
               <label style={{display:'flex',alignItems:'center',gap:4,cursor:'pointer',fontSize:11}}>
                 <input type="checkbox" checked={showLink} onChange={e => setShowLink(e.target.checked)} />
                 Rec Link
+              </label>
+              <label>
+                <input type="checkbox" data-col-sitetype checked={showSiteType} onChange={e => setShowSiteType(e.target.checked)} />
+                Site Type
               </label>
               <label>
                 <input type="checkbox" checked={showResident} onChange={e => setShowResident(e.target.checked)} />
@@ -3235,6 +3438,7 @@ function App() {
                           {showPhone && <span className="col-phone">Phone #</span>}
                           {showEmail && <span className="col-email">Email</span>}
                           <span className="col-purpose">Purpose</span>
+                          {showSiteType  && <span className="col-sitetype">Type</span>}
                           {showResident  && <span className="col-resident">Resident?</span>}
                           {showBookType  && <span className="col-booktype">Book Type</span>}
                           {showHeadCount && <span className="col-hcnt">Cnt</span>}
@@ -3270,6 +3474,7 @@ function App() {
                                   : ''}
                               </span>}
                               <span className="cell col-purpose">{r.resName}</span>
+                              {showSiteType  && <span className="cell col-sitetype" data-sitetype={siteTypeKey(r)}>{siteTypeLabel(siteTypeKey(r))}</span>}
                               {showResident  && <span className="cell col-resident">{r.resident}</span>}
                               {showBookType  && <span className="cell col-booktype">{r.bookingType}</span>}
                               {showHeadCount && <span className="cell col-hcnt">{r.headCount}</span>}

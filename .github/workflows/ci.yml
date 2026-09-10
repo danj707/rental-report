@@ -240,6 +240,9 @@ jobs:
       - name: Add-ons in the note line, Forms link (the add-on money survives its column)
         run: node scripts/facility-addons-forms.spec.js
 
+      - name: Site Type column + filter (untyped sites are their own option; the PDF sees both)
+        run: node scripts/facility-sitetype.spec.js
+
       - name: Retired reports (overview + annual-report off, and they page nobody)
         run: node scripts/retired-reports.spec.js
 

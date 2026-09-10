@@ -5811,6 +5811,17 @@ async function generatePdf(orgSlug, reportType, startDate, endDate, filters = {}
   // So it is forwarded on PRESENCE, not truthiness. Absent still means "the
   // caller is not speaking about PII"; empty means "neither".
   if (filters.pii !== undefined) qsObj.pii = filters.pii;
+  // FOURTH AND FIFTH INSTANCE, 2026-09-10, both on the rental schedule's new
+  // site-type control, and both for exactly the reason `pii` is above.
+  //   `site_types` is a LIST whose empty value means "the reader ticked None",
+  //   so the truthy loop would drop it and the PDF would print every site type
+  //   while the screen showed no rows at all.
+  //   `sitetype` is the column's own on/off. It happens to survive the loop
+  //   today because it is spelled '0' rather than '', and a parameter that
+  //   works by accident of its encoding is one rename from breaking silently.
+  // Absent still means "the caller is not speaking about this".
+  if (filters.site_types !== undefined) qsObj.site_types = filters.site_types;
+  if (filters.sitetype !== undefined) qsObj.sitetype = filters.sitetype;
   if (orgTok) qsObj.token = orgTok;
   const qs = new URLSearchParams(qsObj);
   // ── The custom data reports' own filter vocabulary ──
