@@ -68,6 +68,30 @@
 -- Platform-wide as at 2026-09-10: 11,761 reservations across 54 orgs holding
 -- $97,893.76 — against 70,702 cancelled reservations already fully refunded, so
 -- the product does handle most of this and the report is the residue.
+--
+-- `Days Waiting` EXISTS BECAUSE THE RAW LIST IS NOT A WORK QUEUE, and this is
+-- the measurement that decides how to read the whole report. When a refund does
+-- happen it happens FAST — over the 11,022 cancelled reservations that were
+-- refunded: 62.7% the same day, 84.0% within three days, 95.0% within SEVEN,
+-- 98.9% within thirty, median 0.5 days, p95 7.0 days.
+--
+-- So seven days is a MEASURED threshold rather than a guess: past it, the
+-- normal process was never going to catch the item. And almost everything here
+-- is past it — of the 11,761 outstanding, only 377 ($3,831.75) are under a week
+-- old, while 8,184 ($62,888.27) are three months to a year old and 82 are over
+-- a year. Median age 155 days.
+--
+-- WHAT THIS REPORT STILL CANNOT TELL YOU, said plainly because the median
+-- outstanding amount is $5.00: it cannot separate money DELIBERATELY retained
+-- (a cancellation fee, a de-minimis policy on a $5 court booking) from money
+-- somebody simply missed. Both look identical in the data — there is no
+-- cancellation-policy signal on the reservation to read. The age column is what
+-- makes the list workable anyway: sort by it and the old, LARGE items are the
+-- ones worth a human, which is a different and much shorter list than "$97,894
+-- outstanding".
+--
+-- Ordered biggest-first within each location for that reason — a refund queue
+-- is worked by amount, not by date.
 -- ─────────────────────────────────────────────────────────────────────────────
 WITH cx AS (
   SELECT r.id                                    AS reservation_id,
@@ -127,6 +151,10 @@ SELECT
   ROUND(m.refunded_cents / 100.0, 2)                                 AS "Refunded",
   ROUND((m.paid_cents - m.refunded_cents) / 100.0, 2)                AS "Unrefunded",
   m.last_refund_at::date                                             AS "Last Refund",
+  -- NOT additive: an age is a property of one row and summing it down the
+  -- column adds up nothing anyone wants, so it is deliberately absent from the
+  -- registry's `numeric` map — the same treatment as `Sites`.
+  (CURRENT_DATE - cx.canceled_at::date)                              AS "Days Waiting",
   cx.rental_id::text                                                 AS "Rental ID",
   1                                                                  AS "Bookings"
 FROM cx
@@ -135,4 +163,4 @@ LEFT JOIN site     sc ON sc.reservation_id = cx.reservation_id
 LEFT JOIN location l  ON l.id  = cx.location_id
 LEFT JOIN users    u  ON u.id  = cx.customer_user_id
 WHERE m.paid_cents - m.refunded_cents > 0
-ORDER BY 1, cx.canceled_at DESC, cx.starts_at DESC
+ORDER BY 1, (m.paid_cents - m.refunded_cents) DESC, cx.canceled_at DESC

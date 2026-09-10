@@ -1168,6 +1168,27 @@ test("a signed Amount column is never split into two unsigned ones", () => {
   assert.ok(!n["Issued"] && !n["Used"], "Amount was split and no longer nets");
 });
 
+test("the refund queue carries an AGE, and the age never rolls up", () => {
+  // The measurement that decides how the whole report reads: refunds that DO
+  // happen are 95% done within seven days (median 0.5d, p95 7.0d over 11,022
+  // refunded cancellations), so past a week the normal process was never going
+  // to catch the item. Only 377 of 11,761 outstanding are inside that window;
+  // median age is 155 days and median amount $5.00. Without the age column the
+  // report hands an org 11,761 mostly-$5 rows and calls it a work queue.
+  const sql = fs.readFileSync(path.join(root, "sql", "report-cards", "rental-refunds-due.sql"), "utf8");
+  const body = sql.replace(/^\s*--.*$/gm, "");
+  assert.ok(/AS "Days Waiting"/.test(body), "the age column is gone");
+  assert.ok(/CURRENT_DATE - cx\.canceled_at::date/.test(body),
+    "the age is not measured from the cancellation");
+  // An age is a property of ONE booking. Summing it down the column adds up
+  // nothing anyone wants — the same treatment as Sites.
+  assert.ok(!registry["rental-refunds-due"].numeric["Days Waiting"],
+    "Days Waiting must not roll up");
+  // Worked by amount, not by date: the old LARGE rows are the actionable ones.
+  assert.ok(/ORDER BY 1, \(m\.paid_cents - m\.refunded_cents\) DESC/.test(body),
+    "the queue is no longer ordered biggest-first");
+});
+
 test("Sites is NOT additive, and Ledger Difference is not the headline", () => {
   // Summing a per-booking court count down the column adds up nothing anyone
   // wants — the same trap as the wizard summing Number of Payments.

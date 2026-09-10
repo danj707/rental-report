@@ -84,6 +84,37 @@ drifted. Verified against real data rather than argued: El Segundo over
 September reads **1** drifted account, not 27. The spec fails by name on that
 mutation.
 
+### THE REFUND LIST IS NOT A WORK QUEUE UNTIL IT CARRIES AN AGE
+
+Dan, before merging: *"would it help to work on a facility rental refund report
+before merging this into the main reporting system?"* Yes — and the useful work
+turned out to be a MEASUREMENT rather than a build.
+
+**When a refund happens, it happens fast.** Over the 11,022 cancelled
+reservations that WERE refunded: **62.7% the same day, 84.0% within three days,
+95.0% within SEVEN, 98.9% within thirty**, median 0.5 days, p95 7.0 days. So
+**seven days is a measured threshold rather than a guess** — past it, the normal
+process was never going to catch the item.
+
+**And almost nothing outstanding is inside it.** Of the 11,761 items: only
+**377 ($3,831.75)** are under a week old, **947** are 8-30 days,
+**2,175** are 31-90, **8,184 ($62,888.27)** are 3-12 months and **82** are over
+a year. **Median age 155 days.** So this is not staff work-in-flight; it is
+genuinely aged.
+
+**But the median outstanding amount is $5.00**, which is the other half of the
+picture and the reason the report must not shout. It **cannot separate money
+deliberately retained** — a cancellation fee, a de-minimis policy on a $5 court
+booking — **from money somebody missed.** Both look identical, and there is no
+cancellation-policy signal on the reservation to read. Without an age column the
+report hands an org 11,761 mostly-$5 rows averaging five months old and calls it
+*"$97,894 outstanding"*, which is how a report gets distrusted on first contact.
+
+So the card ships **`Days Waiting`** and is **ordered biggest-first within each
+location** — a refund queue is worked by amount, not by date — and the age is
+deliberately NOT additive (summing an age adds up nothing), the same treatment as
+`Sites`. That turns the list into the short one worth a human: old AND large.
+
 **On refunds due the window has a real cost, and the report says so.** It is a
 WORK QUEUE, and the oldest unrefunded items are the ones most likely to have
 been missed — so the default month is precisely the range that hides them.
@@ -188,7 +219,7 @@ measurement rules out the place you looked, not the fact*:
 
 ### Guards, and what is left
 
-`custom-reports.spec.js` 72 → **79 assertions**, and it now **LIFTS AND RUNS the
+`custom-reports.spec.js` 72 → **80 assertions**, and it now **LIFTS AND RUNS the
 registry** (supplying the two names it closes over) rather than regexing the
 literal — a regex over `numeric: { … }` passes on a key that is present and
 wrong. Mutation-tested: a hardcoded El Segundo location in the SQL, and the

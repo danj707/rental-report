@@ -2152,10 +2152,18 @@ const CUSTOM_REPORTS = {
       "Unrefunded": { dp: 2, money: true },
       "Bookings": { dp: 0 },
     },
-    // `Sites` is DELIBERATELY NOT in `numeric`: it is a count of courts on one
-    // booking, so summing it down the column adds up nothing anybody wants. It
-    // exists to make a multi-court booking legible, and it is hidden because it
-    // reads 1 on almost every row.
+    // `Sites` and `Days Waiting` are DELIBERATELY NOT in `numeric`: a court
+    // count and an age are both properties of ONE booking, so summing either
+    // down the column adds up nothing anybody wants.
+    //
+    // `Days Waiting` IS THE COLUMN THAT MAKES THIS LIST WORKABLE, and it is
+    // there because of a measurement. When a refund does happen it happens
+    // fast — over 11,022 refunded cancellations: 62.7% same day, 95.0% within
+    // SEVEN days, p95 7.0 days. So seven days is a measured threshold rather
+    // than a guess, and almost nothing here is inside it: of 11,761 items only
+    // 377 are under a week old, while 8,184 are three months to a year and the
+    // median age is 155 days. Sorted biggest-first, the old LARGE rows are the
+    // ones worth a human — a much shorter list than "$97,894 outstanding".
     //
     // A uuid is noise on a printed work queue and necessary in the file that
     // comes off it, so `Rental ID` is hidden rather than dropped.
@@ -2163,8 +2171,8 @@ const CUSTOM_REPORTS = {
     // Location and Site are exactly the family Dan named as filterable — a
     // place, and a court or lane name. The rest is a directory of people,
     // dates and one-off rental names.
-    noFilter: ["Sites", "Booking Date", "Cancelled", "Rental", "Customer", "Email",
-               "Last Refund", "Rental ID"],
+    noFilter: ["Sites", "Days Waiting", "Booking Date", "Cancelled", "Rental",
+               "Customer", "Email", "Last Refund", "Rental ID"],
   },
 };
 
