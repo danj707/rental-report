@@ -4463,6 +4463,114 @@ Alyssa at Essex Junction: *"download a csv of all current households"* — and
 the individual-grain sheet was *"too overwhelming"*, which is exactly why the
 household is the grouping and the role is a filter rather than two reports.
 
+## WHAT ELSE BELONGS ON THE DATA REPORTS CARD — surveyed, not guessed (2026-09-10)
+
+Dan: *"see what other types of 'data reports' we could add to that new card.
+Don't want to go too much into the Seb realm, but some people want a nicely
+formatted report. Examine a few large org dashboards, there's lots of boring
+data reports in there that might work across orgs. Anything that's a 'one off'
+we're ignoring."*
+
+**THE SURVEY IS THE FINDING, and the method is the reusable part.** Five org
+collections read card by card — Apex (116 cards), Clarksville (69), Norman (68),
+Watertown/Torrance (64), Brookline (52) — and the signal is not what any one org
+asked for, it is **which cards our own staff COPIED from one org to another.**
+Several carry a byte-identical description across three collections
+(*"Base query for account credit balances in Apex"*, *"Audit for main section
+fields for a city"*, *"Accounted for issues with payment plans"*), and Brookline's
+whole collection is a clone of Apex's with the names left alone. A card somebody
+re-pasted into a fourth city is a report the platform should own.
+
+Recurrence alone is not enough, so every candidate was then measured against
+LIVE DATA for how many orgs it would return rows for. Nothing below is a guess.
+
+### TIER 1 — the three worth building
+
+| | copied into | live coverage |
+|---|---|---|
+| **Facility rentals, balances due** | 4 of 5 (Clarksville 6088, Brookline 14590, Norman 4854, Watertown 2979/2980) | **28,711 rentals owing across 106 orgs**, $43.6M all-time, 9.2% of the 312,647 rentals ever billed |
+| **Sections with no GL code** | 4 of 5, same description each time | **17,351 PAID sections across 81 orgs — 48.2% of every paid section on the platform** |
+| **Account credit balances** | 3 of 5 (Clarksville ×3, Brookline, Apex ×2) | **7,610 accounts across 83 orgs holding $3,957,321** the org owes its customers |
+
+- **Balances due may need no new card.** Card 19570 already computes
+  Billed / Collected / Refunded per RESERVATION and the reporting project
+  already serves it; this is that card re-grained to the rental with a
+  `billed > collected` filter. Check that before writing SQL.
+- **The GL audit must split FREE sections out.** 2,808 live sections have no GL
+  code and charge nothing, which is correct configuration — folding them in
+  reports setup debt that is not there. The number that matters is the paid one.
+- **Account credit is the one with no existing home at all.** It is also two
+  reports in one: the BALANCE (what is owed) and the LEDGER
+  (`credit.creator_user_id` + `admin_note` — who granted it and why), which is
+  what Apex's *"Adds and Subtracts by Admin"* actually is.
+
+### TIER 2 — real, but settle a definition first
+
+- **Refunds to be processed** — 4 of 5 (Clarksville ×4, Norman 2216, Watertown
+  ×3, Apex 20555), all sharing *"Accounted for issues with payment plans"*.
+  **There is no `refund_request` table**, so what these queries key on has to be
+  read out of one of them before this can be specified.
+- **Pending rental applications** — 3 of 5. **1,791 across 56 orgs.** Small, and
+  it pairs naturally with balances due on one facilities-flavoured report.
+- **Transaction ledger with the tender split** — 3 of 5, and in Clarksville and
+  Brookline it is literally the same five saved questions over
+  `materialized.transaction_report` (Total $$ By Payment Method / Total Refunds
+  / Total $$ Transactions / Transaction $$ By Week / Transactions). The GL report
+  covers the rollup; this is the same money at TRANSACTION grain with cash /
+  check / card / credit columns — the exact shape a CivicRec org expects, and
+  the shape cards 21684 and 21685 already emit for El Segundo.
+
+### DELIBERATELY NOT RECOMMENDED, and why
+
+- **"Happening Today"** is the single most-copied card in the survey — **5 of 5
+  collections** — and it does NOT belong here. It is live data, and the rule
+  already recorded in this file is that a dashboard is the place for a live
+  trend while a report answers a question about a window somebody chose. It
+  belongs in rec-dashboard.
+- **Top Sections by Enrollments / Top Activities / Revenue by Program** (4 of 5,
+  Clarksville alone holds FOUR copies of one of them) — already the Programs
+  report.
+- **Active / Expired / Inactive Auto-Renewing Memberships** (3 of 5) — already
+  the Memberships report.
+- **"User Report — edit this with the zip codes you need"** (Clarksville 15248,
+  Brookline 18225, identical description) — **already shipped.** All Users and
+  Households answers it, and the Zip Code filter restored on 2026-09-10 is
+  precisely the hand-edit that description is describing. Worth telling those
+  two orgs rather than building anything.
+- **Daily Employee Cash Out Summary** — Clarksville holds **four** copies plus
+  *"Transactions Processed by Employees"*, and no other sampled org has it. A
+  one-off by Dan's rule, so it is out — but the SHAPE is generic
+  (`desk_location` + cashier + tender), so it graduates the day a second org
+  asks. Recorded so nobody re-derives that.
+- Promo Code Report, SMS Count, Ice/Hockey Export, In Design Report, Mom Prom,
+  Daddy/Daughter Dance Tickets — one-offs.
+
+### TWO OF MY OWN MEASUREMENTS WERE WRONG FIRST, and both are the same trap
+
+- **`section.pricing_policy` has no `prices` array.** Reading
+  `pricing_policy->'prices'` returned NULL on **all 40,981** live sections, so
+  the first probe reported *"0 paid sections lack a GL code"* — a confident zero
+  produced by looking in a key that does not exist. The real shape is
+  `{"default": {"type": "fixed", "cents": 11000}}`. Checking the surprising zero
+  against the raw jsonb is what caught it; the true answer is 17,351.
+- **`facility_rental.status` has exactly TWO values** — `confirmed` (244,303)
+  and `in-progress` (36,986). My first pending-applications probe filtered on
+  `pending`/`requested`/`submitted` and returned **0 rows across 0 orgs**, which
+  reads as "nobody uses this feature" and is a statement about my WHERE clause.
+  A pending application is one whose rental is still `in-progress`.
+
+*Generalise it, again: a measurement rules out the place you looked, not the
+fact. Both zeros here were mine.*
+
+### THE GATE FOR ANY OF THESE IS CROSS-ORG PORTABILITY
+
+`CUSTOM_REPORTS` is registry-driven and `public/custom-report.html` renders any
+of them with no page change — `all-users` proved that. What disqualifies a card
+is the CARD: 21682 hardcodes El Segundo's three location names and 21684/21685
+partition on El Segundo's GL codes, which is why those four are org-gated. Every
+Tier 1 candidate above is `org_id` + a date window and nothing else, so each is
+one card plus one registry entry.
+
 ## All four aquatics reports, and the column picker (2026-09-09)
 
 Dan, on report 1's PDF: *"here's the output, it's super long lol"* — 15 pages for
