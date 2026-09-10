@@ -243,6 +243,9 @@ jobs:
       - name: Site Type column + filter (untyped sites are their own option; the PDF sees both)
         run: node scripts/facility-sitetype.spec.js
 
+      - name: Saved views on the rental schedule (key order, and a stale view warns instead of blanking)
+        run: node scripts/facility-saved-views.spec.js
+
       - name: Retired reports (overview + annual-report off, and they page nobody)
         run: node scripts/retired-reports.spec.js
 

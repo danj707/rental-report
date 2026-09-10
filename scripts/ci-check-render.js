@@ -1452,6 +1452,15 @@ const STUBS = [
         ? [v("v_camp", "Hackberry Hill", { dateMode: "relative", relativeRange: "next7",
                                            params: "section_name=Camp Blue&status=enrolled" }),
            v("v_cancels", "Cancellations", { params: "status=cancelled" })]
+        // The rental schedule. `v_rooms` narrows to ONE site type, which the
+        // fixture's three rows (gym / room / NULL) make discriminating: a
+        // picker that lit up without filtering leaves all three on screen.
+        // `v_gone` names a site type this window has no rows for — the stale
+        // view that must fall back to everything AND say so, rather than
+        // rendering an empty report that reads as "nothing is booked".
+        : /\/facility\//.test(url)
+        ? [v("v_rooms", "Rooms only", { params: "site_types=room" }),
+           v("v_gone",  "Ice rink",   { params: "site_types=rink" })]
         : [];
       return { max: 25, views };
     } },
@@ -2229,6 +2238,194 @@ const CASES = [
       try { localStorage.setItem('col_sitetype', 'true'); } catch (e) {}
     }); },
     needs: ".data-row", absent: "[data-sitetype]" },
+
+  // ── Saved views on the rental schedule (Dan, 2026-09-10) ────────────────
+  // The picker lists what the feed returned. Keyed on a view NAME from the
+  // stub, so a picker that renders an empty list still fails.
+  { name: "facility · saved views listed", path: "/{org}/facility",
+    needs: "[data-view-row=\"Rooms only\"]",
+    act: async page => {
+      await page.waitForSelector("[data-view-btn]", { timeout: 45000 });
+      await page.click("[data-view-btn]");
+    } },
+  // APPLYING one has to narrow the table, not just tick a row. The fixture's
+  // three rows are gym / room / NULL, so a view naming `room` leaves exactly
+  // one — "a row was clickable" would pass on an apply that did nothing.
+  { name: "facility · applying a view filters the table", path: "/{org}/facility",
+    needs: "body[data-fv=\"1\"]",
+    // localStorage SURVIVES between render cases, and applyView writes the last
+    // view used — so without this an earlier case leaves a view applied and the
+    // next one starts on a filtered table. The key is prefix + orgSlug, so it
+    // has to be swept rather than removed by name.
+    pre: async page => { await page.evaluateOnNewDocument(() => {
+      try {
+        Object.keys(localStorage).forEach(k => {
+          if (k.indexOf('facility_saved_view_last_v1_') === 0) localStorage.removeItem(k);
+        });
+      } catch (e) {}
+    }); },
+    act: async page => {
+      await page.waitForSelector("[data-view-btn]", { timeout: 45000 });
+      await page.click("[data-view-btn]");
+      await page.waitForSelector("[data-view-row=\"Rooms only\"]", { timeout: 45000 });
+      await page.click("[data-view-row=\"Rooms only\"]");
+      await page.waitForFunction(() => {
+        const rows = document.querySelectorAll(".data-row");
+        // The button NAMES the applied view, the URL carries its id, and the
+        // table is actually down to the one room booking. All three, because
+        // each alone passes on a different half-working apply.
+        const named = /Rooms only/.test(document.querySelector("[data-view-btn]")?.textContent || "");
+        const inUrl = new URLSearchParams(window.location.search).get("view") === "v_rooms";
+        if (rows.length === 1 && named && inUrl) { document.body.setAttribute("data-fv", "1"); return true; }
+        return false;
+      }, { timeout: 45000 });
+    } },
+  // A STALE view — one naming a site type this window has no bookings for —
+  // must show EVERYTHING and say so. Blanking the report reads as "nothing is
+  // booked this week", which is a different and wrong answer, and showing
+  // everything silently reads as a broken filter.
+  { name: "facility · a stale view warns instead of blanking", path: "/{org}/facility",
+    needs: "body[data-fvwarn=\"1\"]",
+    // localStorage SURVIVES between render cases, and applyView writes the last
+    // view used — so without this an earlier case leaves a view applied and the
+    // next one starts on a filtered table. The key is prefix + orgSlug, so it
+    // has to be swept rather than removed by name.
+    pre: async page => { await page.evaluateOnNewDocument(() => {
+      try {
+        Object.keys(localStorage).forEach(k => {
+          if (k.indexOf('facility_saved_view_last_v1_') === 0) localStorage.removeItem(k);
+        });
+      } catch (e) {}
+    }); },
+    act: async page => {
+      await page.waitForSelector(".data-row", { timeout: 45000 });
+      // Count the UNFILTERED table first rather than hardcoding it: the feed is
+      // four fixtures concatenated, and a number written here would go stale the
+      // next time one of them grows a row.
+      const before = await page.evaluate(() => document.querySelectorAll(".data-row").length);
+      await page.click("[data-view-btn]");
+      await page.waitForSelector("[data-view-row=\"Ice rink\"]", { timeout: 45000 });
+      await page.click("[data-view-row=\"Ice rink\"]");
+      await page.waitForFunction(n => {
+        const rows = document.querySelectorAll(".data-row").length;
+        const warn = document.querySelector("[data-view-warn]");
+        // Both halves: nothing was filtered away, AND the reader is told why.
+        // Either alone is a different bug — a silent everything reads as a
+        // broken filter, and a warning over an empty table reads as a bad week.
+        if (rows === n && warn && /Ice rink/.test(warn.textContent)) {
+          document.body.setAttribute("data-fvwarn", "1"); return true;
+        }
+        return false;
+      }, { timeout: 45000 }, before);
+    } },
+  // Default view puts every row back. A clearView that only dropped the ACTIVE
+  // dimension would leave the previous narrowing in place, which is the "could
+  // only narrow, never widen" bug.
+  { name: "facility · Default view widens back", path: "/{org}/facility",
+    needs: "body[data-fvclear=\"1\"]",
+    // localStorage SURVIVES between render cases, and applyView writes the last
+    // view used — so without this an earlier case leaves a view applied and the
+    // next one starts on a filtered table. The key is prefix + orgSlug, so it
+    // has to be swept rather than removed by name.
+    pre: async page => { await page.evaluateOnNewDocument(() => {
+      try {
+        Object.keys(localStorage).forEach(k => {
+          if (k.indexOf('facility_saved_view_last_v1_') === 0) localStorage.removeItem(k);
+        });
+      } catch (e) {}
+    }); },
+    act: async page => {
+      await page.waitForSelector(".data-row", { timeout: 45000 });
+      const before = await page.evaluate(() => document.querySelectorAll(".data-row").length);
+      await page.click("[data-view-btn]");
+      await page.waitForSelector("[data-view-row=\"Rooms only\"]", { timeout: 45000 });
+      await page.click("[data-view-row=\"Rooms only\"]");
+      await page.waitForFunction(() => document.querySelectorAll(".data-row").length === 1,
+        { timeout: 45000 });
+      await page.click("[data-view-btn]");
+      await page.waitForSelector("[data-view-default]", { timeout: 45000 });
+      await page.click("[data-view-default]");
+      await page.waitForFunction(n => {
+        const rows = document.querySelectorAll(".data-row").length;
+        const named = /Default view/.test(document.querySelector("[data-view-btn]")?.textContent || "");
+        const cleared = !new URLSearchParams(window.location.search).get("view");
+        if (rows === n && named && cleared) { document.body.setAttribute("data-fvclear", "1"); return true; }
+        return false;
+      }, { timeout: 45000 }, before);
+    } },
+  // The save dialog offers the ranges the SERVER injects, in its order. A page
+  // that hardcoded its own list is how gl.html came to offer "Today", which the
+  // server has always refused to store — and no source assertion can tell a
+  // rendered <select> from an empty one.
+  { name: "facility · the dialog offers the server's ranges", path: "/{org}/facility",
+    needs: "body[data-fvrange=\"next7\"]",
+    // localStorage SURVIVES between render cases, and applyView writes the last
+    // view used — so without this an earlier case leaves a view applied and the
+    // next one starts on a filtered table. The key is prefix + orgSlug, so it
+    // has to be swept rather than removed by name.
+    pre: async page => { await page.evaluateOnNewDocument(() => {
+      try {
+        Object.keys(localStorage).forEach(k => {
+          if (k.indexOf('facility_saved_view_last_v1_') === 0) localStorage.removeItem(k);
+        });
+      } catch (e) {}
+    }); },
+    act: async page => {
+      await page.waitForSelector("[data-view-btn]", { timeout: 45000 });
+      await page.click("[data-view-btn]");
+      await page.waitForSelector("[data-view-row=\"Rooms only\"]", { timeout: 45000 });
+      await page.click("[data-view-row=\"Rooms only\"]");
+      await page.waitForFunction(() => document.querySelectorAll(".data-row").length === 1,
+        { timeout: 45000 });
+      await page.click("[data-view-save]");
+      await page.waitForSelector("[data-view-dialog]", { timeout: 45000 });
+      // Pick the relative-range mode, which is what reveals the select.
+      await page.evaluate(() => {
+        const radios = document.querySelectorAll("[data-view-dialog] input[type=radio]");
+        if (radios[1]) radios[1].click();
+      });
+      await page.waitForFunction(() => {
+        const sel = document.querySelector("[data-view-range]");
+        if (!sel || !sel.options.length) return false;
+        // The FIRST option is the dialog's default and must be the report's own
+        // window: the rental schedule opens on today + 6 days, i.e. next7.
+        document.body.setAttribute("data-fvrange", sel.options[0].value);
+        return true;
+      }, { timeout: 45000 });
+    } },
+  // ...and the dialog PREVIEWS what it is about to store, which is the only
+  // thing on screen that says a view carries the filters and not the columns.
+  { name: "facility · the dialog names the filters it will save", path: "/{org}/facility",
+    needs: "body[data-fvprev=\"1\"]",
+    // localStorage SURVIVES between render cases, and applyView writes the last
+    // view used — so without this an earlier case leaves a view applied and the
+    // next one starts on a filtered table. The key is prefix + orgSlug, so it
+    // has to be swept rather than removed by name.
+    pre: async page => { await page.evaluateOnNewDocument(() => {
+      try {
+        Object.keys(localStorage).forEach(k => {
+          if (k.indexOf('facility_saved_view_last_v1_') === 0) localStorage.removeItem(k);
+        });
+      } catch (e) {}
+    }); },
+    act: async page => {
+      await page.waitForSelector("[data-view-btn]", { timeout: 45000 });
+      await page.click("[data-view-btn]");
+      await page.waitForSelector("[data-view-row=\"Rooms only\"]", { timeout: 45000 });
+      await page.click("[data-view-row=\"Rooms only\"]");
+      await page.waitForFunction(() => document.querySelectorAll(".data-row").length === 1,
+        { timeout: 45000 });
+      await page.click("[data-view-save]");
+      await page.waitForFunction(() => {
+        const p = document.querySelector("[data-view-preview]");
+        // "Room", not "room": the preview reads the site type the way a person
+        // does, through the same siteTypeLabel the cell and the filter use.
+        if (p && /Room/.test(p.textContent) && !/no filters/.test(p.textContent)) {
+          document.body.setAttribute("data-fvprev", "1"); return true;
+        }
+        return false;
+      }, { timeout: 45000 });
+    } },
 
   { name: "facilities · summary",  path: "/{org}/facilities?tab=summary", needs: ".sum-cards, .aqua-sec, .fac-banner" },
   { name: "org landing",           path: "/{org}",                        needs: ".card" },

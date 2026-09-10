@@ -10096,6 +10096,19 @@ const SAVED_VIEW_PARAMS = {
   // and a shared view that overwrote them would take a colleague's chosen
   // columns away when they opened someone else's saved filter.
   roster: ["section_name", "status"],
+  // The rental schedule's FILTER state. Every one of these is a multi-select or
+  // a mode the toolbar owns, and every one is already in getParams' whitelist
+  // and already rides the share link and the PDF — so a view is a query-string
+  // swap here exactly as it is on the other two reports.
+  //
+  // `sitetype` (the Site Type COLUMN) is deliberately absent while `site_types`
+  // (the site-type FILTER) is present, and the line between them is the roster's
+  // rule rather than a new one: a filter is part of the question the report
+  // answers, a column is how one person likes to look at it. `pii` is out for
+  // the same reason, and more sharply — a view that turned somebody's contact
+  // columns back on would put phone numbers on a colleague's screen because
+  // they opened a saved filter.
+  facility: ["locations", "sites", "site_types", "book_type", "addons"],
 };
 // Relative ranges a view of this report may STORE. Same vocabulary the email
 // subscriptions use (getDateRange), so a view could later feed one unchanged.
@@ -10104,6 +10117,7 @@ const SAVED_VIEW_PARAMS = {
 const SAVED_VIEW_RELATIVE_ACCEPT = {
   gl:     ["today", "yesterday", "prior7", "prior30", "last7", "lastMonth"],
   roster: ["today", "next7", "next14", "next30", "prior7", "prior30", "lastMonth"],
+  facility: ["today", "next7", "next14", "next30", "prior7", "prior30", "lastMonth"],
 };
 // What a page OFFERS, in the order it offers them — injected into ORG_CONFIG so
 // the save dialog cannot offer a range the server then refuses. It could: gl.html
@@ -10129,6 +10143,19 @@ const SAVED_VIEW_RELATIVE_OFFER = {
     ["today",    "Today"],
     ["prior7",   "Prior 7 days"],
     ["prior30",  "Prior 30 days"],
+    ["lastMonth", "Last month"],
+  ],
+  // The rental schedule reads FORWARD too — it answers "what is booked" — and
+  // its own default window is today + 6 days, which is exactly what `next7`
+  // resolves to. Leading with anything else would make the first offered range
+  // disagree with the range the report opens on.
+  facility: [
+    ["next7",     "Next 7 days"],
+    ["next14",    "Next 14 days"],
+    ["next30",    "Next 30 days"],
+    ["today",     "Today"],
+    ["prior7",    "Prior 7 days"],
+    ["prior30",   "Prior 30 days"],
     ["lastMonth", "Last month"],
   ],
 };
@@ -11099,7 +11126,10 @@ app.get("/:org/facility", (req, res) => {
   const org  = ORGS[slug];
   if (!org) return res.status(404).send("Unknown org");
   logEvent(slug, "facility", "view", req);
-  const orgConfig = { defaultDateRange: org.facility?.defaultDateRange || "month", defaultLocationFilter: org.facility?.defaultLocationFilter || null, emailEnabled: EMAIL_ENABLED_ORGS.has(slug) };
+  // savedViewRanges is injected rather than hardcoded in the page: the save
+  // dialog must not be able to offer a relative range the server then refuses
+  // (see SAVED_VIEW_RELATIVE_OFFER — gl.html did exactly that for months).
+  const orgConfig = { defaultDateRange: org.facility?.defaultDateRange || "month", defaultLocationFilter: org.facility?.defaultLocationFilter || null, emailEnabled: EMAIL_ENABLED_ORGS.has(slug), savedViewRanges: SAVED_VIEW_RELATIVE_OFFER.facility };
   const html = require("fs").readFileSync(path.join(__dirname, "public", "facility.html"), "utf8");
   res.send(html.replace("<head>", () => "<head>" + orgConfigInject(orgConfig, req)));
 });
