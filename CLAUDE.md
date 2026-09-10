@@ -7117,6 +7117,98 @@ Plus a browser check that the KPI **opens** the panel and closes again, and that
 sorting on the new column works — `ci-check-admin-js` proves the handler exists
 and parses, which is not the same claim.
 
+## EXPORTS MUST RESPECT THE FILTERS (STANDING RULE, Dan 2026-09-09)
+
+Dan, after the rental schedule's PDF printed phone numbers the reader had
+switched off: *"any time we make an adjustment to a filter, that it needs to be
+picked up by an export/pdf/excel, whatever. exports need to respect filters."*
+
+**So: a filter, toggle, column picker or chip is not finished when the screen is
+right. It is finished when the PDF, the print view, Excel, CSV and the emailed
+copy all show the same thing the reader is looking at.** An export quietly
+carrying rows or columns somebody excluded is worse than one that fails, because
+it looks correct.
+
+### A PARAMETER HAS FOUR GATES, AND PASSING THREE LOOKS EXACTLY LIKE WORKING
+
+This is the shape every instance has taken. Three of the gates are on the client
+and one is on the server, so the screen and the browser's own Print can both be
+perfect while the server-rendered PDF is wrong:
+
+| gate | where | what it costs to miss |
+|---|---|---|
+| `getParams()`'s explicit whitelist | the page | the deep link silently does nothing — the value reads `undefined` |
+| the page's own state / `currentFilterParams` | the page | the share link and the export params drop it |
+| the page's export paths (`downloadExcel`, `downloadCsv`, the print branch) | the page | the file carries what the screen excluded |
+| **`generatePdf`'s forward list** | **server.js** | **the PDF and the emailed PDF carry it, and nothing on the client can tell** |
+
+**Recorded instances: `gl_codes`, `refunds`, and `pii`.** All three cleared the
+client gates and failed the server one. The third happened while its author was
+reading the comment describing the first two.
+
+### CLIENT-SIDE AND SERVER-SIDE EXPORTS FAIL DIFFERENTLY
+
+Know which kind you are touching before you reason about it:
+
+- **Client-side — Excel, CSV, the browser's Print.** These read component state
+  directly, so they are right the moment the screen is. What breaks here is a
+  handler reading the UNSCOPED rows (`rows` instead of `filteredRows`) — already
+  recorded for the Programs Excel export and the Aquatics sheets.
+- **Server-side — the Puppeteer PDF, and the emailed PDF.** These re-render the
+  page under `?_print=1` **with an empty localStorage**, in a browser that has
+  never seen the reader's session. **The URL is the only channel.** A preference
+  kept only in storage cannot reach them, whatever it looks like on screen.
+
+### THE EMPTY VALUE IS THE ONE THAT BREAKS
+
+`generatePdf`'s forward list is a `forEach` testing `if (filters[k])`. That is
+right for every parameter whose empty value is meaningless — and **wrong for any
+parameter that is a LIST**, because for a list the empty string is a real answer:
+*"the reader excluded everything."*
+
+`pii` shipped broken twice for this reason. Adding it to the truthy list fixes
+the case where the columns are ON and leaves the OFF case — the reported bug —
+untouched: the empty string is dropped, the print page finds no parameter, falls
+back to its default, and prints what the reader hid. **A list parameter is
+forwarded on PRESENCE:**
+
+```js
+if (filters.pii !== undefined) qsObj.pii = filters.pii;
+```
+
+Absent means *"the caller is not speaking about this"*; empty means *"none"*.
+They are different answers and the page reads them differently.
+
+### THE GUARD HAS TO CROSS THE BOUNDARY THE BUG CROSSES
+
+`ci-check-render.js` drives the PAGE. A case at `?_print=1&<param>=` proves the
+page READS the parameter and says nothing about whether the server SENDS it —
+which is why five green render cases sat over a broken PDF. **Lift and run
+`generatePdf`'s own query builder** (`facility-addons-forms.spec.js` does this:
+slice from `const qsObj = {` to the `URLSearchParams` line and `new Function` it)
+so the assertion is about the URL that actually gets built.
+
+And mutation-test the *plausible* fix, not only the absence: folding a list
+parameter into the truthy loop passes every populated-value assertion and fails
+only on empty.
+
+### THE CHECKLIST
+
+When adding or changing any filter:
+
+1. Is it in `getParams()`'s whitelist?
+2. Does the share link carry it — and is every name in that effect's dependency
+   array declared ABOVE the effect? (Babel turns `const` into `var`, so a name
+   read early is `undefined` in the deps rather than a throw, and the effect then
+   only runs on mount.)
+3. Do Excel and CSV read the SCOPED rows?
+4. Is it in `generatePdf`'s forward list — and if it is a list, forwarded on
+   presence rather than truthiness?
+5. Does a render case drive the real `?_print=1` URL, and a spec assert the
+   server's forwarding?
+6. If it persists per browser, is the persist gated so a shared link cannot
+   rewrite the reader's own default?
+
 ## Slack activity notifications — wire every new surface (IMPORTANT)
 
 Standing rule (see Working preferences): any new button, export, download, or
