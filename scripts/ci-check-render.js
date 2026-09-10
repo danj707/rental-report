@@ -1906,7 +1906,19 @@ const CASES = [
       await page.waitForSelector(".prog-draft", { timeout: 20000 });
       await page.waitForSelector("#chkDraft:not([disabled])", { timeout: 20000 });
       await page.click("#chkDraft");
-      await new Promise(r => setTimeout(r, 400));
+      // POLL, NEVER SLEEP. This used to wait a flat 400ms and then let `needs`
+      // read the count — so on a slow runner React had not committed the
+      // re-render yet, data-ps-rows was still 6, and the case failed with "the
+      // page came up blank" on a page that was perfectly fine. It did exactly
+      // that once in CI while passing locally and on the other run of the same
+      // commit. `waitForSelector` is no good here either: the element was
+      // already there and only its ATTRIBUTE VALUE changes, which it does not
+      // reliably see. Both of those are already recorded in CLAUDE.md, and a
+      // flaky assertion is not a guard.
+      await page.waitForFunction(() => {
+        const el = document.querySelector("[data-ps-rows]");
+        return el && el.getAttribute("data-ps-rows") === "5";
+      }, { timeout: 20000 });
     } },
 
   /* THE WINDOW LABEL IS WHERE THE TIMEZONE BUG LIVES. The page derives its
