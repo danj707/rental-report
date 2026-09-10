@@ -26,6 +26,8 @@
   .toolbar .btn-run:hover { background: #1d4ed8; }
   .toolbar .btn-excel { background: #16803c; border-color: #16803c; font-weight: 600; }
   .toolbar .btn-excel:hover { background: #15692f; }
+  .toolbar input[type="search"] { padding: 5px 8px; border: 1px solid rgba(255,255,255,.25); border-radius: 4px; background: #3a3a3a; color: #fff; font-size: 12px; font-family: inherit; width: 170px; }
+  .toolbar input[type="search"]::placeholder { color: #8b8b8b; }
   .toolbar .row-count { font-size: 11px; color: #aaa; }
   .toolbar .divider { width: 1px; height: 28px; background: rgba(255,255,255,.15); margin: 0 2px; }
 
@@ -47,7 +49,17 @@
   .cmenu-foot button { padding: 4px 10px; font-size: 11px; }
   .scope-note { margin: 12px 0 0; font-size: 11.5px; color: #6b7280; }
 
-  .page { max-width: 1280px; margin: 16px auto; padding: 26px 30px 34px; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+  /* All Users carries fifteen columns and was running off the right edge with
+     the last of them unreachable. The scroller has always scrolled, but a
+     reader does not go looking for a horizontal scrollbar on a report — they
+     read it as columns that are simply missing. So the sheet takes whatever
+     the window gives it, with a floor so a narrow laptop still gets a sheet
+     rather than an edge-to-edge wall of text. */
+  /* `width` on a percentage rather than `max-width` on 100vw: vw INCLUDES the
+     vertical scrollbar, so a report long enough to scroll would overflow
+     sideways by its width — a horizontal scrollbar on the whole page, which is
+     the symptom this is fixing. */
+  .page { width: calc(100% - 32px); max-width: 1720px; margin: 16px auto; padding: 26px 30px 34px; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
 
   /* ── The provenance block. CivicRec puts Run On / From / To / the filter
      values at the top of every report, and Joseph files these monthly — a
@@ -104,11 +116,20 @@
   @media print {
     body { background: #fff; padding: 0; }
     .toolbar, .no-print, #rec-refresh-badge, .rec-banner { display: none !important; }
-    .page { max-width: none; margin: 0; padding: 0; box-shadow: none; }
+    .page { width: auto; max-width: none; margin: 0; padding: 0; box-shadow: none; }
     table.rep tr { break-inside: avoid; }
     table.rep tr.ghead { break-after: avoid; }
     table.rep { font-size: 10.5px; }
     table.rep thead { display: table-header-group; }
+    /* On screen the columns keep their own width and the scroller scrolls.
+       On PAPER there is nowhere to scroll to, so a nowrap column simply runs
+       off the right edge and the reader never learns it existed. Wrapping is
+       the only fix that loses nothing: the table is width:100%, so allowing
+       the text cells to break makes it FIT the sheet rather than overflow it.
+       Numbers keep their nowrap — a wrapped figure is unreadable. */
+    table.rep th, table.rep td.txt { white-space: normal; }
+    table.rep td.txtwrap { max-width: none; }
+    table.rep { table-layout: auto; word-break: break-word; }
     .scroller { overflow: visible; }
   }
 </style>
@@ -159,19 +180,65 @@ const LOCATIONS = Array.isArray(CFG.locations) ? CFG.locations : [];
 // it means reports 2-4 inherit the control with no registry churn - but which
 // ones start off is a per-report judgement about what the reader came for.
 const HIDDEN_DEFAULT = Array.isArray(CFG.hiddenColumns) ? CFG.hiddenColumns : [];
+// Columns that get NO per-column filter menu. A denylist rather than an
+// allowlist on purpose: an allowlist naming a column the card no longer emits
+// loses that filter silently, where a stale denylist entry does nothing at all.
+// It never affects the COLUMN — a column with no menu is still toggleable, and
+// the free-text search below still reaches it.
+const NO_FILTER = Array.isArray(CFG.noFilter) ? CFG.noFilter : [];
+/* -- A FILTER IS A VOCABULARY, NOT A DIRECTORY ----------------------------
+   Dan, 2026-09-10: "don't add filters for data sets that are huge, like names,
+   emails, etc. Some of the filters on the users report were thousands of lines,
+   that makes no sense. we should only be adding filters for items like
+   locations, sites, membership names, lane or court names, groups, residency
+   status."
+
+   That is a statement about CARDINALITY, so it is answered from the rows rather
+   than from a list somebody maintains: a column whose values are a vocabulary
+   the org chose (a location, a court, a residency answer) has a handful of
+   them and they repeat, while a column that identifies a PERSON or a booking
+   has roughly one value per row. A menu of the second kind is the report
+   itself rendered as a dropdown, and nobody can scan it.
+
+   Deriving it means a new report inherits the rule with no registry entry, and
+   a card that GAINS a column gets the right answer on the day it ships —
+   where a hand-kept list is only ever as current as the last person to edit it.
+   `noFilter` stays as the explicit override for a low-cardinality column a
+   report still does not want a menu for. */
+const FILTER_MAX_OPTIONS = 40;
 // Per browser, like every other column picker here, and deliberately NOT in the
 // URL: which columns you like looking at is a display preference, not part of
 // the question the report answers. The filters ARE in the URL, because they
 // are.
 const COLS_KEY = 'customreport:' + (CFG.report || '') + ':hidden';
+// ...WITH ONE EXCEPTION, AND IT IS THE ONE THE PDF DEPENDS ON. The server
+// renders the PDF by driving this page under ?_print=1 in a Puppeteer browser
+// with an EMPTY localStorage, so a preference kept only in storage can never
+// reach it and the PDF would print columns that are not on the reader's
+// screen. The URL is that render's only channel, so ?hide= is read here and
+// the PDF button sets it. Repeated, never comma-joined — a column header
+// legitimately contains a comma.
+//
+// Precedence: URL -> this browser's preference -> the report's own default.
+// An EMPTY ?hide= is a real answer ("nothing is hidden"), which is why the
+// presence of the key decides rather than its truthiness — the same rule the
+// rental schedule's `pii` needed after it shipped the other way.
+const HIDE_IN_URL = SP.has('hide');
 function loadHidden() {
+  if (HIDE_IN_URL) return SP.getAll('hide').filter(Boolean);
   try {
     const raw = localStorage.getItem(COLS_KEY);
     if (raw) { const v = JSON.parse(raw); if (Array.isArray(v)) return v; }
   } catch (e) { /* a browser refusing storage must not blank the report */ }
   return HIDDEN_DEFAULT.slice();
 }
-function saveHidden(v) { try { localStorage.setItem(COLS_KEY, JSON.stringify(v)); } catch (e) {} }
+// A view arriving in the URL SETS the columns; it must not quietly rewrite the
+// reader's own saved preference, or opening somebody else's link changes what
+// every later visit opens on.
+function saveHidden(v) {
+  if (HIDE_IN_URL) return;
+  try { localStorage.setItem(COLS_KEY, JSON.stringify(v)); } catch (e) {}
+}
 // Repeated ?f_<column>=, read with getAll - NEVER comma-joined. A rental name
 // legitimately contains a comma ("Court Reservation: Lane 2 - B, Court
 // Reservation: Lane 3 - A") and a split would quietly cut it in half, which is
@@ -342,6 +409,43 @@ function filterRows(rows, filters) {
   );
 }
 
+/* -- The open text search ------------------------------------------------
+   One box across EVERY column of the row, hidden ones included: a reader
+   hunting for "Turing" or "90245" should not first have to work out which
+   column it lives in, and on a report whose per-column menus were removed for
+   being 145 checkboxes long this is what replaces them.
+
+   Case-insensitive, and every whitespace-separated word must appear SOMEWHERE
+   in the row (AND, not a substring of the whole row joined together) — so
+   "smith 90245" finds the Smiths in that zip rather than requiring the reader
+   to type the two in the order the card happens to emit them.
+
+   Pure and at module scope so a spec can RUN it. */
+function searchRows(rows, q) {
+  const terms = String(q || '').toLowerCase().split(/\s+/).filter(Boolean);
+  if (!terms.length) return rows || [];
+  return (rows || []).filter(r => {
+    const hay = Object.keys(r || {}).map(k => (r[k] == null ? '' : String(r[k]))).join(' \u0001 ').toLowerCase();
+    return terms.every(t => hay.indexOf(t) !== -1);
+  });
+}
+
+/* Is this column a vocabulary or a directory? Counts distinct values and
+   BAILS OUT the moment it passes the cap — on a 6,500-row user report the
+   answer for Email is known after 41 rows, and building the whole map to
+   throw it away is the cost this runs on every render.
+
+   Pure and at module scope so a spec can RUN it. */
+function isFilterable(rows, col, cap) {
+  const seen = new Set();
+  const list = rows || [];
+  for (let i = 0; i < list.length; i++) {
+    seen.add(list[i][col] == null ? '' : String(list[i][col]));
+    if (seen.size > cap) return false;
+  }
+  return true;
+}
+
 /* Busiest first, so the value someone is hunting for leads. Blank is its own
    option and is LABELLED, never dropped: a row the card could not attribute is
    still a row, and hiding it makes the grand total disagree with the CSV. */
@@ -456,6 +560,15 @@ function GroupedTable({ tree, levels, cols, rowCount }) {
   const ordered  = textCols.concat(numCols);
   const span     = 1 + ordered.length;
   const items    = flattenTree(tree, levels);
+  // The label block is the index column plus EVERY text column, and that is
+  // the whole leading block — there is no second filler cell. There used to
+  // be one, and it double-counted the text columns, so every subtotal and the
+  // grand total pushed their numbers `textCols.length - 1` columns to the
+  // RIGHT of the headers they belong under. It rendered correctly on exactly
+  // the one shape nobody could see it in: with a single text column the filler
+  // was suppressed by its own `> 1` guard, so report 1 looked right while
+  // drop-in and passes were shifted. The invariant is one line of arithmetic:
+  // labelSpan + numCols.length must equal the header's 1 + ordered.length.
   const labelSpan = Math.max(1, 1 + textCols.length);
 
   // The VALUE rides on the cell as well as the text. A roll-up that adds up
@@ -494,7 +607,6 @@ function GroupedTable({ tree, levels, cols, rowCount }) {
               return (
                 <tr key={i} className={'sub' + (it.label ? ' lbl' : '')} data-sub-level={it.depth}>
                   <td className="sublabel" colSpan={labelSpan}>{it.label}</td>
-                  {textCols.length > 1 && <td colSpan={textCols.length - 1} />}
                   {totalCells(it.totals, 'total')}
                 </tr>
               );
@@ -517,7 +629,6 @@ function GroupedTable({ tree, levels, cols, rowCount }) {
           })}
           <tr className="grand">
             <td colSpan={labelSpan}>Grand total · {rowCount.toLocaleString()} row{rowCount === 1 ? '' : 's'}</td>
-            {textCols.length > 1 && <td colSpan={textCols.length - 1} />}
             {totalCells(tree.totals, 'grand')}
           </tr>
         </tbody>
@@ -559,6 +670,11 @@ function App() {
   // one revision, and the unit test could not see it because the fixture
   // supplied column names the app never did. Found by the render check.
   const [filters, setFilters] = useState({});
+  // The open text search. In the URL (it is part of the question the report
+  // answers, unlike the column picker) and applied BEFORE the collapse, so a
+  // narrowed view re-sums rather than showing subtotals for rows that are not
+  // on screen.
+  const [q, setQ] = useState(() => SP.get('q') || '');
   const hydratedFilters = useRef(false);
   useEffect(() => { saveHidden(hidden); }, [hidden]);
   const runSeq = useRef(0);
@@ -600,6 +716,7 @@ function App() {
       applied.start ? u.searchParams.set('start_date', applied.start) : u.searchParams.delete('start_date');
       applied.end   ? u.searchParams.set('end_date',   applied.end)   : u.searchParams.delete('end_date');
       applied.location ? u.searchParams.set('location', applied.location) : u.searchParams.delete('location');
+      q ? u.searchParams.set('q', q) : u.searchParams.delete('q');
       // DELETE then append, never append alone: append stacks a second copy of
       // every value on each render. Repeated keys rather than a comma join,
       // because these values can contain a comma.
@@ -607,7 +724,7 @@ function App() {
       Object.keys(filters).forEach(c => (filters[c] || []).forEach(v => u.searchParams.append(filterParam(c), v)));
       window.history.replaceState({}, '', u.toString());
     } catch (e) { /* never break the page over a URL */ }
-  }, [applied, filters]);
+  }, [applied, filters, q]);
 
   const cols = useMemo(() => columnsOf(rows), [rows]);
   const bodyCols = useMemo(() => cols.filter(c => !GROUP_BY.includes(c)), [cols]);
@@ -616,6 +733,19 @@ function App() {
   // Numerics are the answer, so they are never hidden and never filtered on.
   const dimCols = useMemo(() => bodyCols.filter(c => !NUMERIC[c]), [bodyCols]);
   const shownDims = useMemo(() => dimCols.filter(c => hidden.indexOf(c) === -1), [dimCols, hidden]);
+  // Which dimensions get a MENU. Not the same set as the columns: a column with
+  // no menu is still shown, still exported and still reachable by the search.
+  //
+  // A COLUMN ALREADY BEING FILTERED KEEPS ITS MENU whatever its cardinality.
+  // A deep link can narrow on anything, and a filter with no control to clear
+  // it is the dead end this repo keeps writing down — the scope note would say
+  // "Email: ada@example.com" with nothing on screen able to undo it.
+  const filterCols = useMemo(
+    () => dimCols.filter(c =>
+      (filters[c] || []).length ||
+      (NO_FILTER.indexOf(c) === -1 && isFilterable(rows || [], c, FILTER_MAX_OPTIONS))),
+    [dimCols, rows, filters]
+  );
   // The card's own column order, minus what is hidden. Numerics always survive.
   const viewCols = useMemo(
     () => bodyCols.filter(c => NUMERIC[c] || hidden.indexOf(c) === -1),
@@ -628,10 +758,10 @@ function App() {
   // "has the user filtered yet" would silently not apply it. That is exactly
   // the bug recorded for scopedRows when cancellations became a default.
   const shownRows = useMemo(() => {
-    const kept = filterRows(rows || [], filters);
+    const kept = searchRows(filterRows(rows || [], filters), q);
     if (shownDims.length === dimCols.length) return kept;
     return collapseRows(kept, levelsSafe(GROUP_BY, cols).concat(shownDims), numericKeys);
-  }, [rows, filters, shownDims, dimCols, cols, numericKeys]);
+  }, [rows, filters, q, shownDims, dimCols, cols, numericKeys]);
   // Only group on levels the feed actually carries. A registry naming a column
   // the card no longer emits would otherwise put every row in one group called
   // "(none)" — a report that looks fine and says nothing.
@@ -644,8 +774,8 @@ function App() {
     [shownRows, levels, numericKeys]
   );
   const filtered = useMemo(
-    () => Object.keys(filters).some(k => (filters[k] || []).length),
-    [filters]
+    () => !!q.trim() || Object.keys(filters).some(k => (filters[k] || []).length),
+    [filters, q]
   );
 
   // A deep link's filters can only be resolved once the feed has said what the
@@ -710,6 +840,35 @@ function App() {
 
   function print() { logClientEvent('print', { n: shownRows.length, location: applied.location || '' }); window.print(); }
 
+  // PRINT AND PDF ARE TWO DIFFERENT THINGS, and they fail differently — which
+  // is why they are two buttons here as they are on every other report.
+  // Print hands the reader's own browser the page it is already showing, so it
+  // is right by construction. The PDF is rendered SERVER-side by Puppeteer
+  // driving this same page under ?_print=1 in a browser that has never seen
+  // this reader: no localStorage, no component state, nothing but the URL.
+  //
+  // So every narrowing on screen has to be written into that URL or the PDF
+  // silently disagrees with the screen it was asked for. All four travel:
+  // the window, the location, the per-column filters (repeated f_<col>=, never
+  // comma-joined), the search, and the hidden columns — the last of which lives
+  // only in localStorage and therefore has NO other way to get there.
+  function downloadPdf() {
+    const qs = new URLSearchParams();
+    if (applied.start) qs.set('start_date', applied.start);
+    if (applied.end)   qs.set('end_date',   applied.end);
+    if (applied.location) qs.set('location', applied.location);
+    Object.keys(filters).forEach(c => (filters[c] || []).forEach(v => qs.append(filterParam(c), v)));
+    // ALWAYS SET, both of them, even when empty. An omitted parameter on the
+    // print page resolves to the DEFAULT — which for `hide` is the report's own
+    // hiddenColumns — so an explicit empty value is the only way a reader who
+    // has unhidden everything gets a PDF that agrees with their screen. That is
+    // the exact bug the rental schedule's `pii` shipped with.
+    qs.set('q', q);
+    if (hidden.length) hidden.forEach(c => qs.append('hide', c));
+    else qs.set('hide', '');
+    openReportPdf(withToken(basePath + '/api/pdf?' + qs.toString()), { label: REPORT_LABEL });
+  }
+
   const backHref = '/' + orgSlug + (URL_TOKEN ? '?token=' + encodeURIComponent(URL_TOKEN) : '');
   const orgName = CFG.displayName || orgSlug;
   const hasRows = shownRows.length > 0;
@@ -745,6 +904,14 @@ function App() {
         <button className="btn-run" data-run onClick={() => run(pending.start, pending.end, pending.location)} disabled={loading}>
           {loading ? 'Running…' : 'Run report'}
         </button>
+        {/* One box across every column, hidden ones included. It is deliberately
+            NOT a per-column control: on a report whose menus run to 145 values
+            a checkbox list is a wall of text, and a reader hunting for a name
+            or a zip should not have to know which column it sits in. */}
+        <label>Search
+          <input type="search" data-search placeholder="name, zip, anything…"
+                 value={q} onChange={e => setQ(e.target.value)} />
+        </label>
         {dimCols.length > 0 && (
           <CheckMenu
             slug="columns"
@@ -761,8 +928,13 @@ function App() {
             broken; the shared aquatics dashboard's location list does exactly
             that. Hidden columns keep their filter - narrowing by something you
             are not looking at is a legitimate thing to want, and the scope note
-            says what was applied. */}
-        {dimCols.map(c => (
+            says what was applied.
+
+            A column only gets a menu if its values are a VOCABULARY - see
+            isFilterable, which counts them - or if the registry says it may
+            not have one at all. Neither hides the column, and the search
+            reaches every column whether it has a menu or not. */}
+        {filterCols.map(c => (
           <CheckMenu
             key={c}
             slug={filterParam(c)}
@@ -781,7 +953,8 @@ function App() {
         <span className="toolbar-spacer" />
         {hasRows && <button onClick={downloadCsv} title="The rows as data — no subtotal rows">⬇ CSV</button>}
         {hasRows && <button className="btn-excel" onClick={downloadExcel}>📊 Excel</button>}
-        <button onClick={print}>🖨️ Print / PDF</button>
+        <button onClick={print}>🖨️ Print</button>
+        <button className="btn-pdf" onClick={downloadPdf}>📄 PDF</button>
       </div>
 
       <div className="page">
@@ -799,12 +972,16 @@ function App() {
               <div><span className="k">Location</span><span className="v" data-head-location>{applied.location || 'All locations'}</span></div>
             </div>
           </div>
-          {/* The card behind the number, named. A figure a reader can take back
-              to Metabase is checkable; one they have to trust is not. */}
-          <div className="rep-source">
-            Source: Metabase card {meta.card || CFG.cardId || '—'}
-            {meta.stale_cache ? ' · served from cache — Metabase did not answer this run' : ''}
-          </div>
+          {/* The card id used to be printed here. It is internal plumbing on a
+              report an org prints and files — the provenance a reader needs is
+              the window and the location, which the block above already states.
+              The stale-cache warning STAYS: "these numbers are older than this
+              run" is a fact about the figures, not about where they came from. */}
+          {meta.stale_cache && (
+            <div className="rep-source" data-stale-cache>
+              Served from cache — Metabase did not answer this run.
+            </div>
+          )}
         </div>
 
         {loading && <div className="loading-wrap"><ReportLoader label={'Running ' + REPORT_LABEL} /></div>}
@@ -817,7 +994,7 @@ function App() {
           <div className="empty" data-empty-filtered>
             <b>Every row is filtered out.</b>{' '}
             The card returned {rows.length.toLocaleString()} row{rows.length === 1 ? '' : 's'} for this window
-            — clear a filter in the toolbar to see them.
+            — {q.trim() ? 'clear the search box' : 'clear a filter'} in the toolbar to see them.
           </div>
         )}
 
@@ -846,10 +1023,10 @@ function App() {
                 {filtered && (
                   <span>
                     Filtered to {shownRows.length.toLocaleString()} of {rows.length.toLocaleString()} rows
-                    {' · '}
+                    {q.trim() ? ' · search: "' + q.trim() + '"' : ''}
                     {Object.keys(filters).filter(c => (filters[c] || []).length).map(c =>
-                      c + ': ' + filters[c].map(v => (v === '' ? '(blank)' : v)).join(', ')
-                    ).join(' · ')}
+                      ' · ' + c + ': ' + filters[c].map(v => (v === '' ? '(blank)' : v)).join(', ')
+                    ).join('')}
                     {'. '}
                   </span>
                 )}
@@ -865,6 +1042,12 @@ function App() {
             )}
           </div>
         )}
+
+        {/* The marker the server-side PDF waits on. Puppeteer holds until this
+            is in the DOM, so it must appear once the report has RESOLVED —
+            rows, an error, or an empty window — and never while loading, or
+            the PDF captures a spinner. */}
+        {!loading && <div id="report-ready" data-ready="true" style={{ display: 'none' }} />}
       </div>
     </div>
   );

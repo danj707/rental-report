@@ -1849,6 +1849,12 @@ const CUSTOM_REPORTS = {
     // the checkbox in the toolbar brings it back. Hiding RE-SUMS rather than
     // blanking the cell; see collapseRows in public/custom-report.html.
     hiddenColumns: ["Rental Name"],
+    // ...and no filter MENU for it either. 145 distinct values in a September
+    // window, most of them the auto-generated "Court Reservation: <lane>"
+    // strings above: a checkbox list that long is a list, not a filter. The
+    // column is still one tick away in the picker, and the toolbar's free-text
+    // search reaches it whether it is shown or not.
+    noFilter: ["Rental Name"],
     // The location dropdown, matching the aquatics dashboard's own custom list.
     // PER REPORT, deliberately: card 1 has no city-wide Rec ID bucket, and the
     // shared dashboard filter offers values that return zero rows on cards that
@@ -2006,6 +2012,18 @@ const CUSTOM_REPORTS = {
     // screen because five columns of address push the names off the page. One
     // tick brings them back, and hiding them RE-SUMS rather than blanking.
     hiddenColumns: ["Street Number", "Street Name", "State", "Date Added to Residency Group"],
+    // ONE filter menu survives, and it is the only one that is a filter rather
+    // than a directory: Residency? has two values and answers a question staff
+    // actually ask. Every other dimension here is per-PERSON — a name, an
+    // email, a phone, an address part, a date — so its menu is one checkbox
+    // per household, which is the report itself rendered as a dropdown.
+    // The toolbar's free-text search is what replaces them, and it reaches
+    // every column at once instead of making the reader pick one first.
+    noFilter: [
+      "Household Role", "Rec ID", "First Name", "Last Name", "Email", "Phone",
+      "Street Number", "Street Name", "City", "State", "Zip Code",
+      "Created At", "Date Added to Residency Group",
+    ],
   },
 };
 
@@ -5775,6 +5793,33 @@ async function generatePdf(orgSlug, reportType, startDate, endDate, filters = {}
   if (filters.pii !== undefined) qsObj.pii = filters.pii;
   if (orgTok) qsObj.token = orgTok;
   const qs = new URLSearchParams(qsObj);
+  // ── The custom data reports' own filter vocabulary ──
+  //
+  // These CANNOT ride the list above, for two separate reasons. Their
+  // per-column filters are `f_<column>` — one key per column, named by the
+  // card's own headers, so there is no fixed list to enumerate — and both
+  // `f_` and `hide` are REPEATED keys rather than comma-joined, because a
+  // column header and a rental name both legitimately contain a comma
+  // ("Court Reservation: Lane 2 - B, Court Reservation: Lane 3 - A").
+  // URLSearchParams built from an object would comma-join an array and cut
+  // those values in half, so they are appended after it is constructed.
+  //
+  // `hide` is the load-bearing one: the column picker lives in localStorage,
+  // which a Puppeteer render does not have, so this is its ONLY channel. And
+  // like `pii`, both travel on PRESENCE — an empty `hide` means "the reader
+  // unhid everything", which is not the same as the report's own default.
+  ["f_", "hide"].forEach(prefix => {
+    Object.keys(filters).forEach(k => {
+      if (prefix === "f_" ? k.indexOf("f_") !== 0 : k !== "hide") return;
+      qs.delete(k);
+      const v = filters[k];
+      (Array.isArray(v) ? v : [v]).forEach(x => qs.append(k, x == null ? "" : String(x)));
+    });
+  });
+  // ONE value — the page `set`s it. An array (a hand-built URL repeating ?q=)
+  // would stringify as a comma-joined term that matches nothing, so the last
+  // one wins rather than the reader getting a silently empty report.
+  if (filters.q !== undefined) qs.set("q", Array.isArray(filters.q) ? filters.q[filters.q.length - 1] : filters.q);
   const url = `http://localhost:${PORT}/${orgSlug}/${reportType}?${qs}`;
   console.log(`[pdf] Generating for ${orgSlug}/${reportType}: ${url}`);
 
@@ -5791,7 +5836,13 @@ async function generatePdf(orgSlug, reportType, startDate, endDate, filters = {}
   // Doing it per-grid in print CSS would have to be redone for every grid
   // anyone adds later.
   const isDirectors = reportType === "directors-report";
-  const reportLabel = isTyler
+  // The custom data reports FIRST, or they fall all the way through this chain
+  // to its default and every one of them prints "Facility Rental Schedule" in
+  // its own footer. Read from the registry rather than added to the ladder, so
+  // a fifth report is named correctly the day it is registered.
+  const reportLabel = CUSTOM_REPORTS[reportType]
+    ? CUSTOM_REPORTS[reportType].label
+    : isTyler
     ? "GL Code Rollup, Treasurer Turnover"
     : reportType === "gl"
     ? "GL Code Rollup"
@@ -7507,6 +7558,10 @@ Object.keys(CUSTOM_REPORTS).forEach((key) => {
       // body column is toggleable regardless - the page derives that from the
       // feed - so a new report inherits the control without a registry edit.
       hiddenColumns: spec.hiddenColumns || [],
+      // Which columns get NO per-column filter menu. A denylist, so a stale
+      // entry does nothing where a stale allowlist would silently lose a
+      // filter; and it never hides the COLUMN, only its dropdown.
+      noFilter: spec.noFilter || [],
     };
     const html = fs.readFileSync(path.join(__dirname, "public", "custom-report.html"), "utf8");
     res.type("html").send(html.replace("</head>", () => orgConfigInject(orgConfig, req) + "</head>"));
@@ -7651,6 +7706,39 @@ Object.keys(CUSTOM_REPORTS).forEach((key) => {
     };
     logEvent(slug, key, event, req, extra);
     res.json({ ok: true });
+  });
+
+  // ── The PDF ──
+  //
+  // Its own route, registered here above the generic /:org/:report/api/pdf,
+  // whose `resolveOrg` 404s any report outside REPORT_TYPES — which these
+  // deliberately are not. Same Puppeteer pipeline as every other report: it
+  // drives THIS page under ?_print=1 and waits for #report-ready.
+  //
+  // Print and PDF are two different things and the page offers both. Print is
+  // the reader's own browser rendering what is already on their screen. This
+  // is a browser that has never seen them — no localStorage, no state — so
+  // every narrowing has to arrive in the query string, which is why
+  // generatePdf forwards this report's whole filter vocabulary (`q`, `hide`
+  // and every repeated `f_<column>`) rather than only its named list.
+  app.get(`/:org/${key}/api/pdf`, async (req, res) => {
+    const slug = req.params.org;
+    if (!ORGS[slug]) return res.status(404).send("Unknown org");
+    if (!customReportEnabled(slug, key)) {
+      res.locals.deliberate404 = true;
+      return res.status(404).type("text/plain").send("Not found");
+    }
+    try {
+      req.reportType = key;
+      logEvent(slug, key, "pdf", req);
+      const pdf = await generatePdf(slug, key, req.query.start_date, req.query.end_date, req.query);
+      const filename = `${key}-${req.query.start_date || "report"}.pdf`;
+      res.set({ "Content-Type": "application/pdf", "Content-Disposition": `inline; filename="${filename}"`, "Content-Length": pdf.length });
+      res.send(pdf);
+    } catch (err) {
+      console.error("[pdf] Error:", err);
+      res.status(500).json({ error: err.message });
+    }
   });
 });
 
