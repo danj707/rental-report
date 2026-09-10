@@ -411,9 +411,21 @@ function fasttrackRows() {
      section as v18 describes it, and the render case requires both to print
      Early Access. Nothing but a browser proves the two agree once the value has
      been through normalizeRow, ftEffectiveStatus and the table cell. */
+  /* GO-LIVE IS iso(-2), NOT iso(-1), AND THAT IS LOAD-BEARING. This section
+     carries the SAME 62 holds as launchedEarly, and `justLaunched` sorts by FT
+     stake with the go-live INSTANT as the tie-break — so with both on iso(-1)
+     the order was decided by whether a millisecond boundary happened to fall
+     between these two fixture lines. Same millisecond: a tie, and the stable
+     sort keeps launchedEarly first. One millisecond later: this row wins
+     recency and `fasttrack · launch order` fails. It did, once, in CI, on a
+     tree where it passed locally and on the previous run of the same commit.
+     A day earlier makes the tie-break deterministic and changes nothing else:
+     it is still inside the 3-day just-launched window, still an open early
+     window with general registration a week out, which is all its own case
+     asserts. A flaky assertion is not a guard. */
   const launchedEarlyV18 = Object.assign(table("Premier Table Early v18", 62, 37, 25, -1), {
     "Section ID": "sec-premier-early-v18",
-    "Early Access Opens": iso(-1), "Reg Opens": iso(6), "Reg Closes": iso(45),
+    "Early Access Opens": iso(-2), "Reg Opens": iso(6), "Reg Closes": iso(45),
     "Reg Status": "early-access",   // what the v18 card reports for this shape
     "FT Converted": 25, "FT Pending": 37, "Capacity": 25,
     "Direct Enrolled": 0, "Total Enrolled": 25, "Fill %": 100, "Conversion %": 40.3,
