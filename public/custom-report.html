@@ -204,8 +204,15 @@ const NO_FILTER = Array.isArray(CFG.noFilter) ? CFG.noFilter : [];
    a card that GAINS a column gets the right answer on the day it ships —
    where a hand-kept list is only ever as current as the last person to edit it.
    `noFilter` stays as the explicit override for a low-cardinality column a
-   report still does not want a menu for. */
-const FILTER_MAX_OPTIONS = 40;
+   report still does not want a menu for.
+
+   THE CAP IS SET BETWEEN TWO MEASURED NUMBERS, not picked. Card 21685 emits 55
+   distinct pass and membership names at El Segundo, and Dan named membership
+   names as exactly the kind of thing that SHOULD have a filter; card 21682
+   emits 145 rental names, which is the menu he asked to remove. So the line has
+   to fall between 55 and 145, and the menu scrolls at 360px either way. Move it
+   only against a measurement, not a feeling. */
+const FILTER_MAX_OPTIONS = 100;
 // Per browser, like every other column picker here, and deliberately NOT in the
 // URL: which columns you like looking at is a display preference, not part of
 // the question the report answers. The filters ARE in the URL, because they

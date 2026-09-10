@@ -688,7 +688,13 @@ test("a filter is offered for a VOCABULARY, never for a directory", () => {
   // Blank is a value like any other — it is an option on the menus that survive.
   assert.strictEqual(isFilterable([{ c: "" }, { c: null }, { c: "x" }], "c", 40), true);
   assert.strictEqual(isFilterable([], "c", 40), true, "an unanswered feed is not a directory");
-  assert.ok(/const FILTER_MAX_OPTIONS = 40;/.test(page), "and the cap is named, not inline");
+  // The CAP ITSELF is bounded by two measured numbers rather than picked: card
+  // 21685 emits 55 pass and membership names (which Dan named as something that
+  // SHOULD have a filter) and card 21682 emits 145 rental names (the menu he
+  // asked to remove). A cap outside that range gets one of the two wrong.
+  const cap = Number(/const FILTER_MAX_OPTIONS = (\d+);/.exec(page)[1]);
+  assert.ok(cap > 55, "55 membership names must keep their menu, got cap " + cap);
+  assert.ok(cap < 145, "145 rental names must lose theirs, got cap " + cap);
 });
 
 test("a column already being filtered KEEPS its menu, whatever its cardinality", () => {

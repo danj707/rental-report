@@ -7203,8 +7203,16 @@ sites, membership names, lane or court names, groups, residency status."*
 That is a statement about **cardinality**, so it is answered from the ROWS.
 `isFilterable(rows, col, cap)` counts distinct values and **bails out the
 moment it passes the cap** — on a 6,500-row user report the answer for Email is
-known after 41 rows, and building the whole map to throw it away is the cost
-this pays on every render. `FILTER_MAX_OPTIONS` is 40.
+known after 101 rows, and building the whole map to throw it away is the cost
+this pays on every render.
+
+**`FILTER_MAX_OPTIONS` IS SET BETWEEN TWO MEASURED NUMBERS, not picked.** Card
+21685 emits **55** distinct pass and membership names at El Segundo, and Dan
+named membership names as exactly the kind of thing that should have a filter;
+card 21682 emits **145** rental names, which is the menu he asked to remove. So
+the line has to fall between 55 and 145 — it is **100** — and the spec asserts
+that range rather than the literal, so moving it costs a measurement. The first
+draft was 40, which would have taken the membership-name filter with it.
 
 **Deriving it rather than listing it is the whole point:** a new report inherits
 the rule with no registry entry, and a card that GAINS a column gets the right

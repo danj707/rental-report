@@ -1213,12 +1213,16 @@ const STUBS = [
         { Month: "2026-08", Location: "Wiseburn", Lane: "A", "Program Type": "Lap Swim",        "Rental Name": "Lap Swim",     "Booking Type": "managed", Reservations: 20, "Lane Hours": 40.5 },
         { Month: "2026-08", Location: "Hilltop",  Lane: "D", "Program Type": "Open / Rec Swim", "Rental Name": "Drop In Lanes","Booking Type": "managed", Reservations: 1,  "Lane Hours": 2 },
       ].map(r => (STUB_MODE === "prevloc" ? (({ Location, ...rest }) => rest)(r) : r))
-        /* `hicard` is what proves the cardinality cap in a browser: 60 rows
-           with 60 distinct Lane values against two Program Types. A menu is a
+        /* `hicard` is what proves the cardinality cap in a browser: 130 rows
+           with 130 distinct Lane values against two Program Types. A menu is a
            vocabulary, and no unit fixture can show that the PAGE offers one
-           set of menus and not the other. */
+           set of menus and not the other.
+           130 IS CHOSEN AGAINST THE CAP, not for roundness — the cap is set
+           between 55 measured membership names and 145 measured rental names,
+           so a fixture under it proves nothing and would pass on a page with
+           no cap at all. */
         .concat(STUB_MODE === "hicard"
-          ? Array.from({ length: 60 }, (_, i) => ({
+          ? Array.from({ length: 130 }, (_, i) => ({
               Month: "2026-09", Location: "Wiseburn", Lane: "Lane " + i,
               "Program Type": i % 2 ? "Lap Swim" : "Masters",
               "Rental Name": "Rental " + i, "Booking Type": "managed",
@@ -4617,11 +4621,11 @@ const CASES = [
     },
     needs: 'body[data-note="1"] [data-row-count="1"]' },
 
-  { name: "aquatic-lane-hours · a 60-value column gets no menu, a 2-value one does",
+  { name: "aquatic-lane-hours · a 130-value column gets no menu, a 2-value one does",
     path: "/" + AQ_ORG + "/aquatic-lane-hours", token: AQ_TOKEN, stubMode: "hicard",
     // Dan: "don't add filters for data sets that are huge... only for items
     // like locations, sites, membership names, lane or court names, groups,
-    // residency status." Lane is 60 distinct here and Program Type is 2, and
+    // residency status." Lane is 130 distinct here and Program Type is 2, and
     // NEITHER is in the registry's noFilter list — so this passes only if the
     // page decided it from the rows.
     act: async page => {
