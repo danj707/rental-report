@@ -1030,6 +1030,9 @@ function App(){
   const [gradeFilter,setGradeFilter]=useState('');
   const [wizApplied,setWizApplied]=useState(false);
   const [wizScrollIdx,setWizScrollIdx]=useState(0);
+  // Has the visible window's own fetch finished? The filter-options fetch waits
+  // on it — see the effect below.
+  const [firstLoadDone,setFirstLoadDone]=useState(false);
 
   function wizApply(act,loc,age,grade){
     if(act)setActFilter(act);
@@ -1063,19 +1066,42 @@ function App(){
     const from=fmtISO(ws), to=fmtISO(addDays(ws,6));
     const {rows,src,error}=await fetchData(from,to);
     setRows(rows.map(normalizeRow).filter(e=>!isHiddenActivity(e))); setSrc(src); setFetchError(error||''); setLoading(false);
+    setFirstLoadDone(true);
   },[]);
 
-  // One-time wide fetch to populate all filter options (today → +60 days)
+  /* Wide fetch (today → +60 days) that fills the Activity/Location dropdowns
+     with everything, not just what the current week happens to contain.
+
+     IT WAITS FOR THE VISIBLE WINDOW'S FETCH TO LAND, and that sequencing is the
+     whole point. Fired on mount alongside load(), these are two concurrent
+     queries against the same Metabase card, and they do not merely queue — they
+     contend, and each makes the other roughly twice as slow. Measured at
+     Watertown, card 17298: run alone the week is 92.5s and the 60-day window
+     34.0s; fired together the way this page used to, 180.3s and 196.9s. The
+     data route's budget is 60s + a 120s retry, so both blow through it and the
+     reader watches "Loading…" for about three minutes.
+
+     Neither window is ever pre-warmed (prewarm writes the base key and this
+     month; feedCacheKey includes the parameter string, so a specific week and a
+     rolling today→+60 span are each their own entry), so this is every cold
+     open, not an edge case.
+
+     Deferring costs the dropdowns nothing — they are not on screen until the
+     table is — and the table is what the reader is waiting for. */
   useEffect(()=>{
+    if(!firstLoadDone) return;
+    let cancelled=false;
     (async()=>{
       const from=fmtISO(new Date());
       const to=fmtISO(addDays(new Date(),60));
       const {rows:wideRows}=await fetchData(from,to);
+      if(cancelled) return;
       const norm=wideRows.map(normalizeRow).filter(e=>!isHiddenActivity(e));
       setAllActivities([...new Set(norm.flatMap(e=>(e.activity||'').split(',').map(a=>a.trim())).filter(Boolean))].sort());
       setAllLocations([...new Set(norm.map(e=>e.location).filter(Boolean))].sort());
     })();
-  },[]);
+    return ()=>{cancelled=true;};
+  },[firstLoadDone]);
 
   useEffect(()=>{ if(c.print) document.body.classList.add('print-mode'); },[]);
   useEffect(()=>{
@@ -1087,6 +1113,9 @@ function App(){
         const {rows:r,src:s,error}=await fetchData(fmtISO(first),fmtISO(last));
         setRows(r.map(normalizeRow).filter(e=>!isHiddenActivity(e)));
         setSrc(s); setFetchError(error||''); setLoading(false);
+        // Month view is the other way in. Without this a reader who lands on
+        // the month view never gets filter options at all.
+        setFirstLoadDone(true);
       })();
     } else {
       load(weekStart);
@@ -1393,7 +1422,10 @@ function App(){
       <PopoverCard ev={popoverEv} onClose={()=>setPopoverEv(null)}/>
       <ProgramFinder/>
       {src==='sample' && <div className="note">Showing sample data.{fetchError ? ' Reason: '+fetchError+'.' : ''} Check browser console for details. Wire <code>/{'{org}'}/calendar/api/data</code> to go live.</div>}
-      {!loading && <div id="report-ready" style={{display:'none'}}>ready</div>}
+      {/* Render hooks. `data-cal-rows` is the count in VIEW, which is what a
+          render case can key on — "a grid rendered" passes just as happily on a
+          page handed another report's shape. */}
+      {!loading && <div id="report-ready" style={{display:'none'}} data-cal-rows={filtered.length} data-cal-all={rows.length}>ready</div>}
       {isPresent && <div className="present-status">Auto-refreshes every 5 min · Press Esc to exit</div>}
     </div>
   );

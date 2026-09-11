@@ -592,14 +592,22 @@ green**; all **65 CI specs** green.
 API save regenerates every tag as Text, taking the rental schedule down for all
 29 orgs. Flip link https://rec.metabaseapp.com/question/17294
 
-### NOT BUILT, and it is the obvious next one
+### NOT BUILT — and CLOSED, not deferred (Dan, 2026-09-11)
 
-**`site_lighting_configuration` is not read anywhere.** It is the only thing
-that can say *"this field has Musco control and nobody scheduled lights"* —
-1,229 of Midland's 1,230 upcoming reservations on a lit site, today. Its
-`lighting_product_id` (NULL on all 73 rows) is also the intended bridge between
-the wired site and the Rec add-on, which is the question underneath Dan's:
-whether the $25 someone paid actually turned anything on.
+**`site_lighting_configuration` is not read anywhere, and it is not going to
+be.** Dan: *"not important, we only want to surface rentals with the lights
+already scheduled."* That is exactly what the report does today, so this is a
+decision that the current behaviour is the wanted behaviour — **do not raise it
+again as an obvious next step.**
+
+Kept because the measurements are real and the reasoning should not be
+re-derived if the question ever changes: the table is the only thing that can
+say *"this field has Musco control and nobody scheduled lights"* (1,229 of
+Midland's 1,230 upcoming reservations sit on a lit site), and its
+`lighting_product_id` (NULL on all 73 rows) is the intended bridge between the
+wired site and the Rec add-on — i.e. whether the $25 someone paid actually
+turned anything on. Both are questions about UNSCHEDULED sites, which is the
+half Dan does not want surfaced.
 
 **`pkill -f` SELF-MATCHED AGAIN**, this time because the *grep argument in the
 same command line* contained the needle. Exit 144, no output. Assemble the
@@ -747,7 +755,12 @@ https://rec.metabaseapp.com/question/17294
 all**, so pasting the repo copy to make a two-line change would have broken the
 card outright. Read the live card first; the mirror is a mirror.
 
-## PINNED: "Happening Today" belongs on the org DASHBOARD (Dan, 2026-09-10)
+## ~~PINNED~~ DONE ELSEWHERE: "Happening Today" on the org DASHBOARD
+
+**Dan, 2026-09-11: *"already done on another thread."*** It is off this
+project's open list — do not raise it here. The notes below stay because they
+are the specification and the traps are measured; check rec-dashboard for what
+actually shipped before re-deriving any of it.
 
 *"the 'Happening today' is an awesome thought for a new card on the dashboard.
 Pin that thought for the weekend."*
@@ -1856,7 +1869,11 @@ Note `scripts/ci-check-html.js` cannot run in this sandbox
 has no JSX for it to compile anyway. The page's single inline block was
 parse-checked directly instead.
 
-## PINNED: feature-adoption sparklines on the ORG DASHBOARD (Dan, 2026-09-08)
+## ~~PINNED~~ DONE ELSEWHERE: feature-adoption sparklines on the ORG DASHBOARD
+
+**Dan, 2026-09-11: *"already done on another thread."*** Off this project's open
+list. The notes below stay for the four traps, which are measured and still
+apply to whatever draws that line.
 
 *"pin a quick item for the org-dashboard feature adoption, the sparklines
 showing trends on feature adoption and use."*
@@ -1909,6 +1926,177 @@ is the more interesting question and is not a sparkline job.
 Any adoption figure has to count every usage event, exactly as
 `getReportActivity()` does, or it reports the platform's most-used surfaces as
 unused.
+
+## CARD 17301 v7.1 — THE MEMBERSHIPS FIX, PUSHED (2026-09-11)
+
+Dan: *"yes, start on the memberships fix."* Pushed to card 17301 and **the
+report is DOWN for all 29 orgs until the date tags are flipped** — measured
+through the public endpoint immediately after the push: `An error occurred.
+(HTTP 400)` in **0.1s**, the refusal tell. Flip link
+https://rec.metabaseapp.com/question/17301
+
+**THE TWO ARMS NEVER SHARE A CTE, and that sentence is the whole fix.** v7 made
+the same move to the base tables and timed out past 200s for every org but
+Pawnee; the mechanism is in `sql/report-cards/17301-v7-DIAGNOSIS.md` and it is
+that an OR spanning three tables cannot be evaluated until every column in it is
+available, so **both** index-usable predicates were demoted into a `Join Filter`
+on the outermost nested loop and `win` survived only as two hashed SubPlans
+evaluated LAST. v7.1 gives each arm its own CTE: `tx_oi` drives FROM the window
+INTO `order_item_transaction_order_item_id_index` and **needs no joins at all**
+(order_item_id and amount are both columns there), and `tx_cust` is driven from
+the orphan pairs.
+
+### PROVING THE EXACT TEXT, because inheriting a proof is how v7 shipped broken
+
+**Three layers, and the first is the one that makes the other two sufficient.**
+
+1. **The change is provably LOCALISED.** Comment-stripped and whitespace-
+   normalised, everything before `win` and everything from the final SELECT
+   onward is **byte-identical** to v6 (tail md5 `62bc5fe813d12d95e1a1f54bd4206665`
+   on both sides), and **`win` itself is byte-identical too.** So the card's
+   output depends on the change only through the two relations `tx_oi` and
+   `tx_cust`. Same lesson as card 17295 v9: *when a change is localised, prove
+   the localised thing.*
+2. **Those two relations are md5-identical to the item log's**, per group, over
+   the same `win`:
+
+| | groups | item log vs base tables |
+|---|---|---|
+| pawnee, 2025-09-04..2026-09-30 | 96 | md5 `df597571a55b492e2657cb8bccfb6577` both |
+| **apex-sandbox, UNWINDOWED** (the shape prewarm sends) | **17,369** | md5 `f083cde4878c1efd3e158a893497be7d` both, $660,341.55 paid / $26,111.59 refunded either way |
+
+3. **The whole final SELECT was RUN**, not wrapped in a summary probe — the
+   card-21682 failure. pawnee 13mo returns **100 rows**, which is the figure this
+   file already records for v6 over that exact window, and apex over September
+   returns 727.
+
+### THE FALLBACK CANNOT BE PROVEN ON A REAL ORPHAN, so it was proven on real money
+
+Re-measured 2026-09-11: **10 orphan rows on the entire platform — 5
+apex-park-and-recreation-district, 5 apex-sandbox** — and **the item log finds
+ZERO transactions for any of them.** So `cu_n=0` on both sides is the only
+answer a real orphan can ever give, and a test over it proves 0 = 0.
+
+It was therefore driven with **every real (customer, product) pair pawnee has,
+as if each were an orphan**: 102 pairs → **66 groups, $5,750.00 paid,
+$610.00 refunded, md5 `e1ed906f5002a8005fa9860576d0e444` both ways.** That is
+the gap the diagnosis explicitly listed as owed (*"the customer/product fallback
+rebuilt on base tables is untested here"*), closed on money that exists.
+
+**Generalise it: when the production data cannot exercise a branch, feed the
+branch real data it was not built for rather than settling for an empty-set
+match.**
+
+### THE `amount` COLUMN'S OWN COMMENT IS WRONG, and believing it flips every net
+
+`order_item_transaction.amount` is documented as *"Positive for payments,
+negative for refunds"*. Measured at pawnee over the filtered set: **134 refund
+rows, ALL POSITIVE; 1,217 payment rows, all positive; zero rows carrying neither
+a payment nor a refund.** So the sign convention matches the item log and the
+card's `paid - refunded` is right as written — an `ABS()` or a unary minus added
+on the strength of that comment would silently invert Net Collected on every
+row. Pinned by the spec. *Third instance in this file of a comment sending the
+next person the wrong way* (the false `section_name` comment on card 17296, the
+*"organization.config holds no timezone key"* note on 21649).
+
+### The three base-side filters, re-derived rather than copied
+
+`deleted_at IS NULL AND confirmed_at IS NOT NULL AND credit_id IS NULL` is the
+partial predicate on `order_item_transaction_item_log_period_index` — the item
+log's own notion of a countable transaction — and it is what makes the md5s
+match. `order_item.deleted_at` is deliberately **not** filtered, settled
+empirically over 157k groups on 2026-09-04. Note `credit_id` is **not surfaced
+by the schema tool** (it is flagged deprecated) but is very much there; the
+table's own `reportIntent` says *"exactly one of payment_id/refund_id/credit_id
+is set per row"*.
+
+### Speed, honestly
+
+**Measure it again after the flip through the public endpoint — the replica was
+badly loaded during this work** (a bare `pg_indexes` query timed out at 60s
+twice, and a trivial `organization` lookup took 53s). What is comparable,
+because each pair ran minutes apart on the same load:
+
+| | v6 (item log) | v7.1 (base tables) |
+|---|---|---|
+| pawnee 13mo, the payment aggregates | **46.1s** | **8.1s** |
+| apex-sandbox unwindowed, same | **59.0s** | **35.3s** |
+
+Both figures include the same scan of the 132 MB purchases view for `win`, which
+is now the floor rather than the 1230 MB item log.
+
+**AND THE 60s MCP CEILING IS A REAL CONSTRAINT ON THIS KIND OF WORK.** One scan
+of `materialized.item_log_report` alone measured **31.9s** for pawnee, so any
+v6-side query is 40-60s before it does anything, and clarksville all-time and
+the full v6 card both exceeded the tool's limit outright. **The trick that made
+the gate possible is an md5 FINGERPRINT per side rather than a FULL OUTER JOIN
+across both** — each side then fits in its own query and the comparison happens
+outside the database. Worth reaching for on any card of this shape.
+
+### Guards
+
+`scripts/memberships-card-base-tables.spec.js` (**67 assertions, in CI**).
+Mutation-tested **seventeen ways, all failing by name**: the item log back,
+`org_ilr` reintroduced, the two arms OR'd back together (the v7 bug), `tx_oi`
+driven from the ledger instead of from the window, `tx_oi` growing a join to
+`order_item` (the 2.7s → 45.9s shape), each of `deleted_at` / `confirmed_at` /
+`credit_id` / `organization_id` dropped, the refunds ABSed on the comment's
+say-so, `tx_cust` filtering `order_item.deleted_at`, `tx_cust` dropping
+`product_type`, `win_orphan` taking every purchase rather than the orphans, the
+bottom `[[ ]]` filter deleted, the trailing `ORDER BY` dropped (the card-17300
+failure), an output column renamed, and `tx_cust` joined for every row rather
+than only for orphans.
+
+**The push read back BYTE-IDENTICAL**, trailing `ORDER BY` and both `[[ ]]`
+pairs intact. **THREE tags, not six** — the card was updated rather than
+re-saved on top of an earlier push — but all three came back **`text`**, so both
+dates need the flip.
+
+### SIGNED OFF AFTER THE FLIP (2026-09-11)
+
+Dan flipped both dates. Cache-independently through the public endpoint, with
+the app's own parameter shape, one probe at a time:
+
+| probe | result |
+|---|---|
+| pawnee, THIRTEEN MONTHS (the manifest's discriminating row) | **100 rows in 10.9s** |
+| **norman, the window the PAGE sends** (current month) | **275 rows in 3.8s** |
+| apex, current month | **730 rows in 24.2s** |
+| norman, THIRTEEN MONTHS | 20,545 rows in **88.5s**, and **196.2s** on a re-run |
+
+**100 rows at pawnee is the same figure recorded for v6 over that exact
+window** — the additive proof, now on live data rather than in a fingerprint.
+
+**THE apex VERDICT, which the list above refused to write before the flip: apex
+is fine.** 730 rows in 24.2s against 727 in 41.8s pre-flip here, and v6 at apex
+was never measured at all — so this is a measurement where there was none,
+not an improvement claim.
+
+### THE 13-MONTH NORMAN NUMBER IS TRANSFER, NOT THE QUERY — and the re-run proves it
+
+88.5s then **196.2s for the identical 20,545 rows** is a 2.2x spread on input
+that cannot have changed, which is already the tell. Run down rather than waved
+at as load, one probe at a time:
+
+| norman, thirteen months | |
+|---|---|
+| `win` alone (the 132 MB purchases view) | **0.4s**, 20,546 rows |
+| the `tx_oi` payment arm alone | **7.4s**, 20,511 groups |
+| **the card's WHOLE final SELECT**, literals substituted, `ORDER BY` executing, inside a counting wrapper | **3.6s**, 20,546 rows |
+
+So **the database work is 3.6 seconds** and the rest of that wall clock is
+Metabase serialising 20,546 rows × 30 columns to JSON and shipping them. **v7.1
+neither caused that nor fixes it** — v6 paid the same transfer for the same row
+set — and the app never asks for it anyway: `defaultDates()` is the current
+calendar month, which is the 3.8s row above. Worth stating because a 196s
+figure in a sign-off table reads as a regression, and the counting wrapper is
+what separates the two.
+
+**The arm's own money ties**: $407,034.50 paid / **$6,698.00 refunded**, against
+$406,353.50 / $6,698.00 measured on 2026-09-06. Refunds identical to the cent;
+paid is $681 higher because the window runs to 2026-09-30 and September is still
+OPEN. Never diff an open window against itself across two reads — the
+Clarksville rule, and the reason to check before reporting a delta as a diff.
 
 ## Card 17301 v7 — PUSHED AND IT IS A REGRESSION (2026-09-04)
 
@@ -2433,6 +2621,20 @@ fail.
 - **Always hand over the direct Metabase card link** whenever a card needs Dan to
   touch it (the date-tag flip after any programmatic save, most often) —
   `https://rec.metabaseapp.com/question/<id>`. Don't just name the card id.
+- **ALWAYS PUSH A CARD VIA THE API AND HAND OVER THE FLIP LINK — never hand
+  Dan a paste.** His words, 2026-09-11: *"always push and flip, never paste.
+  what is this, 1995?"* This REVERSES the older "hand over the paste" habit
+  recorded in the card sections below, and it holds even for a shared card
+  serving all 29 orgs: the push→flip window is a real outage and it is accepted,
+  because a human re-typing 170 lines of SQL is worse. What does NOT change is
+  everything around the push — read the live card first (the mirror is a
+  mirror), diff the pushed SQL back byte-for-byte, say plainly that the report
+  is DOWN until the flip, and sign off cache-independently through the public
+  endpoint AFTER the flip rather than before.
+  **The one carve-out is a card whose parameters a human has already
+  configured** — cards 21682-21685 carry El Segundo's hardcoded `org_id`
+  default, which an API save silently wipes along with the tag types, and that
+  is a loss a flip cannot undo. Those still go through the UI.
 - **Wire a Slack activity notification into every new user-facing surface** —
   new features, buttons, export/download options, and other notable interactions
   should ping the Slack activity feed, without being asked. Dan wants visibility
@@ -4206,8 +4408,12 @@ window, and exactly **one** of them was created after the 177 was measured
 
 **v9 DID NOT FIX APEX, and Dan's call is to leave it parked** (*"leave it
 parked"*), which is the same call recorded on the manifest row: *"we'll address
-this when we move to an api direct model."* Said plainly so nobody reads the
-Watertown win as a platform win:
+this when we move to an api direct model."*
+
+**RE-CONFIRMED AND CLOSED 2026-09-11: *"park, don't ask me again."*** So this is
+not an open item and must not be re-offered as a next step — apex on card 17295
+waits for the API-direct move and nothing before it. Said plainly so nobody
+reads the Watertown win as a platform win:
 
 - **Mid-size orgs get it.** Watertown's dominant CTE went 14.0s / 9,194 order
   items to 0.08s / 890.
@@ -8233,6 +8439,319 @@ Plus a browser check that the KPI **opens** the panel and closes again, and that
 sorting on the new column works — `ci-check-admin-js` proves the handler exists
 and parses, which is not the same claim.
 
+## THE SESSION SCHEDULE NEVER FINISHED LOADING (2026-09-11)
+
+Dan, on Watertown's programme calendar stuck on *"Loading…"*: *"hmm this
+watertown program calendar is never loading"*, then — *"it finally returned
+after about 3 min."*
+
+**TWO CAUSES THAT MULTIPLY, and neither is visible in the page or the card on
+its own.** Reproduced before anything was changed, through the public endpoint:
+
+| card 17298, watertown | alone | fired together, as the page does |
+|---|---|---|
+| the visible week (Sep 13-19) | **92.5s** | **180.3s** |
+| the filter-options sweep (today → +60) | **34.0s** | **196.9s** |
+
+The data route's budget is 60s + a 120s retry = 180s, so **both blow through
+it**, and the three minutes is the browser sitting on the retry.
+
+### THE CARD COMPUTED THREE CTEs FOR THE WHOLE PLATFORM
+
+`section_registration`, `program_activities` and `section_eligibility` carry no
+org filter at all — they aggregate **51,154 registration windows, 9,695
+program-activity rows and 31,380 eligibility lookups** and then LEFT JOIN the
+2% that can survive. Watertown holds **775 of the platform's 58,429 sections**.
+
+**`section_eligibility` ALONE MEASURED 54.9s BUILDING 31,127 GROUPS — more than
+the whole card (49.8s).** It *is* the card. Its per-row work is a `STRING_AGG`
+over a `CASE` ladder doing `SPLIT_PART`/`::numeric`/`ROUND` on every eligibility
+rule on the platform, to label one org's sections.
+
+**SCOPING IT THROUGH A JOIN TO `section` BARELY HELPED — 55s → 42s — and the
+plan says why.** Reading `EXPLAIN (COSTS OFF)` for SHAPE rather than trusting a
+wall clock (the rule this file already records for 17301 v7):
+
+```
+->  Hash Join
+      Hash Cond: (ergl.section_id = osec.id)
+      ->  Seq Scan on eligibility_rule_group_lookup ergl      ← the whole table
+```
+
+A 47x cut in OUTPUT against a 24% cut in TIME is the tell: the scan is the
+floor, and scoping by join only saves the aggregation on top of it.
+
+**THE TABLE CARRIES ITS OWN INDEXED `organization_id`, AND THE CARD NEVER READ
+IT.** So do all six tables these CTEs touch — checked, not assumed:
+
+| table | size | own `organization_id` | indexed |
+|---|---|---|---|
+| `eligibility_rule` | 36 MB | yes | yes |
+| `registration_window` | 26 MB | yes | yes |
+| `eligibility_rule_group_lookup` | 14 MB | yes | yes |
+| `eligibility_rule_group` | 10 MB | yes | yes |
+| `program_activity` | 2.4 MB | yes | yes |
+| `activity` | 1.1 MB | yes | yes |
+
+Filtering on it turns the seq scan into a `Bitmap Index Scan on
+eligibility_rule_group_lookup_organization_id_index`. **Watertown's week:
+49.8s → 7.2s, 62 rows either way and a byte-identical row-level fingerprint
+(`5f5d6d4e2b36e07dffe6fa8d451f3bcb`).**
+
+*Generalise it: I reached for a join to scope, got a seq scan, and the key was
+sitting on the table all along. Before scoping through a relationship, check
+whether the table already carries the column.*
+
+### THE OBVIOUS FORM OF THE FIX IS WRONG, AND IT WOULD HAVE SHIPPED SILENTLY
+
+`AND ca.organization_id = {{org_id}}` on `program_activities` is the version
+that matches the other two and it is a real regression. **`program_activity.
+organization_id` is NULL on one live row: SF Rec & Park's *"Tennis Lesson with
+Vern"* — a program with 215 SECTIONS.** Scoping on that column drops it, and
+every one of those sections silently relabels from **Tennis** to
+**Uncategorized** — a plausible-looking word in a filter dropdown, on an org
+nobody was testing.
+
+Measured, all three forms side by side against production:
+
+| | result |
+|---|---|
+| deployed (unscoped) | `Tennis` |
+| scoped through the PROGRAM (shipped) | `Tennis` |
+| scoped on `ca.organization_id` | **NULL** |
+
+So that CTE is scoped through `program`, whose org is correct by construction
+and equally indexed. The other two were cleared the same way and have **ZERO**
+mismatching or NULL rows platform-wide — **which is the equivalence proof for
+every org rather than for a sampled few**, and is stronger than any number of
+per-org fingerprints.
+
+### THE PAGE FIRED BOTH QUERIES ON MOUNT
+
+`calendar.html` asks for the visible week AND a today→+60 sweep to fill the
+Activity/Location dropdowns. Both effects ran on mount, so they did not queue —
+**they contended, and each roughly doubled the other** (the table at the top).
+
+**NEITHER WINDOW IS EVER PRE-WARMED, so this is every cold open.** Prewarm
+writes the base key and this month; `feedCacheKey` includes the parameter
+string, so a specific week and a rolling today→+60 span are each their own
+entry, and the 60-day one **moves every day by construction**.
+
+The filter-options fetch now waits for the visible window's fetch. It costs the
+dropdowns nothing — they are not on screen until the table is — and **the month
+branch releases the same gate**, or an org landing in month view never gets
+filter options at all.
+
+### Guards
+
+`scripts/calendar-card-scope.spec.js` (**27 assertions, in CI**).
+Mutation-tested eleven ways, all failing by name: each of the three CTEs
+unscoped, `program_activities` scoped on `ca.organization_id` **with the program
+join still present** (the SF regression, and the one mutation that proves that
+assertion discriminates rather than being caught by its neighbour), the trailing
+`ORDER BY` dropped (the card-17300 failure), the `[[ ]]` clauses made
+non-optional, the `DATE()` cast dropped, an output column renamed, the page
+firing both fetches again, and only one of the two view branches releasing the
+gate.
+
+**And this page had NO render coverage at all** — part of why it could hang for
+three minutes with nothing noticing. Two cases now, and the second is the only
+thing that can see the fix: **no source assertion can prove an ordering**, since
+the effect reads correctly either way and what regressed is a RACE. It spies on
+`fetch`, and **keys on the GAP between the two request starts rather than on
+their order** — two requests issued together still arrive in some order, so an
+order-only check passes on the bug. Verified to fail by name on the real
+regression while the baseline case keeps passing.
+
+**The stub is registered ABOVE the generic `/api/data` one**, per the recorded
+trap, and **the two windows answer DIFFERENT rows** (the wide one carries a
+third activity): a fixture where both answered the same thing could not tell a
+sequenced page from a concurrent one.
+
+**THE SHARED CALENDAR CARD HAD NO MANIFEST ROW AT ALL** — the fourth time this
+gap has been found, after waitlist, checkins and the shared roster. Added, and
+**Watertown rather than the heaviest org on purpose**: the card dates every row
+by the org's majority `location.timezone` while Metabase renders Pacific, so a
+Pacific org structurally cannot catch a conversion regression here. `daysAhead`,
+not `days` — a schedule looks FORWARD. 37 → 38.
+
+### PUSHED — and it behaved exactly as this file predicts
+
+Dan, asked paste-or-push: *"always push and flip, never paste. what is this,
+1995?"* Recorded as a standing preference at the top of this file.
+
+Read live and diffed against the mirror BEFORE writing: **no drift**, the live
+card was byte-identical to the pre-edit mirror. Pushed via
+`construct_native_query` + `update_question`, then **diffed straight back:
+byte-identical**, trailing `ORDER BY "Date", "Begin Sort", "Location"` intact
+and all three org filters present. That check exists because card 17300
+silently lost its `ORDER BY` to transcription.
+
+**THREE tags came back, not six** — the card was updated rather than re-saved on
+top of an earlier push, so there was no `string/=` duplicate set to flip away.
+But all three came back **`type: "text"`**, so `start_date`/`end_date` need the
+usual flip to Date.
+
+**AND THE REPORT WAS DOWN FOR ALL 29 ORGS UNTIL THAT FLIP.** Measured
+immediately after the push through the public endpoint with the app's own
+parameter shape: **`An error occurred. (HTTP 400)` in 0.1s** — the 0.1s is the
+tell, a refusal rather than load. The `DATE({{start_date}})` cast means the SQL
+itself parses fine under a Text tag; what 400s is that `buildMetabaseParams`
+hardcodes `date/single` and Metabase rejects a `date/single` value against a
+Text-typed tag. **So the cast protects the SQL, not the feed** — worth stating,
+because the cast is easy to read as making a card push safe and it does not.
+
+Flip link: https://rec.metabaseapp.com/question/17298
+
+### SIGNED OFF after the flip (2026-09-11)
+
+Dan flipped both dates. The card now registers **exactly three** parameters —
+`org_id` `string/=`, `start_date`/`end_date` `date/single` — with no `string/=`
+duplicate set, so there was nothing to re-save away.
+
+Cache-independently through the public endpoint, with the app's own parameter
+shape, **after** the flip:
+
+| probe | before | after |
+|---|---|---|
+| watertown, the week the page sends | 62 rows in **92.5s** | 62 rows in **1.9s** |
+| watertown, the 60-day filter-options window | 447 rows in **34.0s** | 447 rows in **1.3s** |
+| apex (heaviest) | — | 502 rows in **5.5s** |
+| the new manifest row's own forward window | — | 54 rows in **0.6s** |
+
+**Row counts are identical where they were measured before**, which is the
+additive proof: this change restricted inputs and moved no output.
+
+**AND THE SF CASE WAS CHECKED IN PRODUCTION, not only in a probe.** *"Tennis
+Lesson with Vern"* reads **`Tennis`** in the live card's own output. The window
+also returns 209 rows reading `Uncategorized` across 26 programs, and that was
+run down rather than waved through — **`DROPPED_BY_SCOPING = 0`**: of 31 SF
+programs in the window, 5 resolve an activity identically under the scoped and
+unscoped CTEs, and the other 26 have no `program_activity` row at all. So the
+Uncategorized rows are SF's own data entry, not something this change caused.
+*Check a large-looking number against the pre-change behaviour before either
+reporting it as a finding or assuming it is yours.*
+
+**A STRAY SERVER, THIRD INSTANCE.** Killing the wedged render sweep left its
+child `server.js` holding port 3989, and the next render run failed with
+`EADDRINUSE` — which reads as a code fault. Clear strays before believing a
+render failure. And the fix for the `pkill` self-match had to go further than
+last time: the sweeping script now lives in a FILE, run as `python3 <path>`, so
+neither needle appears in any command line at all.
+
+**`pkill` SELF-MATCHED A FOURTH TIME, in a new form.** I assembled the `node`
+needle at runtime as the note here says — and then put the sweep and
+`node scripts/ci-check-render.js` **in the same shell command**, so that shell's
+own cmdline contained both needles and the sweep killed it. The rule is stronger
+than "assemble the needle": *neither needle may appear anywhere in the command,
+including in a later part of the same pipeline.* Run the sweep in its own call.
+
+**AND A FILTERED RENDER RUN THAT MATCHES NOTHING REPORTS SUCCESS**, which is how
+"this page has no coverage" first read as "the coverage passes":
+`node scripts/ci-check-render.js calendar` printed **"✓ 0 page(s) render with no
+uncaught errors"**. Read the count, not the tick.
+
+## THE AUDIT: DOES ANY OTHER CARD SCAN THE PLATFORM? (2026-09-11)
+
+Dan, straight after the 17298 fix: *"did we check other reports to ensure the
+same thing--we're not scanning the entire DB"*
+
+**No other card has it at a cost that matters, and one has it in miniature.**
+Swept every CTE of all 31 SQL mirrors plus the six shared cards that have no
+mirror, read live (17297 court-utilization, 17299 products, 17887 retention,
+17920 qbr-stats, 17953 section-detail, 19174 selfservice).
+
+### THE ONE HIT: card 21683's `fac` — the same shape, 1/100th the cost
+
+```sql
+fac AS (
+  SELECT sf.section_id, string_agg(DISTINCT ... ) AS instructor
+  FROM section_facilitator sf
+  JOIN instructor i ON i.id = sf.facilitator_id
+  JOIN users u      ON u.id = i.user_id
+  GROUP BY 1
+)
+```
+
+No org filter, no join to a scoped set — it is 17298's `section_eligibility`
+exactly. Measured: **Seq Scan on `section_facilitator`, 36,183 rows, 35,883
+groups built** to label El Segundo's ~83 aquatic sections. **487 ms.**
+
+`section_facilitator` carries its own indexed `organization_id`, so the fix is
+the same one line. **NOT DONE, and that is a judgement rather than an
+oversight:** card 21683 is El Segundo-only, the card runs in ~2s, and it is in
+the UI-paste carve-out (an API save wipes the hardcoded `org_id` default and
+the Date tags), so the fix costs Dan a paste to buy 0.4s. Flagged, his call.
+
+### THE SEQ SCAN WAS NEVER 17298's COST — and this corrects the write-up above
+
+Card 21649's `elig` reads **the same 14 MB `eligibility_rule_group_lookup`**
+and **still opens with a Seq Scan** — 32,618 rows — and that scan costs
+**14 ms**. So "it seq-scans a platform-wide table" is not on its own a finding.
+
+What made 17298 cost 54.9s is WHERE the restriction lands in the plan. 21649
+hash-joins the lookup to its windowed `sections` set **before** the two
+nested-loop index probes into `eligibility_rule_group` and `eligibility_rule`,
+so those loops run **507 times**. 17298 had no restriction at all, so they ran
+for every one of the platform's 46,548 lookup rows on cold buffers — which is
+also why scoping 17298 through a join to `section` only bought 55s → 42s
+despite cutting the output 47x: **it restricted at the wrong point in the
+plan.** Filtering on the table's own indexed `organization_id` moves the
+restriction to the scan itself, which is why that is the version that worked.
+
+**So the audit question is not "is there a seq scan" but "how many rows reach
+the expensive work above it".**
+
+### EVERYTHING ELSE IS SCOPED BY CONSTRUCTION, checked rather than assumed
+
+A CTE that reads a base table is fine when it is INNER-joined to an
+already-scoped set on an indexed key, because the restriction lands first:
+
+| card | CTE | why it is fine |
+|---|---|---|
+| 17294 | `rental_items` / `item_tx` / `paid_rollup` | joined to the windowed `base` on `order_item_transaction_order_item_id_index` |
+| 17294 | `rental_notes` | `note` is 22k rows / 7 MB; its seq scan is **4 ms** |
+| 17294 · 17301 · 17788 | `resident_households` / `resident_users` | inner join to `res_group` (a handful of rows) on `membership_group_id_index` |
+| 19570 | `res_fin` / `fr_loc` / `inv_pay` | **this card has already been through this exercise** — its own v2.1 header records the same fix |
+| 21649 | `run` / `enr` / `sfac` | drive FROM `win`, which is org-scoped and windowed |
+| 21683 | `sec_loc` / `sess` | inner join to `aquatic_sections` |
+| credit-balances | `all_time` / `led` | inner join to `acct` on `credit_credit_account_id_index` |
+| all-users | `hh` | `h.id IN (SELECT ... org_users)` |
+| 17297 | `dated_res` | inner join through `reservation_court` into the org-scoped `courts` |
+| 17953 · 19174 · 17887 | every CTE | carry `organization_id = {{org_id}}` outright |
+
+**Every table involved carries its own indexed `organization_id` except `users`
+and `household`, which have no org column at all** — already recorded, and the
+reason `all-users` scopes through `organization_association` instead.
+
+### TWO THINGS THIS FOUND THAT ARE A DIFFERENT BUG, and both are already known
+
+- **Org-scoped but UNWINDOWED** — card 17887's `section_dates` aggregates the
+  org's entire session history, and 17294's `rental_notes` every one of apex's
+  8,253 rentals. That is the 17295 `sec_win` class, not this one, and both are
+  cheap today (an index scan, not a platform scan).
+- **The `materialized` schema** — card 17299 reads `item_log_report`, which has
+  exactly one index (its pkey), so `WHERE organization_id = …` IS a full scan
+  however it is written. That is the index ask already pinned in this file, on
+  a fifth card. **No SQL change can fix it**, which is precisely why it is
+  pinned rather than parked.
+
+### The method, so it is not re-derived
+
+1. Split each mirror's CTEs and flag any whose driving table gets no
+   `alias.organization_id =` at the CTE's own top level.
+2. Discard the ones INNER-joined to a scoped CTE on an indexed key — those
+   restrict first and the driving-FROM is syntax, not plan order.
+3. For what is left, read `EXPLAIN (ANALYZE, BUFFERS, COSTS OFF)` and ask **how
+   many rows reach the work above the scan**, not whether the scan is a scan.
+4. Before adding a filter, count platform-wide rows where the table's own
+   `organization_id` disagrees with its parent's — that proves equivalence for
+   every org at once, which beats any number of per-org fingerprints.
+
+**Run the probes one at a time.** This replica's load varies enough that a bare
+catalog query has timed out at 60s, and I broke that rule twice in the session
+that produced the fix above.
+
 ## THE RENTAL SCHEDULE'S COLUMNS NEVER GREW — a dead CSS rule (2026-09-11)
 
 Dan, with Euclid's schedule open and most of the column checkboxes turned off:
@@ -8954,6 +9473,13 @@ page state.
   button is hidden and the route 503s.
 
 ## The `materialized` schema has no secondary indexes (PINNED, spec'd 2026-08-21)
+
+**RE-PINNED AGAINST THE API / SEMANTIC-LAYER UPDATE (Dan, 2026-09-11):
+*"pin for the api update"*.** So this is not a SQL job and not a card job — it
+travels with the direct-connection work, which is exactly where it starts to
+matter: going direct inherits these seq scans **without** the 4-hour feed cache
+hiding them, which is the finding that killed the Report Wizard. Raise it in
+that conversation, not on its own.
 
 **PINNED, not being worked (Dan, 2026-08-21).** The table view eng is building
 may make this moot, and the one surface that felt the pain — the Tyler export —
