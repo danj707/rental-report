@@ -2163,6 +2163,29 @@ function customReportsForOrg(slug) {
   return Object.keys(CUSTOM_REPORTS).filter(k => customReportEnabled(slug, k));
 }
 
+/* THE ADMIN PORTAL TOGGLES THE CARD, NOT THE SEVEN REPORTS BEHIND IT.
+   org.html draws the custom reports as ONE "Data Reports" card with a chip per
+   report, and it self-hides when none of them survive the hidden list
+   (`if (!DATA_REPORTS.length) return ''`). So the thing an admin can see and
+   therefore the thing they mean to switch off is the CARD — which is not a
+   report key at all, and had no row in the admin grid because that grid is
+   built from REPORT_TYPES and these are a separate registry.
+
+   This synthetic key stands for "every custom report this org has". It is
+   resolved server-side from the registry rather than accepted as a list from
+   the client, so the set cannot drift from what the org page actually draws
+   and a caller cannot name arbitrary keys through it. */
+const DATA_REPORTS_KEY = "data-reports";
+/* Visible iff at least ONE survives - the org page's own rule, not "none are
+   hidden". Any other reading disagrees with the screen: hide six of seven and
+   the card is still there, so reporting it as hidden would be false. */
+function dataReportsHiddenForOrg(slug, hiddenList) {
+  const keys = customReportsForOrg(slug);
+  if (!keys.length) return true;
+  const hidden = new Set(hiddenList || getHiddenReports(slug));
+  return keys.every(k => hidden.has(k));
+}
+
 // ── Shared Metabase UUIDs (one query per report type, parameterized by org_id) ──
 // When a report type has an entry here, the server uses this UUID + passes the
 // org's orgId as {{org_id}}, instead of using the per-org mbUuid.
@@ -15310,12 +15333,38 @@ app.post("/api/admin/toggle-report", express.json(), (req, res) => {
   if (dashboardPasswordBlocked(req, res)) return;
   const { org: slug, report } = req.body || {};
   if (!ORGS[slug]) return res.status(404).json({ error: "Unknown org" });
-  if (!REPORT_TYPES.includes(report) && report !== "chat" && report !== "report-wizard" && report !== "rentalcalendar" && report !== "facilities" && report !== "directors-report" && report !== "lessons") return res.status(400).json({ error: "Unknown report type" });
+  /* The custom reports are accepted INDIVIDUALLY as well as through the card's
+     own key. The hidden store already holds them one by one and org.html already
+     honours them one by one - refusing them here left a state the platform can be
+     in and could not be moved out of through its own API, which is how a card
+     with a missing chip would have become unfixable. Found by mutation testing:
+     the set-toggle spec's own setup step was silently 400ing. */
+  if (!REPORT_TYPES.includes(report) && report !== "chat" && report !== "report-wizard" && report !== "rentalcalendar" && report !== "facilities" && report !== "directors-report" && report !== "lessons" && report !== DATA_REPORTS_KEY && !customReportsForOrg(slug).includes(report)) return res.status(400).json({ error: "Unknown report type" });
   const hidden = getHiddenReports(slug);
+
+  /* THE DATA REPORTS CARD IS N KEYS BEHIND ONE SWITCH, so it flips as a SET.
+     Flipping them one at a time would leave a half state the org page renders
+     as a card with some chips missing - which is not a state anyone asked for
+     and is not what the admin grid is showing. The keys come from the registry
+     here, never from the request. */
+  if (report === DATA_REPORTS_KEY) {
+    const keys = customReportsForOrg(slug);
+    if (!keys.length) return res.status(400).json({ error: "No data reports for this organization" });
+    const wasHidden = dataReportsHiddenForOrg(slug, hidden);
+    const next = wasHidden
+      ? hidden.filter(k => !keys.includes(k))            // show: drop every one
+      : hidden.concat(keys.filter(k => !hidden.includes(k))); // hide: add every one
+    setHiddenReports(slug, next);
+    return res.json({ ok: true, hidden: next, hiddenNow: !wasHidden, label: "Data Reports" });
+  }
+
   const idx = hidden.indexOf(report);
   if (idx >= 0) hidden.splice(idx, 1); else hidden.push(report);
   setHiddenReports(slug, hidden);
-  res.json({ ok: true, hidden });
+  /* hiddenNow is the SERVER's answer rather than something the client re-derives
+     from the list. For a single key the two agree; for the set above they cannot,
+     because the list holds the individual report keys and never the card's. */
+  res.json({ ok: true, hidden, hiddenNow: hidden.includes(report), label: report });
 });
 
 // ── Project-update announcements ─────────────────────────────────────
@@ -16620,6 +16669,9 @@ app.get("/", (req, res) => {
     "ice-calendar":      { label: "Ice Participant Calendar", icon: "❄️", desc: "Participant-filtered monthly ice program calendar", color: "#0ea5e9" },
     qoq:                 { label: "QoQ Revenue Comparison", icon: "📉", desc: "Quarter-over-quarter GL revenue comparison with delta analysis", color: "#8b5cf6" },
     "programs-schedule": { label: "Program Schedule", icon: "🗓️", desc: "Every class and camp meeting by date, location and site — instructor, confirmed count, and a link to each roster", color: "#7c3aed" },
+    // The per-org data reports, as the ONE card org.html actually draws. The
+    // description is the card's own wording so the two surfaces agree.
+    [DATA_REPORTS_KEY]:  { label: "Data Reports", icon: "📋", desc: "Row-level reports with roll-ups, built to print and to export", color: "#b45309" },
   };
 
   const hiddenReports = getAllHiddenReports();
@@ -16639,6 +16691,9 @@ app.get("/", (req, res) => {
     // Rental calendar — non-Metabase, per-org opt-in
     if (RENTAL_CALENDAR_ORGS.has(slug)) available.push('rentalcalendar');
     if (org.gl?.mbUuid || SHARED_UUIDS.gl) available.push('qoq');
+    // Data Reports — one row for the whole card, and only where there is one.
+    // An org with no custom reports must not get a row it can never turn on.
+    if (customReportsForOrg(slug).length) available.push(DATA_REPORTS_KEY);
     const slugTitle    = slug.charAt(0).toUpperCase() + slug.slice(1);
     const displayName  = org.displayName || `${slugTitle} Parks &amp; Recreation`;
     const tokenQS      = org.token ? `?token=${encodeURIComponent(org.token)}` : "";
@@ -16647,10 +16702,18 @@ app.get("/", (req, res) => {
     const orgHidden = hiddenReports[slug] || [];
     const cards = available.map(r => {
       const m = reportMeta[r] || { label: r, icon: "\u{1F4C4}", desc: "", color: "#888" };
-      const isHidden = DEFAULT_HIDDEN_REPORTS.has(r) ? reportHiddenForOrg(slug, r) : orgHidden.indexOf(r) >= 0;
+      const isHidden = r === DATA_REPORTS_KEY
+        ? dataReportsHiddenForOrg(slug, orgHidden)
+        : (DEFAULT_HIDDEN_REPORTS.has(r) ? reportHiddenForOrg(slug, r) : orgHidden.indexOf(r) >= 0);
+      // `data-reports` is not a route. Opening the card has to land on a real
+      // report or the admin grid grows a tile that 404s - the dead-end pattern
+      // this project keeps writing down.
+      const href = r === DATA_REPORTS_KEY
+        ? `/${slug}/${customReportsForOrg(slug)[0]}${tokenQS}`
+        : `/${slug}/${r}${tokenQS}`;
       const dimCls = isHidden ? ' report-card-hidden' : '';
       return `
-        <a href="/${slug}/${r}${tokenQS}" class="report-card${dimCls}" style="--accent:${m.color}" data-org="${slug}" data-report="${r}">
+        <a href="${href}" class="report-card${dimCls}" style="--accent:${m.color}" data-org="${slug}" data-report="${r}">
           <span class="report-icon">${m.icon}</span>
           <div class="report-body">
             <div class="report-label">${m.label}${m.ai ? ' <span class="ai-pill-inline">AI</span>' : ''}${m.wcag ? ' <span class="wcag-pill-inline">AA</span>' : ''}</div>
@@ -19232,14 +19295,22 @@ app.get("/", (req, res) => {
         // (Facilities is now visible-by-default, so nothing is inverted here.)
         const DEFAULT_HIDDEN = [];
         const present = data.hidden.indexOf(report) >= 0;
-        const isNowHidden = DEFAULT_HIDDEN.indexOf(report) >= 0 ? !present : present;
+        /* PREFER THE SERVER'S ANSWER. The Data Reports card is N keys behind one
+           switch, so the stored list holds the individual report keys and never
+           the card's own - re-deriving from it here would report the card as
+           visible the instant it was hidden. The fallback keeps working for any
+           caller answering without the field. */
+        const isNowHidden = typeof data.hiddenNow === 'boolean'
+          ? data.hiddenNow
+          : (DEFAULT_HIDDEN.indexOf(report) >= 0 ? !present : present);
+        const label = data.label || report;
         card.classList.toggle('report-card-hidden', isNowHidden);
         // Toggle SVG icons (first = eye-open, second = eye-slash)
         var svgs = btn.querySelectorAll('svg');
         svgs[0].style.display = isNowHidden ? 'none' : 'block';
         svgs[1].style.display = isNowHidden ? 'block' : 'none';
         btn.title = isNowHidden ? 'Hidden from org page' : 'Visible on org page';
-        mbToast(isNowHidden ? report + ' hidden from ' + slug + ' org page' : report + ' visible on ' + slug + ' org page');
+        mbToast(isNowHidden ? label + ' hidden from ' + slug + ' org page' : label + ' visible on ' + slug + ' org page');
       } catch (e) {
         alert('Toggle failed: ' + e.message);
       }
