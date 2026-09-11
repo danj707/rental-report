@@ -3790,8 +3790,9 @@ code failure in the output.
 ## Card 17295 does the whole org's work and then throws it away (2026-09-03)
 
 Dan, after the same bug was fixed on card 21286: *"yes, profile 17295 and scope
-it like you did the other card."* Profiled, fixed, **NOT PUSHED** — see the last
-section here for why, and `sql/report-cards/17295-programs-report.v9-PENDING.sql`
+it like you did the other card."* Profiled, fixed, and **LIVE since 2026-09-11**
+— see the push section at the end, and the mirror
+`sql/report-cards/17295-programs-report.sql`
 for the candidate.
 
 **THE ONLY DATE FILTER IS THE `[[ ]]` PAIR AT THE VERY BOTTOM**, against the `sd`
@@ -3860,23 +3861,72 @@ over an empty set) and no `sec_env` row at all, and passes both tests either way
 | deployed (v8) | 177 | `50ed1d95b84df5dab22a104bbe1fb629` |
 | candidate | 177 | `50ed1d95b84df5dab22a104bbe1fb629` |
 
-**Apex could NOT be proven the same way**, and that is a gap to close before the
-push rather than a thing to wave through: both shapes exceed the 60s ceiling on
-every tool available from here, and there is no `MB_API_KEY` in this sandbox to
-go around it. The clean way to close it is a **scratch card** carrying the
-candidate SQL, compared to 17295 through the public endpoint — no risk, no
-downtime, and it needs a public link before it can be read.
+### APEX WAS CLOSED WITHOUT THE SCRATCH CARD, and the cheaper proof is stronger
 
-### WHY IT IS NOT PUSHED
+This used to say apex needed a **scratch card** compared through the public
+endpoint, because both shapes exceed the 60s ceiling from here. **That was the
+wrong shape of proof.** v9 changes exactly one thing — WHICH SECTIONS its CTEs
+are computed over — so the only thing that can differ is the SECTION SET, and
+that is a small query over `section` and `session` alone. Apex, 1.6s, 2026-09-11:
 
-Pushing takes the Programs report **down for every org** until a human re-types
-the Start/End Date tags: an API push regenerates every tag as Text, the card then
-registers **six** parameters, the app binds by slug and sends two values per
-variable, and Metabase answers *"An error occurred."* That is not a thing to
-start while nobody is at a keyboard. The `verify-report-live.js` sign-off has to
-follow the flip, not precede it, because the verifier fails the same way during
-the window and its failure carries no extra information.
-Flip link: https://rec.metabaseapp.com/question/17295
+| window | deployed | v9 | only in deployed | only in v9 |
+|---|---|---|---|---|
+| one week | 1,040 | 1,040 | **0** | **0** |
+| one month | 1,386 | 1,386 | **0** | **0** |
+| one year | 5,897 | 5,897 | **0** | **0** |
+| all time | 5,985 | 5,985 | **0** | **0** |
+
+**And the stronger form underneath it, which is why no further window needs
+testing: over ALL 5,985 apex sections, ZERO have a differing envelope** —
+`sd.first_start`/`last_end` are identical to `sec_env.mn`/`mx` row for row — and
+the **537** sections with no sessions at all land in the NULL branch identically
+on both sides. The two filters therefore select the same sections for ANY
+window, which is a stronger claim than the Watertown md5 (one window, one org).
+
+*Generalise it: when a change is localised, prove the localised thing. The
+whole-output fingerprint was the shape of proof that fit Watertown, and
+reaching for a scratch card was reaching for a bigger version of it rather than
+asking what could actually differ.*
+
+### THE PUSH, 2026-09-11 — and apex is STILL parked
+
+Dan: *"no more copy/pasting, I'm here, just update it via the api and give me a
+link to flip the card."*
+
+Pushed via `construct_native_query` + `update_question` and **diffed straight
+back: byte-identical**, md5 `c172ba0222a3784222c0823eb22cd2c1`, with the
+trailing `ORDER BY p.name, s.name` and the `'\s+'` regex inside `sec_fac` both
+intact. That check exists because card 17300 silently lost its `ORDER BY` to
+transcription, and a backslash crossing a JSON boundary is the other thing most
+likely to be mangled. Tags came back **Text** as always — but **THREE, not six**,
+because the card was updated rather than re-saved on top of an earlier push, so
+there was no duplicate `string/=` set to flip away. Dan flipped both dates.
+
+**Sign-off, cache-independently through the public endpoint, after the flip:**
+
+| org | result |
+|---|---|
+| watertown, Sep 2026 | **178 rows in 51.7s** |
+| apex, the 7-day window the page sends | **TIMEOUT past 200s** |
+
+**THE 177 → 178 IS A NEW SECTION, NOT A v9 CHANGE**, and it was checked rather
+than assumed: the deployed filter independently selects **178** sections for that
+window, and exactly **one** of them was created after the 177 was measured
+(2026-09-08). September is an OPEN window — the Clarksville rule, again.
+
+**v9 DID NOT FIX APEX, and Dan's call is to leave it parked** (*"leave it
+parked"*), which is the same call recorded on the manifest row: *"we'll address
+this when we move to an api direct model."* Said plainly so nobody reads the
+Watertown win as a platform win:
+
+- **Mid-size orgs get it.** Watertown's dominant CTE went 14.0s / 9,194 order
+  items to 0.08s / 890.
+- **Apex does not.** `sec_env` is itself a GROUP BY over all 36,921 apex
+  sessions, so at that size the scoping costs something before it saves
+  anything, and the correlated `item_tx` LATERAL is still the floor.
+- One timeout is **not** evidence on its own — this card has measured 7.7s to
+  59.8s on identical input from here — but it is not evidence of a fix either,
+  and the honest summary is that apex is unchanged.
 
 Guard: `scripts/programs-card-window.spec.js` (**34 assertions, in CI**), which
 reads the PENDING candidate while it exists and the live mirror after the push,
