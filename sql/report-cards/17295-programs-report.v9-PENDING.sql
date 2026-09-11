@@ -1,19 +1,38 @@
--- ⚠ NOT LIVE YET. This is the v9 CANDIDATE for card 17295 (the shared Programs
--- card). `17295-programs-report.sql` beside it is the mirror of what is actually
--- deployed and stays that way until this is pushed; when it is, that file takes
--- this content and this one is deleted.
+-- Card 17295: ✅ Programs Report — v9 (SCOPED INPUTS) — 2026-09-11
 --
--- IT IS NOT PUSHED BECAUSE PUSHING IT TAKES THE PROGRAMS REPORT DOWN FOR EVERY
--- ORG until a human re-types the Start/End Date tags in the Metabase UI. An API
--- push regenerates every template tag as Text, which leaves the card registering
--- SIX parameters (org_id/start_date/end_date as date/single AND the same three
--- slugs as string/=); the app binds by slug, sends two values per variable, and
--- Metabase answers "An error occurred." for all ~15 orgs on this card. So it is
--- pushed only when Dan is at a keyboard to flip them, and the cache-independent
--- sign-off (scripts/verify-report-live.js, programs/apex row) has to follow the
--- flip rather than precede it. Flip link: https://rec.metabaseapp.com/question/17295
+-- v8 and earlier applied the date window ONLY at the very bottom, against the
+-- sd LATERAL. So bk, item_tx, item_collected, sec_fin (with its
+-- payment_plan_installment LATERAL), slots, ppl, wl and sec_fac were all
+-- computed over the org's ENTIRE HISTORY and then discarded for out-of-window
+-- sections. Measured at Watertown over Sep 2026: item_tx alone 14.0s / 9,194
+-- order items unscoped against 0.08s / 890 scoped.
 --
--- The change itself is described in the v9 comment block below.
+-- sec_win IS THE CARD'S OWN FILTER, LIFTED — not a new one. sd.first_start is
+-- MIN(starts_at) over the per-location groups and sd.last_end is MAX(ends_at);
+-- sec_env computes exactly those with one GROUP BY instead of a per-section
+-- LATERAL. The bottom [[ ]] clauses STAY as the authority: sec_win restricts
+-- INPUTS, the output is still governed by the filter that always governed it.
+-- Deleting either is how two predicates drift apart silently.
+--
+-- PROVEN VALUE-IDENTICAL, twice:
+--   · Watertown, 2026-09-01..30 — md5 over row_to_json of every output column:
+--     177 rows / 50ed1d95b84df5dab22a104bbe1fb629 on BOTH shapes.
+--   · Apex (the heaviest org, and the one that could not be fingerprinted
+--     because both shapes exceed the 60s tool ceiling there) — 2026-09-11, the
+--     section sets the two filters select, which is the only thing scoping can
+--     change:
+--         one week  1,040 = 1,040   one month 1,386 = 1,386
+--         one year  5,897 = 5,897   all time  5,985 = 5,985
+--     zero sections in either side alone, at every window. And the stronger
+--     form underneath it: over ALL 5,985 apex sections, ZERO have a differing
+--     envelope (sd.first_start/last_end identical to sec_env.mn/mx row for
+--     row), and the 537 sections with NO sessions land in the NULL branch
+--     identically on both sides — so the sets agree for ANY window, not only
+--     the four measured.
+--
+-- NOTE: after any API update, re-set Start/End Date variable types to Date in
+-- the Metabase UI. https://rec.metabaseapp.com/question/17295
+
 -- 2026-08-10 TABLE-DROP MIGRATION: class/class_activity are being dropped
 -- (replaced by program/program_activity, same UUIDs; section.program_id is
 -- populated 1:1 with section.class_id). This file is the live card SQL with
