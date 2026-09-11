@@ -236,6 +236,105 @@ local-midnight parse land on the previous UTC day. Same lesson as
 to be killed by pid sweep. *A re-exec sentinel must be an explicit env flag, not
 a guess at what the value it sets will look like.*
 
+## REC INSIGHTS, READ OUT LOUD — a prototype on ONE page (2026-09-11)
+
+Dan: *"stupid question--can we read the rec AI insights outloud?"* then
+*"try it on one page so i can hear it. and I have an eleven labs account bty"*.
+
+**`public/products.html` only** — the Product Sales report, the page the
+half-open window was found on. A `🔊 Listen` button beside Rec Insights that
+reads the panel and turns into `■ Stop` while it does.
+
+### THE BROWSER ALREADY DOES THIS, and that is why the prototype is free
+
+`window.speechSynthesis` — no API key, no server route, no per-call cost, and
+**the text never leaves the machine**, which matters more here than usual
+because an insight quotes the org's own revenue back at it. Nothing was
+installed and nothing new is warmed.
+
+**`speakScript` IS THE ONE SEAM.** ElevenLabs is a different body for that
+function — fetch the audio from a server route, play it — with the script
+builder, every call site and the Stop button unchanged. What it would cost:
+a route, a key in Railway env, and **a decision that is not technical** —
+ElevenLabs is a third party, so the sentence *"Westwood sold 41 passes in
+August against 78 in July"* would leave the platform to be spoken. The
+browser path does not have that question to answer.
+
+### THE SPOKEN SCRIPT IS NOT THE VISUAL ONE
+
+`insightLines(ins)` builds it, and the two deliberately differ:
+
+- **The type is a VISUAL category and only two of its three values survive
+  being spoken.** `opportunity` → *"Opportunity."*, `risk` → *"Heads up."*,
+  and `signal` leads with **nothing** — reading "signal" before every third
+  card is noise that a coloured left border says for free.
+- **`action` is prefixed *"Next step."*** because on screen it is an arrow, and
+  an arrow read aloud is either silence or the word "arrow".
+- Whitespace is collapsed and empty parts dropped, or the reader pauses on a
+  line break that only exists in the markup.
+
+### ONE UTTERANCE PER LINE, not one for the whole script
+
+**Chrome silently truncates a long utterance at around fifteen seconds**, so a
+single joined string stops mid-sentence — which reads as the feature being
+broken rather than as a browser limit. Short queued utterances also make Stop
+feel immediate. `u.onerror` calls `onDone` too: a voice that fails must not
+leave the button stuck on `■ Stop` with nothing to stop.
+
+`speechSynthesis.cancel()` runs before the first utterance, so two readings
+can never overlap — and **the cleanup effect is keyed on `[insights]`**, not on
+mount, because refreshing the panel must stop the old numbers being narrated
+over the new ones. It cancels on unmount for a different reason: **speech hangs
+off the WINDOW, not off this page**, so without it the browser carries on
+talking after a navigation.
+
+### THE GATE HAD TO BE `insights.length`, AND ONLY THE STUB SHOWED THAT
+
+`insights` is set to whatever the feed returns, so **an empty array is truthy**
+— a button gated on `insights` alone renders over an empty grid and does
+nothing when clicked. Found by writing the render stub's `noinsights` mode,
+not by reading the code. Absent, not disabled: a control with nothing to read
+is the dead end this file keeps recording.
+
+### The beacon
+
+`insights-listen` (🔊), on the generic log route's `ALLOWED` list and in
+`SLACK_NOTIFY`, **carrying the COUNT** — clamped server-side, never echoed.
+Without it the message cannot separate somebody trying the button from
+somebody actually listening to four insights. It has its own message branch,
+because the shared one would print the report type twice and the thing
+listened to never — the defect already fixed once in the `feedback` branch.
+
+`logClientEvent` on this page grew an `extraQs` argument rather than the count
+being smuggled into the event NAME, which is how a beacon comes back
+`400 Unknown event` and, being fire-and-forget, never complains.
+
+### Guards
+
+`scripts/insights-listen.spec.js` (**34 assertions, in CI**), which LIFTS AND
+RUNS `insightLines` and source-asserts the parts a browser cannot show cheaply.
+Mutation-tested ten ways, all failing by name: `signal` given a lead word, the
+action losing its *"Next step"* prefix, the whole script spoken as one
+utterance (the Chrome truncation), the pre-cancel dropped, `onerror` dropped,
+the button gated on `insights` alone (the bug the stub found), the cleanup
+effect keyed on mount instead of `[insights]`, the count dropped from the
+beacon, and the event missing from either allowlist.
+
+It also pins **the ElevenLabs seam**: `window.speechSynthesis` is touched
+inside the component only to `.cancel()`, and `speakScript` has exactly one
+definition and one caller. A second call site is a second place to change when
+the voice changes.
+
+**Two `ci-check-render.js` cases**, and what they key on is decided by the
+harness: **headless Chromium reports `"speechSynthesis" in window` and
+`getVoices() === []`**, so `TTS_OK` is true and the button renders while
+nothing ever speaks. Asserting the speaking state would therefore be flaky —
+*a flaky assertion is not a guard* — so one case requires the button present
+with the insights and the other requires it **ABSENT** on a feed that answered
+with an empty array. The new insights stub sits **ABOVE** the generic
+`/\/api\//` catch-all, since `STUBS` is searched with `.find`; below it the
+page would get `{rows: []}` and every case would be testing the catch-all.
+
 ## AN ACTUAL MUSCO INTEGRATION, NOT THE REC ADD-ON (2026-09-11)
 
 Dan, the day after the removed-schedule fix: *"what are we doing for the

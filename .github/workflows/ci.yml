@@ -267,6 +267,9 @@ jobs:
       - name: Metabase window backstop (one bound is bounded server-side; blank-both still means all-time)
         run: node scripts/metabase-window-backstop.spec.js
 
+      - name: Insights read aloud (the spoken script; one utterance per line; the beacon reaches Slack)
+        run: node scripts/insights-listen.spec.js
+
       - name: Rental schedule columns (they grow into spare width; the page and the server agree on the name)
         run: node scripts/facility-columns.spec.js
 

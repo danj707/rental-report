@@ -4673,7 +4673,7 @@ setTimeout(() => { checkCardParamTypes().catch(() => {}); }, 150 * 1000).unref?.
 // Inert if the env var is unset. Fire-and-forget — never blocks or breaks logging.
 // To change what pings Slack, edit SLACK_NOTIFY. High-frequency events (view/fetch)
 // are debounced per org+report so Slack isn't a firehose.
-const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "campmap-filter", "campmap-amenity", "pdf", "excel", "print", "summary", "game", "map", "outdoor", "fields", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email", "checkin-loc", "checkin-member", "checkin-failed", "form-open", "epact", "settings-open", "settings-unlock", "settings-locked", "settings-save", "settings-reset", "deadlink", "generate", "wizard-save", "mb-autorenew", "mb-salesmix", "ft-export", "panel-csv", "intel-csv", "wizard-feedback", "roster-open", "report-csv"]);
+const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "campmap-filter", "campmap-amenity", "pdf", "excel", "print", "summary", "game", "map", "outdoor", "fields", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email", "checkin-loc", "checkin-member", "checkin-failed", "form-open", "epact", "settings-open", "settings-unlock", "settings-locked", "settings-save", "settings-reset", "deadlink", "generate", "wizard-save", "mb-autorenew", "mb-salesmix", "ft-export", "panel-csv", "intel-csv", "wizard-feedback", "roster-open", "report-csv", "insights-listen"]);
 const SLACK_DEBOUNCE_MS = { view: 30 * 60 * 1000, fetch: 30 * 60 * 1000,
   // A broken report stays broken. The health check only reports NEW failures,
   // but a flapping card would otherwise post every hour.
@@ -4688,6 +4688,10 @@ const SLACK_EVENT_META = {
   // WHICH chart someone needed the numbers out of — the most useful signal we
   // have about where the reports stop being enough on screen.
   "panel-csv":       { emoji: "\u{1F4C8}", verb: "downloaded chart data from" },
+  // Somebody had the insights READ TO THEM rather than reading them. Worth its
+  // own event because it says something no view count can: the panel was worth
+  // listening to while doing something else.
+  "insights-listen": { emoji: "\u{1F50A}", verb: "listened to Rec Insights on" },
   // Deliberately a louder glyph than panel-csv: this one carries PII.
   "intel-csv":       { emoji: "\u{1F4C7}", verb: "downloaded a contact list from" },
   // A custom data report's own CSV. These reports exist BECAUSE the export is
@@ -5080,6 +5084,12 @@ function notifySlack(rec) {
     const n = rec.bookings;
     const on = n == null ? "" : ` — ${n.toLocaleString()} field booking${n === 1 ? "" : "s"} in range`;
     text = `${meta.emoji} ${orgName} (\`${rec.org}\`) opened *Fields* on the facilities report${on}`;
+  } else if (rec.event === "insights-listen") {
+    // The COUNT is the whole reason this carries an extra: without it the
+    // message cannot separate a click from a listen.
+    const n = rec.insights;
+    const many = n == null ? "" : ` \u2014 ${n} insight${n === 1 ? "" : "s"}`;
+    text = `${meta.emoji} ${orgName} (\`${rec.org}\`) listened to Rec Insights on *${rec.report}*${many}`;
   } else if (rec.event === "panel-csv") {
     // NAME THE PANEL, or the message reads "downloaded chart data from
     // *facility*" and says nothing about which chart — which is the only part
@@ -8071,7 +8081,7 @@ app.post("/:org/:report/api/log", resolveOrg, (req, res) => {
   const { event, game, location, view } = req.query;
   // view-apply is events.jsonl-only by design — it is not in SLACK_NOTIFY, so
   // logEvent records it without pinging the feed (see the saved-views block).
-  const ALLOWED = ["excel", "print", "summary", "game", "map", "view-apply", "checkin-loc", "checkin-member", "checkin-failed", "form-open", "epact", "settings-open", "mb-autorenew", "mb-salesmix", "ft-export", "panel-csv", "intel-csv", "roster-open"];
+  const ALLOWED = ["excel", "print", "summary", "game", "map", "view-apply", "checkin-loc", "checkin-member", "checkin-failed", "form-open", "epact", "settings-open", "mb-autorenew", "mb-salesmix", "ft-export", "panel-csv", "intel-csv", "roster-open", "insights-listen"];
   if (!ALLOWED.includes(event)) return res.status(400).json({ ok: false, error: "Unknown event" });
   const ciN = Number(req.query.n);
   const extra = event === "game" && game ? { game: String(game).slice(0, 60) }
@@ -8092,6 +8102,11 @@ app.post("/:org/:report/api/log", resolveOrg, (req, res) => {
               // names, emails and phone numbers, so the segment and the head
               // count are the record of who took what — the thing that pays
               // for the download being direct at all.
+              // HOW MANY insights were read aloud. The count is the only part
+              // worth carrying: it separates somebody trying the button from
+              // somebody actually listening to the panel.
+              : event === "insights-listen"
+                ? { insights: Number.isFinite(ciN) && ciN >= 0 && ciN <= 99 ? Math.round(ciN) : undefined }
               : event === "intel-csv"
                 ? { segment: String(req.query.segment || "").slice(0, 60),
                     contacts: Number.isFinite(ciN) && ciN >= 0 && ciN <= 9999999 ? Math.round(ciN) : undefined }

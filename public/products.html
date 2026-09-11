@@ -407,6 +407,14 @@
     }
     @media (prefers-reduced-motion: reduce) { .insights-btn .sparkle { animation: none; opacity: 0; } .insights-btn:hover:not(:disabled) { transform: none; } }
     .insights-sub { font-size: 12px; color: #888; }
+    /* Listen sits beside Rec Insights, deliberately quieter than it: reading
+       the panel aloud is a way to consume what is already on screen, not a
+       second thing to generate. */
+    .listen-btn { background: #fff; color: #4338ca; border: 1px solid #c7d2fe; border-radius: 8px;
+                  padding: 7px 14px; font-size: 13px; font-weight: 600; cursor: pointer;
+                  font-family: inherit; transition: all .15s; }
+    .listen-btn:hover { background: #eef2ff; border-color: #a5b4fc; }
+    .listen-btn.speaking { background: #4338ca; color: #fff; border-color: #4338ca; }
     .insights-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 12px; }
     .insight-card { border: 1px solid #e5e7eb; border-left-width: 4px; border-radius: 8px; padding: 14px 16px; background: #fff; }
     .insight-opportunity { border-left-color: #10b981; } .insight-opportunity .insight-type { color: #059669; }
@@ -541,6 +549,51 @@ function SummaryCard({ color, label, value, sub }) {
   );
 }
 
+// ── READ THE INSIGHTS OUT LOUD ────────────────────────────────────────────
+// PROTOTYPE, this page only. The browser's own speechSynthesis: no API key,
+// no server route, no per-call cost, and the text never leaves the machine —
+// which matters more here than usual, because an insight quotes this org's
+// own revenue.
+//
+// `speakScript` is the ONE seam. Swapping to ElevenLabs is a different body
+// for that function — fetch the audio from a server route, play it — with
+// every call site, the script and the stop button unchanged.
+const TTS_OK = typeof window !== "undefined" && "speechSynthesis" in window;
+
+// The type is a VISUAL category and only two of its three values carry meaning
+// when spoken. Reading "signal" aloud before every third card is noise.
+function insightLines(ins) {
+  if (!ins) return [];
+  const lead = ins.type === "opportunity" ? "Opportunity. "
+             : ins.type === "risk" ? "Heads up. "
+             : "";
+  const out = [lead + String(ins.title || "").trim()];
+  if (ins.detail) out.push(String(ins.detail).trim());
+  // "Next step" rather than the on-screen arrow: an arrow read aloud is
+  // either silence or the word "arrow", and neither is what it means.
+  if (ins.action) out.push("Next step. " + String(ins.action).trim());
+  return out.map(t => t.replace(/\s+/g, " ").trim()).filter(Boolean);
+}
+
+// ONE UTTERANCE PER LINE, not one for the whole script. Chrome silently
+// truncates a long utterance at around fifteen seconds, so a single string
+// stops mid-sentence — which reads as the feature being broken rather than as
+// a browser limit. Short queued utterances also make Stop feel immediate.
+function speakScript(lines, onDone) {
+  if (!TTS_OK) { onDone(); return; }
+  window.speechSynthesis.cancel();   // never let two readings overlap
+  let i = 0;
+  const next = () => {
+    if (i >= lines.length) { onDone(); return; }
+    const u = new SpeechSynthesisUtterance(lines[i++]);
+    u.rate = 1.05;                   // default is a touch slow for prose
+    u.onend = next;
+    u.onerror = () => onDone();      // a failed voice must not leave it stuck
+    window.speechSynthesis.speak(u);
+  };
+  next();
+}
+
 function App() {
   const orgSlug = window.location.pathname.split('/').filter(Boolean)[0] || '';
   const def = getDefaultRange();
@@ -576,6 +629,7 @@ function App() {
   const [pdfLoading, setPdfLoading] = useState(false);
   const [expanded, setExpanded] = useState(() => new Set());
   const [insights, setInsights] = useState(null);
+  const [speaking, setSpeaking] = useState(false);
   const [insightsLoading, setInsightsLoading] = useState(false);
   const [insightsError, setInsightsError] = useState(null);
   const [insightsTraceId, setInsightsTraceId] = useState(null);
@@ -601,10 +655,10 @@ function App() {
     return () => document.removeEventListener('mousedown', onDocClick);
   }, []);
 
-  function logClientEvent(event) {
+  function logClientEvent(event, extraQs) {
     const parts = window.location.pathname.split('/').filter(Boolean);
     if (parts.length >= 2) {
-      fetch(withToken(`/${parts[0]}/${parts[1]}/api/log?event=${event}`), { method: 'POST' }).catch(() => {});
+      fetch(withToken(`/${parts[0]}/${parts[1]}/api/log?event=${event}${extraQs || ''}`), { method: 'POST' }).catch(() => {});
     }
   }
 
@@ -867,6 +921,28 @@ function App() {
     }
   }, [buildInsightsBlob]);
 
+  const stopSpeaking = useCallback(() => {
+    if (TTS_OK) window.speechSynthesis.cancel();
+    setSpeaking(false);
+  }, []);
+
+  const speakInsights = useCallback(() => {
+    if (!TTS_OK || !insights || !insights.length) return;
+    const lines = insights.reduce((acc, ins) => acc.concat(insightLines(ins)), []);
+    if (!lines.length) return;
+    setSpeaking(true);
+    speakScript(lines, () => setSpeaking(false));
+    logClientEvent('insights-listen', '&n=' + insights.length);
+  }, [insights]);
+
+  // Refreshing the insights must stop the old ones being read, or the panel is
+  // narrating numbers that are no longer on screen. Unmount cancels too:
+  // speechSynthesis hangs off the WINDOW, not off this page, so it carries on
+  // talking after a navigation otherwise.
+  useEffect(() => {
+    return () => { if (TTS_OK) window.speechSynthesis.cancel(); };
+  }, [insights]);
+
   function exportExcel() {
     logClientEvent('excel');
     if (byItem) {
@@ -1091,6 +1167,15 @@ function App() {
                                 <span className="sparkle">✦</span><span className="sparkle">✧</span><span className="sparkle">✦</span><span className="sparkle">✧</span><span className="sparkle">✦</span><span className="sparkle">✧</span>
 {insightsLoading ? 'Analyzing…' : (insights ? '↻ Refresh' : '✨ Rec Insights')}
               </button>
+              {insights && insights.length > 0 && !insightsLoading && TTS_OK && (
+                <button type="button"
+                        className={'listen-btn' + (speaking ? ' speaking' : '')}
+                        data-listen={speaking ? 'speaking' : 'idle'}
+                        onClick={speaking ? stopSpeaking : speakInsights}
+                        title={speaking ? 'Stop reading' : 'Read these insights out loud'}>
+                  {speaking ? '■ Stop' : '🔊 Listen'}
+                </button>
+              )}
               {insights && !insightsLoading && (
                 <span className="insights-sub">{'Analyzed ' + displayRows.length + ' products'}</span>
               )}
