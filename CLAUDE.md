@@ -142,6 +142,28 @@ name, because a rule that says `inset:0` renders an identical class.
   in `SLACK_NOTIFY`**: it is data for the readout, and one post per dismissal
   would drown the feed it exists to inform. The spec fails if it drifts in.
 
+### EDITING A LIVE SURVEY WOULD HAVE RE-KEYED ITS ANSWERS — found by reading my own diff
+
+The composer minted each question's id from its POSITION on save
+(`id: 'q'+(i+1)`). Fine for a new survey and wrong the moment one with
+responses is edited: insert a question at the top and **every answer below it
+files under the question one place down**, silently, and the readout cannot
+tell that from real data. It is the same defect as reading a submitted answer
+positionally, one surface earlier — and the readout is where it would actually
+be believed.
+
+So the id TRAVELS: `svyEdit` loads it, the save sends it back, and
+`normalizeSurveyQuestion` no longer defaults it at all — **an absent id means a
+NEW question and may mean nothing else.** `normalizeSurvey` mints past every id
+this survey has ever used, the **previous version's included**, because reusing
+the id of a question that was deleted would inherit its answers. A duplicate id
+is treated as unnamed and re-minted, since two questions sharing one would lose
+an answer set between them.
+
+Mutation-tested three ways, all failing by name: the ids re-numbered from the
+position (the bug as it was written), the composer dropping the id on load, and
+a new question allowed to reuse a deleted one's.
+
 ### The org landing page needed its own slug
 
 `/:org` has no second path segment and no `REPORT_DIRECTORY` entry, so the page
@@ -171,7 +193,7 @@ reproduce the bug has not tested the guard.*
 
 ### Guards
 
-`scripts/surveys.spec.js` (**72 assertions, in CI**). The source/unit half
+`scripts/surveys.spec.js` (**75 assertions, in CI**). The source/unit half
 LIFTS AND RUNS the model; the live half boots a real server and drives the real
 routes — publish, deliver, answer, dismiss, close, edit, retarget, and the
 readout. `SKIP_SOURCE=1` drops the source half.
@@ -185,7 +207,7 @@ sentence somebody typed. Mutating the branch away produces, verbatim,
 and the question never, which is the defect already fixed once in the Report
 Wizard's own thumbs branch.
 
-**Mutation-tested eighteen ways, all failing by name**: the public-page test
+**Mutation-tested twenty-one ways, all failing by name**: the public-page test
 dropped from `surveyFor` (the rule, gone), the middleware re-typing the three
 slugs, a closed survey silently accepting a late submit, the readout reverted
 to an ungated GET, a mean printed however few answers there are, NPS as a mean,
@@ -195,7 +217,9 @@ posting to Slack, editing forking a new survey and stranding its responses, the
 route leaning on the middleware above it for `no-store`, answers read
 positionally, the widget re-asking after a dismissal, the widget remembering
 before the server confirms, the org-dashboard slug drifting, the Slack branch
-falling into the generic line, and the free text dropped from the post.
+falling into the generic line, the free text dropped from the post, an edit
+re-numbering the questions from their position, the composer dropping the id on
+load, and a new question reusing a deleted one's id.
 
 **Seven `ci-check-render.js` cases**, over a new `/api/survey` stub — which
 **must sit above the generic `/api/` catch-all**, or that catch-all answers

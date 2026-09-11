@@ -4010,15 +4010,18 @@ function surveyClampStr(v, max) {
    respondent as a broken survey rather than as a question we forgot to
    finish. `yesno` supplies its own options so the composer cannot mis-type
    them, and so the readout can count Yes against No without guessing. */
-function normalizeSurveyQuestion(q, i) {
+function normalizeSurveyQuestion(q) {
   if (!q || typeof q !== "object") return null;
   const type = String(q.type || "");
   const spec = SURVEY_QUESTION_TYPES[type];
   if (!spec) return null;
   const prompt = surveyClampStr(q.prompt, 200);
   if (!prompt) return null;
+  // The id is deliberately NOT defaulted from the position here — see the
+  // minting block in normalizeSurvey. A question that arrives without one is a
+  // NEW question, and that is the only thing its absence may mean.
   const out = {
-    id: surveyClampStr(q.id, 40) || `q${i + 1}`,
+    id: surveyClampStr(q.id, 40) || "",
     type,
     prompt,
     required: !!q.required,
@@ -4049,14 +4052,37 @@ function normalizeSurvey(input, prev) {
   const rawQs = Array.isArray(input && input.questions) ? input.questions : [];
   const questions = [];
   for (let i = 0; i < rawQs.length && questions.length < SURVEY_MAX_QUESTIONS; i++) {
-    const q = normalizeSurveyQuestion(rawQs[i], i);
+    const q = normalizeSurveyQuestion(rawQs[i]);
     if (q) questions.push(q);
   }
   if (!questions.length) return { error: "Add at least one question that can be answered" };
-  const seen = new Set();
-  for (const q of questions) {            // ids address the answers; two the same loses one
-    while (seen.has(q.id)) q.id += "_";
-    seen.add(q.id);
+
+  /* IDS ARE THE ONLY LINK BETWEEN A STORED ANSWER AND THE QUESTION THAT ASKED
+     IT, so minting them from the question's POSITION is wrong the moment a
+     survey with responses is edited: insert a question at the top and every
+     answer below it shifts one question down, silently, and the readout cannot
+     tell that from real data. It is the same defect as reading a submitted
+     answer positionally, one surface earlier — and the readout is where it
+     would actually be believed.
+
+     So a question the composer loaded keeps its id, and a NEW one is minted
+     past every id this survey has ever used — the incoming set AND the
+     previous version's, because reusing the id of a question that was deleted
+     would inherit its answers. */
+  const taken = new Set([
+    ...questions.map(q => q.id),
+    ...((prev && prev.questions) || []).map(q => q.id),
+  ]);
+  const used = new Set();
+  let next = 1;
+  for (const q of questions) {
+    // Two questions carrying the same id would lose one of their answer sets,
+    // so a duplicate is treated as unnamed and minted a fresh one.
+    if (q.id && !used.has(q.id)) { used.add(q.id); continue; }
+    while (taken.has("q" + next) || used.has("q" + next)) next++;
+    q.id = "q" + next;
+    used.add(q.id);
+    taken.add(q.id);
   }
   const t = (input && input.targeting) || {};
   const orgs = (Array.isArray(t.orgs) ? t.orgs : []).filter(s => ORGS[s]);
@@ -18192,8 +18218,12 @@ app.get("/", (req, res) => {
     SVY.editing = id;
     document.getElementById('svy-title').value = s.title || '';
     document.getElementById('svy-intro').value = s.intro || '';
+    // THE ID TRAVELS. Dropping it here and letting the save mint a fresh one
+    // from the position re-keys every answer already collected: insert a
+    // question at the top and the readout files each answer under the question
+    // below it, silently. The server mints only for questions with no id.
     SVY.qs = (s.questions||[]).map(function(q){
-      return { type:q.type, prompt:q.prompt, required:!!q.required, options:(q.options||[]).slice() };
+      return { id:q.id, type:q.type, prompt:q.prompt, required:!!q.required, options:(q.options||[]).slice() };
     });
     if (!SVY.qs.length) SVY.qs = [{ type:'rating5', prompt:'', required:false, options:[] }];
     var orgs = (s.targeting && s.targeting.orgs) || [];
@@ -18222,8 +18252,8 @@ app.get("/", (req, res) => {
       title: document.getElementById('svy-title').value,
       intro: document.getElementById('svy-intro').value,
       status: status,
-      questions: SVY.qs.map(function(q, i){
-        return { id: 'q'+(i+1), type:q.type, prompt:q.prompt, required:!!q.required,
+      questions: SVY.qs.map(function(q){
+        return { id: q.id || undefined, type:q.type, prompt:q.prompt, required:!!q.required,
                  options:(q.options||[]).map(function(o){ return String(o).trim(); }).filter(Boolean) };
       }),
       targeting: {

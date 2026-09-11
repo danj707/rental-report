@@ -153,6 +153,45 @@ test("a survey with no title is refused", () => {
 });
 
 /* ── Ids address the answers ──────────────────────────────────────── */
+test("EDITING KEEPS EACH QUESTION'S ID, or every answer re-keys under its neighbour", () => {
+  const first = M.normalizeSurvey(draft({
+    questions: [q({ prompt: "Rate it" }), q({ type: "text", prompt: "Why?" })],
+  })).survey;
+  const ids = first.questions.map(x => x.id);
+  // Insert a NEW question at the top, exactly as the composer would send it.
+  const again = M.normalizeSurvey({
+    title: "T",
+    questions: [
+      q({ prompt: "Brand new" }),                                   // no id — new
+      { id: ids[0], type: "rating5", prompt: "Rate it" },
+      { id: ids[1], type: "text", prompt: "Why?" },
+    ],
+  }, first).survey;
+  assert.strictEqual(again.questions[1].id, ids[0], "the first question lost its id");
+  assert.strictEqual(again.questions[2].id, ids[1], "the second question lost its id");
+  assert.ok(!ids.includes(again.questions[0].id), "the new question took an id that already has answers");
+});
+test("...and a NEW question never reuses the id of a deleted one", () => {
+  const first = M.normalizeSurvey(draft({
+    questions: [q({ prompt: "A" }), q({ prompt: "B" }), q({ prompt: "C" })],
+  })).survey;
+  const bId = first.questions[1].id;
+  const again = M.normalizeSurvey({
+    title: "T",
+    questions: [
+      { id: first.questions[0].id, type: "rating5", prompt: "A" },
+      q({ prompt: "New one" }),                                     // B was deleted
+    ],
+  }, first).survey;
+  assert.notStrictEqual(again.questions[1].id, bId,
+    "the new question inherited the deleted question's answers");
+});
+test("the composer carries the id through an edit rather than re-numbering", () => {
+  const edit = srv.slice(srv.indexOf("function svyEdit("), srv.indexOf("async function svySave("));
+  assert.ok(/return \{ id:q\.id,/.test(edit), "svyEdit must load each question's id");
+  const save = srv.slice(srv.indexOf("async function svySave("), srv.indexOf("async function svyStatus("));
+  assert.ok(!/id: 'q'\+\(i\+1\)/.test(save), "an id minted from the position re-keys the answers");
+});
 test("two questions given the same id are separated — one id would lose an answer", () => {
   const { survey } = M.normalizeSurvey(draft({
     questions: [q({ id: "a" }), q({ id: "a", prompt: "And now?" })],
