@@ -60,6 +60,12 @@
       "note": "TIMEOUT RAISED 60 -> 180 on 2026-08-31 to match the app's own budget (60s first try + 120s retry). Measured four times that day on identical input: 31.0s, 41.5s, 46.8s, 71.3s — always the same 5,085 rows. At 60s this row failed for something users never see, which is the slow-vs-broken distinction the health check already draws."
     },
     {
+      "label": "facility / midland (the ONLY org wired for Musco - 73 sites mapped in site_lighting_configuration, and the only org that has ever carried a live lighting schedule. Had NO manifest coverage at all until 2026-09-11, so a re-Texted date tag or broken SQL would have taken the rental schedule down for the one org that depends on the lighting columns with nothing else noticing. Deliberately DATELESS: the current-month default returns ~1,471 reservations here, and pinning it to the December window holding the lit row would fail the day that test rental is deleted.)",
+      "card": "f6787f45-3a36-4501-8a5f-b0f647451a85",
+      "org": "8a8a4fb1-c184-4196-a878-75c775ce6252",
+      "timeout": 120
+    },
+    {
       "label": "facility / smyrna (weekly rental schedule + Paid? column)",
       "card": "f6787f45-3a36-4501-8a5f-b0f647451a85",
       "org": "efc0724c-8f32-481a-bab3-fc19c724f3a7"

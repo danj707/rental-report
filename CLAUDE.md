@@ -78,12 +78,116 @@ unconfirmed rather than drawing the confident lamp**, because the two ways to be
 wrong are not symmetric: a healthy row shown as unconfirmed is noise, a broken
 one shown as confident is the dark field.
 
-**SAID PLAINLY BECAUSE IT WILL BE READ AS MEASURED AND IS NOT:** `sync_status`
-has only ever held `'removed'`, **`synced_at` is NULL on all 9 rows and
-`last_error` is NULL on all 9.** `'synced'` and `'error'` come from the staff
-MCP tool's own documentation. One map is the place to correct it once Midland
-has a live schedule — Dan: *"I'll circle back once they get setup in the next
-few days."*
+**~~SAID PLAINLY BECAUSE IT WILL BE READ AS MEASURED AND IS NOT~~ — HALF OF IT
+IS MEASURED NOW (2026-09-11, same day).** Dan configured the first live
+schedule that afternoon and sent it over: *"here's a live reservation in
+midland with the musco lighting configured. check the sql and confirm this is
+showing up in that output, and on the facility rental report."*
+
+**It does, and it is the exact shape the feature was built for and could not
+test.** `Dan Test Lighting` — Baseball PRACTICE Field, Beal LL Grass Field 7,
+Wed 16 Dec 2026 6pm-10pm, Sunset → End of reservation:
+
+| | |
+|---|---|
+| `sync_status` | **`synced`** — the first non-`removed` status ever written |
+| `start_source` / `end_source` | `sunset` / `reservation` |
+| `musco_start_value` / `_end_value` | `'suns'` / `'2200'` |
+| `lit_from` | **NULL** — sunset stores no instant, exactly as predicted |
+| `lit_until` | `2026-12-17T04:00:00Z`, `timezone` `America/Chicago` |
+| `synced_at` | set. `last_error` NULL |
+
+Card 17294 returns it with **`Lit Window = "10:00pm"`** — the bare one-sided
+string — plus `Lit Start Source = 'sunset'` and `Lighting Sync = 'synced'`. The
+page's own helpers, lifted from the bytes production serves and run against
+that row, render **`💡 Lit: Sunset - 10:00pm`**, the yellow bar, and `synced`
+in the Excel export. **Without commit 2 it would have printed `💡 Lit: 10:00pm`
+on a booking that ENDS at 10** — the whole point, now demonstrated rather than
+argued.
+
+**And the timezone half is proven on real data for the first time too.**
+`Lit Until` comes back `2026-12-16T20:00:00-08:00` (Metabase renders Pacific),
+so a browser parsing the raw instant shows **8:00pm**; the facility is Central
+and the truth is **10:00pm**, which is what the row's own `End` cell says two
+columns over. Only the pre-formatted column makes those agree.
+
+**So of the 10 schedules on the platform, 9 are `removed` and 1 is `synced`.**
+`'synced'` is measured. **`'error'` is still documentation only** — `last_error`
+is NULL on all 10 and nothing has ever failed — which is exactly why an
+unrecognised status still refuses the lamp. `LIGHTING_SYNC_STATES` is still the
+one place to correct it.
+
+**The golden row is kept in the spec verbatim**, as the only evidence in this
+repo that the pipeline works on something real. Mutation-checked **in
+isolation** (not merely through the suite, where three earlier assertions catch
+the same mutations first and the golden claims are never reached): the sunset
+word unmapped, `synced` not drawing the lamp, and the clock beating the rule
+all fail it, and the first of those reproduces the live degradation exactly —
+`"10:00pm"`.
+
+**MIDLAND HAD NO MANIFEST ROW AT ALL**, found doing this. The two facility rows
+are apex and smyrna and both are dateless, so the daily check has never probed
+the one org wired for Musco. Added, **deliberately dateless**: the current-month
+default returns ~1,471 reservations there, where pinning it to the December
+window holding the lit row would fail the day that test rental is deleted.
+36 → 37.
+
+### THE CONTROL HAS TO NAME MUSCO — the predicate was right, the LABEL was not
+
+Dan, on the shipped toolbar: *"How are we filtering for when musco lighting is
+configured. An 'add on' for field lighting is NOT the same as the musco/rec
+integration."*
+
+`muscoLit()` never reads `r.addons` and there are guards that fail if it ever
+does — so the filter was correct. **The button said `💡 Lighting`, and the
+add-on picker two controls over builds its options FROM THE ROWS**, so on any
+org that bills for lighting a checkbox reading `Field Lights` sits inches from
+it. They answer opposite questions — the add-on says somebody was CHARGED, the
+filter says a schedule will turn the lights ON — and nothing on screen
+separated them. **Correct behaviour behind an ambiguous label is
+indistinguishable from the bug.** It reads `Musco Lighting` / `Musco Only` now,
+and the tooltip names the distinction rather than leaving it to be inferred.
+
+**ABSENT, NOT DISABLED, is unchanged**: `hasLighting` gates it on there being a
+schedule in the window, and `hasLighting` reads `muscoLit`, so an add-on can
+never summon the control either. It did not render for any org until Midland's
+first schedule landed, which is also part of why Dan could not find it.
+
+Guarded by the naming assertions in `facility-lighting.spec.js` and two render
+cases — one requiring the button to name Musco **AND** the `Field Lights`
+string to be on screen (asserting the naming alone proves nothing about
+ambiguity if the collision is not there), one clicking it and keying on the row
+COUNT plus the add-on row's absence. Each browser mutation fails exactly one
+case by name.
+
+**THE BUTTON READS `💡 Musco`, AND IT STAYS A TOGGLE.** I built the natural
+follow-on — a checkbox picker matching the three multi-selects beside it, with
+options from the rows (`Rejected` / `Unconfirmed` / `Synced`) so you could
+isolate a broken schedule — and **Dan turned it down**: *"I'm fine leaving it
+the way it is now with the button, scrap the other adjustments. Only item,
+rename it 'Musco', not 'Lighting'."* Recorded because the work was real and the
+reasoning is worth not re-deriving:
+
+- A picker's **empty state would have been the opposite of its neighbours'**.
+  Every other filter here seeds all-ticked and narrows as you untick; seeding
+  Musco that way opens the report already narrowed to lit rentals for the one
+  org that has them. Nothing ticked would have to mean *every* rental, so
+  all-ticked and empty become different answers and `All` stops being the
+  redundant twin of `Clear`. Legible, but a rule that contradicts the three
+  controls beside it.
+- **It would have made "show me the broken ones" reachable**, which the toggle
+  structurally cannot. Worth revisiting only if an org ever has enough rejected
+  schedules for that to be a real query — today the answer is the ⚠ on the row.
+
+**AND IT SURFACED ONE THING THAT IS STILL TRUE AND STILL NOT FIXED:
+`filterLighting` PASSES NONE OF THE FOUR GATES.** It is local state and reaches
+neither the URL, the share link, the saved view, nor the PDF — so a reader who
+narrows to lit rentals and hits Print gets **every rental back, silently**. That
+is this file's own standing rule broken on a live control. Fixing it is four
+one-line additions (`getParams`, the share builder, `currentFilterParams`,
+`generatePdf`'s forward list) plus `SAVED_VIEW_PARAMS.facility` — and it needs a
+decision first, because the toggle's saved-view semantics are the same
+empty-vs-all question the picker raised. Not done; not forgotten.
 
 ### A REVERSAL, STATED: "Lit Only" still means HAS a schedule
 

@@ -13,8 +13,9 @@
 //      deleting the row. Card 17294 SELECTED that column all along and then
 //      tested only whether the row EXISTED, so a removed schedule kept its 💡
 //      and kept the rental inside the "Lit Only" filter. Measured 2026-09-10:
-//      all 9 lighting schedules on the platform are 'removed', so this column
-//      has never been right for anybody.
+//      all 9 lighting schedules on the platform were 'removed', so this column
+//      had never been right for anybody. (The tenth arrived 2026-09-11 and is
+//      'synced' — see the golden row at the foot of this file.)
 //
 //   2. lit_from/lit_until are timestamptz, and the page parsed them with
 //      `new Date(s).getHours()` — the READER'S zone. Midland's 6:00pm Central
@@ -324,11 +325,16 @@ ok(/field id/.test(lightingSyncState({ lightingSync: "error", lightingError: "un
    "the vendor's message should ride along with an error");
 
 // An unrecognised status is reported as unconfirmed rather than drawn as a
-// confident lamp. This is the load-bearing one: 'synced' and 'error' come from
-// the staff MCP tool's DOCUMENTATION and have never been seen in data — no
-// schedule on the platform has ever carried a non-'removed' status, and
-// synced_at is NULL on all 9 — so the unknown branch is the one that will run
-// first if the real vocabulary differs.
+// confident lamp.
+//
+// CORRECTED 2026-09-11: 'synced' is now MEASURED, not documentation. Midland
+// configured the first live schedule that afternoon and it carries
+// sync_status = 'synced' with synced_at populated and last_error NULL — so of
+// the 10 schedules on the platform, 9 are 'removed' and 1 is 'synced', and the
+// map's happy path is confirmed against real data. 'error' is still
+// documentation only: last_error is NULL on all 10 and no schedule has ever
+// failed, so the unknown branch is what would run if that spelling is wrong.
+// That asymmetry is why an unrecognised status still refuses the lamp.
 ok(lightingSyncState({ lightingSync: "whatever" }).tone !== "ok",
    "an unrecognised status must not report as confirmed");
 ok(lightingSyncState({ lightingSync: "" }).tone !== "ok",
@@ -410,8 +416,14 @@ ok(!/tone\s*===\s*'ok'/.test(filterBlock) && !/lightingSyncState/.test(filterBlo
 const btnStart = src.indexOf("className={'musco-btn'");
 ok(btnStart > 0, "the Musco filter button should be in the toolbar");
 const btnJsx = src.slice(btnStart, btnStart + 700);
-ok(/Musco Lighting/.test(btnJsx),
-   "the filter button should name Musco when off, not just 'Lighting'");
+// EXACTLY 'Musco'. Dan, 2026-09-11: "I'm fine leaving it the way it is now
+// with the button ... Only item, rename it 'Musco', not 'Lighting'." The
+// quoted form is what makes this discriminating: 'Musco Lighting' does not
+// match /'Musco'/, so both the old label and the longer one fail here — a
+// second assertion for the longer form was redundant and was caught by this
+// one, which is not the same as being guarded.
+ok(/'Musco'/.test(btnJsx),
+   "the filter button should read exactly 'Musco' — not 'Lighting', not 'Musco Lighting'");
 ok(/Musco Only/.test(btnJsx),
    "the filter button should name Musco when on, not just 'Lit Only'");
 ok(!/>\s*Lighting\s*</.test(btnJsx) && !/'Lighting'/.test(btnJsx),
@@ -428,5 +440,69 @@ ok(/\{hasLighting && \(/.test(src),
    "the Musco filter should be gated on there being a schedule to filter to");
 ok(/hasLighting\s*=\s*useMemo\(\(\)\s*=>\s*rows && rows\.some\(muscoLit\)/.test(src),
    "hasLighting should read muscoLit, so an add-on can never summon the control");
+
+// ── THE FIRST REAL ONE, END TO END ────────────────────────────────────────
+// Everything above this point was written against a shape nobody had ever
+// produced: at the time, all 9 lighting schedules on the platform were
+// 'removed', and 'synced' came from the staff MCP tool's documentation rather
+// than from data. On 2026-09-11 Midland configured one — "Dan Test Lighting",
+// Baseball PRACTICE Field, Beal LL Grass Field 7, Wed 16 Dec 2026 6pm-10pm,
+// Sunset -> End of reservation — and it is the FIRST `synced` row there has
+// ever been.
+//
+// This is that row, verbatim, as card 17294 returned it through the public
+// endpoint. It is kept as a golden fixture because it is the only evidence in
+// this repo that the pipeline works on something real, and because it is
+// exactly the shape the whole feature was built around and could not test:
+//
+//   Lit From        NULL            <- sunset stores no instant
+//   Lit Until       timestamptz     <- Pacific-rendered by Metabase
+//   Lit Window      "10:00pm"       <- CONCAT_WS yields the END ALONE
+//   Lit Start Source "sunset"
+//   Lighting Sync   "synced"
+//
+// Printed raw, "Lit: 10:00pm" says the lights come ON at 10 — on a booking
+// that ENDS at 10. The correct reading is "Sunset - 10:00pm", and only the
+// source column can tell those apart.
+const LIVE = {
+  lighting: "Yes",
+  lightingSync: "synced",
+  litWindow: "10:00pm",
+  litFrom: "",
+  litUntil: "2026-12-16T20:00:00-08:00",
+  litStartSource: "sunset",
+  litEndSource: "reservation",
+  lightingError: "",
+  addons: "",
+};
+ok(muscoLit(LIVE) === true,
+   "the live Midland schedule should read as Musco-lit");
+ok(litWindowLabel(LIVE) === "Sunset - 10:00pm",
+   "the live sunset row should render 'Sunset - 10:00pm', not the bare '10:00pm' that means the opposite");
+const liveState = lightingSyncState(LIVE);
+ok(liveState.status === "synced" && liveState.tone === "ok" && liveState.icon === "\u{1F4A1}",
+   "a synced schedule should draw the confident lamp — this is the first one on the platform");
+
+// THE TIMEZONE HALF, ALSO PROVEN FOR THE FIRST TIME ON REAL DATA. The raw
+// instant is 2026-12-17T04:00:00Z. Metabase renders it Pacific, so a browser
+// parsing "Lit Until" by hand shows 8:00pm; the schedule's own timezone is
+// America/Chicago and the truth is 10:00pm, which is what the reservation's
+// own End cell says two columns over. The pre-formatted column is the only
+// reason those agree.
+// The row's own End cell reads "10:00pm" (card 17294 emits "10:00pm" from the
+// tsrange, and formatTime strips the leading zero). The lit end has to AGREE
+// with it on the same row — the disagreement Dan actually spotted.
+const liveEnd = sandbox.formatTime("10:00pm");
+ok(litWindowLabel(LIVE).endsWith(liveEnd),
+   "the lit end should agree with the reservation's own End cell on the same row");
+ok(litWindowLabel(LIVE).indexOf("8:00pm") < 0,
+   "the note must not fall back to the reader-zone parse of Lit Until (Pacific reads 8:00pm; the truth is 10:00pm Central)");
+
+// And the counterfactual, so the golden row cannot quietly stop discriminating:
+// drop the source column (a pre-column feed, i.e. any response cached before
+// the 2026-09-11 paste) and the same row degrades to the bare end time.
+const PRE = Object.assign({}, LIVE, { litStartSource: "", litEndSource: "" });
+ok(litWindowLabel(PRE) === "10:00pm",
+   "a pre-column feed should degrade to the bare end rather than inventing a start");
 
 console.log(n + " assertions passed.");

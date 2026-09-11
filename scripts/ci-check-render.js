@@ -2349,7 +2349,10 @@ const CASES = [
       await page.evaluate(() => {
         const btn = document.querySelector('[data-musco-filter]');
         const txt = btn ? btn.textContent.trim() : '';
-        document.body.setAttribute('data-musco-btn', txt.indexOf('Musco') >= 0 ? '1' : '0');
+        // EXACT, not a substring. Dan: "rename it 'Musco', not 'Lighting'" —
+        // and an indexOf('Musco') check passes just as happily on "Musco
+        // Lighting", which is the longer label he turned down.
+        document.body.setAttribute('data-musco-btn', /\u{1F4A1}\s*Musco$/u.test(txt) ? '1' : '0');
         // The add-on picker builds its options from the rows, so this is the
         // collision the label has to survive — assert it is actually there,
         // or the naming assertion above proves nothing about ambiguity.
