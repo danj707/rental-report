@@ -1816,15 +1816,51 @@ pairs intact. **THREE tags, not six** — the card was updated rather than
 re-saved on top of an earlier push — but all three came back **`text`**, so both
 dates need the flip.
 
-### STILL OWED
+### SIGNED OFF AFTER THE FLIP (2026-09-11)
 
-- **The flip**, then a cache-independent sign-off through the public endpoint
-  for pawnee, norman and apex. Until then the report is down.
-- **An apex verdict.** apex over September ran 727 rows in 41.8s here on a loaded
-  replica; v6 at apex has never been measured at all. Do not claim apex is fixed
-  until the post-flip probe says so.
-- The `pawnee, THIRTEEN MONTHS` manifest row is the one that discriminates —
-  re-run `verify-report-live` over the whole manifest after the flip.
+Dan flipped both dates. Cache-independently through the public endpoint, with
+the app's own parameter shape, one probe at a time:
+
+| probe | result |
+|---|---|
+| pawnee, THIRTEEN MONTHS (the manifest's discriminating row) | **100 rows in 10.9s** |
+| **norman, the window the PAGE sends** (current month) | **275 rows in 3.8s** |
+| apex, current month | **730 rows in 24.2s** |
+| norman, THIRTEEN MONTHS | 20,545 rows in **88.5s**, and **196.2s** on a re-run |
+
+**100 rows at pawnee is the same figure recorded for v6 over that exact
+window** — the additive proof, now on live data rather than in a fingerprint.
+
+**THE apex VERDICT, which the list above refused to write before the flip: apex
+is fine.** 730 rows in 24.2s against 727 in 41.8s pre-flip here, and v6 at apex
+was never measured at all — so this is a measurement where there was none,
+not an improvement claim.
+
+### THE 13-MONTH NORMAN NUMBER IS TRANSFER, NOT THE QUERY — and the re-run proves it
+
+88.5s then **196.2s for the identical 20,545 rows** is a 2.2x spread on input
+that cannot have changed, which is already the tell. Run down rather than waved
+at as load, one probe at a time:
+
+| norman, thirteen months | |
+|---|---|
+| `win` alone (the 132 MB purchases view) | **0.4s**, 20,546 rows |
+| the `tx_oi` payment arm alone | **7.4s**, 20,511 groups |
+| **the card's WHOLE final SELECT**, literals substituted, `ORDER BY` executing, inside a counting wrapper | **3.6s**, 20,546 rows |
+
+So **the database work is 3.6 seconds** and the rest of that wall clock is
+Metabase serialising 20,546 rows × 30 columns to JSON and shipping them. **v7.1
+neither caused that nor fixes it** — v6 paid the same transfer for the same row
+set — and the app never asks for it anyway: `defaultDates()` is the current
+calendar month, which is the 3.8s row above. Worth stating because a 196s
+figure in a sign-off table reads as a regression, and the counting wrapper is
+what separates the two.
+
+**The arm's own money ties**: $407,034.50 paid / **$6,698.00 refunded**, against
+$406,353.50 / $6,698.00 measured on 2026-09-06. Refunds identical to the cent;
+paid is $681 higher because the window runs to 2026-09-30 and September is still
+OPEN. Never diff an open window against itself across two reads — the
+Clarksville rule, and the reason to check before reporting a delta as a diff.
 
 ## Card 17301 v7 — PUSHED AND IT IS A REGRESSION (2026-09-04)
 

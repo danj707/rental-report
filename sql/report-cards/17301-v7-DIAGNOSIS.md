@@ -178,6 +178,13 @@ The shape is no longer the unknown. Only the proof is.
 - **The push and the flip.** Pushed 2026-09-11, read back byte-identical, three
   tags — all `text`, so both dates need the UI flip. The report is down for all
   29 orgs until then (`An error occurred. (HTTP 400)` in 0.1s).
+- **The flip, and the sign-off.** Both tags flipped 2026-09-11. Through the
+  public endpoint with the app's own parameter shape: pawnee 13mo **100 rows in
+  10.9s** (the figure recorded for v6 over that window), **norman over the
+  window the page actually sends 275 rows in 3.8s**, apex September 730 rows in
+  24.2s. The 13-month norman probe reads 88.5s and 196.2s on identical input —
+  that is JSON transfer of 20,546 rows, not the query: the card's whole final
+  SELECT with literals, inside a counting wrapper, is **3.6s**.
 
 **A method note worth keeping.** Any query touching `materialized.item_log_report`
 costs one full seq scan — 31.9s for pawnee alone on this replica — so the
