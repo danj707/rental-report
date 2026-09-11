@@ -261,6 +261,12 @@ jobs:
       - name: GL code multi-select (unmapped money is an option; None sticks; one menu)
         run: node scripts/gl-code-filter.spec.js
 
+      - name: Report window (a half-open range is refused; every export states the window it loaded)
+        run: node scripts/report-window.spec.js
+
+      - name: Metabase window backstop (one bound is bounded server-side; blank-both still means all-time)
+        run: node scripts/metabase-window-backstop.spec.js
+
       - name: Rental schedule columns (they grow into spare width; the page and the server agree on the name)
         run: node scripts/facility-columns.spec.js
 

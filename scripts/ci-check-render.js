@@ -1375,6 +1375,24 @@ const STUBS = [
   { match: /\/facilities\/api\/campsites/, body: () => campsitesGeo },
   { match: /\/waitlist\/api\/data/, body: () => ({ rows: waitlistRows(), meta: { org_id: "org-uuid-1" } }) },
   { match: /\/gl\/api\/data/, body: () => ({ rows: glRows(), meta: { org_id: "org-uuid-1" } }) },
+  /* Product Sales — the report Marina at Norman exported as "August" and got
+     Aug 1 → today from, because her End Date box was empty.
+
+     ABOVE the generic /api/data stub on purpose: STUBS is searched with .find
+     and /\/api\/data/ matches this path too, so a stub registered below it
+     answers first and the page renders another report's shape.
+
+     The fixture is deliberately SIX rows over two dates with distinct values,
+     so a workbook whose table lands at the wrong row cannot still look right —
+     the header and the first data row are both asserted by position. */
+  { match: /\/products\/api\/data/, body: () => ({
+      rows: [
+        { Date: "2026-08-31", "Product Name": "Open Swim (Ages 18-49)", "Desk Location": "Westwood Admissions 1", "Qty Sold": 41, "Revenue ($)": 410, "Refunds ($)": 10, "Net Revenue ($)": 400 },
+        { Date: "2026-08-31", "Product Name": "Morning Toddler Time",   "Desk Location": "Westwood Admissions 5", "Qty Sold": 12, "Revenue ($)": 60,  "Refunds ($)": 0,  "Net Revenue ($)": 60 },
+        { Date: "2026-08-02", "Product Name": "Open Swim (Ages 4-17)",  "Desk Location": "Westwood Admissions 2", "Qty Sold": 23, "Revenue ($)": 184, "Refunds ($)": 8,  "Net Revenue ($)": 176 },
+        { Date: "2026-08-01", "Product Name": "WFAC Pizza Pack",        "Desk Location": "Concession Office",     "Qty Sold": 2,  "Revenue ($)": 114.94, "Refunds ($)": 0, "Net Revenue ($)": 114.94 },
+      ],
+      meta: { org_name: "City of Norman", org_id: "org-uuid-1" } }) },
   /* Card 21055, the money half of the by-month panel. MUST PEAK IN A DIFFERENT
      MONTH FROM THE ACTIVITY SERIES — August here against September in
      programRows() — because that disagreement is the entire reason the panel
@@ -4498,6 +4516,113 @@ const CASES = [
   // select all, and individual checkboxes." This report had NO render case at
   // all before today.
   { name: "gl · the rollup renders", path: "/{org}/gl", needs: "[data-glcode-btn]" },
+  /* ── THE REPORT WINDOW ────────────────────────────────────────────────────
+     Marina at Norman asked Product Sales for 1–31 August and got 1 August →
+     today: $96,293 against August's real $82,258, seventeen per cent high, in a
+     file she had named "Aug 2026". Her End Date box was empty, the page omitted
+     the blank date from the query string, and the card's optional end bound
+     dropped out.
+
+     NO SOURCE ASSERTION CAN SEE EITHER HALF OF THE FIX. A gated button and an
+     ungated one are the same markup until React renders them, and a workbook
+     whose table lands two rows off still contains every value — only the bytes
+     say where they landed. */
+  { name: "products · a half-open window refuses Run",
+    path: "/{org}/products",
+    act: async p => {
+      await p.waitForSelector(".btn-run", { timeout: 45000 });
+      // Clear the End box the way a person does, then let React commit. Setting
+      // .value directly is ignored by a controlled input — it tracks its own
+      // value internally — so this focuses the field and clears it by keyboard.
+      await p.evaluate(() => {
+        const boxes = Array.from(document.querySelectorAll('.toolbar input[type="date"]'));
+        const el = boxes[boxes.length - 1];
+        const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+        setter.call(el, "");
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+        el.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+      await p.waitForFunction(() => !!document.querySelector("[data-window-problem]"), { timeout: 15000 });
+      // Stamp the button's DISABLED state, because "a warning rendered" passes
+      // just as happily on a page that still lets you run the query.
+      await p.evaluate(() => {
+        const b = document.querySelector(".btn-run");
+        document.body.setAttribute("data-run-disabled", b && b.disabled ? "1" : "0");
+      });
+    },
+    needs: 'body[data-run-disabled="1"] [data-window-problem]' },
+
+  /* The reason has to NAME what the reader is about to get. "Pick an end date"
+     is a rule; "this runs through today" is the thing that was wrong with her
+     file, and it is the difference between a control that teaches and one that
+     just says no. */
+  { name: "products · the refusal says what would have happened",
+    path: "/{org}/products",
+    act: async p => {
+      await p.waitForSelector(".btn-run", { timeout: 45000 });
+      await p.evaluate(() => {
+        const boxes = Array.from(document.querySelectorAll('.toolbar input[type="date"]'));
+        const el = boxes[boxes.length - 1];
+        const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value").set;
+        setter.call(el, "");
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+      await p.waitForFunction(() => {
+        const n = document.querySelector("[data-window-problem]");
+        return n && /through today/.test(n.textContent);
+      }, { timeout: 15000 });
+      await p.evaluate(() => document.body.setAttribute("data-win-msg", "1"));
+    },
+    needs: 'body[data-win-msg="1"]' },
+
+  /* THE BYTES, not "an Excel button exists". This reads the payload the popup
+     is handed and checks WHERE the table landed: the window on line 1, a blank
+     line 2, the header on line 3 and a real data row on line 4. An off-by-two
+     anywhere in the prelude moves all four.
+     (The number FORMATS the row-index loops apply are not in the TSV; those
+     bounds are pinned by report-window.spec.js, which was mutation-tested
+     against the naive `<= dataRows.length` bound.) */
+  { name: "products · excel carries the window it loaded",
+    path: "/{org}/products?start_date=2026-08-01&end_date=2026-08-31",
+    act: async p => {
+      await p.waitForSelector(".btn-run", { timeout: 45000 });
+      await p.evaluate(() => {
+        window.__payload = null;
+        window.open = () => ({
+          document: { write() {}, close() {} },
+          set __recExport(v) { window.__payload = v; },
+          get __recExport() { return window.__payload; },
+        });
+      });
+      const clicked = await p.evaluate(() => {
+        const b = Array.from(document.querySelectorAll("button"))
+          .find(x => /excel/i.test(x.textContent));
+        if (!b) return false;
+        b.click();
+        return true;
+      });
+      if (!clicked) return;
+      await p.waitForFunction(() => !!window.__payload, { timeout: 15000 });
+      await p.evaluate(() => {
+        const p2 = window.__payload;
+        const lines = String(p2.tsv || "").split("\n");
+        const set = (k, v) => { if (v) document.body.setAttribute(k, v); };
+        set("data-px-title", /Aug 1, 2026/.test(lines[0]) && /Aug 31, 2026/.test(lines[0]) ? "1" : "");
+        set("data-px-blank", (lines[1] || "").replace(/\t/g, "").trim() === "" ? "1" : "");
+        set("data-px-hdr",   /^Date\t/.test(lines[2] || "") ? "1" : "");
+        set("data-px-row",   /Open Swim/.test(lines[3] || "") ? "1" : "");
+      });
+    },
+    needs: 'body[data-px-title="1"][data-px-blank="1"][data-px-hdr="1"][data-px-row="1"]' },
+
+  /* BOTH BLANK STAYS LEGAL, and only a browser can show it. waitlist opens
+     all-time and carries its own "Clear dates" button, so a rule tightened into
+     "no blank dates" would empty this report for every org — the page must
+     still render rows with nothing in either box. */
+  { name: "waitlist · all-time is still allowed",
+    path: "/{org}/waitlist",
+    needs: "table tbody tr", absent: "[data-window-problem]" },
+
   // EVERYTHING STARTS CHECKED, so there is no badge — the badge only appears
   // once a real subset is picked. Keyed on the badge's ABSENCE, which is the
   // only thing that distinguishes all-checked from a filter left over from

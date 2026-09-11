@@ -7468,6 +7468,47 @@ function buildMetabaseParams(query, reportType, orgId) {
     }
     console.log("[data] " + reportType + ": no dates, defaulting to " + query.start_date + " → " + query.end_date);
   }
+  // THE SERVER-SIDE BACKSTOP for a HALF-OPEN window (2026-09-11).
+  //
+  // The branch above only fires when BOTH dates are missing, so exactly ONE
+  // missing date fell through untouched — and the cards' end bound lives in an
+  // optional [[ ]] block, so with no parameter the clause drops out and the
+  // report runs to today. That is Marina's August export: 338 rows and
+  // $96,293.47 against August's real $82,258.22, seventeen per cent high, with
+  // eleven days of September in a file named "Aug 2026".
+  //
+  // The ten report pages refuse to send this now. This is for every OTHER
+  // caller — a saved view, an email subscription, a hand-built link, a page
+  // written next year — because a parameter dropped in three places and noticed
+  // by none is not a client-side problem.
+  //
+  // THE SPAN IS ANCHORED ON THE BOUND WE WERE GIVEN, in whichever direction the
+  // missing one lies, so it CANNOT INVERT. "Missing end means today" is the
+  // tempting rule and it is wrong for a forward report: a facility window
+  // starting in December would get an end date in September and return nothing.
+  // The span matches the both-blank default's exactly, so a one-sided window
+  // and a blank one now cost the same.
+  //
+  // NO_DATE_REPORTS is deliberately NOT consulted here. That set says what a
+  // BLANK window means (all-time for waitlist, no default elsewhere); it says
+  // nothing about a half-open one, which no report has ever wanted.
+  else if (!query.start_date !== !query.end_date) {
+    const offset = DEFAULT_WINDOW_DAYS * 86400000;
+    const given = parseToISO(query.start_date || query.end_date);
+    const anchor = new Date(given + "T00:00:00Z");
+    if (isNaN(anchor.getTime())) {
+      // An unparseable bound is not something to build a window from — pass it
+      // through and let Metabase say so, rather than inventing a range around a
+      // date we could not read.
+      console.warn("[data] " + reportType + ": half-open window with an unreadable bound (" + given + "), passing through");
+    } else if (query.start_date) {
+      query = Object.assign({}, query, { end_date: new Date(anchor.getTime() + offset).toISOString().slice(0, 10) });
+      console.log("[data] " + reportType + ": start_date with no end_date, bounding at " + query.end_date + " (would otherwise run through today)");
+    } else {
+      query = Object.assign({}, query, { start_date: new Date(anchor.getTime() - offset).toISOString().slice(0, 10) });
+      console.log("[data] " + reportType + ": end_date with no start_date, bounding at " + query.start_date + " (would otherwise run from the beginning of the org's history)");
+    }
+  }
   if (query.start_date) {
     params.push({ type: "date/single", target: ["variable", ["template-tag", "start_date"]], value: parseToISO(query.start_date) });
   }

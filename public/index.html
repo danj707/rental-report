@@ -82,6 +82,10 @@
     }
     .toolbar .btn-run:hover { background: #15803d; }
     .toolbar .btn-run:disabled { opacity: .5; cursor: not-allowed; }
+    /* A half-open window is refused, and the reason sits beside the button that
+       is refusing it — a disabled control with no explanation is the dead end
+       this repo keeps writing down. */
+    .win-warn { color: #fbbf24; font-size: 11px; line-height: 1.25; max-width: 260px; }
     .toolbar .btn-pdf {
       background: #3b82f6;
       border-color: #3b82f6;
@@ -408,9 +412,19 @@ function App() {
   // Initial load
   useEffect(() => { fetchData(startDate, endDate); }, []);
 
-  function handleRunReport() { fetchData(startDate, endDate); }
+  function handleRunReport() {
+    if (window.recWindowProblem(startDate, endDate)) return; // the button is one way in, not the only one
+    fetchData(startDate, endDate);
+  }
 
   const datesChanged = startDate !== loadedStart || endDate !== loadedEnd;
+  /* Read at CALL TIME, not module scope: open-pdf.js is deferred.
+     A blank date box was omitted from the query string, which dropped the
+     card's optional bound and silently ran the report through today — Norman's
+     August product sales came back as Aug 1 → Sep 11, 17% high. Both blank is
+     still legal (the server's own default window); only a HALF-OPEN one is
+     refused. */
+  const windowProblem = window.recWindowProblem(startDate, endDate);
 
   // Group by date then location
   const grouped = useMemo(() => {
@@ -481,11 +495,12 @@ function App() {
         <button
           className="btn-run"
           onClick={handleRunReport}
-          disabled={loading}
+          disabled={loading || !!windowProblem}
           style={datesChanged && !loading ? {boxShadow: '0 0 0 2px #4ade80'} : {}}
         >
           {loading ? 'Loading…' : '▶ Run Report'}
         </button>
+        {windowProblem && <span className="win-warn" data-window-problem>{windowProblem}</span>}
 
         <div className="toolbar-spacer" />
 

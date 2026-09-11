@@ -54,6 +54,10 @@
     .toolbar .btn-run  { background: #16a34a; border-color: #16a34a; font-weight: 600; font-size: 12px; padding: 5px 14px; }
     .toolbar .btn-run:hover { background: #15803d; }
     .toolbar .btn-run:disabled { opacity: .5; cursor: not-allowed; }
+    /* A half-open window is refused, and the reason sits beside the button that
+       is refusing it — a disabled control with no explanation is the dead end
+       this repo keeps writing down. */
+    .win-warn { color: #fbbf24; font-size: 11px; line-height: 1.25; max-width: 260px; }
     .toolbar .btn-pdf { background: #3b82f6; border-color: #3b82f6; font-weight: 600; }
     .toolbar .btn-pdf:hover { background: #2563eb; }
     .toolbar .btn-pdf:disabled { opacity: .5; cursor: not-allowed; }
@@ -977,7 +981,10 @@ function App() {
     fetchData(startDate, endDate, sectionFilter);
   }, []);
 
-  function handleRun() { fetchData(startDate, endDate, sectionFilter); }
+  function handleRun() {
+    if (window.recWindowProblem(startDate, endDate)) return; // the button is one way in, not the only one
+    fetchData(startDate, endDate, sectionFilter);
+  }
 
   // ── Saved views ───────────────────────────────────────────────────────────
   // The filter query string a view would store, built from what is on screen.
@@ -1799,6 +1806,13 @@ function App() {
   const paramsChanged = loadedSection !== null && (
     startDate !== loadedStart || endDate !== loadedEnd
   );
+  /* Read at CALL TIME, not module scope: open-pdf.js is deferred.
+     A blank date box was omitted from the query string, which dropped the
+     card's optional bound and silently ran the report through today — Norman's
+     August product sales came back as Aug 1 → Sep 11, 17% high. Both blank is
+     still legal (the server's own default window); only a HALF-OPEN one is
+     refused. */
+  const windowProblem = window.recWindowProblem(startDate, endDate);
 
   const sectionFilteredRows = useMemo(() => {
     if (!rows) return [];
@@ -1902,11 +1916,16 @@ function App() {
       r.status,
       ...(cols.registered ? [toXlDate(r.registered)] : []),
     ]);
-    const ws = XLSX.utils.aoa_to_sheet([headers, ...dataRows], { cellDates: true });
+    /* THE WINDOW, AT THE TOP OF THE FILE. Marina at Norman exported "August"
+       and got Aug 1 → today because her End Date box was empty; the file said
+       nothing, and she had renamed it, so the one tell (the auto filename) was
+       gone. Data starts at A3 — every row-index loop below moves with it. */
+    const wsData = [...recExportTitleRows('Class Roster', loadedStart, loadedEnd), headers, ...dataRows];
+    const ws = XLSX.utils.aoa_to_sheet(wsData, { cellDates: true });
     // Format date columns
     const sesIdx = 2;
     const regIdx = cols.registered ? headers.indexOf('Registered') : -1;
-    for (let ri = 1; ri <= dataRows.length; ri++) {
+    for (let ri = 3; ri < wsData.length; ri++) {
       [sesIdx, regIdx].forEach(ci => {
         if (ci < 0) return;
         const addr = XLSX.utils.encode_cell({ r: ri, c: ci });
@@ -2026,10 +2045,11 @@ function App() {
         <button onClick={() => setMonth(-1)} style={{fontSize:10,padding:'3px 7px'}}>Last Mo.</button>
         <button onClick={() => setMonth(0)}  style={{fontSize:10,padding:'3px 7px'}}>This Mo.</button>
         <button onClick={() => setMonth(1)}  style={{fontSize:10,padding:'3px 7px'}}>Next Mo.</button>
-        <button className="btn-run" onClick={handleRun} disabled={loading}
+        <button className="btn-run" onClick={handleRun} disabled={loading || !!windowProblem}
           style={paramsChanged && !loading ? {boxShadow:'0 0 0 2px #4ade80'} : {}}>
           {loading ? <><span className="btn-spinner" />Loading…</> : '▶ Run Report'}
         </button>
+        {windowProblem && <span className="win-warn" data-window-problem>{windowProblem}</span>}
 
         <div className="toolbar-divider" />
 

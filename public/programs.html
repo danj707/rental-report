@@ -46,6 +46,10 @@
     .toolbar .btn-run { background: #16a34a; border-color: #16a34a; font-weight: 600; }
     .toolbar .btn-run:hover { background: #15803d; }
     .toolbar .btn-run:disabled { opacity: .5; cursor: not-allowed; }
+    /* A half-open window is refused, and the reason sits beside the button that
+       is refusing it — a disabled control with no explanation is the dead end
+       this repo keeps writing down. */
+    .win-warn { color: #fbbf24; font-size: 11px; line-height: 1.25; max-width: 260px; }
     .toolbar .btn-pdf { background: #3b82f6; border-color: #3b82f6; font-weight: 600; }
     .toolbar .btn-pdf:hover { background: #2563eb; }
     .toolbar .btn-pdf:disabled { opacity: .5; cursor: not-allowed; }
@@ -2440,10 +2444,15 @@ function App() {
         fmtNum(r.periodReceived), fmtNum(r.periodRefunds), fmtNum(r.periodNet),
       ];
     });
-    const ws = XLSX.utils.aoa_to_sheet([headers, ...data], { cellDates: true });
+    /* THE WINDOW, AT THE TOP OF THE FILE. Marina at Norman exported "August"
+       and got Aug 1 → today because her End Date box was empty; the file said
+       nothing, and she had renamed it, so the one tell (the auto filename) was
+       gone. Data starts at A3 — every row-index loop below moves with it. */
+    const wsData = [...recExportTitleRows('Program Revenue', loadedStart, loadedEnd), headers, ...data];
+    const ws = XLSX.utils.aoa_to_sheet(wsData, { cellDates: true });
     const sdIdx = headers.indexOf('Start Date');
     const edIdx = headers.indexOf('End Date');
-    for (let ri = 1; ri <= data.length; ri++) {
+    for (let ri = 3; ri < wsData.length; ri++) {
       [sdIdx, edIdx].forEach(ci => {
         if (ci < 0) return;
         const addr = XLSX.utils.encode_cell({ r: ri, c: ci });
@@ -3045,6 +3054,13 @@ function App() {
                              + (showInstructorCol ? 1 : 0);
   const isPrint = params._print === '1';
   const datesChanged = startDate !== loadedStart || endDate !== loadedEnd;
+  /* Read at CALL TIME, not module scope: open-pdf.js is deferred.
+     A blank date box was omitted from the query string, which dropped the
+     card's optional bound and silently ran the report through today — Norman's
+     August product sales came back as Aug 1 → Sep 11, 17% high. Both blank is
+     still legal (the server's own default window); only a HALF-OPEN one is
+     refused. */
+  const windowProblem = window.recWindowProblem(startDate, endDate);
 
   // ── Toolbar ────────────────────────────────────────────────────────
   function renderToolbar() {
@@ -3061,12 +3077,13 @@ function App() {
         <button onClick={setYear}            style={{fontSize:11,padding:'4px 8px'}}>This Year</button>
         <button
           className="btn-run"
-          onClick={() => fetchData(startDate, endDate)}
-          disabled={loading}
+          onClick={() => { if (windowProblem) return; fetchData(startDate, endDate); }}
+          disabled={loading || !!windowProblem}
           style={datesChanged && !loading ? {boxShadow:'0 0 0 2px #4ade80'} : {}}
         >
           {loading ? <><span className="btn-spinner" />Loading…</> : '▶ Run Report'}
         </button>
+        {windowProblem && <span className="win-warn" data-window-problem>{windowProblem}</span>}
         <div className="divider" />
         <div style={{display:'flex',alignItems:'center',gap:8,fontSize:11}}>
           <span style={{color:'#999',fontSize:10,textTransform:'uppercase',letterSpacing:'0.05em'}}>Cols</span>

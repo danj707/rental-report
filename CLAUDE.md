@@ -1,5 +1,241 @@
 # Project notes for Claude
 
+## A HALF-OPEN DATE WINDOW RAN THE REPORT THROUGH TODAY (2026-09-11)
+
+Marina at Norman: the Product Sales export carried data outside her date range.
+She asked for **1–31 August 2026** and got **1 August → today** — 338 rows and
+**$96,293.47 against August's real $82,258.22, seventeen per cent high**, with
+eleven days of September in a file named *"Aug 2026"*.
+
+Dan: *"do 1 and 2 across all ten pages!"*
+
+### THE NUMBERS WERE NEVER WRONG. THE WINDOW WAS.
+
+Her August subtotal is **$82,258.22 to the cent**, identical to a fresh run over
+the correct window, and Dan's own export of the same month reproduces against
+card 17299 with **zero diffs across 85 product×desk keys**. Nothing in the
+arithmetic, the card or the page's date parsing is broken — which is exactly why
+it took a human noticing September rows to find it.
+
+**REPRODUCED EXACTLY BEFORE ANYTHING WAS CHANGED.** Card 17299 queried with
+`start_date` alone and no `end_date`: **338 rows, $96,293.47, 0 rows on either
+side alone, 0 value diffs** — her file, to the cent.
+
+### A PARAMETER IS DROPPED IN THREE PLACES AND NOTHING NOTICES
+
+1. **The page omits a blank date from the query string** —
+   `if (ed) qs.set('end_date', ed)`. Ten pages do this.
+2. **`buildMetabaseParams` only backfills when BOTH dates are missing**
+   (`if (!query.start_date && !query.end_date && ...)`), so exactly ONE missing
+   date falls through untouched. The both-empty case is guarded; the half-open
+   one is the hole.
+3. **The card's end bound lives in an optional `[[ ]]` block**, so with no
+   parameter the clause drops out and the report runs to now.
+
+**THE DEFECT IS THE HALF-OPEN WINDOW, NOT AN EMPTY BOX**, and that distinction
+is the whole design. Blank-both is a deliberate, shipped state: `waitlist` is in
+`NO_DATE_REPORTS`, opens all-time and carries its own *"Clear dates — back to
+all-time"* button, and elsewhere blank-both hits the server's 7-day default.
+Tightening the rule into *"no blank dates"* would empty the waitlist report for
+every org — **verified in a browser: that mutation fails all eight waitlist
+render cases.** `recWindowProblem` therefore answers one narrow question and
+says nothing about the empty case.
+
+### THREE THINGS I MEASURED AND RULED OUT, so nobody re-derives them
+
+- **Not a timezone bug.** All **34,216** Norman item-log rows in the window are
+  stamped `America/Chicago` exactly (`matches_central = 34216`, pacific 0, utc
+  0), and card 17299 filters and displays the *same* pre-localized
+  `datetime_at_primary_timezone` column — the filter and the `Date` it emits
+  cannot disagree.
+- **Not the page's date parsing.** `parseDateFlexible` builds from parts, so the
+  UTC-midnight trap is not in play.
+- **Not the feed cache.** `feedCacheKey` carries the parameter string and
+  `getCachedEntry`'s base-key fallback can only fire when `key === baseKey`,
+  which the route's `v1:` segment makes impossible.
+
+*A measurement rules out the place you looked, not the fact.* Three confident
+negatives in a row, and the cause was one `if`.
+
+### NOTHING ON SCREEN OR IN THE FILE SAID THE WINDOW WAS WRONG
+
+`rangeLabel` is `formatDisplayDate(loadedStart) + " — " + formatDisplayDate(loadedEnd)`,
+and `formatDisplayDate('')` returns `''` — so the header read
+**"Friday, August 1, 2026 — "**, a dangling em dash, which is easy to read past.
+The sheet carried no window at all. The one real tell was the auto filename,
+which would have read **`products-daily-2026-08-01_all.xlsx`** — the code
+already has an `|| 'all'` fallback, i.e. it knew the date could be blank and
+shipped the file anyway — **and she had renamed the file.**
+
+### THE FIX: refuse it, then state it
+
+**`recWindowProblem` / `recWindowLabel` / `recExportTitleRows` live in
+`public/open-pdf.js`**, which all ten pages already load. One definition, ten
+readers — a second copy of the rule is a second chance to get it wrong.
+
+- **The message names the CONSEQUENCE, not the rule.** *"Pick an end date"* is a
+  rule; *"with only a start date this runs through today"* is the thing that was
+  actually wrong with her file.
+- **The label is built from the date's own PARTS.** `new Date("2026-08-01")` is
+  UTC midnight and renders as July 31 west of UTC — five instances of that are
+  already in this file, and one here would misname the very window the stamp
+  exists to state.
+- **The button is one way in, not the only one.** Seven handlers refuse too
+  (`handleRun` / `handleRunReport` / `run`), so a preset or a future caller
+  cannot route around the gate.
+- **waitlist has no Run button** — its dates drive the fetch directly — so the
+  guard is on the effect, with `windowProblem` in its dependency array or
+  completing the range never re-runs the fetch.
+
+**THE EXCEL STAMP FOLLOWS gl.html, WHICH HAS ALWAYS DONE THIS**: a title row
+carrying the window, a blank spacer, table at A3. The other nine workbooks are
+brought up to the one page that was already right, and gl now reads the shared
+label so ten files cannot word one fact ten ways.
+
+**AND EVERY ROW-INDEX FORMAT LOOP HAD TO MOVE WITH IT — that is where the real
+risk was.** A loop still bounded by `<= dataRows.length` stops exactly two rows
+early once the table starts at A3, so the last two bookings silently lose their
+date or money format. Measured rather than reasoned: with the naive bound, rows
+5 and 6 of a 3-row table come back **unformatted**. Six loops across five pages,
+and **the spec caught two in facility.html that I had missed** — the money and
+add-on-fee loops, whose text is identical to the date loop I did patch.
+
+**WHAT IS DELIBERATELY NOT STAMPED.** The ePACT export is a verified
+five-column upload to a HIPAA vendor that maps on POSITION — a title line breaks
+the import. custom-report's CSV and the per-panel CSVs stay rows-only: on those
+surfaces the CSV is the data feed and the workbook is the thing a person reads.
+`index.html` is PDF-only and has no workbook; the spec asserts that, so the gap
+is a decision on the record rather than a page someone forgot.
+
+### Guards
+
+`scripts/report-window.spec.js` (**93 assertions, in CI**), which LIFTS AND RUNS
+the three helpers. **Mutation-tested 22 ways, all 22 failing by name** —
+including both-blank refused (the tightening), each half-open direction allowed
+again, the message no longer naming the consequence, the spacer row dropped, a
+one-sided window back to a dangling dash, every Run gate removed, waitlist's
+effect ungated and its deps reverted, each naive loop bound restored, the ePACT
+CSV stamped, and a workbook stamped with the *pending* box instead of the loaded
+window.
+
+**Four `ci-check-render.js` cases, and only a browser can see any of them** — a
+gated button and an ungated one are the same markup until React renders them,
+and a workbook whose table lands two rows off still contains every value. The
+export case reads the **bytes the popup is handed** (`window.open` stubbed, not
+`saveWorkbookViaPopup`, so the delivery path is covered) and checks WHERE the
+table landed: window on line 1, blank line 2, header line 3, data line 4. Each
+browser mutation was verified to fail **exactly the case it names** while the
+others keep passing.
+
+**FOUR PRE-EXISTING SPECS PINNED LITERALS MY CHANGE LEGITIMATELY MOVED**, and
+all four are the brittleness this file keeps recording:
+
+- `report-tabs.spec.js` pinned programs' `onClick={() => fetchData(startDate,
+  endDate)}` byte for byte, so adding the guard broke it **with nothing about
+  tabs having changed**. Its intent is the ARGUMENT COUNT — Run must not pass
+  `initial`, or a re-run keeps the tab — and it tests that now.
+- `facility-addons-forms.spec.js` sliced `downloadExcel` as a **fixed 3000
+  characters**, so two added lines pushed the column widths off the end and the
+  spec **died instead of failing by name**. It is bounded by the function's own
+  end now. *A fixed-length slice stops covering the tail of a function the moment
+  anything is added to it, and then passes by not reaching the code it names.*
+- `custom-reports.spec.js` pinned `aoa_to_sheet(table)`; the claim is that both
+  files come from ONE flat table, which the prelude does not change.
+
+All three were re-verified to still catch the regressions they were written for.
+
+### Two process notes, both mine
+
+- **MY MUTATION RUNNER REPORTED FOUR FALSE `SURVIVED`s.** The first version had
+  a shell-quoting bug so the file was never mutated; the second filtered out the
+  very line the render check reports failures on (`✗ N of M page(s) did not
+  render`). Both times it printed a clean green result. **Nth instance of "a
+  runner that cannot say SURVIVED has not tested anything"** — it now asserts the
+  file actually changed and tells vacuous, survived and caught apart.
+- **A LOCAL UNPINNED INSTALL IS NOT THE CI ENVIRONMENT.** `npm install
+  @babel/standalone` gave me **8.0.5**, whose default JSX runtime emits `import`
+  statements, and `saved-views.spec.js` failed with *"Cannot use import statement
+  outside a module"* — which reads exactly like a repo regression. CI pins
+  **7.23.9**. Match it before believing a local spec failure.
+
+### THE SERVER-SIDE BACKSTOP — BUILT the same day (Dan: *"yes do the server side backstop too"*)
+
+The client fix is ten pages refusing to SEND a half-open window.
+`buildMetabaseParams` now refuses to PASS one, so a saved view, an email
+subscription, a hand-built link or a page written next year cannot reproduce it.
+
+**THE SPAN IS ANCHORED ON THE BOUND WE WERE GIVEN, so it cannot invert.**
+*"Missing end means today"* is the tempting rule and it is wrong for a FORWARD
+report — a facility window starting in December would be handed an end date in
+September and return nothing. Missing end → `start + DEFAULT_WINDOW_DAYS`;
+missing start → `end − DEFAULT_WINDOW_DAYS`. Direction-agnostic, and the same
+span the both-blank default already produces, so a one-sided window and a blank
+one now cost the same.
+
+**THE BOTH-BLANK BRANCH IS AN `if` AND THIS IS ITS `else if`**, which is the
+whole design and the same distinction `recWindowProblem` draws on the client.
+Blank-both is a deliberate, shipped state; tightening the rule into *"no blank
+dates"* would empty the waitlist report for every org. **`NO_DATE_REPORTS` is
+deliberately NOT consulted by the new branch** — that set says what a BLANK
+window means, and says nothing about a half-open one, which no report has ever
+wanted.
+
+**An unreadable bound is passed through, never built on.** Inventing a range
+around a date we could not read puts a confident window on a report whose input
+was garbage — and `new Date(NaN).toISOString()` THROWS, so without the `isNaN`
+guard the route 500s rather than degrading.
+
+### WHY IT COULD NOT BREAK ANYTHING, measured rather than argued
+
+- **Only TWO of the eleven callers can receive a half-open window** — the data
+  route and the facilities summary, the two that pass `req.query`. The other
+  nine pass both dates or neither, and the three that pass `{}` land in the
+  existing both-blank branch.
+- **The CACHE KEY is derived from the same `buildMetabaseParams` output at fetch
+  AND at lookup**, in both success paths and both stale-fallback paths — so a
+  filled-in date shifts the key consistently and cannot split the write from the
+  read. The only cost is that a previously-cached half-open entry goes cold
+  once, and the client no longer creates those.
+- **Zero of the manifest's 37 rows send one bound**, so `verify-report-live` is
+  untouched.
+- The one behaviour change is the intended one: a link, saved view or
+  subscription carrying one date stops running through today.
+
+**It also closes a path the client fix structurally cannot reach.** The email
+subscription warms its own feed from the resolved report URL
+(`if (pdfStart) warmQs.set(...)`, each bound independently), so a saved view
+holding one date warmed a half-open key and then rendered a PDF from it. The
+page under `?_print=1` renders no toolbar, so the client's refusal is invisible
+there — the server is the only place that case can be caught.
+
+### Guards
+
+`scripts/metabase-window-backstop.spec.js` (**57 assertions, in CI**), which
+LIFTS AND RUNS the real `buildMetabaseParams` — a regex passes on an inverted
+comparison, and the whole defect was a condition that read correctly and covered
+one case too few. Mutation-tested ten ways, all failing by name: the backstop
+removed (the bug as it shipped), the missing end filled with TODAY (which
+inverts a forward window), only one direction bounded, the both-blank branch
+widened to *"either missing"* (which empties waitlist), the half-open branch
+skipped for `NO_DATE_REPORTS`, an unreadable bound built on anyway, a COMPLETE
+window rewritten too, the anchor built from the raw bound instead of the
+normalised one, and the UTC pin dropped.
+
+**MY FIRST TIMEZONE PIN WAS DECORATIVE, AND MUTATION IS WHAT SHOWED IT.** I
+re-exec'd under `America/Los_Angeles` on the reflex recorded elsewhere in this
+file — and `parseToISO` normalises first, so the anchor is always `YYYY-MM-DD`,
+and **an ISO date string is UTC midnight by spec in every zone.** No zone behind
+UTC can separate the two derivations; the mutation was caught by the source
+assertion alone. It runs under **`Asia/Tokyo`** now, driving a **non-ISO** bound
+(`08/01/2026`), because a zone AHEAD of UTC is the only thing that makes a
+local-midnight parse land on the previous UTC day. Same lesson as
+`roster-epact.spec.js`, in the same direction, re-learned.
+
+**And the re-exec guard tested `TZ` itself** (`!/Pacific/.test(process.env.TZ)`)
+— which never matches `America/Los_Angeles`, so the spec forked forever and had
+to be killed by pid sweep. *A re-exec sentinel must be an explicit env flag, not
+a guess at what the value it sets will look like.*
+
 ## AN ACTUAL MUSCO INTEGRATION, NOT THE REC ADD-ON (2026-09-11)
 
 Dan, the day after the removed-schedule fix: *"what are we doing for the
