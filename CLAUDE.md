@@ -8066,6 +8066,14 @@ columns carry no `flex` at all, and every wrapping column carries `!important`
 on all three properties — with a preceding assertion that `.data-row .cell`
 still truncates by default, or the overrides are being checked against nothing.
 
+**A HARNESS-DRIVING TRAP, cost ten minutes twice.** `node
+scripts/ci-check-render.js facility | tail -30` shows NOTHING until the run
+ends — `tail` buffers the whole stream — so a run that is progressing normally
+is indistinguishable from one that is wedged, and the obvious response is to
+kill and restart it. Redirect to a file and read that instead. (Related and
+already recorded: the case filter must be plain ASCII — `"facility ·"` reaches
+the harness with the middot mangled and matches nothing.)
+
 **Five `ci-check-render.js` cases, because the geometry is the claim and no
 source assertion can see it** — the stylesheet reads plausibly either way.
 Driven through `pre` + `evaluateOnNewDocument` with Euclid's own column set in
