@@ -1795,6 +1795,22 @@ const clearRefundPref = async (page) => {
   });
 };
 
+/* EUCLID'S OWN COLUMN SET — Begin, End, Facility/Site, Reservee, Purpose and
+   nothing else. Defined once rather than once per case: it is what leaves
+   spare width for the columns to grow into, and every case about the growth
+   needs exactly it. A fourth hand-written copy is how one of them ends up
+   ticking a column the others do not and quietly testing a different layout. */
+const EUCLID_COLUMNS = async page => {
+  await page.evaluateOnNewDocument(() => {
+    try {
+      ['phone', 'email', 'headcount', 'total', 'forms', 'paid', 'permit',
+       'notes', 'resident', 'booktype', 'addon_fees']
+        .forEach(k => localStorage.setItem('col_' + k, 'false'));
+      ['link', 'sitetype', 'lighting'].forEach(k => localStorage.removeItem('col_' + k));
+    } catch (e) {}
+  });
+};
+
 const CASES = [
   { name: "facilities · camping",  path: "/{org}/facilities?tab=camping", needs: ".camp-cal .cc-hd" },
 
@@ -2520,14 +2536,7 @@ const CASES = [
   // nothing else.
   { name: "facility · the columns fill the page when most are switched off",
     path: "/{org}/facility",
-    pre: async page => { await page.evaluateOnNewDocument(() => {
-      try {
-        ['phone', 'email', 'headcount', 'total', 'forms', 'paid', 'permit',
-         'notes', 'resident', 'booktype', 'addon_fees']
-          .forEach(k => localStorage.setItem('col_' + k, 'false'));
-        ['link', 'sitetype', 'lighting'].forEach(k => localStorage.removeItem('col_' + k));
-      } catch (e) {}
-    }); },
+    pre: EUCLID_COLUMNS,
     act: async page => {
       await page.waitForSelector(".data-row .cell.col-purpose", { timeout: 30000 });
       await page.evaluate(() => {
@@ -2549,14 +2558,7 @@ const CASES = [
     note: "the row's columns must reach the right-hand edge" },
   { name: "facility · ...leaving no dead space to the right",
     path: "/{org}/facility",
-    pre: async page => { await page.evaluateOnNewDocument(() => {
-      try {
-        ['phone', 'email', 'headcount', 'total', 'forms', 'paid', 'permit',
-         'notes', 'resident', 'booktype', 'addon_fees']
-          .forEach(k => localStorage.setItem('col_' + k, 'false'));
-        ['link', 'sitetype', 'lighting'].forEach(k => localStorage.removeItem('col_' + k));
-      } catch (e) {}
-    }); },
+    pre: EUCLID_COLUMNS,
     act: async page => {
       await page.waitForSelector(".data-row .cell.col-purpose", { timeout: 30000 });
       await page.evaluate(() => {
@@ -2613,16 +2615,45 @@ const CASES = [
   // THE HEADER AND THE BODY SHARE THE COLUMN CLASSES, so they grow together —
   // and a header that drifted off its own values is the one way this change
   // could look right and read wrong.
+  //
+  // IT RUNS ON EUCLID'S COLUMN SET, AND THAT IS THE WHOLE POINT. The first
+  // draft used the default set and SURVIVED ITS OWN MUTATION: with every
+  // column ticked the row is already over-full, so flex-grow does nothing in
+  // either row, and a header that stopped growing renders identically. A case
+  // that passes on the regression it names is not a guard. With the columns
+  // Dan actually had, there is spare width to distribute and the same mutation
+  // drifts the heading by over a hundred pixels.
+  //
+  // That set also removes the 2-3px of drift the over-full layout produced —
+  // a shrinking flex item floors at `min-width: auto`, and the header's labels
+  // are longer than the values beneath them ("Resident?" against "Yes"), so
+  // the header floored higher. Measured as pre-existing at the time, not
+  // assumed: the identical drift appeared against the file as it stood before
+  // the flex change. Nothing spare to shrink means nothing to floor.
   { name: "facility · the headings stay over their own columns",
     path: "/{org}/facility",
+    pre: EUCLID_COLUMNS,
     act: async page => {
       await page.waitForSelector(".col-header-row .col-purpose", { timeout: 30000 });
-      await page.evaluate(() => {
-        const h = document.querySelector('.col-header-row .col-purpose').getBoundingClientRect();
-        const c = document.querySelector('.data-row .cell.col-purpose').getBoundingClientRect();
-        document.body.setAttribute('data-col-aligned',
-          Math.abs(h.left - c.left) <= 1 && Math.abs(h.width - c.width) <= 1 ? '1' : '0');
+      /* THE DIAGNOSIS IS THROWN, NOT JUST STAMPED. "rendered no
+         body[data-col-aligned=1]" is the same sentence whether the header
+         drifted two pixels or two hundred, and whether it was the left edge or
+         the width — three different causes with three different fixes. */
+      const drift = await page.evaluate(() => {
+        const out = [];
+        document.querySelectorAll('.col-header-row > *').forEach(h => {
+          const cls = [...h.classList].find(c => c.startsWith('col-'));
+          if (!cls) return;
+          const c = document.querySelector('.data-row .cell.' + cls);
+          if (!c) { out.push(cls + ': no body cell'); return; }
+          const hb = h.getBoundingClientRect(), cb = c.getBoundingClientRect();
+          const dl = Math.round(hb.left - cb.left), dw = Math.round(hb.width - cb.width);
+          if (Math.abs(dl) > 1 || Math.abs(dw) > 1) out.push(cls + ' left' + dl + ' width' + dw);
+        });
+        document.body.setAttribute('data-col-aligned', out.length ? '0' : '1');
+        return out;
       });
+      if (drift.length) throw new Error('headings drift off their columns: ' + drift.join(' | '));
     },
     needs: "body[data-col-aligned=\"1\"]" },
 
