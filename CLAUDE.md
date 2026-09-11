@@ -8175,6 +8175,42 @@ because the cast is easy to read as making a card push safe and it does not.
 
 Flip link: https://rec.metabaseapp.com/question/17298
 
+### SIGNED OFF after the flip (2026-09-11)
+
+Dan flipped both dates. The card now registers **exactly three** parameters —
+`org_id` `string/=`, `start_date`/`end_date` `date/single` — with no `string/=`
+duplicate set, so there was nothing to re-save away.
+
+Cache-independently through the public endpoint, with the app's own parameter
+shape, **after** the flip:
+
+| probe | before | after |
+|---|---|---|
+| watertown, the week the page sends | 62 rows in **92.5s** | 62 rows in **1.9s** |
+| watertown, the 60-day filter-options window | 447 rows in **34.0s** | 447 rows in **1.3s** |
+| apex (heaviest) | — | 502 rows in **5.5s** |
+| the new manifest row's own forward window | — | 54 rows in **0.6s** |
+
+**Row counts are identical where they were measured before**, which is the
+additive proof: this change restricted inputs and moved no output.
+
+**AND THE SF CASE WAS CHECKED IN PRODUCTION, not only in a probe.** *"Tennis
+Lesson with Vern"* reads **`Tennis`** in the live card's own output. The window
+also returns 209 rows reading `Uncategorized` across 26 programs, and that was
+run down rather than waved through — **`DROPPED_BY_SCOPING = 0`**: of 31 SF
+programs in the window, 5 resolve an activity identically under the scoped and
+unscoped CTEs, and the other 26 have no `program_activity` row at all. So the
+Uncategorized rows are SF's own data entry, not something this change caused.
+*Check a large-looking number against the pre-change behaviour before either
+reporting it as a finding or assuming it is yours.*
+
+**A STRAY SERVER, THIRD INSTANCE.** Killing the wedged render sweep left its
+child `server.js` holding port 3989, and the next render run failed with
+`EADDRINUSE` — which reads as a code fault. Clear strays before believing a
+render failure. And the fix for the `pkill` self-match had to go further than
+last time: the sweeping script now lives in a FILE, run as `python3 <path>`, so
+neither needle appears in any command line at all.
+
 **`pkill` SELF-MATCHED A FOURTH TIME, in a new form.** I assembled the `node`
 needle at runtime as the note here says — and then put the sweep and
 `node scripts/ci-check-render.js` **in the same shell command**, so that shell's
