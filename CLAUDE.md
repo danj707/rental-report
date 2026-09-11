@@ -158,15 +158,83 @@ All three were re-verified to still catch the regressions they were written for.
   outside a module"* — which reads exactly like a repo regression. CI pins
   **7.23.9**. Match it before believing a local spec failure.
 
-### NOT DONE, and it is the obvious next one
+### THE SERVER-SIDE BACKSTOP — BUILT the same day (Dan: *"yes do the server side backstop too"*)
 
-**The server-side backstop.** `buildMetabaseParams` still lets a half-open
-window through untouched — the fix here is entirely on the client, so any future
-caller that sends one bound (a saved view, a subscription, a hand-built link, a
-new page) gets the same silent widening. Filling a missing end with today, or a
-missing start with `end − 7`, is a few lines in that function plus a spec.
-Recorded rather than built because it changes what every report does with a
-parameter shape the app no longer sends.
+The client fix is ten pages refusing to SEND a half-open window.
+`buildMetabaseParams` now refuses to PASS one, so a saved view, an email
+subscription, a hand-built link or a page written next year cannot reproduce it.
+
+**THE SPAN IS ANCHORED ON THE BOUND WE WERE GIVEN, so it cannot invert.**
+*"Missing end means today"* is the tempting rule and it is wrong for a FORWARD
+report — a facility window starting in December would be handed an end date in
+September and return nothing. Missing end → `start + DEFAULT_WINDOW_DAYS`;
+missing start → `end − DEFAULT_WINDOW_DAYS`. Direction-agnostic, and the same
+span the both-blank default already produces, so a one-sided window and a blank
+one now cost the same.
+
+**THE BOTH-BLANK BRANCH IS AN `if` AND THIS IS ITS `else if`**, which is the
+whole design and the same distinction `recWindowProblem` draws on the client.
+Blank-both is a deliberate, shipped state; tightening the rule into *"no blank
+dates"* would empty the waitlist report for every org. **`NO_DATE_REPORTS` is
+deliberately NOT consulted by the new branch** — that set says what a BLANK
+window means, and says nothing about a half-open one, which no report has ever
+wanted.
+
+**An unreadable bound is passed through, never built on.** Inventing a range
+around a date we could not read puts a confident window on a report whose input
+was garbage — and `new Date(NaN).toISOString()` THROWS, so without the `isNaN`
+guard the route 500s rather than degrading.
+
+### WHY IT COULD NOT BREAK ANYTHING, measured rather than argued
+
+- **Only TWO of the eleven callers can receive a half-open window** — the data
+  route and the facilities summary, the two that pass `req.query`. The other
+  nine pass both dates or neither, and the three that pass `{}` land in the
+  existing both-blank branch.
+- **The CACHE KEY is derived from the same `buildMetabaseParams` output at fetch
+  AND at lookup**, in both success paths and both stale-fallback paths — so a
+  filled-in date shifts the key consistently and cannot split the write from the
+  read. The only cost is that a previously-cached half-open entry goes cold
+  once, and the client no longer creates those.
+- **Zero of the manifest's 37 rows send one bound**, so `verify-report-live` is
+  untouched.
+- The one behaviour change is the intended one: a link, saved view or
+  subscription carrying one date stops running through today.
+
+**It also closes a path the client fix structurally cannot reach.** The email
+subscription warms its own feed from the resolved report URL
+(`if (pdfStart) warmQs.set(...)`, each bound independently), so a saved view
+holding one date warmed a half-open key and then rendered a PDF from it. The
+page under `?_print=1` renders no toolbar, so the client's refusal is invisible
+there — the server is the only place that case can be caught.
+
+### Guards
+
+`scripts/metabase-window-backstop.spec.js` (**57 assertions, in CI**), which
+LIFTS AND RUNS the real `buildMetabaseParams` — a regex passes on an inverted
+comparison, and the whole defect was a condition that read correctly and covered
+one case too few. Mutation-tested ten ways, all failing by name: the backstop
+removed (the bug as it shipped), the missing end filled with TODAY (which
+inverts a forward window), only one direction bounded, the both-blank branch
+widened to *"either missing"* (which empties waitlist), the half-open branch
+skipped for `NO_DATE_REPORTS`, an unreadable bound built on anyway, a COMPLETE
+window rewritten too, the anchor built from the raw bound instead of the
+normalised one, and the UTC pin dropped.
+
+**MY FIRST TIMEZONE PIN WAS DECORATIVE, AND MUTATION IS WHAT SHOWED IT.** I
+re-exec'd under `America/Los_Angeles` on the reflex recorded elsewhere in this
+file — and `parseToISO` normalises first, so the anchor is always `YYYY-MM-DD`,
+and **an ISO date string is UTC midnight by spec in every zone.** No zone behind
+UTC can separate the two derivations; the mutation was caught by the source
+assertion alone. It runs under **`Asia/Tokyo`** now, driving a **non-ISO** bound
+(`08/01/2026`), because a zone AHEAD of UTC is the only thing that makes a
+local-midnight parse land on the previous UTC day. Same lesson as
+`roster-epact.spec.js`, in the same direction, re-learned.
+
+**And the re-exec guard tested `TZ` itself** (`!/Pacific/.test(process.env.TZ)`)
+— which never matches `America/Los_Angeles`, so the spec forked forever and had
+to be killed by pid sweep. *A re-exec sentinel must be an explicit env flag, not
+a guess at what the value it sets will look like.*
 
 ## AN ACTUAL MUSCO INTEGRATION, NOT THE REC ADD-ON (2026-09-11)
 
