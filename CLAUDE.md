@@ -1,5 +1,228 @@
 # Project notes for Claude
 
+## THE SURVEY BUILDER — admin surfaces only, and that is structural (2026-09-11)
+
+Dan: *"lets build the survey tool, i need some feedback"*, then, on the shape:
+*"An open survey builder, I can choose from a 1-5 rating, stars, open text box,
+etc. Similar to the intercom survey builder."* And the one hard rule, verbatim:
+*"both, just NEVER on a customer facing report, like the watertown facility
+rental view or the programs view that users see, ONLY on admin stuff."*
+
+Composer in the admin dashboard (**📝 Surveys**, beside Add Update), delivery as
+a corner card on every admin report, responses in the event log, readout in the
+same modal. **No deploy to publish one.**
+
+### THE RULE IS HONOURED BY WHERE THE CODE LIVES, not by a check inside it
+
+The survey ships inside **`public/feedback-widget.js`**, and the three
+un-tokened customer pages **do not load that file** — measured: `calendar`,
+`rentalcalendar` and `campmap` at **zero**, against **22 admin pages** that do.
+So a resident cannot be shown a survey even if every gate on the server were
+deleted. That was free, and it is the strongest guarantee available.
+
+The server gate is the SECOND line, and it is **DERIVED rather than re-typed**.
+`PUBLIC_REPORTS` is now one Set read by **both** the org-token middleware —
+which decides which pages go un-tokened at all — and `surveyFor()`. Before this
+the middleware carried the three slugs as a literal
+(`segs[1] === "calendar" || …`), and a second hand-kept copy is exactly how a
+fourth public page becomes public to a resident *and* surveyable at the same
+time. **Two lists is the bug; one list is the fix.**
+
+**The public test is the FIRST line of `surveyFor`**, ahead of any targeting,
+so it reads as the rule it is rather than as a filter that happens to exclude
+them — and the spec asserts that ordering, not just its presence.
+
+Guarded three independent ways, each of which alone can be defeated:
+
+| | catches |
+|---|---|
+| the widget is absent from those three pages | somebody adding it *"for the banner"* |
+| `PUBLIC_REPORTS` read by both callers | a fourth public page |
+| `surveyFor` RUN against each public slug | an inverted comparison a regex would pass |
+
+Proven by mutation: adding `<script src="/feedback-widget.js">` to
+`campmap.html` fails **both** the spec (by name) and the
+`survey · THE RULE` render case, independently.
+
+### SEVEN QUESTION TYPES, and `rating5`/`stars` are deliberately two
+
+`rating5` · `stars` · `nps` · `yesno` · `single` · `multi` · `text`.
+
+Dan named a 1-5 rating **and** stars, so they are separate types even though
+both store an integer 1-5 and the readout treats them as one scale. **The face
+changes the answer** — stars invite a gut reaction, numerals invite
+deliberation — and collapsing them into one type with a `display` flag would
+look tidier while losing the thing he asked for.
+
+- **NPS IS NEVER A MEAN.** The 0-10 scale is a *classification*: promoters
+  (9-10) minus detractors (0-6) over the total. A mean NPS of 7.4 means
+  nothing, so `surveyReadout` sets `out.mean = null` on an NPS question
+  explicitly — not merely "does not compute one" — so no surface downstream can
+  print one by accident. The spec fails on either half.
+- **A question that cannot be answered is never stored.** A `single` with no
+  options renders as a prompt with nothing under it, which reads to the
+  respondent as a broken product rather than as a question we forgot to finish.
+  `yesno` supplies its own options so the composer cannot mistype them and the
+  readout can count Yes against No without guessing. A duplicate option is
+  collapsed, or it splits its own vote.
+- **Two questions with the same id are separated on save.** Ids address the
+  answers; two the same silently loses one.
+
+### THE ANSWERS GO TO THE EVENT LOG, NOT TO A JSON BLOB
+
+Every other small store here — `votes.json`, `update-votes.json` — is a
+read-modify-write on one document, which is **fine for a COUNTER**: two
+replicas racing lose a tick and nobody can tell. **A survey answer is a person
+who took the trouble to type something**, and losing one silently is the single
+failure this feature cannot have. `logEvent` is append-only and safe across the
+two replicas, and it is where every other feedback family already lives.
+
+**Read back BY QUESTION ID against the survey's own definition**, never
+positionally and never trusting the shape the browser sent: a survey edited
+between a page load and a submit would otherwise file an answer under the wrong
+question, silently, and the readout cannot tell that from a real one. The
+mutation that reads them positionally fails by name.
+
+**A closed survey REFUSES a late submit (409) rather than accepting and
+dropping it.** A page open since before it closed must not be able to thank
+somebody for an answer nobody kept.
+
+### THE READOUT IS A POST, AND THAT IS THE SECURITY CALL
+
+It returns **verbatim text that named orgs typed about us** — the most
+sensitive thing this server holds outside the reports. `dashboardAuth` guards
+only `/` (its first line is `if (req.path !== "/") return next()`), so an
+`/api/admin` GET is **open** — tolerable for the announcements list, which is
+our own authored copy, and not tolerable here. A POST lets the password ride in
+the **body**, the channel every other admin write on that page already uses,
+instead of inventing a `?password=` that leaks through logs and referrers. It
+**fails closed**: no `DASHBOARD_PASSWORD` means nobody. Same asymmetry as
+`reportSettingsAdminKey()`.
+
+### A SUMMARY FIGURE WAITS FOR A FLOOR; THE DISTRIBUTION NEVER DOES
+
+`SURVEY_MIN_FOR_STATS = 5`. Under it the **bars are the whole answer** — four
+bars IS the raw data — and only the single derived number (a mean, an NPS) is
+withheld, with the panel saying how many more it needs rather than printing
+nothing. Same rule as `RATE_MIN_VIEWS` on the campmap strip and
+`WL_CONV_MIN_OFFERS` on the waitlist. A confident *"4.2 average"* off three
+ratings is the kind of number that gets quoted.
+
+**An empty readout is a real answer and must not read as a broken panel.**
+Nobody-has-answered-yet and the-survey-is-not-reaching-anyone are different
+facts, and `dismissed` is what separates them — which is the whole reason
+dismissals are recorded at all.
+
+### A CARD, NEVER A MODAL — and `survey-dismiss` stays out of Slack
+
+These readers are admins mid-task. A dialog over the report they came to read
+is an interruption, and an interruption is how a survey gets closed unread. It
+sits bottom-right, after a **4s delay** so they see the report first, and it can
+be ignored. The render case measures the **computed box** rather than the class
+name, because a rule that says `inset:0` renders an identical class.
+
+- **Asked once per browser, and a dismissal counts as much as an answer.**
+  Being re-asked something you already declined is worse than never being
+  asked, and it is the fastest way to make the card get ignored.
+- **The send is remembered only after the server confirms it.** Marking it done
+  optimistically is how an answer that never landed becomes an answer nobody is
+  ever asked for again.
+- **A missing required answer NAMES the question.** On a scrolling card the one
+  they missed may be off screen, so *"fill in the required fields"* is a dead
+  end. The render case also asserts **no request was made** — an error message
+  over a request that already fired is the worse failure.
+- **Stars fill UP TO the one clicked.** A single lit star among four grey ones
+  is not how anybody reads a star rating.
+- Prompts and options are written with `textContent`, never `innerHTML`: this
+  is admin-authored copy, but it is copy that reaches other people's screens.
+- **`survey-response` posts to Slack carrying the WORDS** — the survey's name,
+  how much was filled in, the scale answers inline and the free text quoted. A
+  line reading *"somebody answered a survey"* is the post that makes a feature
+  look busy and tells nobody anything. **`survey-dismiss` is deliberately NOT
+  in `SLACK_NOTIFY`**: it is data for the readout, and one post per dismissal
+  would drown the feed it exists to inform. The spec fails if it drifts in.
+
+### The org landing page needed its own slug
+
+`/:org` has no second path segment and no `REPORT_DIRECTORY` entry, so the page
+**most admins actually land on** would have been untargetable.
+`SURVEY_ORG_SURFACE = "org-dashboard"` is declared in server.js and mirrored in
+the widget, with the spec pinning the two together — two spellings of one
+surface makes targeting it match nothing, silently.
+
+### A guard of mine proved the wrong thing, and mutation is what showed it
+
+The `no-store` assertion **read the live header only**, and deleting the
+route's own `res.set` SURVIVED — because the page-level no-store middleware
+sits *above* this route and supplies it anyway. So the assertion was proving
+the header arrives, not that this route guarantees it. It is a **pair** now:
+the live read, plus a source assertion that the route sets it itself. The
+explicit set is kept for the same reason — that middleware works only because
+of **where it is registered**, and a route moved above it loses the header with
+nothing on screen to say so. *The guarantee belongs to the route, not to its
+line number.* (Two hours earlier, the same class of bug in rec-dashboard's
+image upload — the fourth instance across these two repos.)
+
+**And one of my mutations was wrong rather than the guard**: inserting
+`surveyRemember` at the top of the *second* `.then` still puts it after the
+`throw`, so it did not reproduce the optimistic bug at all. The real one puts
+it before the `fetch`, and that fails by name. *A mutation that does not
+reproduce the bug has not tested the guard.*
+
+### Guards
+
+`scripts/surveys.spec.js` (**72 assertions, in CI**). The source/unit half
+LIFTS AND RUNS the model; the live half boots a real server and drives the real
+routes — publish, deliver, answer, dismiss, close, edit, retarget, and the
+readout. `SKIP_SOURCE=1` drops the source half.
+
+**IT ALSO STANDS UP A FAKE SLACK**, because `notifySlack` early-returns on an
+empty `SLACK_WEBHOOK_URL` — so with the webhook unset the message branch is
+never executed and *"the code mentions `surveyTitle`"* is all anyone has
+proved. The captured post is asserted to carry the survey's name and the
+sentence somebody typed. Mutating the branch away produces, verbatim,
+`📝 Fixture A (fixture-a) answered a survey on *facility*` — the report type,
+and the question never, which is the defect already fixed once in the Report
+Wizard's own thumbs branch.
+
+**Mutation-tested eighteen ways, all failing by name**: the public-page test
+dropped from `surveyFor` (the rule, gone), the middleware re-typing the three
+slugs, a closed survey silently accepting a late submit, the readout reverted
+to an ungated GET, a mean printed however few answers there are, NPS as a mean,
+a choose-one with no options stored anyway, an unrecognised choice stored raw,
+a response rewriting the survey blob instead of appending, `survey-dismiss`
+posting to Slack, editing forking a new survey and stranding its responses, the
+route leaning on the middleware above it for `no-store`, answers read
+positionally, the widget re-asking after a dismissal, the widget remembering
+before the server confirms, the org-dashboard slug drifting, the Slack branch
+falling into the generic line, and the free text dropped from the post.
+
+**Seven `ci-check-render.js` cases**, over a new `/api/survey` stub — which
+**must sit above the generic `/api/` catch-all**, or that catch-all answers
+`{ok:true, rows:[]}`, the widget reads `d.survey` as undefined, and every case
+asserting the card is ABSENT passes vacuously. Same fall-through already
+recorded for the `/api/data` stub.
+
+**Every case clears `localStorage` in `pre`** — the widget asks once per
+browser, so a case that answers or dismisses leaves the next one looking at a
+page with no card: a green baseline turning red only when run as part of the
+group. Second instance, after the saved-views cases. **The dismiss case clears
+it ONE-SHOT via `sessionStorage`**, because `evaluateOnNewDocument` runs on
+every navigation and an unconditional clear would wipe the dismissal on the
+reload the case depends on — which would make it assert the opposite of its own
+name.
+
+### NOT BUILT, and worth knowing
+
+- **No per-person identity**, so "once per browser" is the strongest
+  de-duplication available. Two people at one desk share a browser; one person
+  on two machines is asked twice.
+- **No scheduling beyond a start/end date** — no "show after N visits", no
+  sampling. Worth adding only if a survey ever needs to reach a fraction of an
+  org rather than all of it.
+- **The readout does not cross-tab by report.** `byOrg` is there; which page
+  somebody was on when they answered is in the event log and not on screen.
+
 ## AN ACTUAL MUSCO INTEGRATION, NOT THE REC ADD-ON (2026-09-11)
 
 Dan, the day after the removed-schedule fix: *"what are we doing for the
