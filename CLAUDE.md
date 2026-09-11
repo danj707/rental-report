@@ -1,5 +1,172 @@
 # Project notes for Claude
 
+## AN ACTUAL MUSCO INTEGRATION, NOT THE REC ADD-ON (2026-09-11)
+
+Dan, the day after the removed-schedule fix: *"what are we doing for the
+facility rental report when an actual musco lighting is connected, not just the
+rec 'add on'?"* Then, on the answer: *"yes, build 1 and 2. If a rental has an
+actual 'Musco Lighting' configuration set (which I think none currrently have)
+then I'd want a yellow bar lighlighting that row for easy visibility."*
+
+**THE TIMING IS THE FINDING.** `site_lighting_configuration` — the site→Musco
+map, which nothing in this repo had ever read — holds **73 sites across 6
+locations and 6 CLC facilities, created 2026-09-09 and 2026-09-10, for exactly
+one org: City of Midland.** And **1,230 of their next 1,408 reservations (87%)
+sit on one of those sites**, over 184 rentals and 69 of the 73. So a column that
+has never been right for anybody is about to matter for nearly every row of that
+org's schedule.
+
+### THREE THINGS THE REPORT COULD NOT DO, and the second is a wrong number
+
+**1. `Lighting Sync` was on the card and READ BY NOTHING.** Selected by 17294,
+mapped at `facility.html:1446`, rendered on no surface — **sixth instance of the
+mapped-and-never-read pattern**, on the one column that says whether the lights
+will actually come on. An errored push drew the same confident 💡 as a healthy
+one, i.e. a booked team at a dark field.
+
+**2. A SUNSET SCHEDULE RENDERED A TIME THAT MEANS THE OPPOSITE.**
+`start_source` is `'sunset'` on **2 of the 9** schedules ever written
+(`musco_start_value` is the literal string `'suns'`), and **`lit_from` is NULL
+on both** — there is no instant to store, because the switch-on tracks the sun
+and moves every day of a recurring rental. `CONCAT_WS` then yields the end
+alone, and the exact string those live rows produce is **`"11:00pm"`**. Printed
+raw the note reads *"💡 Lit: 11:00pm"* — **lights ON at 11, when it means OFF at
+11.** Measured, not reasoned: the window expression was run against all nine
+real rows.
+
+**3. Nothing said a site was wired at all.** Not built — see the bottom.
+
+### THE CARD SHIPS THE RULE; THE PAGE WORDS IT
+
+Three new columns — `Lit Start Source`, `Lit End Source`, `Lighting Error` —
+and **`Lit Window` is deliberately NOT changed to say "Sunset" in SQL.** The
+word is presentation, and the page already owns one definition of how a time is
+displayed (`litWindowLabel` → `formatTime`). Composing it in the card would put
+a second definition on the far side of a four-hour cache. The spec fails if
+`'Sunset'` appears near the `Lit Window` expression.
+
+**CLOCKS ARE ASSIGNED TO THE ENDS THAT ARE NOT RULE-DRIVEN, not read
+positionally.** A one-sided `"11:00pm"` is the END when the start is sunset and
+the START when the end is, and the string cannot tell those apart. **Two clocks
+stay positional and the rule OVERRIDES the clock it produced** — the stored
+instant is one day's sunset and the rental recurs, so the rule is the true
+statement. *That case failed on the first run of my own spec*, because assigning
+"in order" broke the moment a ruled end also had a clock.
+
+### `muscoLit()` — ONE PREDICATE, AND IT NEVER READS AN ADD-ON
+
+The note, the "Lit Only" filter, the row highlight and the Excel export all go
+through it. Dan, sending a screenshot of a rental carrying a `💡 Field Lights
+($25.00)` line: *"The screenshot is just an example, not an actual musco
+lighting integration."* Exactly — **"Field Lights" and "Field Light Fee" are
+among the most-attached add-ons on the platform (409 rentals), they are money,
+and they turn nothing on.** Both the spec and a render case fail on a highlight
+keyed on the add-on name.
+
+**It also carries the `'removed'` test on the PAGE**, which the card already
+does in its join. That is not redundant: feeds cache four hours, so a response
+fetched before yesterday's paste still says `Lighting = 'Yes'` with
+`sync_status = 'removed'`, and this closes the one TTL where the shipped bug
+survives. Denylist again — an unclassifiable status stays lit.
+
+### ONLY `synced` IS A CONFIRMATION — and the vocabulary is NOT measured
+
+`LIGHTING_SYNC_STATES` maps `synced` → 💡, `error` → ⚠ (with `last_error`
+appended, the difference between *"something failed"* and *"Musco rejected this
+field id"*), `pending` → 🕓. **Anything unrecognised, blank included, reports as
+unconfirmed rather than drawing the confident lamp**, because the two ways to be
+wrong are not symmetric: a healthy row shown as unconfirmed is noise, a broken
+one shown as confident is the dark field.
+
+**SAID PLAINLY BECAUSE IT WILL BE READ AS MEASURED AND IS NOT:** `sync_status`
+has only ever held `'removed'`, **`synced_at` is NULL on all 9 rows and
+`last_error` is NULL on all 9.** `'synced'` and `'error'` come from the staff
+MCP tool's own documentation. One map is the place to correct it once Midland
+has a live schedule — Dan: *"I'll circle back once they get setup in the next
+few days."*
+
+### A REVERSAL, STATED: "Lit Only" still means HAS a schedule
+
+I proposed that a rejected schedule should fall OUT of that filter, on the
+grounds that its job is *"where will the lights be on"*, and Dan approved the
+plan as written. **It is the wrong call and the yellow bar is what makes it
+obvious**: a filter that hides the broken ones is how a broken one goes
+unnoticed, and the rejected row is the one most worth finding. Same failure
+direction as the card's own denylist. The ⚠ makes the state visible INSIDE the
+filter instead. The spec fails if the filter ever narrows to confirmed.
+
+### The yellow bar
+
+`.data-row.musco-lit` + `.sub-row.musco-lit`, `#fffbeb` with an inset amber bar,
+declared AFTER `:nth-child(even)` because both are (0,2,0) and source order is
+what makes it win. **`print-color-adjust` in both spellings** — the PDF is the
+copy a grounds crew actually holds, and a highlight the printer drops is not a
+highlight.
+
+### Guards
+
+`facility-lighting.spec.js` 38 → **97 assertions**. Mutation-tested **23 ways,
+all failing by name**: the sunset word dropped (the bug as it would have
+shipped), a real clock worded too, the sources never mapped, the clock beating
+the rule, `muscoLit` ignoring `removed`, `muscoLit` reading the add-on, an
+unknown status reporting as confirmed, `error` drawing the healthy lamp, the
+vendor message dropped, the note back on the raw column, the note losing the
+sync state, the filter narrowing to confirmed, the filter back on the raw
+column, the yellow bar dropped, either print-color rule dropped, the row class
+reading the add-on, Excel writing the raw column, Excel losing a width, and
+three on the card.
+
+**Two of my own guards were defective and mutation is what showed it.** The
+spec's LIFT started at `litWindowLabel`, which now calls `litSourceWord`
+declared above it — so it **died with a bare ReferenceError instead of failing
+by name** on the very first run, the Nth instance of a slice reaching past its
+own inputs; the boundary is asserted now. And a single
+`/print-color-adjust/` **also matches the `-webkit-` prefix**, so deleting the
+standard property SURVIVED; the two spellings are asserted separately and both
+directions re-verified.
+
+**Four `ci-check-render.js` cases**, over three new fixture rows that each make
+a wrong implementation render something *plausible*: a sunset row whose window
+is the bare `"11:00pm"` the live rows actually produce, a rejected row, and a
+row billing a `Field Lights` add-on with no schedule. The add-on case keys on
+the **count** (exactly 3 highlighted) plus the add-on row being present and not
+among them — asserting the absence alone passes on a row that never rendered.
+All three browser-only mutations were verified to fail **exactly one case each,
+by name**, with the other ten passing.
+
+**My new fixture rows broke the two EXISTING lit cases**, which took the first
+`.sub-row` saying "Lit" and had silently assumed there was only one. Both are
+scoped to their own row now. *A case that depends on there being one of a thing
+stops testing what it names the moment there are two.*
+
+### Verified
+
+The card mirror's **whole final SELECT** was run with literals — as a subquery
+of a counting wrapper, so the column list and the trailing `ORDER BY` execute
+(the card-21682 failure) without shipping 1,492 rows through a tool. Midland
+September: **1,492 rows, all lighting columns 0**, new columns resolve. The
+window expression was then run against all nine real schedules, which is what
+produced the `"11:00pm"` string above. Full `facility · ` render group **31
+green**; all **65 CI specs** green.
+
+**THE CARD IS A PASTE, NOT A PUSH** — 17294's date tags are Date-typed and an
+API save regenerates every tag as Text, taking the rental schedule down for all
+29 orgs. Flip link https://rec.metabaseapp.com/question/17294
+
+### NOT BUILT, and it is the obvious next one
+
+**`site_lighting_configuration` is not read anywhere.** It is the only thing
+that can say *"this field has Musco control and nobody scheduled lights"* —
+1,229 of Midland's 1,230 upcoming reservations on a lit site, today. Its
+`lighting_product_id` (NULL on all 73 rows) is also the intended bridge between
+the wired site and the Rec add-on, which is the question underneath Dan's:
+whether the $25 someone paid actually turned anything on.
+
+**`pkill -f` SELF-MATCHED AGAIN**, this time because the *grep argument in the
+same command line* contained the needle. Exit 144, no output. Assemble the
+needle at runtime in Python and skip the current pid; and never let the literal
+appear anywhere else in the command.
+
 ## MIDLAND'S RENTAL SHOWED MUSCO LIGHTING IT DOES NOT HAVE (2026-09-10)
 
 Dan, with the rental open in Rec: *"the midland rental schedule shows this

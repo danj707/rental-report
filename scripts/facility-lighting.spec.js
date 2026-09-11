@@ -51,10 +51,18 @@ const eq = (a, b, m) => { assert.strictEqual(a, b, m); n++; };
 // both fields either way — so the only assertion worth making is what it
 // RETURNS. The page builds a React tree at module scope, so slice the one
 // function rather than evaluating the file.
-const start = src.indexOf("function litWindowLabel(r) {");
-ok(start > 0, "facility.html should declare litWindowLabel at module scope");
+// The slice STARTS at LIT_SOURCE_WORDS, not at litWindowLabel, because
+// litWindowLabel calls litSourceWord — and a slice that reaches past its own
+// inputs dies with a bare ReferenceError instead of failing by name. That is
+// exactly what this spec did on the first run after the sources landed, which
+// is the Nth instance of it in this repo and the reason the boundary is
+// asserted rather than assumed.
+const start = src.indexOf("var LIT_SOURCE_WORDS = {");
+ok(start > 0, "facility.html should declare LIT_SOURCE_WORDS at module scope");
 const end = src.indexOf("function addonNoteFragment(items)", start);
-ok(end > start, "addonNoteFragment should follow litWindowLabel");
+ok(end > start, "addonNoteFragment should follow the lighting helpers");
+ok(src.indexOf("function litWindowLabel(r) {") > start,
+   "litWindowLabel should sit inside the lifted block, after its own helper");
 
 // formatTime comes with it: it is the page's ONE definition of how a time is
 // displayed, and litWindowLabel routing through it is what stops the note
@@ -66,8 +74,11 @@ const ftEnd = src.indexOf("\nfunction ", ftStart + 10);
 const sandbox = {};
 vm.createContext(sandbox);
 vm.runInContext(src.slice(ftStart, ftEnd) + "\n" + src.slice(start, end), sandbox);
-const { litWindowLabel } = sandbox;
+const { litWindowLabel, muscoLit, lightingSyncState, litSourceWord } = sandbox;
 ok(typeof litWindowLabel === "function", "litWindowLabel should be liftable");
+ok(typeof muscoLit === "function", "muscoLit should be liftable");
+ok(typeof lightingSyncState === "function", "lightingSyncState should be liftable");
+ok(typeof litSourceWord === "function", "litSourceWord should be liftable");
 
 // The card's own string wins outright. This is the whole point: it is already
 // in the facility's timezone and already formatted, so the page adds nothing.
@@ -176,29 +187,212 @@ ok(/litWindow:\s*raw\['Lit Window'\]/.test(src),
 // The note line must go through the helper. A second reader of the shape is a
 // second chance to get it wrong — progAutopayCell through progAutopayShare,
 // siteLabel with one definition, loaderReadEstimate.
-const noteStart = src.indexOf("if (r.lighting === 'Yes') {");
-ok(noteStart > 0, "the lit note should still be gated on the Lighting column");
-const noteBlock = src.slice(noteStart, noteStart + 400);
+const noteStart = src.indexOf("if (muscoLit(r)) {");
+ok(noteStart > 0, "the lit note should be gated on muscoLit, not on the raw column");
+const noteBlock = src.slice(noteStart, noteStart + 700);
 ok(/litWindowLabel\(r\)/.test(noteBlock),
    "the lit note should compose its window through litWindowLabel");
 ok(!/new Date\(/.test(noteBlock),
    "the lit note should not parse an instant in the reader's timezone");
+ok(/lightingSyncState\(r\)/.test(noteBlock),
+   "the lit note should carry the Musco sync state, not a bare lamp");
 
 // The Excel export follows the view: an export that carried a different clock
 // from the screen is the exports-must-respect-filters rule one field over.
 const xlStart = src.indexOf("if (showLighting)  headers.push(");
 ok(xlStart > 0, "the Excel export should still have a lighting column group");
-ok(/'Lighting', 'Lit Window', 'Lit From', 'Lit Until'/.test(src.slice(xlStart, xlStart + 200)),
-   "the Excel header should carry Lit Window beside the raw instants");
-const xlRow = src.indexOf("if (showLighting) { row.push(r.lighting");
+ok(/'Lighting', 'Musco Sync', 'Lit Window', 'Lit From', 'Lit Until'/.test(src.slice(xlStart, xlStart + 200)),
+   "the Excel header should carry Musco Sync and Lit Window beside the raw instants");
+const xlRow = src.indexOf("if (showLighting) { row.push(");
 ok(xlRow > 0, "the Excel row builder should still write the lighting group");
-ok(/litWindowLabel\(r\)/.test(src.slice(xlRow, xlRow + 260)),
+const xlRowBlock = src.slice(xlRow, xlRow + 320);
+ok(/litWindowLabel\(r\)/.test(xlRowBlock),
    "the Excel row should read the window through the same helper the screen does");
+ok(/muscoLit\(r\)/.test(xlRowBlock),
+   "the Excel row should read lit-ness through muscoLit, or a stale feed exports a removed schedule as lit");
+ok(!/row\.push\(r\.lighting/.test(xlRowBlock),
+   "the Excel row should not write the raw Lighting column straight through");
 
 // One cell per header, or every column after this one shifts — the fault the
 // last three column additions caused on other reports.
-const hdrCount = (src.slice(xlStart, xlStart + 200).match(/'Lit|'Lighting/g) || []).length;
-const cellCount = (src.slice(xlRow, xlRow + 260).match(/row\.push\(/g) || []).length;
+const hdrCount = (src.slice(xlStart, xlStart + 200).match(/'Lit|'Lighting|'Musco/g) || []).length;
+const cellCount = (xlRowBlock.match(/row\.push\(/g) || []).length;
 eq(cellCount, hdrCount, "the lighting group should push one cell per header");
+// ...and the column widths have to grow with them, or every width after this
+// group lands under the wrong column.
+const widthLine = src.slice(src.indexOf("...(showLighting?["), src.indexOf("...(showLighting?[") + 90);
+eq((widthLine.match(/wch/g) || []).length, hdrCount,
+   "the lighting group should carry one column width per header");
+
+// ── A RULE IS NOT A CLOCK (2026-09-11) ──────────────────────────────────────
+// Musco can anchor an end of the window to sunset, and such a schedule stores
+// NO lit_from — measured on the real rows, NULL on both of the two that use
+// it, so the card's CONCAT_WS yields the END ALONE. The exact string those
+// rows produce is "11:00pm", and printing it raw says the lights come ON at
+// 11 when it means they go OFF at 11.
+eq(litSourceWord("sunset"), "Sunset", "sunset should render as a word");
+eq(litSourceWord("SUNSET"), "Sunset", "the source match should not be case-sensitive");
+eq(litSourceWord("reservation"), "",
+   "a reservation-anchored end has a real clock and must not be worded");
+eq(litSourceWord("set_time"), "",
+   "set_time IS a clock (23:00 on the one live row) and must not be worded");
+eq(litSourceWord(""), "", "a missing source should yield no word");
+eq(litSourceWord(null), "", "a null source should yield no word, not throw");
+
+// The bug, with the exact string the two live sunset rows produce.
+eq(litWindowLabel({ litWindow: "11:00pm", litStartSource: "sunset", litEndSource: "set_time" }),
+   "Sunset - 11:00pm",
+   "a sunset start must be worded, not dropped, or the note reads as ON at 11");
+eq(litWindowLabel({ litWindow: "11:00pm", litStartSource: "sunset", litEndSource: "reservation" }),
+   "Sunset - 11:00pm",
+   "the other live sunset shape should read the same way");
+
+// WITHOUT the source columns this is the old, misleading output. Asserted so
+// the fallback is a KNOWN state rather than an accident: a feed cached before
+// the card carried the sources still renders the bare end for one TTL, and
+// that is the behaviour being aged out rather than a second bug.
+eq(litWindowLabel({ litWindow: "11:00pm" }), "11:00pm",
+   "a pre-source feed should fall back to the card's own string unchanged");
+
+// The clock is assigned to the end that is NOT rule-driven, rather than read
+// positionally — a one-sided string cannot say which end it is on its own.
+eq(litWindowLabel({ litWindow: "06:00pm", litStartSource: "reservation", litEndSource: "sunrise" }),
+   "6:00pm - Sunrise",
+   "a rule on the END should take the word while the clock stays on the start");
+
+// A rule beats a clock even when both are present: the stored instant is one
+// day's sunset and the rental recurs, so the RULE is the true statement.
+eq(litWindowLabel({ litWindow: "07:42pm - 11:00pm", litStartSource: "sunset", litEndSource: "set_time" }),
+   "Sunset - 11:00pm",
+   "a resolved sunset instant should still render as the rule that produced it");
+
+// Both ends ruled, no clocks at all.
+eq(litWindowLabel({ litWindow: "", litStartSource: "sunset", litEndSource: "sunrise" }),
+   "Sunset - Sunrise", "two rules and no clocks should still render a window");
+
+// The fallback path words itself the same way, or a feed expiring mid-session
+// restyles the note.
+eq(litWindowLabel({ litUntil: "2026-07-16T23:00:00Z", litStartSource: "sunset" }).indexOf("Sunset -"),
+   0, "the pre-Lit-Window fallback should word a sunset start too");
+
+// ── muscoLit: the schedule, never the add-on ────────────────────────────────
+ok(muscoLit({ lighting: "Yes", lightingSync: "synced" }),
+   "a synced schedule is lit");
+ok(!muscoLit({ lighting: "", lightingSync: "" }), "no schedule is not lit");
+ok(!muscoLit(null), "a missing row is not lit, and must not throw");
+
+// THE ADD-ON TRAP, and it is not hypothetical: "Field Lights" and "Field Light
+// Fee" are among the four most-attached add-ons on the platform (409 rentals
+// carry one), they are money, and they turn nothing on. Dan, sending a
+// screenshot of exactly that row: "The screenshot is just an example, not an
+// actual musco lighting integration."
+ok(!muscoLit({ lighting: "", addons: "Field Lights ($25.00)", addonFees: 25 }),
+   "an add-on named Field Lights must never count as Musco lighting");
+ok(!muscoLit({ lighting: "", addons: "Musco Lighting ($25.00)" }),
+   "an add-on named Musco Lighting must still not count — the schedule is the signal");
+
+// The stale-cache leg: card 17294 drops removed schedules in its own join, but
+// a response fetched before that change is live for four more hours and still
+// says Yes.
+ok(!muscoLit({ lighting: "Yes", lightingSync: "removed" }),
+   "a removed schedule on a stale feed must not render as lit");
+ok(!muscoLit({ lighting: "Yes", lightingSync: "REMOVED " }),
+   "the removed test should survive case and whitespace");
+
+// Denylist, like the card's join: an unclassifiable status is more likely live
+// than removed, and the failure direction has to be "tell someone".
+ok(muscoLit({ lighting: "Yes", lightingSync: "" }),
+   "a blank status should stay lit rather than being hidden");
+ok(muscoLit({ lighting: "Yes", lightingSync: "something-new" }),
+   "an unknown status should stay lit rather than being hidden");
+
+// ── lightingSyncState: only 'synced' is a confirmation ──────────────────────
+eq(lightingSyncState({ lightingSync: "synced" }).tone, "ok",
+   "a synced schedule is the only confident state");
+eq(lightingSyncState({ lightingSync: "synced" }).icon, "\u{1F4A1}",
+   "a synced schedule keeps the lamp");
+eq(lightingSyncState({ lightingSync: "error" }).tone, "bad",
+   "a rejected schedule should be alarming");
+ok(lightingSyncState({ lightingSync: "error" }).icon !== "\u{1F4A1}",
+   "a rejected schedule must not draw the same lamp as a healthy one");
+ok(/NOT come on/.test(lightingSyncState({ lightingSync: "error" }).label),
+   "the error state should say what it costs, not just that it failed");
+
+// The vendor's own message is the difference between "something failed" and
+// "Musco rejected this field id".
+ok(/field id/.test(lightingSyncState({ lightingSync: "error", lightingError: "unknown field id" }).label),
+   "the vendor's message should ride along with an error");
+
+// An unrecognised status is reported as unconfirmed rather than drawn as a
+// confident lamp. This is the load-bearing one: 'synced' and 'error' come from
+// the staff MCP tool's DOCUMENTATION and have never been seen in data — no
+// schedule on the platform has ever carried a non-'removed' status, and
+// synced_at is NULL on all 9 — so the unknown branch is the one that will run
+// first if the real vocabulary differs.
+ok(lightingSyncState({ lightingSync: "whatever" }).tone !== "ok",
+   "an unrecognised status must not report as confirmed");
+ok(lightingSyncState({ lightingSync: "" }).tone !== "ok",
+   "a blank status must not report as confirmed");
+ok(lightingSyncState(null).tone !== "ok",
+   "a missing row must not report as confirmed, and must not throw");
+ok(/not recognised/.test(lightingSyncState({ lightingSync: "whatever" }).label),
+   "an unrecognised status should name itself so it can be added to the map");
+
+// ── The card carries the rule and the reason ───────────────────────────────
+["Lit Start Source", "Lit End Source", "Lighting Error"].forEach(c => {
+  ok(sqlCode.indexOf('AS "' + c + '"') > 0, "card 17294 should emit " + c);
+});
+["start_source", "end_source", "last_error"].forEach(c => {
+  ok(new RegExp("rls\\." + c + "\\s+AS\\s+lighting_").test(sqlCode),
+     "the base CTE should carry rls." + c);
+});
+// The card ships the RULE and the page words it — composing "Sunset" in SQL
+// would put a second definition of how a time is displayed on the other side
+// of a four-hour cache.
+ok(!/'Sunset'/i.test(sqlCode.slice(sqlCode.indexOf('AS "Lit Window"') - 900,
+                                   sqlCode.indexOf('AS "Lit Window"') + 60)),
+   "the card should not word the sunset rule itself — the page owns display");
+
+// ── The page maps them, and the row is highlighted ─────────────────────────
+[["litStartSource", "Lit Start Source"], ["litEndSource", "Lit End Source"],
+ ["lightingError", "Lighting Error"]].forEach(([k, col]) => {
+  ok(new RegExp(k + ":\\s*raw\\['" + col + "'\\]").test(src),
+     "normalizeRow should map " + col);
+});
+
+// Dan: "If a rental has an actual 'Musco Lighting' configuration set ... then
+// I'd want a yellow bar highlighting that row for easy visibility."
+ok(/\.data-row\.musco-lit[\s\S]{0,240}background:\s*#fffbeb/.test(src),
+   "a Musco-lit row should carry the yellow highlight");
+// BOTH spellings, and asserted separately. A single /print-color-adjust/ also
+// matches the -webkit- prefix, so deleting the standard property SURVIVED the
+// first draft of this assertion — caught by mutation, not by review.
+const barCss = src.slice(src.indexOf(".data-row.musco-lit"), src.indexOf(".data-row.musco-lit") + 300);
+ok(/-webkit-print-color-adjust:\s*exact/.test(barCss),
+   "the highlight needs the prefixed print-color rule for Chromium's PDF");
+ok(/\n\s*print-color-adjust:\s*exact/.test(barCss),
+   "the highlight needs the standard print-color rule — that is the copy a grounds crew holds");
+const rowJsx = src.slice(src.indexOf("className={'data-row'"), src.indexOf("className={'data-row'") + 220);
+ok(/muscoLit\(r\)/.test(rowJsx),
+   "the row class should come from muscoLit, so it can never fire on an add-on");
+ok(!/addons/.test(rowJsx), "the row class must not read the add-on list");
+
+// FOUR SURFACES, ONE PREDICATE. The note, the filter, the highlight and the
+// export disagreeing about whether a field's floodlights are on this booking
+// is the facility-Summary failure one report over.
+ok((src.match(/muscoLit\(/g) || []).length >= 6,
+   "muscoLit should be read by the note, the filter, the highlight and the export");
+const filterBlock = src.slice(src.indexOf("if (filterLighting) {"),
+                              src.indexOf("if (filterLighting) {") + 700);
+ok(/result\.filter\(muscoLit\)/.test(filterBlock),
+   "the Lit Only filter should read the same predicate as everything else");
+ok(!/r\.lighting === 'Yes'/.test(filterBlock),
+   "the Lit Only filter should not re-derive lit-ness from the raw column");
+
+// The filter deliberately keeps a REJECTED schedule in view. A filter that
+// hid the broken ones is how a broken one goes unnoticed — the same failure
+// direction as the card's own denylist, and a reversal of what was proposed.
+ok(!/tone\s*===\s*'ok'/.test(filterBlock) && !/lightingSyncState/.test(filterBlock),
+   "the Lit Only filter should not narrow to confirmed schedules");
 
 console.log(n + " assertions passed.");

@@ -62,6 +62,46 @@
 --    export, and feeds cache four hours — so a pre-push response and a
 --    post-push one are both live at once and the page has to be able to fall
 --    back to them.
+--
+-- 5. 2026-09-11: THE SCHEDULE'S OWN RULE, AND WHETHER MUSCO TOOK IT.
+--
+--    Dan, with Midland about to go live: "what are we doing for the facility
+--    rental report when an actual musco lighting is connected, not just the
+--    rec 'add on'?"
+--
+--    Measured the same day, and the timing is the point: Midland was wired
+--    for Musco on 2026-09-09/10 — site_lighting_configuration holds 73 sites
+--    across 6 locations and 6 CLC facilities, the ONLY org on the platform
+--    with any. 1,230 of their next 1,408 reservations (87%) sit on one of
+--    those sites, over 184 rentals. So this column is about to matter for
+--    nearly every row of that org's schedule, having never mattered anywhere.
+--
+--    A SUNSET SCHEDULE HAS NO START INSTANT, and that is what made this
+--    urgent rather than cosmetic. start_source is 'sunset' on 2 of the 9
+--    schedules ever written (musco_start_value is the literal string 'suns'),
+--    and lit_from is NULL on BOTH — there is no fixed time to store, because
+--    the switch-on tracks the sun and moves every day of a recurring rental.
+--    CONCAT_WS then yields the end alone, so the page would print
+--    "Lit: 11:00pm" for a field that comes on at dusk and goes off at 11.
+--    Emitting start_source/end_source lets it say "Sunset - 11:00pm" instead.
+--    Deliberately NOT composed into "Lit Window" here: the word is
+--    presentation, and the page already owns one definition of how a time is
+--    displayed (litWindowLabel -> formatTime). The card ships the rule; the
+--    page words it.
+--
+--    "Lighting Sync" WAS ALREADY ON THIS CARD AND READ BY NOTHING — selected
+--    here, mapped in public/facility.html, and rendered on no surface. It is
+--    the only column that can say whether the lights will actually come on,
+--    and without it an errored push draws the same confident 💡 as a healthy
+--    one, i.e. a booked team at a dark field. "Lighting Error" carries the
+--    vendor's own message beside it, which is the difference between
+--    "something failed" and "Musco rejected this field id".
+--
+--    NOT YET OBSERVABLE, said plainly so nobody reads the page's vocabulary
+--    as measured: synced_at is NULL on all 9 rows, last_error is NULL on all
+--    9, and sync_status has only ever held 'removed'. 'synced' and 'error'
+--    come from the staff MCP tool's own documentation, not from data. Revisit
+--    the mapping once Midland has a live one.
 WITH addons AS (
   SELECT
     STRING_AGG(
@@ -178,7 +218,18 @@ base AS (
     rls.lit_from      AS lighting_lit_from,
     rls.lit_until     AS lighting_lit_until,
     rls.sync_status   AS lighting_sync_status,
-    rls.timezone      AS lighting_timezone
+    rls.timezone      AS lighting_timezone,
+    -- THE RULE, NOT ONLY THE CLOCK. start_source is 'reservation' or 'sunset'
+    -- (end_source adds 'set_time'), and a SUNSET-anchored schedule carries NO
+    -- lit_from at all — measured, NULL on both such rows of the 9 on the
+    -- platform, because there is no fixed instant to store: the switch-on
+    -- tracks the sun. Without these two the page can only print the end and
+    -- would say "Lit: 11:00pm", which reads as ON at 11 when it means OFF at
+    -- 11. last_error is the vendor's own message, which is the difference
+    -- between "something failed" and "Musco rejected this field id".
+    rls.start_source  AS lighting_start_source,
+    rls.end_source    AS lighting_end_source,
+    rls.last_error    AS lighting_last_error
   FROM facility_rental fr
   JOIN organization o ON o.id = fr.organization_id
   JOIN reservation r ON r.facility_rental_id = fr.id
@@ -333,13 +384,20 @@ SELECT
   b.lighting_lit_from                       AS "Lit From",
   b.lighting_lit_until                      AS "Lit Until",
   b.lighting_sync_status                    AS "Lighting Sync",
+  b.lighting_start_source                   AS "Lit Start Source",
+  b.lighting_end_source                     AS "Lit End Source",
+  b.lighting_last_error                     AS "Lighting Error",
 
   -- Lit Window: the same instants, PRE-FORMATTED in the facility's own
   -- timezone, in the same 'HH12:MIam' shape as Begin/End two columns up so
   -- the three read as one clock. The schedule carries its own timezone on
   -- every row measured; the location is the fallback for one that does not.
-  -- CONCAT_WS skips a NULL side, so a sunset start that has not resolved yet
-  -- prints the end alone rather than the string "- 11:00pm".
+  -- CONCAT_WS skips a NULL side rather than making the whole string NULL, so a
+  -- sunset-anchored schedule prints the end alone instead of "- 11:00pm".
+  -- THAT IS NOT A TIME THE PAGE MAY PRINT ON ITS OWN: a lone "11:00pm" reads
+  -- as lights ON at 11 when it means OFF at 11. "Lit Start Source" above is
+  -- what lets the page say "Sunset - 11:00pm" instead, and it is why the
+  -- source columns ship with this one rather than after it.
   NULLIF(CONCAT_WS(' - ',
     to_char(b.lighting_lit_from  AT TIME ZONE COALESCE(b.lighting_timezone, b.location_timezone), 'HH12:MIam'),
     to_char(b.lighting_lit_until AT TIME ZONE COALESCE(b.lighting_timezone, b.location_timezone), 'HH12:MIam')

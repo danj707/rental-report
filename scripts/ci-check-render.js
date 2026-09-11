@@ -112,6 +112,58 @@ function campsiteRows() {
     "Lighting": "Yes", "Lighting Sync": "synced",
     "Lit From": "2026-09-11T23:00:00Z", "Lit Until": "2026-09-12T00:00:00Z",
     "Lit Window": "06:00pm - 07:00pm",
+    "Lit Start Source": "reservation", "Lit End Source": "reservation",
+    "Lighting Error": null,
+  }));
+
+  // A SUNSET-ANCHORED schedule. Musco can anchor an end to the sun rather than
+  // a clock, and such a schedule stores NO lit_from at all — measured, NULL on
+  // both of the two rows on the platform that use it — so the card's
+  // CONCAT_WS yields the END ALONE. "11:00pm" is the exact string those live
+  // rows produce, and printing it raw says the lights come ON at 11 when it
+  // means they go OFF at 11. Only the source column can tell the two apart,
+  // so a fixture without it could not discriminate.
+  rows.push(Object.assign({}, litRow, {
+    "Reservation ID": "Site 04-sunset", "Date": d(6), "Multi-Day Days": null, "Multi-Day Day#": null,
+    "Facility": "Topaz Lake Recreation Area - Site 04", "Add Ons": "", "Add-On Fees": 0, "Total": 80,
+    "Begin": "08:30pm", "End": "11:00pm",
+    "Lighting": "Yes", "Lighting Sync": "synced",
+    "Lit From": null, "Lit Until": "2026-09-13T06:00:00Z",
+    "Lit Window": "11:00pm",
+    "Lit Start Source": "sunset", "Lit End Source": "set_time",
+    "Lighting Error": null,
+  }));
+
+  // A schedule MUSCO REJECTED. It has to stay visible — a filter that hid the
+  // broken ones is how a booked team ends up at a dark field — but it must not
+  // draw the same confident lamp as a healthy one. "Lighting Sync" has been on
+  // card 17294 all along and was read by no surface, so before this the two
+  // rendered identically.
+  rows.push(Object.assign({}, litRow, {
+    "Reservation ID": "Site 05-err", "Date": d(7), "Multi-Day Days": null, "Multi-Day Day#": null,
+    "Facility": "Topaz Lake Recreation Area - Site 05", "Add Ons": "", "Add-On Fees": 0, "Total": 90,
+    "Begin": "07:00pm", "End": "09:00pm",
+    "Lighting": "Yes", "Lighting Sync": "error",
+    "Lit From": "2026-09-14T02:00:00Z", "Lit Until": "2026-09-14T04:00:00Z",
+    "Lit Window": "07:00pm - 09:00pm",
+    "Lit Start Source": "reservation", "Lit End Source": "reservation",
+    "Lighting Error": "unknown clc field id",
+  }));
+
+  // A booking that BILLS for lighting and drives nothing — the add-on trap.
+  // Dan, sending a screenshot of exactly this shape: "The screenshot is just
+  // an example, not an actual musco lighting integration." "Field Lights" and
+  // "Field Light Fee" are among the most-attached add-ons on the platform, so
+  // a highlight that keyed on the add-on name would fire on 409 rentals that
+  // have no Musco schedule at all.
+  rows.push(Object.assign({}, litRow, {
+    "Reservation ID": "Site 06-addon", "Date": d(8), "Multi-Day Days": null, "Multi-Day Day#": null,
+    "Facility": "Topaz Lake Recreation Area - Site 06",
+    "Add Ons": "Field Lights ($25.00)", "Add-On Fees": 25, "Total": 150,
+    "Begin": "06:30pm", "End": "08:30pm",
+    "Lighting": null, "Lighting Sync": null,
+    "Lit From": null, "Lit Until": null, "Lit Window": null,
+    "Lit Start Source": null, "Lit End Source": null, "Lighting Error": null,
   }));
   return rows;
 }
@@ -2163,9 +2215,14 @@ const CASES = [
   // derivations deliberately differ (see facilityRows).
   { name: "facility · the lit note reads the facility's clock", path: "/{org}/facility",
     act: async page => {
+      // SCOPED TO ITS OWN ROW. The fixture carries several lit rows now (a
+      // synced one, a sunset one, a rejected one), so taking the first note
+      // that says "Lit" tests whichever happens to sort first.
       const txt = await page.evaluate(() => {
         const el = Array.from(document.querySelectorAll('.sub-row'))
-          .find(n => n.textContent.indexOf('Lit:') >= 0);
+          .find(n => n.textContent.indexOf('Lit:') >= 0
+                  && n.previousElementSibling
+                  && n.previousElementSibling.textContent.indexOf('Site 03') >= 0);
         return el ? el.textContent : '';
       });
       await page.evaluate(t => {
@@ -2181,7 +2238,9 @@ const CASES = [
     act: async page => {
       await page.evaluate(() => {
         const note = Array.from(document.querySelectorAll('.sub-row'))
-          .find(n => n.textContent.indexOf('Lit:') >= 0);
+          .find(n => n.textContent.indexOf('Lit:') >= 0
+                  && n.previousElementSibling
+                  && n.previousElementSibling.textContent.indexOf('Site 03') >= 0);
         const row = note && note.previousElementSibling;
         const cells = row ? Array.from(row.querySelectorAll('.cell')).map(c => c.textContent.trim()) : [];
         const hasBegin = cells.indexOf('6:00pm') >= 0, hasEnd = cells.indexOf('7:00pm') >= 0;
@@ -2189,6 +2248,94 @@ const CASES = [
       });
     },
     needs: "body[data-lit-agrees=\"1\"]" },
+
+  // ── The integration itself (Dan, 2026-09-11: "what are we doing for the
+  // facility rental report when an actual musco lighting is connected, not
+  // just the rec 'add on'?") ──────────────────────────────────────────────
+  //
+  // A SUNSET-ANCHORED schedule stores no start instant, so the card's window
+  // arrives as a bare "11:00pm" — which reads as lights ON at 11 when it means
+  // OFF at 11. Two of the nine schedules on the platform are this shape.
+  // Keyed on BOTH halves: requiring "Sunset - 11:00pm" alone would pass on a
+  // build that also printed the bare form somewhere, and requiring the absence
+  // alone would pass on a row that rendered no note at all.
+  { name: "facility · a sunset schedule says Sunset, not a bare clock", path: "/{org}/facility",
+    act: async page => {
+      await page.evaluate(() => {
+        const notes = Array.from(document.querySelectorAll('.sub-row'))
+          .map(n => n.textContent).filter(t => t.indexOf('Lit') >= 0);
+        const joined = notes.join(' || ');
+        document.body.setAttribute('data-lit-sunset',
+          /Sunset - 11:00pm/.test(joined) ? '1' : '0');
+        // The bug: a note whose whole window is the end time and nothing else.
+        document.body.setAttribute('data-lit-bare',
+          notes.some(t => /Lit:\s*11:00pm\s*$/.test(t.trim())) ? '1' : '0');
+      });
+    },
+    needs: "body[data-lit-sunset=\"1\"][data-lit-bare=\"0\"]" },
+
+  // A schedule Musco REJECTED must not draw the same confident lamp as a
+  // healthy one — before this, "Lighting Sync" was on the card and read by no
+  // surface, so the two rendered identically. Keyed on the icon and on the
+  // vendor's own message, because "an error state rendered" passes on a build
+  // that says only that something failed.
+  { name: "facility · a rejected schedule is not a lit field", path: "/{org}/facility",
+    act: async page => {
+      await page.evaluate(() => {
+        const rows = Array.from(document.querySelectorAll('[data-musco-lit]'));
+        const bad = rows.filter(r => r.getAttribute('data-musco-lit') === 'bad');
+        const ok_ = rows.filter(r => r.getAttribute('data-musco-lit') === 'ok');
+        const note = n => { const s = n.nextElementSibling; return s ? s.textContent : ''; };
+        document.body.setAttribute('data-lit-tones', bad.length + '/' + ok_.length);
+        document.body.setAttribute('data-lit-err-icon',
+          bad.length && note(bad[0]).indexOf('\u26A0') >= 0 ? '1' : '0');
+        document.body.setAttribute('data-lit-err-why',
+          bad.length && note(bad[0]).indexOf('unknown clc field id') >= 0 ? '1' : '0');
+        // ...and the healthy one keeps the lamp, or the icon says nothing.
+        document.body.setAttribute('data-lit-ok-icon',
+          ok_.length && note(ok_[0]).indexOf('\uD83D\uDCA1') >= 0 ? '1' : '0');
+      });
+    },
+    needs: "body[data-lit-tones=\"1/2\"][data-lit-err-icon=\"1\"][data-lit-err-why=\"1\"][data-lit-ok-icon=\"1\"]" },
+
+  // Dan: "If a rental has an actual 'Musco Lighting' configuration set ... then
+  // I'd want a yellow bar highlighting that row for easy visibility." Read as
+  // the COMPUTED style, because the class is present either way and only the
+  // browser can say whether the rule that styles it survived the cascade.
+  { name: "facility · a Musco-lit row carries the yellow bar", path: "/{org}/facility",
+    act: async page => {
+      await page.evaluate(() => {
+        const row = document.querySelector('.data-row.musco-lit');
+        const cs = row ? getComputedStyle(row) : null;
+        document.body.setAttribute('data-lit-bg', cs ? cs.backgroundColor : 'none');
+        document.body.setAttribute('data-lit-bar',
+          cs && /inset/.test(cs.boxShadow) ? '1' : '0');
+      });
+    },
+    needs: "body[data-lit-bg=\"rgb(255, 251, 235)\"][data-lit-bar=\"1\"]" },
+
+  // THE ADD-ON TRAP. A rental billing a "$25.00 Field Lights" add-on drives no
+  // floodlights, and 409 rentals on the platform carry one — so a highlight
+  // keyed on the add-on NAME would fire on all of them. Keyed on the count:
+  // "a highlighted row exists" passes on a build that highlights everything.
+  { name: "facility · an add-on called Field Lights highlights nothing", path: "/{org}/facility",
+    act: async page => {
+      await page.evaluate(() => {
+        const lit = document.querySelectorAll('.data-row.musco-lit').length;
+        const addonNote = Array.from(document.querySelectorAll('.sub-row'))
+          .find(n => n.textContent.indexOf('Field Lights') >= 0);
+        const row = addonNote && addonNote.previousElementSibling;
+        document.body.setAttribute('data-lit-count', String(lit));
+        document.body.setAttribute('data-addon-row-lit',
+          row && row.classList.contains('musco-lit') ? '1' : '0');
+        document.body.setAttribute('data-addon-row-found', row ? '1' : '0');
+      });
+    },
+    // Exactly the three rows with a real schedule — synced, sunset, rejected —
+    // and the add-on row present but NOT among them. Asserting the absence
+    // alone would pass on a row that never rendered.
+    needs: "body[data-lit-count=\"3\"][data-addon-row-found=\"1\"][data-addon-row-lit=\"0\"]" },
+
   // The Forms column links to the rental's Required Information tab.
   { name: "facility · forms link",    path: "/{org}/facility",
     needs: "a[href$=\"tab=requiredInformation\"]" },
