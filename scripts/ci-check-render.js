@@ -1795,6 +1795,22 @@ const clearRefundPref = async (page) => {
   });
 };
 
+/* EUCLID'S OWN COLUMN SET — Begin, End, Facility/Site, Reservee, Purpose and
+   nothing else. Defined once rather than once per case: it is what leaves
+   spare width for the columns to grow into, and every case about the growth
+   needs exactly it. A fourth hand-written copy is how one of them ends up
+   ticking a column the others do not and quietly testing a different layout. */
+const EUCLID_COLUMNS = async page => {
+  await page.evaluateOnNewDocument(() => {
+    try {
+      ['phone', 'email', 'headcount', 'total', 'forms', 'paid', 'permit',
+       'notes', 'resident', 'booktype', 'addon_fees']
+        .forEach(k => localStorage.setItem('col_' + k, 'false'));
+      ['link', 'sitetype', 'lighting'].forEach(k => localStorage.removeItem('col_' + k));
+    } catch (e) {}
+  });
+};
+
 const CASES = [
   { name: "facilities · camping",  path: "/{org}/facilities?tab=camping", needs: ".camp-cal .cc-hd" },
 
@@ -2504,6 +2520,142 @@ const CASES = [
   // and 62% of a typical week has no form at all.
   { name: "facility · no forms, no link", path: "/{org}/facility",
     needs: "[data-forms-empty=\"1\"]" },
+
+  // ── THE COLUMNS FILL THE PAGE (Dan, 2026-09-11, with Euclid's schedule open
+  // and most of the checkboxes off: "expecting the data to fit on the page
+  // (clearly it is truncating, and shouldn't)").
+  //
+  // NO SOURCE ASSERTION CAN SEE THIS. `.data-row` is a flexbox, and whether
+  // its columns actually reach the right-hand edge is a question about the
+  // rendered boxes — the shipped version had every column at a fixed `width`
+  // and the one rule with flex-grow named a class no element has, so hundreds
+  // of pixels sat dead while Reservee clipped at 150px. The stylesheet reads
+  // plausibly either way.
+  //
+  // EUCLID'S OWN SHAPE: Begin, End, Facility/Site, Reservee, Purpose and
+  // nothing else.
+  { name: "facility · the columns fill the page when most are switched off",
+    path: "/{org}/facility",
+    pre: EUCLID_COLUMNS,
+    act: async page => {
+      await page.waitForSelector(".data-row .cell.col-purpose", { timeout: 30000 });
+      await page.evaluate(() => {
+        const row = document.querySelector('.data-row');
+        const last = row.lastElementChild;
+        // 8px of row padding is the whole of what should be left over.
+        const slack = Math.round(row.getBoundingClientRect().right
+                                 - last.getBoundingClientRect().right);
+        const res = document.querySelector('.data-row .cell.col-reservee');
+        document.body.setAttribute('data-col-slack', String(slack));
+        document.body.setAttribute('data-col-res-grew',
+          Math.round(res.getBoundingClientRect().width) > 150 ? '1' : '0');
+      });
+    },
+    // BOTH HALVES. "Reservee got wider" alone passes on a build that widened
+    // one column and left the rest of the page empty; "nothing is left over"
+    // alone passes on a build that grew a column nobody reads.
+    needs: "body[data-col-res-grew=\"1\"]",
+    note: "the row's columns must reach the right-hand edge" },
+  { name: "facility · ...leaving no dead space to the right",
+    path: "/{org}/facility",
+    pre: EUCLID_COLUMNS,
+    act: async page => {
+      await page.waitForSelector(".data-row .cell.col-purpose", { timeout: 30000 });
+      await page.evaluate(() => {
+        const row = document.querySelector('.data-row');
+        const last = row.lastElementChild;
+        const slack = Math.round(row.getBoundingClientRect().right
+                                 - last.getBoundingClientRect().right);
+        document.body.setAttribute('data-col-tight', slack <= 24 ? '1' : '0');
+        document.body.setAttribute('data-col-slack', String(slack));
+      });
+    },
+    needs: "body[data-col-tight=\"1\"]" },
+  // AND THE CELLS WRAP RATHER THAN ELLIPSISING. `.col-purpose` said
+  // `white-space: normal` without `!important`, so `.data-row .cell` (0,2,0)
+  // beat it and it truncated anyway — the three columns above it carry
+  // `!important` because whoever wrote them hit this one at a time. Computed
+  // style, because the declaration is present either way.
+  { name: "facility · ...and the text wraps instead of being cut off",
+    path: "/{org}/facility",
+    act: async page => {
+      await page.waitForSelector(".data-row .cell.col-purpose", { timeout: 30000 });
+      await page.evaluate(() => {
+        const pick = (sel) => {
+          const cs = getComputedStyle(document.querySelector(sel));
+          return cs.whiteSpace + '|' + cs.textOverflow;
+        };
+        document.body.setAttribute('data-col-purpose-wrap', pick('.data-row .cell.col-purpose'));
+        document.body.setAttribute('data-col-res-wrap', pick('.data-row .cell.col-reservee'));
+      });
+    },
+    needs: "body[data-col-purpose-wrap=\"normal|clip\"][data-col-res-wrap=\"normal|clip\"]" },
+  // THE FIX MUST NOT PUSH THE ROW OFF THE PAGE with every column ticked, which
+  // is what `min-width: 0` is for — a flex item defaults to `min-width: auto`
+  // and refuses to shrink below its content.
+  { name: "facility · every column on still fits the page width",
+    path: "/{org}/facility",
+    pre: async page => { await page.evaluateOnNewDocument(() => {
+      try {
+        ['phone', 'email', 'headcount', 'total', 'forms', 'paid', 'permit',
+         'notes', 'resident', 'booktype', 'addon_fees']
+          .forEach(k => localStorage.removeItem('col_' + k));
+        ['link', 'sitetype', 'lighting'].forEach(k => localStorage.setItem('col_' + k, 'true'));
+      } catch (e) {}
+    }); },
+    act: async page => {
+      await page.waitForSelector(".data-row", { timeout: 30000 });
+      await page.evaluate(() => {
+        const row = document.querySelector('.data-row');
+        document.body.setAttribute('data-col-noscroll',
+          row.scrollWidth <= row.clientWidth + 1 ? '1' : '0');
+      });
+    },
+    needs: "body[data-col-noscroll=\"1\"]" },
+  // THE HEADER AND THE BODY SHARE THE COLUMN CLASSES, so they grow together —
+  // and a header that drifted off its own values is the one way this change
+  // could look right and read wrong.
+  //
+  // IT RUNS ON EUCLID'S COLUMN SET, AND THAT IS THE WHOLE POINT. The first
+  // draft used the default set and SURVIVED ITS OWN MUTATION: with every
+  // column ticked the row is already over-full, so flex-grow does nothing in
+  // either row, and a header that stopped growing renders identically. A case
+  // that passes on the regression it names is not a guard. With the columns
+  // Dan actually had, there is spare width to distribute and the same mutation
+  // drifts the heading by over a hundred pixels.
+  //
+  // That set also removes the 2-3px of drift the over-full layout produced —
+  // a shrinking flex item floors at `min-width: auto`, and the header's labels
+  // are longer than the values beneath them ("Resident?" against "Yes"), so
+  // the header floored higher. Measured as pre-existing at the time, not
+  // assumed: the identical drift appeared against the file as it stood before
+  // the flex change. Nothing spare to shrink means nothing to floor.
+  { name: "facility · the headings stay over their own columns",
+    path: "/{org}/facility",
+    pre: EUCLID_COLUMNS,
+    act: async page => {
+      await page.waitForSelector(".col-header-row .col-purpose", { timeout: 30000 });
+      /* THE DIAGNOSIS IS THROWN, NOT JUST STAMPED. "rendered no
+         body[data-col-aligned=1]" is the same sentence whether the header
+         drifted two pixels or two hundred, and whether it was the left edge or
+         the width — three different causes with three different fixes. */
+      const drift = await page.evaluate(() => {
+        const out = [];
+        document.querySelectorAll('.col-header-row > *').forEach(h => {
+          const cls = [...h.classList].find(c => c.startsWith('col-'));
+          if (!cls) return;
+          const c = document.querySelector('.data-row .cell.' + cls);
+          if (!c) { out.push(cls + ': no body cell'); return; }
+          const hb = h.getBoundingClientRect(), cb = c.getBoundingClientRect();
+          const dl = Math.round(hb.left - cb.left), dw = Math.round(hb.width - cb.width);
+          if (Math.abs(dl) > 1 || Math.abs(dw) > 1) out.push(cls + ' left' + dl + ' width' + dw);
+        });
+        document.body.setAttribute('data-col-aligned', out.length ? '0' : '1');
+        return out;
+      });
+      if (drift.length) throw new Error('headings drift off their columns: ' + drift.join(' | '));
+    },
+    needs: "body[data-col-aligned=\"1\"]" },
 
   // ── PII columns (Dan, 2026-09-09: "we don't want to include PII here unless
   // the org wants it", then "phone and email should be checked by default").

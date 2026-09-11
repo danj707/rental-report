@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Weekly Rental Schedule</title>
+  <title>Facility Rental Schedule</title>
 
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
@@ -494,16 +494,44 @@
       font-size: 14px;
     }
 
-    /* ── Column widths ── */
+    /* ── Column widths ───────────────────────────────────────────────────
+       THE TEXT COLUMNS GROW INTO WHATEVER IS LEFT; the rigid ones do not.
+
+       Dan, with Euclid's schedule open and most of the column checkboxes
+       turned off: "Turning off almost all checkboxes on the rental report, and
+       expecting the data to fit on the page (clearly it is truncating, and
+       shouldn't)." He is right, and the cause is that NOTHING IN THE ROW HAD
+       flex-grow. `.data-row` is a flexbox and every column carried a fixed
+       `width`; the one rule that grew — `.col-name { flex: 1 }` — named a class
+       NO ELEMENT HAS ANY MORE, so it had been dead for as long as the column
+       set has looked like this. Every pixel of leftover width was dead space,
+       and Reservee clipped at 150px with three hundred of them going spare.
+
+       It only acts where there IS spare width: with every column ticked the
+       widths already fill the row, nothing grows, and the layout is unchanged.
+       That is exactly the case Dan hit — the fewer columns you show, the more
+       the remaining ones get.
+
+       THE `!important`s ARE NOT DECORATION. `.data-row .cell` is (0,2,0) and
+       sets `white-space: nowrap` + `text-overflow: ellipsis`; a bare `.col-x`
+       is (0,1,0) and loses. `.col-purpose` said `white-space: normal` WITHOUT
+       one and was therefore still being truncated — the three siblings above
+       it carry `!important` because whoever wrote them hit this and patched
+       around it one column at a time. Reservee and Purpose now wrap for real,
+       so a long name cannot be cut off even when the row is genuinely narrow.
+
+       `min-width: 0` because a flex item defaults to `min-width: auto`, which
+       refuses to shrink below its content and would push the row wider than
+       the page instead of wrapping. */
     .col-start   { width: 68px; }
     .col-end     { width: 68px; }
-    .col-site    { width: 170px; font-weight: 500; white-space: normal !important; overflow: visible !important; text-overflow: clip !important; line-height: 1.3; }
-    .col-name    { flex: 1; }
+    .col-site    { flex: 2 1 170px; min-width: 0; font-weight: 500; white-space: normal !important; overflow: visible !important; text-overflow: clip !important; line-height: 1.3; }
     .col-hcnt    { width: 46px; text-align: center; }
-    .col-reservee{ width: 150px; }
+    .col-reservee{ flex: 2 1 150px; min-width: 0; white-space: normal !important; overflow: visible !important; text-overflow: clip !important; word-break: break-word; line-height: 1.3; }
     .col-phone   { width: 120px; white-space: normal !important; overflow: visible !important; text-overflow: clip !important; word-break: break-word; }
-    .col-email   { width: 190px; font-size: 10.5px; white-space: normal !important; overflow: visible !important; text-overflow: clip !important; word-break: break-word; }
-    .col-purpose { width: 160px; white-space: normal; word-break: break-word; }
+    .col-email   { flex: 2 1 190px; min-width: 0; font-size: 10.5px; white-space: normal !important; overflow: visible !important; text-overflow: clip !important; word-break: break-word; }
+    /* The widest free text on the row, so it takes the largest share. */
+    .col-purpose { flex: 3 1 160px; min-width: 0; white-space: normal !important; overflow: visible !important; text-overflow: clip !important; word-break: break-word; line-height: 1.3; }
     .col-sitetype{ width: 84px; text-align: center; font-size: 10px; }
     .col-resident{ width: 72px; text-align: center; }
     .col-booktype{ width: 72px; text-align: center; font-size: 10px; }
@@ -4247,7 +4275,7 @@ function App() {
             {logoUrl && <img src={logoUrl} alt="" className="report-header-logo" onError={e => e.target.style.display='none'} />}
             <div>
               <div className="org-label">{orgName}</div>
-              <div className="title">Weekly Rental Schedule</div>
+              <div className="title">Facility Rental Schedule</div>
             </div>
           </div>
           <div className="report-header-right">
