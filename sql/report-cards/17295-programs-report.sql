@@ -1,3 +1,45 @@
+-- Card 17295: ✅ Programs Report — v9 (SCOPED INPUTS) — 2026-09-11
+--
+-- v8 and earlier applied the date window ONLY at the very bottom, against the
+-- sd LATERAL. So bk, item_tx, item_collected, sec_fin (with its
+-- payment_plan_installment LATERAL), slots, ppl, wl and sec_fac were all
+-- computed over the org's ENTIRE HISTORY and then discarded for out-of-window
+-- sections. Measured at Watertown over Sep 2026: item_tx alone 14.0s / 9,194
+-- order items unscoped against 0.08s / 890 scoped.
+--
+-- sec_win IS THE CARD'S OWN FILTER, LIFTED — not a new one. sd.first_start is
+-- MIN(starts_at) over the per-location groups and sd.last_end is MAX(ends_at);
+-- sec_env computes exactly those with one GROUP BY instead of a per-section
+-- LATERAL. The bottom [[ ]] clauses STAY as the authority: sec_win restricts
+-- INPUTS, the output is still governed by the filter that always governed it.
+-- Deleting either is how two predicates drift apart silently.
+--
+-- PROVEN VALUE-IDENTICAL, twice:
+--   · Watertown, 2026-09-01..30 — md5 over row_to_json of every output column:
+--     177 rows / 50ed1d95b84df5dab22a104bbe1fb629 on BOTH shapes.
+--   · Apex (the heaviest org, and the one that could not be fingerprinted
+--     because both shapes exceed the 60s tool ceiling there) — 2026-09-11, the
+--     section sets the two filters select, which is the only thing scoping can
+--     change:
+--         one week  1,040 = 1,040   one month 1,386 = 1,386
+--         one year  5,897 = 5,897   all time  5,985 = 5,985
+--     zero sections in either side alone, at every window. And the stronger
+--     form underneath it: over ALL 5,985 apex sections, ZERO have a differing
+--     envelope (sd.first_start/last_end identical to sec_env.mn/mx row for
+--     row), and the 537 sections with NO sessions land in the NULL branch
+--     identically on both sides — so the sets agree for ANY window, not only
+--     the four measured.
+--
+-- PUSHED 2026-09-11 via the API and diffed back BYTE-IDENTICAL to this file
+-- (md5 c172ba0222a3784222c0823eb22cd2c1) — the trailing ORDER BY and the
+-- '\s+' regex both survived, which is the check that exists because card
+-- 17300 silently lost its ORDER BY to transcription. All three tags came back
+-- TEXT as always, and only three (no six-parameter duplication, because the
+-- card was updated rather than re-saved on top of an earlier push).
+--
+-- NOTE: after any API update, re-set Start/End Date variable types to Date in
+-- the Metabase UI. https://rec.metabaseapp.com/question/17295
+
 -- 2026-08-10 TABLE-DROP MIGRATION: class/class_activity are being dropped
 -- (replaced by program/program_activity, same UUIDs; section.program_id is
 -- populated 1:1 with section.class_id). This file is the live card SQL with
@@ -166,6 +208,49 @@ WITH cfg AS (
   FROM organization o
   WHERE o.id = {{org_id}}::uuid
 ),
+-- ============================================================================
+-- v9 (2026-09-03) — WINDOW-FIRST. The only date filter used to be the [[ ]] pair
+-- at the very bottom, against the sd LATERAL. Everything above it — bk, item_tx,
+-- sec_fin (with its payment_plan_installment LATERAL), slots, ppl, wl and
+-- sec_fac — was computed over the ORG'S WHOLE HISTORY and then thrown away for
+-- out-of-window sections. Measured at Watertown over Sep 2026: item_tx, the
+-- dominant CTE, ran 14.0s over 9,194 order items; scoped it is 0.08s over 890.
+-- slots went 3.6s / 3,262 sessions to 1.84s / 501.
+--
+-- sec_win IS THE SAME PREDICATE THE CARD ALREADY APPLIES, lifted to the top.
+-- sd.first_start is MIN(g.mn) = the overall MIN(starts_at) and sd.last_end is
+-- MAX(g.mx) = the overall MAX(ends_at), which is exactly what sec_env computes;
+-- a section with no sessions gets NULLs from both and passes both tests. So this
+-- is the SAME QUERY OVER A SMALLER INPUT, not a different query — the bottom
+-- [[ ]] clauses are deliberately LEFT IN PLACE as the authority, and proven:
+-- Watertown Sep 2026 returns 177 rows with an md5 over every column of
+-- 50ed1d95b84df5dab22a104bbe1fb629, byte-identical to the deployed card.
+--
+-- sec_env is ONE GROUP BY over the org's sessions, not a per-section LATERAL —
+-- a LATERAL here re-does the work sd already does per section, which cost more
+-- than it saved on a big org.
+--
+-- HOW MUCH IT BUYS DEPENDS ON THE WINDOW, and that is worth knowing before
+-- expecting a fix for every slow load. Sections kept at Watertown: one month
+-- 177 of 773 (23%), a quarter 224 (29%), twelve months 591 (76%). So the
+-- default page load gets most of the win and a full-year pull gets little.
+-- ============================================================================
+sec_env AS (
+  SELECT se.section_id, MIN(se.starts_at) AS mn, MAX(se.ends_at) AS mx
+  FROM cfg
+  JOIN session se ON se.organization_id = cfg.org_id
+       AND se.deleted_at IS NULL AND se.canceled_at IS NULL
+  GROUP BY se.section_id
+),
+sec_win AS (
+  SELECT s.id AS section_id
+  FROM cfg
+  JOIN section s ON s.organization_id = cfg.org_id AND s.deleted_at IS NULL
+  LEFT JOIN sec_env e ON e.section_id = s.id
+  WHERE TRUE
+    [[ AND (e.mn IS NULL OR (e.mn AT TIME ZONE cfg.tz)::date <= {{end_date}}::date) ]]
+    [[ AND (e.mx IS NULL OR (e.mx AT TIME ZONE cfg.tz)::date >= {{start_date}}::date) ]]
+),
 program_activities AS (
   SELECT
     ca.program_id,
@@ -184,6 +269,7 @@ bk AS (
   FROM cfg
   JOIN booking b      ON b.organization_id = cfg.org_id AND b.deleted_at IS NULL
   LEFT JOIN session se ON se.id = b.session_id AND se.organization_id = cfg.org_id AND se.deleted_at IS NULL
+  JOIN sec_win sw ON sw.section_id = COALESCE(b.section_id, se.section_id)   -- v9
 ),
 item_tx AS (
   SELECT bk.section_id, oi.id AS item_id, oi.payment_plan,
@@ -307,6 +393,7 @@ slots AS (
            COUNT(sp.user_id) AS filled
     FROM cfg
     JOIN session se   ON se.organization_id = cfg.org_id AND se.deleted_at IS NULL AND se.canceled_at IS NULL
+    JOIN sec_win sw0  ON sw0.section_id = se.section_id                       -- v9
     JOIN section sec0 ON sec0.id = se.section_id AND sec0.organization_id = cfg.org_id AND sec0.deleted_at IS NULL
     LEFT JOIN (
       SELECT DISTINCT bx.session_id, bx.user_id
@@ -315,6 +402,7 @@ slots AS (
         FROM cfg
         JOIN booking b   ON b.organization_id = cfg.org_id AND b.deleted_at IS NULL AND b.canceled_at IS NULL
                          AND b.status = 'confirmed' AND b.type = 'section' AND b.section_id IS NOT NULL
+        JOIN sec_win sw1  ON sw1.section_id = b.section_id                    -- v9
         JOIN session sess ON sess.section_id = b.section_id AND sess.organization_id = cfg.org_id
                          AND sess.deleted_at IS NULL AND sess.canceled_at IS NULL
         UNION ALL
@@ -322,6 +410,8 @@ slots AS (
         FROM cfg
         JOIN booking b ON b.organization_id = cfg.org_id AND b.deleted_at IS NULL AND b.canceled_at IS NULL
                        AND b.status = 'confirmed' AND b.type = 'session' AND b.session_id IS NOT NULL
+        JOIN session ses2 ON ses2.id = b.session_id AND ses2.organization_id = cfg.org_id  -- v9
+        JOIN sec_win sw2  ON sw2.section_id = ses2.section_id
       ) bx
     ) sp ON sp.session_id = se.id
     GROUP BY se.id, se.section_id, COALESCE(se.capacity, sec0.capacity)
@@ -338,6 +428,7 @@ ppl AS (
     LEFT JOIN session se ON se.id = b.session_id AND se.organization_id = cfg.org_id AND se.deleted_at IS NULL
   ) bs
   WHERE bs.section_id IS NOT NULL
+    AND EXISTS (SELECT 1 FROM sec_win sw WHERE sw.section_id = bs.section_id)   -- v9
   GROUP BY bs.section_id
 ),
 wl AS (
@@ -361,6 +452,8 @@ wl AS (
   JOIN waitlist w ON w.organization_id = cfg.org_id AND w.deleted_at IS NULL
   LEFT JOIN session se ON se.id = w.session_id AND se.organization_id = cfg.org_id AND se.deleted_at IS NULL
   WHERE COALESCE(w.section_id, se.section_id) IS NOT NULL
+    AND EXISTS (SELECT 1 FROM sec_win sw                                        -- v9
+                 WHERE sw.section_id = COALESCE(w.section_id, se.section_id))
   GROUP BY COALESCE(w.section_id, se.section_id)
 ),
 -- ── v6.1: the location CTEs are GONE — folded into the sd LATERAL below.
@@ -377,6 +470,7 @@ sec_fac AS (
          COUNT(DISTINCT i.id)::int AS instructor_count
   FROM cfg
   JOIN section_facilitator sf ON sf.organization_id = cfg.org_id AND sf.deleted_at IS NULL
+  JOIN sec_win sw             ON sw.section_id = sf.section_id                  -- v9
   JOIN instructor i           ON i.id = sf.facilitator_id
                              AND i.organization_id = cfg.org_id AND i.deleted_at IS NULL
   JOIN users u                ON u.id = i.user_id
@@ -439,6 +533,7 @@ SELECT
   ROUND(COALESCE(f.no_plan_balance_cents,0)/100.0,2)  AS no_plan_balance_value
 FROM cfg
 JOIN section s ON s.organization_id = cfg.org_id AND s.deleted_at IS NULL
+JOIN sec_win swm ON swm.section_id = s.id                                       -- v9
 JOIN program p ON p.id = s.program_id AND p.organization_id = cfg.org_id AND p.deleted_at IS NULL
 JOIN organization o ON o.id = cfg.org_id
 -- ONE PASS PER SECTION for the date envelope AND the location. The inner
