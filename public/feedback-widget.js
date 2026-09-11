@@ -302,10 +302,318 @@
     }, true);
   }
 
+
+  // ── Surveys ───────────────────────────────────────────────────────
+  /* An admin-authored question set, offered as a card in the corner.
+     Dan, 2026-09-11: "lets build the survey tool, i need some feedback" — and
+     the hard rule: "just NEVER on a customer facing report ... ONLY on admin
+     stuff."
+
+     THAT RULE IS HONOURED BY WHERE THIS CODE LIVES, not by a check inside it.
+     The three un-tokened customer pages — calendar, rentalcalendar, campmap —
+     do not load feedback-widget.js at all (measured: zero, against 22 admin
+     pages that do), so a resident cannot be shown a survey even if every test
+     on the server were deleted. The server's PUBLIC_REPORTS gate is the second
+     line, not the first.
+
+     A CARD, NEVER A MODAL. These readers are admins mid-task; a dialog over
+     the report they came to read is an interruption, and an interruption is
+     how a survey gets closed unread. It sits in the corner, it can be ignored,
+     and it never covers the page. */
+  var SURVEY_SEEN_KEY = "rec_survey_v1";      // { "<id>": "done" | "no" }
+  var SURVEY_DELAY_MS = 4000;                 // let them see the report first
+  // The org landing page has no second path segment. MUST match
+  // SURVEY_ORG_SURFACE in server.js — the spec pins the two together, because
+  // two spellings of one surface makes targeting it match nothing, silently.
+  var SURVEY_ORG_SURFACE = "org-dashboard";
+
+  function surveySeen(){
+    try { return JSON.parse(localStorage.getItem(SURVEY_SEEN_KEY) || "{}") || {}; }
+    catch (_) { return {}; }
+  }
+  function surveyRemember(id, how){
+    try {
+      var m = surveySeen(); m[id] = how;
+      localStorage.setItem(SURVEY_SEEN_KEY, JSON.stringify(m));
+    } catch (_) {}
+  }
+  function surveyWhere(){
+    var parts = (window.location.pathname || "").split("/").filter(Boolean);
+    var qs = window.location.search || "";
+    var m = qs.match(/token=([^&]+)/);
+    return {
+      org: parts[0] || "",
+      report: parts[1] || SURVEY_ORG_SURFACE,
+      tokenQS: m ? "?token=" + m[1] : "",
+    };
+  }
+
+  var SURVEY_CSS = ""
+    + ".rec-svy{position:fixed;right:18px;bottom:18px;z-index:99997;width:340px;max-width:calc(100vw - 36px);"
+    + "background:#fff;border:1px solid #e5e7eb;border-radius:12px;box-shadow:0 18px 40px rgba(15,23,42,.22);"
+    + "font-family:system-ui,-apple-system,'Segoe UI',sans-serif;color:#111827;overflow:hidden;}"
+    + "@media (prefers-reduced-motion: no-preference){.rec-svy{animation:recSvyIn .22s cubic-bezier(.16,1,.3,1);}}"
+    + "@keyframes recSvyIn{from{transform:translateY(14px);opacity:0}to{transform:translateY(0);opacity:1}}"
+    + ".rec-svy-hd{display:flex;align-items:flex-start;gap:8px;padding:14px 14px 0;}"
+    + ".rec-svy-hd h3{margin:0;font-size:14px;font-weight:650;line-height:1.3;flex:1;}"
+    + ".rec-svy-x{background:none;border:none;cursor:pointer;font-size:17px;line-height:1;color:#9ca3af;padding:0 2px;}"
+    + ".rec-svy-x:hover{color:#4b5563;}"
+    + ".rec-svy-intro{margin:6px 14px 0;font-size:12px;color:#6b7280;line-height:1.45;}"
+    + ".rec-svy-body{padding:12px 14px 4px;max-height:min(60vh,460px);overflow-y:auto;}"
+    + ".rec-svy-q{margin:0 0 14px;}"
+    + ".rec-svy-q > p{margin:0 0 7px;font-size:13px;font-weight:550;line-height:1.35;}"
+    + ".rec-svy-req{color:#dc2626;font-weight:700;margin-left:2px;}"
+    + ".rec-svy-scale{display:flex;gap:5px;flex-wrap:wrap;}"
+    + ".rec-svy-scale button{flex:1 1 0;min-width:30px;padding:7px 0;border:1px solid #d1d5db;background:#fff;border-radius:6px;"
+    + "cursor:pointer;font-size:13px;font-family:inherit;color:#374151;transition:background .1s ease,border-color .1s ease;}"
+    + ".rec-svy-scale button:hover{background:#f3f4f6;}"
+    + ".rec-svy-scale button.on{background:#2563eb;border-color:#2563eb;color:#fff;font-weight:600;}"
+    + ".rec-svy-stars{display:flex;gap:2px;}"
+    + ".rec-svy-stars button{background:none;border:none;cursor:pointer;font-size:24px;line-height:1;padding:0 2px;"
+    + "filter:grayscale(1);opacity:.45;transition:opacity .1s ease,filter .1s ease,transform .1s ease;}"
+    + ".rec-svy-stars button.on{filter:none;opacity:1;}"
+    + ".rec-svy-stars button:hover{transform:scale(1.14);}"
+    + ".rec-svy-opts{display:flex;flex-direction:column;gap:5px;}"
+    + ".rec-svy-opts label{display:flex;align-items:flex-start;gap:7px;font-size:13px;line-height:1.35;cursor:pointer;"
+    + "padding:5px 7px;border:1px solid #e5e7eb;border-radius:6px;color:#374151;}"
+    + ".rec-svy-opts label:hover{background:#f9fafb;}"
+    + ".rec-svy-opts input{margin:2px 0 0;flex-shrink:0;}"
+    + ".rec-svy-q textarea{width:100%;box-sizing:border-box;min-height:74px;resize:vertical;padding:8px 9px;"
+    + "border:1px solid #d1d5db;border-radius:6px;font:inherit;font-size:13px;line-height:1.45;color:#111827;background:#fff;}"
+    + ".rec-svy-q textarea:focus,.rec-svy-scale button:focus-visible,.rec-svy-opts label:focus-within"
+    + "{outline:2px solid #3b82f6;outline-offset:1px;}"
+    + ".rec-svy-ft{display:flex;align-items:center;gap:8px;padding:10px 14px 13px;border-top:1px solid #f3f4f6;}"
+    + ".rec-svy-ft .rec-svy-later{background:none;border:none;color:#6b7280;font-size:12px;cursor:pointer;font-family:inherit;padding:4px 2px;}"
+    + ".rec-svy-ft .rec-svy-later:hover{color:#374151;text-decoration:underline;}"
+    + ".rec-svy-send{margin-left:auto;background:#2563eb;color:#fff;border:none;border-radius:6px;padding:8px 15px;"
+    + "font-size:13px;font-weight:600;font-family:inherit;cursor:pointer;}"
+    + ".rec-svy-send:hover{background:#1d4ed8;}"
+    + ".rec-svy-send:disabled{background:#93c5fd;cursor:not-allowed;}"
+    + ".rec-svy-err{margin:0 14px 8px;font-size:12px;color:#dc2626;line-height:1.4;}"
+    + ".rec-svy-done{padding:26px 18px;text-align:center;}"
+    + ".rec-svy-done h3{margin:0 0 5px;font-size:15px;color:#059669;}"
+    + ".rec-svy-done p{margin:0;font-size:13px;color:#6b7280;}"
+    + "@media print{.rec-svy{display:none!important;}}"
+    + "body.print-mode .rec-svy{display:none!important;}";
+
+  function surveyInjectStyle(){
+    if (document.getElementById("rec-svy-css")) return;
+    var s = document.createElement("style");
+    s.id = "rec-svy-css";
+    s.textContent = SURVEY_CSS;
+    document.head.appendChild(s);
+  }
+
+  // Every prompt and option is set with textContent, never innerHTML — this is
+  // admin-authored copy, but it is copy that reaches other people's screens.
+  function surveyEl(tag, cls, text){
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+  }
+
+  function surveyRenderQuestion(q, state){
+    var wrap = surveyEl("div", "rec-svy-q");
+    wrap.setAttribute("data-svy-q", q.id);
+    wrap.setAttribute("data-svy-type", q.type);
+    var p = surveyEl("p", null, q.prompt);
+    if (q.required) { var r = surveyEl("span", "rec-svy-req", "*"); r.title = "Required"; p.appendChild(r); }
+    wrap.appendChild(p);
+
+    if (q.type === "stars") {
+      var row = surveyEl("div", "rec-svy-stars");
+      for (var i = 1; i <= 5; i++) (function(n){
+        var b = surveyEl("button", null, "★");
+        b.type = "button";
+        b.setAttribute("aria-label", n + " of 5");
+        b.addEventListener("click", function(){
+          state[q.id] = n;
+          // Stars FILL UP TO the one clicked — a single lit star in the middle
+          // of four grey ones is not how anybody reads a star rating.
+          Array.prototype.forEach.call(row.children, function(c, j){
+            c.classList.toggle("on", j < n);
+          });
+        });
+        row.appendChild(b);
+      })(i);
+      wrap.appendChild(row);
+      return wrap;
+    }
+
+    if (q.type === "rating5" || q.type === "nps") {
+      var lo = q.type === "nps" ? 0 : 1, hi = q.type === "nps" ? 10 : 5;
+      var scale = surveyEl("div", "rec-svy-scale");
+      for (var n2 = lo; n2 <= hi; n2++) (function(n){
+        var b = surveyEl("button", null, String(n));
+        b.type = "button";
+        b.addEventListener("click", function(){
+          state[q.id] = n;
+          Array.prototype.forEach.call(scale.children, function(c){ c.classList.remove("on"); });
+          b.classList.add("on");
+        });
+        scale.appendChild(b);
+      })(n2);
+      wrap.appendChild(scale);
+      return wrap;
+    }
+
+    if (q.type === "yesno" || q.type === "single" || q.type === "multi") {
+      var many = q.type === "multi";
+      var box = surveyEl("div", "rec-svy-opts");
+      (q.options || []).forEach(function(opt){
+        var lab = surveyEl("label");
+        var inp = document.createElement("input");
+        inp.type = many ? "checkbox" : "radio";
+        inp.name = "svy_" + q.id;
+        inp.value = opt;
+        inp.addEventListener("change", function(){
+          if (many) {
+            var picked = [];
+            Array.prototype.forEach.call(box.querySelectorAll("input"), function(x){
+              if (x.checked) picked.push(x.value);
+            });
+            // An empty array is not an answer — drop the key entirely so a
+            // required question stays unanswered rather than passing on [].
+            if (picked.length) state[q.id] = picked; else delete state[q.id];
+          } else {
+            state[q.id] = opt;
+          }
+        });
+        lab.appendChild(inp);
+        lab.appendChild(surveyEl("span", null, opt));
+        box.appendChild(lab);
+      });
+      wrap.appendChild(box);
+      return wrap;
+    }
+
+    var ta = document.createElement("textarea");
+    ta.placeholder = q.placeholder || "";
+    ta.setAttribute("maxlength", "2000");
+    ta.addEventListener("input", function(){
+      var v = ta.value.trim();
+      if (v) state[q.id] = v; else delete state[q.id];
+    });
+    wrap.appendChild(ta);
+    return wrap;
+  }
+
+  function surveyMount(survey, where){
+    if (document.querySelector(".rec-svy")) return;
+    surveyInjectStyle();
+    var state = {};
+    var card = surveyEl("div", "rec-svy");
+    card.setAttribute("data-svy", survey.id);
+    card.setAttribute("role", "form");
+    card.setAttribute("aria-label", survey.title);
+
+    var hd = surveyEl("div", "rec-svy-hd");
+    hd.appendChild(surveyEl("h3", null, survey.title));
+    var x = surveyEl("button", "rec-svy-x", "×");
+    x.type = "button"; x.setAttribute("aria-label", "Close");
+    hd.appendChild(x);
+    card.appendChild(hd);
+    if (survey.intro) card.appendChild(surveyEl("p", "rec-svy-intro", survey.intro));
+
+    var body = surveyEl("div", "rec-svy-body");
+    (survey.questions || []).forEach(function(q){ body.appendChild(surveyRenderQuestion(q, state)); });
+    card.appendChild(body);
+
+    var err = surveyEl("div", "rec-svy-err");
+    err.style.display = "none";
+    card.appendChild(err);
+
+    var ft = surveyEl("div", "rec-svy-ft");
+    var later = surveyEl("button", "rec-svy-later", "Not now");
+    later.type = "button";
+    var send = surveyEl("button", "rec-svy-send", "Send");
+    send.type = "button";
+    ft.appendChild(later);
+    ft.appendChild(send);
+    card.appendChild(ft);
+    document.body.appendChild(card);
+
+    function dismiss(){
+      surveyRemember(survey.id, "no");
+      if (where.org) {
+        fetch("/" + where.org + "/" + where.report + "/api/survey-dismiss" + where.tokenQS, {
+          method: "POST", headers: { "Content-Type": "application/json" }, keepalive: true,
+          body: JSON.stringify({ surveyId: survey.id }),
+        }).catch(function(){});
+      }
+      card.remove();
+    }
+    x.addEventListener("click", dismiss);
+    later.addEventListener("click", dismiss);
+
+    send.addEventListener("click", function(){
+      var missing = (survey.questions || []).filter(function(q){
+        return q.required && state[q.id] == null;
+      });
+      if (missing.length) {
+        // Name the question rather than saying "fill in the required fields" —
+        // on a scrolling card the one they missed may be off screen.
+        err.textContent = "Still needed: " + missing.map(function(q){ return "“" + q.prompt + "”"; }).join(", ");
+        err.style.display = "block";
+        var first = body.querySelector('[data-svy-q="' + missing[0].id + '"]');
+        if (first && first.scrollIntoView) first.scrollIntoView({ block: "nearest" });
+        return;
+      }
+      err.style.display = "none";
+      send.disabled = true;
+      send.textContent = "Sending…";
+      fetch("/" + where.org + "/" + where.report + "/api/survey" + where.tokenQS, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ surveyId: survey.id, answers: state }),
+      }).then(function(r){
+        return r.json().catch(function(){ return {}; }).then(function(j){
+          if (!r.ok) throw new Error(j.error || ("Send failed (" + r.status + ")"));
+          return j;
+        });
+      }).then(function(){
+        // Remembered ONLY on a confirmed send. Marking it done optimistically
+        // is how an answer that never landed becomes an answer nobody is ever
+        // asked for again.
+        surveyRemember(survey.id, "done");
+        card.setAttribute("data-svy-done", "1");
+        card.innerHTML = "";
+        var done = surveyEl("div", "rec-svy-done");
+        done.appendChild(surveyEl("h3", null, "Thank you 🙌"));
+        done.appendChild(surveyEl("p", null, "That goes straight to the Rec team."));
+        card.appendChild(done);
+        setTimeout(function(){ if (card.parentNode) card.remove(); }, 2600);
+      }).catch(function(e){
+        err.textContent = (e && e.message) || "Send failed. Please try again.";
+        err.style.display = "block";
+        send.disabled = false;
+        send.textContent = "Send";
+      });
+    });
+  }
+
+  function surveyInit(){
+    var where = surveyWhere();
+    if (!where.org) return;
+    fetch("/" + where.org + "/" + where.report + "/api/survey" + where.tokenQS)
+      .then(function(r){ return r.ok ? r.json() : null; })
+      .then(function(d){
+        var s = d && d.survey;
+        if (!s || !s.id || !(s.questions || []).length) return;
+        // Asked once per browser. Answered OR dismissed both count — being
+        // re-asked something you already declined is worse than never being
+        // asked, and it is the fastest way to make the card get ignored.
+        if (surveySeen()[s.id]) return;
+        setTimeout(function(){ surveyMount(s, where); }, SURVEY_DELAY_MS);
+      })
+      .catch(function(){});
+  }
+
   function init(){
     injectStyle();
     mountBanner();
     wireBursts();
+    surveyInit();
   }
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", init);

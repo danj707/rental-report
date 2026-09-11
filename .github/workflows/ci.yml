@@ -250,6 +250,9 @@ jobs:
       - name: Custom data reports (roll-ups reconcile; the orgId gate; refusals are not dead links)
         run: node scripts/custom-reports.spec.js
 
+      - name: Surveys (never on a customer page; answers keyed by id; the readout is gated)
+        run: node scripts/surveys.spec.js
+
       - name: Fields classifiers (sport precedence; lights never fall out of their family)
         run: node scripts/fields-classify.spec.js
 

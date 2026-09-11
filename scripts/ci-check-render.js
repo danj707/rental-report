@@ -1624,6 +1624,28 @@ const STUBS = [
   // wrong password (report-settings-unlock.spec.js drives that for real, against
   // a booted server). What only a browser can show is that the page SURFACES the
   // refusal instead of silently reloading as though it worked, so this stub
+  /* The survey the widget offers. MUST sit above the generic /api/ catch-all
+     below, which answers `{ok:true, rows:[]}` — the widget reads `d.survey`,
+     so the catch-all silently produces "no survey" and every case asserting
+     the card is ABSENT would pass vacuously. Same fall-through already
+     recorded for the /api/data stub.
+
+     The fixture carries a REQUIRED rating, a choice and a text box, because
+     the interesting cases are the required gate and the answers being keyed by
+     question id. `nosurvey` is the other real state: an admin page with
+     nothing live, which must look different from a page that cannot be
+     surveyed at all. */
+  { match: /\/api\/survey-dismiss/,        body: () => ({ ok: true }) },
+  { match: /\/api\/survey/, body: () => (STUB_MODE === "nosurvey" ? { survey: null } : {
+      survey: {
+        id: "svy_fixture", title: "How is the schedule?", intro: "Two quick questions.",
+        questions: [
+          { id: "q1", type: "rating5", prompt: "Rate the schedule", required: true },
+          { id: "q2", type: "single",  prompt: "Which view?", options: ["Week", "Month"] },
+          { id: "q3", type: "text",    prompt: "Anything else?", placeholder: "Optional" },
+        ],
+      },
+    }) },
   // answers 401 the way the real route does.
   { match: /\/api\/settings-unlock/, status: 401,
     body: () => ({ error: "That password is not right. 4 attempts left.", left: 4 }) },
@@ -1861,6 +1883,157 @@ const EUCLID_COLUMNS = async page => {
 };
 
 const CASES = [
+
+  /* ── Surveys ─────────────────────────────────────────────────────────────
+     Dan's one hard rule — "just NEVER on a customer facing report ... ONLY on
+     admin stuff" — is honoured STRUCTURALLY: the three un-tokened customer
+     pages do not load feedback-widget.js, so there is no survey code on them
+     to gate. The campmap case below is what fails the day somebody adds the
+     widget to that page "for the banner".
+
+     Every case clears localStorage in `pre`. The widget deliberately asks once
+     per browser, so a case that answers or dismisses would leave the next one
+     looking at a page with no card — a green baseline turning red only when
+     run as part of the group, which is already recorded here for the
+     saved-views cases. */
+  { name: "survey · THE RULE — no survey code on the public campsite map",
+    path: "/{org}/campmap",
+    absent: ".rec-svy, script[src='/feedback-widget.js']",
+    needs: "#map" },
+
+  { name: "survey · the card is offered on an admin report",
+    path: "/{org}/facility",
+    pre: async (page) => { await page.evaluateOnNewDocument(() => { try { localStorage.clear(); } catch (e) {} }); },
+    needs: ".rec-svy[data-svy='svy_fixture']" },
+
+  // A corner card, never a modal: these readers are admins mid-task, and a
+  // dialog over the report they came to read is an interruption. Measured off
+  // the COMPUTED box rather than the class name — a rule that says `inset:0`
+  // renders an identical class.
+  { name: "survey · ...as a corner card that does not cover the report",
+    path: "/{org}/facility",
+    pre: async (page) => { await page.evaluateOnNewDocument(() => { try { localStorage.clear(); } catch (e) {} }); },
+    needs: "body[data-svy-corner='1']",
+    act: async (page) => {
+      await page.waitForSelector(".rec-svy", { timeout: 20000 });
+      await page.evaluate(() => {
+        const r = document.querySelector(".rec-svy").getBoundingClientRect();
+        if (r.width < window.innerWidth * 0.8 && r.height < window.innerHeight * 0.9) {
+          document.body.setAttribute("data-svy-corner", "1");
+        }
+      });
+    } },
+
+  // The required gate NAMES the question. On a scrolling card the one they
+  // missed may be off screen, so "fill in the required fields" is a dead end —
+  // and the case asserts NO request was made, because an error message over a
+  // request that already fired is the worse failure.
+  { name: "survey · a required question blocks Send and names itself",
+    path: "/{org}/facility",
+    pre: async (page) => {
+      await page.evaluateOnNewDocument(() => {
+        try { localStorage.clear(); } catch (e) {}
+        window.__svyPosts = [];
+        const f = window.fetch;
+        window.fetch = function (u, o) {
+          if (o && o.method === "POST" && String(u).includes("/api/survey")) window.__svyPosts.push(String(u));
+          return f.apply(this, arguments);
+        };
+      });
+    },
+    needs: "body[data-svy-blocked='1']",
+    act: async (page) => {
+      await page.waitForSelector(".rec-svy-send", { timeout: 20000 });
+      await page.click(".rec-svy-send");
+      await page.evaluate(() => {
+        const e = document.querySelector(".rec-svy-err");
+        const named = e && e.style.display !== "none" && /Rate the schedule/.test(e.textContent);
+        if (named && window.__svyPosts.length === 0) document.body.setAttribute("data-svy-blocked", "1");
+      });
+    } },
+
+  /* THE ANSWERS ARE KEYED BY QUESTION ID, and only the bytes can say so: a
+     card that posted them positionally, or under the prompt text, renders
+     identically and produces a body the server then drops on the floor. So
+     this reads what the POST actually carried. */
+  { name: "survey · answering posts the answers keyed by question id",
+    path: "/{org}/facility",
+    pre: async (page) => {
+      await page.evaluateOnNewDocument(() => {
+        try { localStorage.clear(); } catch (e) {}
+        window.__svyBody = null;
+        const f = window.fetch;
+        window.fetch = function (u, o) {
+          if (o && o.method === "POST" && /\/api\/survey($|\?)/.test(String(u).split("?")[0] + "?")) {
+            try { window.__svyBody = JSON.parse(o.body); } catch (e) {}
+          }
+          return f.apply(this, arguments);
+        };
+      });
+    },
+    needs: "body[data-svy-sent='1']",
+    act: async (page) => {
+      await page.waitForSelector(".rec-svy-scale button", { timeout: 20000 });
+      await page.evaluate(() => {
+        // 4 of 5 on the rating, "Month" on the choice, and a sentence.
+        document.querySelectorAll('[data-svy-q="q1"] .rec-svy-scale button')[3].click();
+        const opts = document.querySelectorAll('[data-svy-q="q2"] input');
+        opts[1].click();
+        const ta = document.querySelector('[data-svy-q="q3"] textarea');
+        ta.value = "The week view wraps.";
+        ta.dispatchEvent(new Event("input", { bubbles: true }));
+        document.querySelector(".rec-svy-send").click();
+      });
+      await page.waitForFunction(() => window.__svyBody, { timeout: 10000 });
+      await page.evaluate(() => {
+        const b = window.__svyBody;
+        if (b && b.surveyId === "svy_fixture" && b.answers
+            && b.answers.q1 === 4 && b.answers.q2 === "Month"
+            && b.answers.q3 === "The week view wraps.") {
+          document.body.setAttribute("data-svy-sent", "1");
+        }
+      });
+    } },
+
+  // An admin page with nothing live must look different from a page that
+  // cannot be surveyed at all — a value test could not separate the two.
+  { name: "survey · nothing is offered when no survey is live",
+    path: "/{org}/facility", stubMode: "nosurvey",
+    pre: async (page) => { await page.evaluateOnNewDocument(() => { try { localStorage.clear(); } catch (e) {} }); },
+    needs: ".toolbar", absent: ".rec-svy" },
+
+  // Dismissed stays dismissed. Being re-asked something you already declined
+  // is worse than never being asked, and it is the fastest way to make the
+  // card get ignored.
+  { name: "survey · Not now dismisses it, and it does not come back",
+    path: "/{org}/facility",
+    // ONE-SHOT clear, via sessionStorage. `evaluateOnNewDocument` runs on every
+    // navigation, so an unconditional clear would wipe the dismissal on the
+    // reload below — and the case would then be asserting that the card comes
+    // back, which is the opposite of what it is named for.
+    pre: async (page) => {
+      await page.evaluateOnNewDocument(() => {
+        try {
+          if (!sessionStorage.getItem("__svyCleared")) {
+            localStorage.clear(); sessionStorage.setItem("__svyCleared", "1");
+          }
+        } catch (e) {}
+      });
+    },
+    needs: "body[data-svy-gone='1']",
+    act: async (page) => {
+      await page.waitForSelector(".rec-svy-later", { timeout: 20000 });
+      await page.click(".rec-svy-later");
+      await page.waitForFunction(() => !document.querySelector(".rec-svy"), { timeout: 5000 });
+      // Reload WITHOUT clearing storage — this is the half that matters.
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await page.waitForSelector(".toolbar", { timeout: 30000 });
+      await new Promise(r => setTimeout(r, 5200));   // past the widget's own show delay
+      await page.evaluate(() => {
+        if (!document.querySelector(".rec-svy")) document.body.setAttribute("data-svy-gone", "1");
+      });
+    } },
+
   { name: "facilities · camping",  path: "/{org}/facilities?tab=camping", needs: ".camp-cal .cc-hd" },
 
   /* ── The Session Schedule (card 17298) ───────────────────────────────────

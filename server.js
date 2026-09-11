@@ -3038,6 +3038,7 @@ const EVENTS_FILE = path.join(DATA_DIR, "events.jsonl");
 const SHOWCASE_FILE = path.join(DATA_DIR, "showcase.json");
 const VISIBILITY_FILE = path.join(DATA_DIR, "report-visibility.json");
 const ANNOUNCEMENTS_FILE = path.join(DATA_DIR, "announcements.json");
+const SURVEYS_FILE = path.join(DATA_DIR, "surveys.json");
 // Pasted screenshots attached to project updates live on the persistent volume
 const ANNOUNCE_IMG_DIR = path.join(DATA_DIR, "announce-images");
 fs.mkdirSync(ANNOUNCE_IMG_DIR, { recursive: true });
@@ -3967,6 +3968,237 @@ function activeAnnouncementsForOrg(slug) {
   return out.sort((x, y) => (y.createdAt || 0) - (x.createdAt || 0));
 }
 
+// ── Surveys: an admin-authored question set, shown on admin surfaces ──
+// Dan, 2026-09-11: "lets build the survey tool, i need some feedback" — and
+// then the one hard rule, in his own words: "both, just NEVER on a customer
+// facing report, like the watertown facility rental view or the programs view
+// that users see, ONLY on admin stuff."
+//
+// THAT RULE IS STRUCTURAL BEFORE IT IS CHECKED. The survey ships inside
+// `public/feedback-widget.js`, and the three un-tokened customer pages do not
+// load that file — measured, `calendar` / `rentalcalendar` / `campmap` all at
+// zero, against 22 admin pages that do. So a customer cannot be shown a survey
+// even if every gate below is deleted.
+//
+// The gate is the second line of defence, and it is DERIVED rather than
+// re-typed: `PUBLIC_REPORTS` is the same Set the org-token middleware reads to
+// decide which pages go un-tokened, so a fourth public page can never be
+// public to a customer and surveyable at the same time. Two hand-kept lists is
+// exactly how a survey ends up on a resident's booking page.
+const PUBLIC_REPORTS = new Set(["calendar", "rentalcalendar", "campmap"]);
+
+// The org landing page (`/:org`) has no second path segment and no report
+// type, so the widget reports itself under this slug. Declared once and read
+// by the composer's surface list and by the widget, or the two spell the same
+// surface differently and targeting it silently matches nothing.
+const SURVEY_ORG_SURFACE = "org-dashboard";
+
+// The vocabulary. `scale` types store an integer, `choice` types store option
+// text, `text` stores a string — so a response can always be read back without
+// knowing which question asked it.
+//
+// rating5 AND stars are BOTH 1-5 and are deliberately separate types, because
+// Dan named both ("a 1-5 rating, stars, open text box"): they are the same
+// scale wearing a different face, and the face changes the answer — stars
+// invite a gut reaction, numerals invite deliberation. The stored value is
+// identical, so the readout treats them as one scale; only the control differs.
+const SURVEY_QUESTION_TYPES = {
+  rating5: { label: "Rating 1–5",  kind: "scale",  min: 1, max: 5  },
+  stars:   { label: "Stars",            kind: "scale",  min: 1, max: 5  },
+  nps:     { label: "NPS 0–10",    kind: "scale",  min: 0, max: 10 },
+  yesno:   { label: "Yes / No",         kind: "choice", fixed: ["Yes", "No"] },
+  single:  { label: "Choose one",       kind: "choice" },
+  multi:   { label: "Choose any",       kind: "choice", many: true },
+  text:    { label: "Open text",        kind: "text" },
+};
+const SURVEY_MAX_QUESTIONS = 10;
+const SURVEY_MAX_OPTIONS   = 12;
+// One free-text answer. The widget stops the textarea at the same number, so
+// a long answer is clamped where it is typed rather than silently on arrival.
+const SURVEY_TEXT_MAX      = 2000;
+
+function getSurveys() {
+  const a = readJSON(SURVEYS_FILE, []);
+  return Array.isArray(a) ? a : [];
+}
+function saveSurveys(list) { writeJSON(SURVEYS_FILE, list); }
+
+function surveyClampStr(v, max) {
+  return String(v == null ? "" : v).replace(/\s+/g, " ").trim().slice(0, max);
+}
+
+/* Normalise one authored question, or return null.
+   A question that cannot be answered is never stored: a `single` with no
+   options renders as a prompt with nothing under it, which reads to the
+   respondent as a broken survey rather than as a question we forgot to
+   finish. `yesno` supplies its own options so the composer cannot mis-type
+   them, and so the readout can count Yes against No without guessing. */
+function normalizeSurveyQuestion(q) {
+  if (!q || typeof q !== "object") return null;
+  const type = String(q.type || "");
+  const spec = SURVEY_QUESTION_TYPES[type];
+  if (!spec) return null;
+  const prompt = surveyClampStr(q.prompt, 200);
+  if (!prompt) return null;
+  // The id is deliberately NOT defaulted from the position here — see the
+  // minting block in normalizeSurvey. A question that arrives without one is a
+  // NEW question, and that is the only thing its absence may mean.
+  const out = {
+    id: surveyClampStr(q.id, 40) || "",
+    type,
+    prompt,
+    required: !!q.required,
+  };
+  if (spec.kind === "choice") {
+    const opts = spec.fixed
+      ? spec.fixed.slice()
+      : (Array.isArray(q.options) ? q.options : [])
+          .map(o => surveyClampStr(o, 80))
+          .filter(Boolean)
+          .filter((o, j, arr) => arr.indexOf(o) === j)   // a duplicate option splits its own vote
+          .slice(0, SURVEY_MAX_OPTIONS);
+    if (opts.length < 2) return null;
+    out.options = opts;
+  }
+  if (spec.kind === "text") out.placeholder = surveyClampStr(q.placeholder, 120);
+  return out;
+}
+
+/* Normalise a whole survey off the composer. Returns { survey } or { error }.
+   Targeting is empty-means-all on BOTH axes, matching every multi-select in
+   this repo — and a report that is public is dropped here rather than
+   rejected, so a composer that offers a stale option cannot make a survey
+   unsaveable; the survey simply is not delivered there. */
+function normalizeSurvey(input, prev) {
+  const title = surveyClampStr(input && input.title, 120);
+  if (!title) return { error: "Give the survey a title" };
+  const rawQs = Array.isArray(input && input.questions) ? input.questions : [];
+  const questions = [];
+  for (let i = 0; i < rawQs.length && questions.length < SURVEY_MAX_QUESTIONS; i++) {
+    const q = normalizeSurveyQuestion(rawQs[i]);
+    if (q) questions.push(q);
+  }
+  if (!questions.length) return { error: "Add at least one question that can be answered" };
+
+  /* IDS ARE THE ONLY LINK BETWEEN A STORED ANSWER AND THE QUESTION THAT ASKED
+     IT, so minting them from the question's POSITION is wrong the moment a
+     survey with responses is edited: insert a question at the top and every
+     answer below it shifts one question down, silently, and the readout cannot
+     tell that from real data. It is the same defect as reading a submitted
+     answer positionally, one surface earlier — and the readout is where it
+     would actually be believed.
+
+     So a question the composer loaded keeps its id, and a NEW one is minted
+     past every id this survey has ever used — the incoming set AND the
+     previous version's, because reusing the id of a question that was deleted
+     would inherit its answers. */
+  const taken = new Set([
+    ...questions.map(q => q.id),
+    ...((prev && prev.questions) || []).map(q => q.id),
+  ]);
+  const used = new Set();
+  let next = 1;
+  for (const q of questions) {
+    // Two questions carrying the same id would lose one of their answer sets,
+    // so a duplicate is treated as unnamed and minted a fresh one.
+    if (q.id && !used.has(q.id)) { used.add(q.id); continue; }
+    while (taken.has("q" + next) || used.has("q" + next)) next++;
+    q.id = "q" + next;
+    used.add(q.id);
+    taken.add(q.id);
+  }
+  const t = (input && input.targeting) || {};
+  const orgs = (Array.isArray(t.orgs) ? t.orgs : []).filter(s => ORGS[s]);
+  const reports = (Array.isArray(t.reports) ? t.reports : [])
+    .map(r => String(r))
+    .filter(r => !PUBLIC_REPORTS.has(r))
+    .filter((r, i, a) => a.indexOf(r) === i);
+  const status = ["draft", "live", "closed"].includes(String(input && input.status))
+    ? String(input.status) : "draft";
+  const now = Date.now();
+  return {
+    survey: {
+      id: (prev && prev.id) || "svy_" + now.toString(36) + Math.random().toString(36).slice(2, 6),
+      title,
+      intro: surveyClampStr(input && input.intro, 240),
+      status,
+      questions,
+      targeting: { orgs, reports },
+      startsAt: parseAnnounceExpiry(input && input.starts) ? Date.parse(String(input.starts) + "T00:00:00-08:00") : null,
+      endsAt: parseAnnounceExpiry(input && input.ends),
+      createdAt: (prev && prev.createdAt) || now,
+      createdISO: (prev && prev.createdISO) || new Date(now).toISOString(),
+      updatedAt: now,
+    },
+  };
+}
+
+/* Is this survey collecting right now? Status AND window, and the window's
+   two ends are tested independently so a survey with only a start date is
+   open-ended rather than never-open. */
+function surveyIsOpen(s, now) {
+  const t = now == null ? Date.now() : now;
+  if (!s || s.status !== "live") return false;
+  if (s.startsAt && t < s.startsAt) return false;
+  if (s.endsAt && t > s.endsAt) return false;
+  return true;
+}
+
+/* The one survey to offer on this org + report, or null.
+   NEVER on a customer-facing page — the first test, before anything else, so
+   it reads as the rule it is rather than as a filter that happens to exclude
+   them. Oldest live survey wins, so publishing a second one does not jump the
+   queue on people who have not answered the first. */
+function surveyFor(slug, report, now) {
+  if (!slug || !report) return null;
+  if (PUBLIC_REPORTS.has(report)) return null;
+  const open = getSurveys()
+    .filter(s => surveyIsOpen(s, now))
+    .filter(s => !s.targeting.orgs.length || s.targeting.orgs.includes(slug))
+    .filter(s => !s.targeting.reports.length || s.targeting.reports.includes(report))
+    .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+  return open[0] || null;
+}
+
+/* Normalise one submitted answer set against the survey that asked for it.
+   Answers are read BY QUESTION ID against the survey's own definition — never
+   positionally, and never trusting the shape the browser sent: a survey edited
+   between a page load and a submit would otherwise file an answer under the
+   wrong question, silently, and the readout cannot tell that from a real one.
+   Anything unrecognised is dropped rather than stored raw. */
+function normalizeSurveyAnswers(survey, raw) {
+  const src = (raw && typeof raw === "object") ? raw : {};
+  const out = {};
+  let answered = 0;
+  for (const q of survey.questions) {
+    const spec = SURVEY_QUESTION_TYPES[q.type];
+    const v = src[q.id];
+    if (v == null || v === "") continue;
+    if (spec.kind === "scale") {
+      const n = Math.round(Number(v));
+      if (!isFinite(n) || n < spec.min || n > spec.max) continue;
+      out[q.id] = n;
+    } else if (spec.kind === "choice" && spec.many) {
+      const picked = (Array.isArray(v) ? v : [v])
+        .map(x => String(x))
+        .filter(x => q.options.includes(x))
+        .filter((x, i, a) => a.indexOf(x) === i);
+      if (!picked.length) continue;
+      out[q.id] = picked;
+    } else if (spec.kind === "choice") {
+      const pick = String(v);
+      if (!q.options.includes(pick)) continue;
+      out[q.id] = pick;
+    } else {
+      const txt = String(v).trim().slice(0, SURVEY_TEXT_MAX);
+      if (!txt) continue;
+      out[q.id] = txt;
+    }
+    answered++;
+  }
+  return { answers: out, answered };
+}
+
 // ── GitHub push: write new orgs to server.js so they live in code ────
 // When the admin dashboard adds a new org, we push the entry to
 // danj707/rental-report on GitHub. Railway auto-deploys on push, so
@@ -4673,7 +4905,7 @@ setTimeout(() => { checkCardParamTypes().catch(() => {}); }, 150 * 1000).unref?.
 // Inert if the env var is unset. Fire-and-forget — never blocks or breaks logging.
 // To change what pings Slack, edit SLACK_NOTIFY. High-frequency events (view/fetch)
 // are debounced per org+report so Slack isn't a firehose.
-const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "campmap-filter", "campmap-amenity", "pdf", "excel", "print", "summary", "game", "map", "outdoor", "fields", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email", "checkin-loc", "checkin-member", "checkin-failed", "form-open", "epact", "settings-open", "settings-unlock", "settings-locked", "settings-save", "settings-reset", "deadlink", "generate", "wizard-save", "mb-autorenew", "mb-salesmix", "ft-export", "panel-csv", "intel-csv", "wizard-feedback", "roster-open", "report-csv"]);
+const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "campmap-filter", "campmap-amenity", "pdf", "excel", "print", "summary", "game", "map", "outdoor", "fields", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email", "checkin-loc", "checkin-member", "checkin-failed", "form-open", "epact", "settings-open", "settings-unlock", "settings-locked", "settings-save", "settings-reset", "deadlink", "generate", "wizard-save", "mb-autorenew", "mb-salesmix", "ft-export", "panel-csv", "intel-csv", "wizard-feedback", "roster-open", "report-csv", "survey-response"]);
 const SLACK_DEBOUNCE_MS = { view: 30 * 60 * 1000, fetch: 30 * 60 * 1000,
   // A broken report stays broken. The health check only reports NEW failures,
   // but a flapping card would otherwise post every hour.
@@ -4699,6 +4931,12 @@ const SLACK_EVENT_META = {
   // them written to events.jsonl and none of them announced, because the event
   // was simply missing from SLACK_NOTIFY.
   "wizard-feedback": { emoji: "\u{1F5D3}\uFE0F", verb: "rated a site suggestion on" },
+  // A survey answer. The verb names the survey rather than the report, because
+  // "somebody answered a survey on facility" says nothing about which question
+  // was being asked — and `survey-dismiss` is deliberately NOT in SLACK_NOTIFY:
+  // a "not now" is data for the readout, and one post per dismissal would
+  // drown the feed it is supposed to inform.
+  "survey-response": { emoji: "\u{1F4DD}", verb: "answered a survey on" },
   created: { emoji: "🏢", verb: "New org created" },
   "org-deleted": { emoji: "🗑️", verb: "DELETED from the reporting project" },
   deadlink: { emoji: "\uD83D\uDD17", verb: "dead link" },
@@ -4828,6 +5066,13 @@ function notifySlack(rec) {
     // key would keep only the first roster they opened.
     : rec.event === "roster-open"
       ? `${rec.org}|${rec.report}|roster-open|${rec.section || ""}`
+    // Per SURVEY and per PAGE — deliberately NOT debounced at all in practice,
+    // because a survey is answered once per person per browser anyway. What the
+    // key defends against is two different surveys, or one survey answered from
+    // two reports, collapsing into a single post: each of those is a separate
+    // person's separate answer and the whole point is to see it arrive.
+    : rec.event === "survey-response"
+      ? `${rec.org}|${rec.report}|survey|${rec.surveyId || ""}|${rec.ts || Date.now()}`
     // By SITE TYPE: rating the pavilion suggestion and then the picnic-table
     // one is two answers about two suggestions.
     : rec.event === "wizard-feedback"
@@ -5133,6 +5378,30 @@ function notifySlack(rec) {
     const q = rec.prompt ? `\n> \u201C${String(rec.prompt).slice(0, 160)}\u201D` : "";
     const mention = SLACK_MENTION_USER_ID ? ` <@${SLACK_MENTION_USER_ID}>` : "";
     text = `${thumbs} ${orgName} (\`${rec.org}\`) rated a Report Wizard report${what}${said}${mention}${q}`;
+  } else if (rec.event === "survey-response") {
+    /* A survey answer, and the WORDS are the point. A line reading "somebody
+       answered a survey" is the post that makes a feature look busy and tells
+       nobody anything — the reason to run a survey at all is what people said,
+       so the message carries the survey's name, how much of it they filled in,
+       and the free text verbatim (clamped). Scale answers are summarised
+       inline rather than listed, because "4/5 · 9/10" beside the quote is what
+       makes the quote readable at a glance. */
+    const answers = (rec.answers && typeof rec.answers === "object") ? rec.answers : {};
+    const vals = Object.values(answers);
+    const nums = vals.filter(v => typeof v === "number");
+    const words = vals.filter(v => typeof v === "string" && v.length > 12);
+    const picks = vals.filter(v => typeof v === "string" && v.length <= 12)
+      .concat(vals.filter(Array.isArray).flat().map(String));
+    const scale = nums.length ? ` \u00B7 ${nums.join(" \u00B7 ")}` : "";
+    const chose = picks.length ? ` \u00B7 ${picks.slice(0, 4).map(p => String(p).slice(0, 40)).join(", ")}` : "";
+    const n = Number(rec.answered), of = Number(rec.questions);
+    const filled = (Number.isFinite(n) && Number.isFinite(of)) ? ` (${n}/${of} answered)` : "";
+    const said = words.length
+      ? "\n" + words.slice(0, 3).map(w => `> \u201C${String(w).slice(0, 300)}\u201D`).join("\n")
+      : "";
+    const what = rec.surveyTitle ? ` \u2014 *${String(rec.surveyTitle).slice(0, 90)}*` : "";
+    const mention = (words.length && SLACK_MENTION_USER_ID) ? ` <@${SLACK_MENTION_USER_ID}>` : "";
+    text = `${meta.emoji} ${orgName} (\`${rec.org}\`) answered a survey${what}${filled}${scale}${chose}${mention}${said}`;
   } else if (rec.event === "wizard-feedback") {
     // The SITE TYPE is the rating. "somebody rated a suggestion" says nothing;
     // which suggestion they were shown is the only part worth reading.
@@ -7413,9 +7682,12 @@ app.use((req, res, next) => {
   const org = ORGS[seg];
   if (!org) return next();                          // not an org slug — let routing handle (will 404 normally)
 
-  // Calendar + rental calendar + campsite map are public — no token required
+  // Calendar + rental calendar + campsite map are public — no token required.
+  // PUBLIC_REPORTS is the ONE list, read here and by surveyFor(): a page that
+  // goes un-tokened to a resident must never be a page a survey can appear on,
+  // and two hand-kept copies is how those two facts drift apart.
   const segs = req.path.split("/").filter(Boolean);
-  if (segs[1] === "calendar" || segs[1] === "rentalcalendar" || segs[1] === "campmap") return next();
+  if (PUBLIC_REPORTS.has(segs[1])) return next();
   if (segs[1] === "api" && (segs[2] === "track" || segs[2] === "calendar-analytics")) return next();
 
   if (!org.token) {                                 // fail closed: tokenless org must not be public
@@ -14989,6 +15261,96 @@ app.post("/:org/:report/api/vote", (req, res) => {
   res.json({ ok: true, counts });
 });
 
+// ── GET /:org/:report/api/survey — is there a survey for this page? ──
+// Answers with the survey definition or `{ survey: null }`. Gated by the org
+// token like every other /:org/ path, and by PUBLIC_REPORTS inside surveyFor()
+// — a customer-facing page can never be handed one.
+//
+// It ships the QUESTIONS, not a rendered form, so the widget is the only thing
+// that decides how a rating looks and the server is the only thing that
+// decides what a valid answer is. A form rendered server-side would put a
+// second definition of "answerable" on the far side of the wire.
+app.get("/:org/:report/api/survey", (req, res) => {
+  const org = req.params.org;
+  const report = req.params.report;
+  if (!ORGS[org]) return res.status(404).json({ error: "Unknown org" });
+  const s = surveyFor(org, report);
+  if (!s) return res.json({ survey: null });
+  /* Publishing a survey has to reach a tab that is already open on its next
+     load, and Express stamps an ETag on every res.json() — a response with no
+     explicit freshness may be served from cache without revalidating, which is
+     the bug already recorded for the saved-views list.
+
+     The page-level no-store middleware above would cover this route today. It
+     is set here anyway, and that is not belt-and-braces: that middleware works
+     only because of WHERE it is registered, and a route moved above it loses
+     the header with nothing on screen to say so. The guarantee belongs to the
+     route, not to its line number. */
+  res.set("Cache-Control", "no-store");
+  res.json({
+    survey: {
+      id: s.id, title: s.title, intro: s.intro,
+      questions: s.questions,
+    },
+  });
+});
+
+// ── POST /:org/:report/api/survey — one person's answers ─────────────
+// WRITTEN TO THE EVENT LOG, NOT TO A BLOB, and that is the load-bearing
+// choice. Every other small store here (votes, update-votes) is a
+// read-modify-write on one JSON document, which is fine for a COUNTER — two
+// replicas racing lose a tick and nobody can tell. A survey answer is a person
+// who took the trouble to type something, and losing one silently is the one
+// failure this feature cannot have. `appendEvent` is append-only and safe
+// across replicas, which is also where every other feedback family already
+// lives (FEEDBACK_SOURCES).
+app.post("/:org/:report/api/survey", (req, res) => {
+  const org = req.params.org;
+  const report = req.params.report;
+  if (!ORGS[org]) return res.status(404).json({ error: "Unknown org" });
+  const id = String((req.body && req.body.surveyId) || "").slice(0, 64);
+  const all = getSurveys();
+  const survey = all.find(s => s.id === id);
+  if (!survey) return res.status(404).json({ error: "Unknown survey" });
+
+  // A page open since before the survey closed must not be able to post into
+  // it — and it is refused rather than accepted-and-dropped, so the widget can
+  // say so instead of thanking somebody for an answer nobody kept.
+  if (!surveyIsOpen(survey)) return res.status(409).json({ error: "This survey has closed" });
+  if (PUBLIC_REPORTS.has(report)) return res.status(404).json({ error: "Unknown survey" });
+
+  const { answers, answered } = normalizeSurveyAnswers(survey, req.body && req.body.answers);
+  if (!answered) return res.status(400).json({ error: "Answer at least one question" });
+  const missing = survey.questions.filter(q => q.required && answers[q.id] == null);
+  if (missing.length) return res.status(400).json({ error: "Answer the required questions", missing: missing.map(q => q.id) });
+
+  logEvent(org, report, "survey-response", req, {
+    surveyId: survey.id,
+    surveyTitle: survey.title,
+    answers,
+    answered,
+    questions: survey.questions.length,
+  });
+  console.log(`[survey] ${org}/${report} answered ${answered}/${survey.questions.length} of "${survey.title}"`);
+  res.json({ ok: true });
+});
+
+// ── POST /:org/:report/api/survey-dismiss — "not now" ────────────────
+// Recorded deliberately. A survey nobody opens and a survey everybody closes
+// look identical in a response count, and only one of those is a question
+// worth re-asking. The widget remembers the dismissal per browser; this is
+// only so the readout can say what the offer rate was.
+app.post("/:org/:report/api/survey-dismiss", (req, res) => {
+  const org = req.params.org;
+  const report = req.params.report;
+  if (!ORGS[org]) return res.status(404).json({ error: "Unknown org" });
+  const id = String((req.body && req.body.surveyId) || "").slice(0, 64);
+  const survey = getSurveys().find(s => s.id === id);
+  if (!survey) return res.status(404).json({ error: "Unknown survey" });
+  logEvent(org, report, "survey-dismiss", req, { surveyId: survey.id, surveyTitle: survey.title });
+  res.json({ ok: true });
+});
+
 // ── POST /:org/api/update-vote — thumbs on a "What's New" popup ─────
 // Was this update worth shipping? The popup is the one moment a partner is
 // looking straight at a new feature, so it is the cheapest honest signal we
@@ -15528,6 +15890,174 @@ app.post("/api/admin/announcements/delete", express.json(), (req, res) => {
   const id = req.body && req.body.id;
   saveAnnouncements(getAnnouncements().filter(x => x.id !== id));
   res.json({ ok: true });
+});
+
+// ── Survey readout ───────────────────────────────────────────────────
+// A summary figure over a handful of answers is a picture of noise, so the
+// DISTRIBUTION is always shown (four bars IS the raw data) and only the single
+// derived number — a mean, an NPS — waits for a floor. Same rule as
+// RATE_MIN_VIEWS on the campmap strip and WL_CONV_MIN_OFFERS on the waitlist,
+// and the readout says how many more it needs rather than printing nothing.
+const SURVEY_MIN_FOR_STATS = 5;
+const SURVEY_READOUT_DAYS  = 400;
+
+function surveyReadout(surveyId, days) {
+  const survey = getSurveys().find(s => s.id === surveyId);
+  if (!survey) return null;
+  const rows = [];
+  let dismissed = 0;
+  for (const e of readEvents(days || SURVEY_READOUT_DAYS)) {
+    if (!e || e.surveyId !== surveyId) continue;
+    if (e.event === "survey-dismiss") { dismissed++; continue; }
+    if (e.event !== "survey-response") continue;
+    if (e.answers && typeof e.answers === "object") rows.push(e);
+  }
+  const byOrg = {};
+  for (const r of rows) byOrg[r.org] = (byOrg[r.org] || 0) + 1;
+
+  const questions = survey.questions.map(q => {
+    const spec = SURVEY_QUESTION_TYPES[q.type];
+    const vals = rows.map(r => r.answers[q.id]).filter(v => v != null);
+    const out = { id: q.id, type: q.type, prompt: q.prompt, answered: vals.length };
+    if (spec.kind === "scale") {
+      const dist = {};
+      for (let n = spec.min; n <= spec.max; n++) dist[n] = 0;
+      let sum = 0;
+      for (const v of vals) { if (dist[v] != null) { dist[v]++; sum += v; } }
+      out.dist = dist; out.min = spec.min; out.max = spec.max;
+      // Under the floor the bars are the whole answer — a confident "4.2
+      // average" off three ratings is the kind of number that gets quoted.
+      out.mean = vals.length >= SURVEY_MIN_FOR_STATS
+        ? Math.round((sum / vals.length) * 10) / 10 : null;
+      if (q.type === "nps") {
+        // NEVER a mean. An NPS of 7.4 is meaningless: the scale is a
+        // classification, and promoters minus detractors is what it means.
+        const promoters  = vals.filter(v => v >= 9).length;
+        const detractors = vals.filter(v => v <= 6).length;
+        out.nps = vals.length >= SURVEY_MIN_FOR_STATS
+          ? Math.round(((promoters - detractors) / vals.length) * 100) : null;
+        out.promoters = promoters;
+        out.passives = vals.length - promoters - detractors;
+        out.detractors = detractors;
+        out.mean = null;                   // so no surface can print one by mistake
+      }
+    } else if (spec.kind === "choice") {
+      const counts = {};
+      for (const o of q.options) counts[o] = 0;
+      for (const v of vals) for (const pick of (Array.isArray(v) ? v : [v])) {
+        if (counts[pick] != null) counts[pick]++;
+      }
+      out.counts = counts;
+      out.options = q.options;
+      out.many = !!spec.many;
+    } else {
+      // Verbatim, newest first, and NOT summarised — the sentences somebody
+      // typed are the reason to run a survey at all.
+      out.texts = rows
+        .filter(r => typeof r.answers[q.id] === "string")
+        .sort((a, b) => (b.ts || 0) - (a.ts || 0))
+        .map(r => ({ text: r.answers[q.id], org: r.org, report: r.report, ts: r.ts }))
+        .slice(0, 200);
+    }
+    return out;
+  });
+
+  return {
+    survey: { id: survey.id, title: survey.title, status: survey.status, targeting: survey.targeting },
+    responses: rows.length,
+    dismissed,
+    orgs: Object.keys(byOrg).length,
+    byOrg,
+    minForStats: SURVEY_MIN_FOR_STATS,
+    // A log that does not reach back far enough must say so rather than
+    // reporting a short history as a quiet survey — the campmap `covers` rule.
+    covers: days || SURVEY_READOUT_DAYS,
+    questions,
+  };
+}
+
+// ── Admin survey routes (password-gated, admin dashboard only) ───────
+app.get("/api/admin/surveys", (req, res) => {
+  const orgs = Object.entries(ORGS)
+    .map(([slug, o]) => ({ slug, name: o.displayName || (slug.charAt(0).toUpperCase() + slug.slice(1)) }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  // The targetable surfaces. PUBLIC_REPORTS is filtered OUT here as well as in
+  // normalizeSurvey — a composer that offers a customer page and then silently
+  // drops it is a control that looks like it works.
+  const reports = Object.keys(REPORT_DIRECTORY)
+    .filter(t => !PUBLIC_REPORTS.has(t))
+    .map(type => ({ type, label: REPORT_DIRECTORY[type].label, emoji: REPORT_DIRECTORY[type].emoji }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+  // The org landing page is an admin surface and is NOT a report, so it has no
+  // REPORT_DIRECTORY entry and would be untargetable — which would leave the
+  // page most admins actually land on unable to carry a survey. It is offered
+  // under its own slug, which no report type uses and no route claims.
+  reports.unshift({ type: SURVEY_ORG_SURFACE, label: "Org dashboard (landing page)", emoji: "\u{1F3E0}" });
+  const counts = {};
+  for (const e of readEvents(SURVEY_READOUT_DAYS)) {
+    if (!e || !e.surveyId) continue;
+    if (e.event === "survey-response") counts[e.surveyId] = (counts[e.surveyId] || 0) + 1;
+  }
+  const surveys = getSurveys()
+    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))
+    .map(s => Object.assign({}, s, { responses: counts[s.id] || 0 }));
+  res.json({ surveys, orgs, reports, types: SURVEY_QUESTION_TYPES, maxQuestions: SURVEY_MAX_QUESTIONS });
+});
+
+// Create OR update — one route, because the composer is one form. An `id` that
+// names an existing survey edits it in place and keeps its responses; the
+// alternative is a second survey and an orphaned readout.
+app.post("/api/admin/surveys", express.json(), (req, res) => {
+  if (dashboardPasswordBlocked(req, res)) return;
+  const list = getSurveys();
+  const prev = req.body && req.body.id ? list.find(s => s.id === req.body.id) : null;
+  if (req.body && req.body.id && !prev) return res.status(404).json({ error: "Unknown survey" });
+  const { survey, error } = normalizeSurvey(req.body, prev);
+  if (error) return res.status(400).json({ error });
+  if (prev) list[list.indexOf(prev)] = survey; else list.push(survey);
+  saveSurveys(list);
+  console.log(`[survey] ${prev ? "updated" : "created"} "${survey.title}" (${survey.questions.length}q, ${survey.status})`);
+  res.json({ ok: true, survey });
+});
+
+app.post("/api/admin/surveys/status", express.json(), (req, res) => {
+  if (dashboardPasswordBlocked(req, res)) return;
+  const status = String((req.body && req.body.status) || "");
+  if (!["draft", "live", "closed"].includes(status)) return res.status(400).json({ error: "status must be draft, live or closed" });
+  const list = getSurveys();
+  const s = list.find(x => x.id === (req.body && req.body.id));
+  if (!s) return res.status(404).json({ error: "Unknown survey" });
+  s.status = status;
+  s.updatedAt = Date.now();
+  saveSurveys(list);
+  res.json({ ok: true, survey: s });
+});
+
+app.post("/api/admin/surveys/delete", express.json(), (req, res) => {
+  if (dashboardPasswordBlocked(req, res)) return;
+  const id = req.body && req.body.id;
+  // The RESPONSES are not deleted with it: they are in the event log, which is
+  // append-only by design, and a readout for a deleted survey is still the
+  // record of what people said. Closing is the reversible thing; this is not.
+  saveSurveys(getSurveys().filter(x => x.id !== id));
+  res.json({ ok: true });
+});
+
+/* THE READOUT IS A POST, AND THAT IS ON PURPOSE.
+   It is a read, but what it returns is verbatim text that named orgs typed
+   about us — the most sensitive thing this server holds outside the reports
+   themselves. `dashboardAuth` guards only `/` (its first line is
+   `if (req.path !== "/") return next()`), so an /api/admin GET is open, which
+   is tolerable for the announcements list — our own authored copy — and is not
+   tolerable here. A POST lets the password ride in the BODY, the same channel
+   every other admin write on this page already uses, instead of inventing a
+   `?password=` query parameter that would leak through logs and referrers.
+   It FAILS CLOSED: no DASHBOARD_PASSWORD configured means nobody. */
+app.post("/api/admin/surveys/responses", express.json(), (req, res) => {
+  if (dashboardPasswordBlocked(req, res)) return;
+  const out = surveyReadout(String((req.body && req.body.id) || ""), Number(req.body && req.body.days) || 0);
+  if (!out) return res.status(404).json({ error: "Unknown survey" });
+  res.json(out);
 });
 
 // ── POST /api/admin/toggle-public-mode — show/hide admin chrome on org page ──
@@ -17578,6 +18108,7 @@ app.get("/", (req, res) => {
     <a href="/langfuse" style="font-size:12px;padding:6px 14px;background:rgba(124,58,237,.85);border:1px solid rgba(124,58,237,1);border-radius:5px;color:#fff;cursor:pointer;text-decoration:none;margin-right:8px;transition:background .15s" onmouseover="this.style.background='rgba(109,40,217,1)'" onmouseout="this.style.background='rgba(124,58,237,.85)'">&#x1F50D; Langfuse</a>
     <a href="/qbr" style="font-size:12px;padding:6px 14px;background:rgba(31,122,90,.92);border:1px solid rgba(31,122,90,1);border-radius:5px;color:#fff;cursor:pointer;text-decoration:none;margin-right:8px;transition:background .15s" onmouseover="this.style.background='rgba(26,106,78,1)'" onmouseout="this.style.background='rgba(31,122,90,.92)'">📊 QBR Generator</a>
     <button onclick="openUpd()" style="font-size:12px;padding:6px 14px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);border-radius:5px;color:#eee;cursor:pointer;margin-right:8px;transition:background .15s" onmouseover="this.style.background='rgba(255,255,255,.22)'" onmouseout="this.style.background='rgba(255,255,255,.12)'">&#128227; Add Update</button>
+    <button onclick="openSvy()" style="font-size:12px;padding:6px 14px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);border-radius:5px;color:#eee;cursor:pointer;margin-right:8px;transition:background .15s" onmouseover="this.style.background='rgba(255,255,255,.22)'" onmouseout="this.style.background='rgba(255,255,255,.12)'">&#128221; Surveys</button>
     <button onclick="openAddOrg()" style="font-size:12px;padding:6px 14px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);border-radius:5px;color:#eee;cursor:pointer;transition:background .15s" onmouseover="this.style.background='rgba(255,255,255,.22)'" onmouseout="this.style.background='rgba(255,255,255,.12)'">➕ Add Org</button>
     <button onclick="openDeleteOrg()" title="Remove an organization from the reporting project" style="font-size:12px;padding:6px 14px;background:rgba(220,38,38,.15);border:1px solid rgba(220,38,38,.45);border-radius:5px;color:#fca5a5;cursor:pointer;margin-left:8px;transition:background .15s" onmouseover="this.style.background='rgba(220,38,38,.3)'" onmouseout="this.style.background='rgba(220,38,38,.15)'">🗑 Delete Org</button>
   </div>
@@ -17670,6 +18201,306 @@ app.get("/", (req, res) => {
     return pwd;
   }
   function clearDashPwd() { sessionStorage.removeItem('_dpwd'); }
+
+  // ── Survey builder ───────────────────────────────────────────────────
+  // The composer is the whole point of the feature: Dan writes and publishes a
+  // survey himself, with no deploy. Question types are read from the SERVER
+  // (SURVEY_QUESTION_TYPES) rather than listed here, so adding one is a change
+  // in one place and this form grows a new option on its own.
+  var SVY = { data: null, editing: null, qs: [] };
+
+  function svyEsc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+  function openSvy(){ document.getElementById('svy-overlay').style.display='block'; loadSvy(); }
+  function closeSvy(){ document.getElementById('svy-overlay').style.display='none'; }
+
+  async function loadSvy(){
+    var d;
+    try { d = await (await fetch('/api/admin/surveys')).json(); }
+    catch(e){ d = { surveys:[], orgs:[], reports:[], types:{} }; }
+    SVY.data = d;
+    var ob = document.getElementById('svy-orgs');
+    ob.innerHTML = (d.orgs||[]).map(function(o){
+      return '<label style="font-size:12px;display:flex;align-items:center;gap:5px;cursor:pointer;padding:3px 7px;border:1px solid #eee;border-radius:5px"><input type="checkbox" class="svy-org" value="'+svyEsc(o.slug)+'" /> '+svyEsc(o.name)+'</label>';
+    }).join('');
+    var rb = document.getElementById('svy-reports');
+    rb.innerHTML = (d.reports||[]).map(function(r){
+      return '<label style="font-size:12px;display:flex;align-items:center;gap:5px;cursor:pointer;padding:3px 7px;border:1px solid #eee;border-radius:5px"><input type="checkbox" class="svy-report" value="'+svyEsc(r.type)+'" /> '+(r.emoji||'')+' '+svyEsc(r.label)+'</label>';
+    }).join('');
+    if (!SVY.qs.length) svyAddQ();
+    svyRenderList();
+  }
+
+  function svyTypeOptions(sel){
+    var t = (SVY.data && SVY.data.types) || {};
+    return Object.keys(t).map(function(k){
+      return '<option value="'+svyEsc(k)+'"'+(k===sel?' selected':'')+'>'+svyEsc(t[k].label)+'</option>';
+    }).join('');
+  }
+  // Which types need an options list, read from the server vocabulary rather
+  // than hardcoded here — a new choice type would otherwise render with no
+  // options box and save as unanswerable.
+  function svyNeedsOptions(type){
+    var spec = (SVY.data && SVY.data.types && SVY.data.types[type]) || {};
+    return spec.kind === 'choice' && !spec.fixed;
+  }
+
+  function svyAddQ(q){
+    var max = (SVY.data && SVY.data.maxQuestions) || 10;
+    if (SVY.qs.length >= max) { svyErr('That is the most questions a survey can carry (' + max + ').'); return; }
+    SVY.qs.push(q || { type:'rating5', prompt:'', required:false, options:[] });
+    svyRenderQs();
+  }
+  function svyDelQ(i){ SVY.qs.splice(i,1); if(!SVY.qs.length) SVY.qs.push({type:'rating5',prompt:'',required:false,options:[]}); svyRenderQs(); }
+  function svyMoveQ(i, d){
+    var j = i + d;
+    if (j < 0 || j >= SVY.qs.length) return;
+    var t = SVY.qs[i]; SVY.qs[i] = SVY.qs[j]; SVY.qs[j] = t;
+    svyRenderQs();
+  }
+  function svySetQ(i, field, val){
+    SVY.qs[i][field] = val;
+    if (field === 'type') svyRenderQs();   // the options box appears or goes
+  }
+
+  function svyRenderQs(){
+    var box = document.getElementById('svy-qs');
+    box.innerHTML = SVY.qs.map(function(q, i){
+      var opts = svyNeedsOptions(q.type)
+        ? '<textarea rows="3" placeholder="One option per line" oninput="svySetQ('+i+',&quot;options&quot;,this.value.split(String.fromCharCode(10)))" style="width:100%;margin-top:7px;padding:7px 9px;border:1px solid #ddd;border-radius:5px;font-size:12.5px;font-family:inherit;resize:vertical;box-sizing:border-box">'+svyEsc((q.options||[]).join(String.fromCharCode(10)))+'</textarea>'
+        : '';
+      return ''
+        + '<div style="border:1px solid #e5e7eb;border-radius:7px;padding:11px 12px;background:#fafafa">'
+        +   '<div style="display:flex;gap:7px;align-items:center;margin-bottom:7px">'
+        +     '<span style="font-size:11px;color:#9ca3af;font-weight:700;min-width:16px">'+(i+1)+'.</span>'
+        +     '<select onchange="svySetQ('+i+',&quot;type&quot;,this.value)" style="padding:5px 7px;border:1px solid #ddd;border-radius:5px;font-size:12px;font-family:inherit">'+svyTypeOptions(q.type)+'</select>'
+        +     '<label style="font-size:11.5px;color:#6b7280;display:flex;align-items:center;gap:4px;cursor:pointer"><input type="checkbox" '+(q.required?'checked':'')+' onchange="svySetQ('+i+',&quot;required&quot;,this.checked)" /> Required</label>'
+        +     '<span style="margin-left:auto;display:flex;gap:3px">'
+        +       '<button onclick="svyMoveQ('+i+',-1)" title="Move up" style="background:#fff;border:1px solid #ddd;border-radius:4px;font-size:11px;cursor:pointer;padding:3px 7px;color:#6b7280">&#9650;</button>'
+        +       '<button onclick="svyMoveQ('+i+',1)" title="Move down" style="background:#fff;border:1px solid #ddd;border-radius:4px;font-size:11px;cursor:pointer;padding:3px 7px;color:#6b7280">&#9660;</button>'
+        +       '<button onclick="svyDelQ('+i+')" title="Remove" style="background:#fff;border:1px solid #fecaca;border-radius:4px;font-size:11px;cursor:pointer;padding:3px 7px;color:#dc2626">&#10005;</button>'
+        +     '</span>'
+        +   '</div>'
+        +   '<input type="text" value="'+svyEsc(q.prompt||'')+'" placeholder="What do you want to ask?" oninput="svySetQ('+i+',&quot;prompt&quot;,this.value)" style="width:100%;padding:7px 9px;border:1px solid #ddd;border-radius:5px;font-size:12.5px;box-sizing:border-box" />'
+        +   opts
+        + '</div>';
+    }).join('');
+  }
+
+  function svyToggleAll(){
+    document.getElementById('svy-orgs').style.display = document.getElementById('svy-all-orgs').checked ? 'none' : 'flex';
+  }
+  function svyToggleAllReports(){
+    document.getElementById('svy-reports').style.display = document.getElementById('svy-all-reports').checked ? 'none' : 'flex';
+  }
+  function svyErr(msg){
+    var e = document.getElementById('svy-error');
+    e.textContent = msg; e.style.display = msg ? 'block' : 'none';
+  }
+  function svyPicked(cls){
+    return Array.prototype.slice.call(document.querySelectorAll('.'+cls))
+      .filter(function(c){ return c.checked; }).map(function(c){ return c.value; });
+  }
+
+  function svyReset(){
+    SVY.editing = null;
+    SVY.qs = [{ type:'rating5', prompt:'', required:false, options:[] }];
+    document.getElementById('svy-title').value = '';
+    document.getElementById('svy-intro').value = '';
+    document.getElementById('svy-starts').value = '';
+    document.getElementById('svy-ends').value = '';
+    document.getElementById('svy-all-orgs').checked = true;
+    document.getElementById('svy-all-reports').checked = true;
+    svyToggleAll(); svyToggleAllReports();
+    Array.prototype.forEach.call(document.querySelectorAll('.svy-org,.svy-report'), function(c){ c.checked = false; });
+    document.getElementById('svy-editing').style.display = 'none';
+    svyErr(''); svyRenderQs();
+  }
+
+  function svyEdit(id){
+    var s = ((SVY.data && SVY.data.surveys) || []).filter(function(x){ return x.id === id; })[0];
+    if (!s) return;
+    SVY.editing = id;
+    document.getElementById('svy-title').value = s.title || '';
+    document.getElementById('svy-intro').value = s.intro || '';
+    // THE ID TRAVELS. Dropping it here and letting the save mint a fresh one
+    // from the position re-keys every answer already collected: insert a
+    // question at the top and the readout files each answer under the question
+    // below it, silently. The server mints only for questions with no id.
+    SVY.qs = (s.questions||[]).map(function(q){
+      return { id:q.id, type:q.type, prompt:q.prompt, required:!!q.required, options:(q.options||[]).slice() };
+    });
+    if (!SVY.qs.length) SVY.qs = [{ type:'rating5', prompt:'', required:false, options:[] }];
+    var orgs = (s.targeting && s.targeting.orgs) || [];
+    var reps = (s.targeting && s.targeting.reports) || [];
+    document.getElementById('svy-all-orgs').checked = !orgs.length;
+    document.getElementById('svy-all-reports').checked = !reps.length;
+    svyToggleAll(); svyToggleAllReports();
+    Array.prototype.forEach.call(document.querySelectorAll('.svy-org'), function(c){ c.checked = orgs.indexOf(c.value) >= 0; });
+    Array.prototype.forEach.call(document.querySelectorAll('.svy-report'), function(c){ c.checked = reps.indexOf(c.value) >= 0; });
+    var ed = document.getElementById('svy-editing');
+    // Editing keeps the id, so the survey keeps the answers it has already
+    // collected — saving a copy instead would strand the readout.
+    ed.textContent = 'Editing ' + (s.title||'') + ' — saving keeps its responses';
+    ed.style.display = 'inline';
+    svyRenderQs();
+    document.getElementById('svy-overlay').scrollTop = 0;
+  }
+
+  async function svySave(status){
+    svyErr('');
+    var pwd = getDashPwd('Save survey');
+    if (!pwd) return;
+    var body = {
+      password: pwd,
+      id: SVY.editing || undefined,
+      title: document.getElementById('svy-title').value,
+      intro: document.getElementById('svy-intro').value,
+      status: status,
+      questions: SVY.qs.map(function(q){
+        return { id: q.id || undefined, type:q.type, prompt:q.prompt, required:!!q.required,
+                 options:(q.options||[]).map(function(o){ return String(o).trim(); }).filter(Boolean) };
+      }),
+      targeting: {
+        orgs: document.getElementById('svy-all-orgs').checked ? [] : svyPicked('svy-org'),
+        reports: document.getElementById('svy-all-reports').checked ? [] : svyPicked('svy-report'),
+      },
+      starts: document.getElementById('svy-starts').value || null,
+      ends: document.getElementById('svy-ends').value || null,
+    };
+    try {
+      var r = await fetch('/api/admin/surveys', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+      var d = await r.json();
+      if (!r.ok) { if (r.status === 401) clearDashPwd(); svyErr(d.error || 'Save failed'); return; }
+      svyReset();
+      await loadSvy();
+    } catch(e){ svyErr('Error: ' + e.message); }
+  }
+
+  async function svyStatus(id, status){
+    var pwd = getDashPwd('Set survey to ' + status);
+    if (!pwd) return;
+    var r = await fetch('/api/admin/surveys/status', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ password:pwd, id:id, status:status }) });
+    if (!r.ok) { clearDashPwd(); var d = await r.json(); alert(d.error || 'Failed'); return; }
+    await loadSvy();
+  }
+  async function svyDelete(id){
+    // Deleting drops the survey and NOT its responses — those are in the event
+    // log. Say so, because "delete" reads as "erase what people told us".
+    if (!confirm('Delete this survey? Answers already collected stay in the activity log, but the readout goes with it. Closing it is the reversible option.')) return;
+    var pwd = getDashPwd('Delete survey');
+    if (!pwd) return;
+    var r = await fetch('/api/admin/surveys/delete', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ password:pwd, id:id }) });
+    if (!r.ok) { clearDashPwd(); alert('Failed'); return; }
+    document.getElementById('svy-results').style.display = 'none';
+    await loadSvy();
+  }
+
+  function svyStatusPill(s){
+    var m = { live:['#065f46','#d1fae5','Live'], draft:['#92400e','#fef3c7','Draft'], closed:['#374151','#f3f4f6','Closed'] }[s.status] || ['#374151','#f3f4f6',s.status];
+    return '<span style="font-size:10.5px;font-weight:700;color:'+m[0]+';background:'+m[1]+';padding:2px 8px;border-radius:999px">'+m[2]+'</span>';
+  }
+
+  function svyRenderList(){
+    var list = (SVY.data && SVY.data.surveys) || [];
+    var el = document.getElementById('svy-list');
+    if (!list.length) { el.innerHTML = '<div style="font-size:12px;color:#9ca3af">No surveys yet. Write one above.</div>'; return; }
+    el.innerHTML = list.map(function(s){
+      var where = (s.targeting.reports||[]).length ? (s.targeting.reports.length + ' surfaces') : 'every admin surface';
+      var who = (s.targeting.orgs||[]).length ? (s.targeting.orgs.length + ' orgs') : 'all orgs';
+      return ''
+        + '<div style="border:1px solid #e5e7eb;border-radius:7px;padding:10px 12px;display:flex;align-items:center;gap:10px">'
+        +   '<div style="flex:1;min-width:0">'
+        +     '<div style="font-size:13px;font-weight:600;color:#111827">'+svyEsc(s.title)+' '+svyStatusPill(s)+'</div>'
+        +     '<div style="font-size:11.5px;color:#6b7280;margin-top:2px">'+(s.questions||[]).length+' questions &middot; '+who+' &middot; '+where+' &middot; <b>'+(s.responses||0)+'</b> responses</div>'
+        +   '</div>'
+        +   '<button onclick="svyResults(&quot;'+svyEsc(s.id)+'&quot;)" style="font-size:11.5px;padding:5px 10px;background:#eef2ff;border:1px solid #c7d2fe;border-radius:5px;color:#3730a3;cursor:pointer;font-weight:600">Results</button>'
+        +   '<button onclick="svyEdit(&quot;'+svyEsc(s.id)+'&quot;)" style="font-size:11.5px;padding:5px 10px;background:#fff;border:1px solid #ddd;border-radius:5px;color:#374151;cursor:pointer">Edit</button>'
+        +   (s.status === 'live'
+              ? '<button onclick="svyStatus(&quot;'+svyEsc(s.id)+'&quot;,&quot;closed&quot;)" style="font-size:11.5px;padding:5px 10px;background:#fff;border:1px solid #ddd;border-radius:5px;color:#374151;cursor:pointer">Close</button>'
+              : '<button onclick="svyStatus(&quot;'+svyEsc(s.id)+'&quot;,&quot;live&quot;)" style="font-size:11.5px;padding:5px 10px;background:#dcfce7;border:1px solid #86efac;border-radius:5px;color:#166534;cursor:pointer;font-weight:600">Publish</button>')
+        +   '<button onclick="svyDelete(&quot;'+svyEsc(s.id)+'&quot;)" title="Delete" style="font-size:11.5px;padding:5px 8px;background:#fff;border:1px solid #fecaca;border-radius:5px;color:#dc2626;cursor:pointer">&#10005;</button>'
+        + '</div>';
+    }).join('');
+  }
+
+  function svyBar(label, n, max, note){
+    var pct = max > 0 ? Math.round((n / max) * 100) : 0;
+    return ''
+      + '<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">'
+      +   '<span style="font-size:11.5px;color:#6b7280;min-width:74px;text-align:right">'+svyEsc(label)+'</span>'
+      +   '<span style="flex:1;background:#f3f4f6;border-radius:4px;height:15px;position:relative;overflow:hidden">'
+      +     '<span style="position:absolute;inset:0 auto 0 0;width:'+pct+'%;background:#93c5fd;border-radius:4px"></span>'
+      +   '</span>'
+      +   '<span style="font-size:11.5px;color:#374151;min-width:46px">'+n+(note?' '+note:'')+'</span>'
+      + '</div>';
+  }
+
+  async function svyResults(id){
+    var pwd = getDashPwd('Read survey responses');
+    if (!pwd) return;
+    var panel = document.getElementById('svy-results');
+    panel.style.display = 'block';
+    panel.innerHTML = '<div style="font-size:12px;color:#9ca3af">Loading…</div>';
+    var d;
+    try {
+      var r = await fetch('/api/admin/surveys/responses', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ password:pwd, id:id }) });
+      d = await r.json();
+      if (!r.ok) { if (r.status === 401) clearDashPwd(); panel.innerHTML = '<div style="font-size:12px;color:#e55">'+svyEsc(d.error||'Failed')+'</div>'; return; }
+    } catch(e){ panel.innerHTML = '<div style="font-size:12px;color:#e55">Error: '+svyEsc(e.message)+'</div>'; return; }
+
+    var offered = d.responses + d.dismissed;
+    var html = ''
+      + '<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:12px">'
+      +   '<div style="font-size:13px;font-weight:700;color:#111827">'+svyEsc(d.survey.title)+'</div>'
+      +   '<div style="font-size:11.5px;color:#6b7280"><b>'+d.responses+'</b> responses from '+d.orgs+' orgs'
+      +     (offered ? ' &middot; '+d.dismissed+' said not now' : '')+'</div>'
+      + '</div>';
+
+    if (!d.responses) {
+      // An empty readout is a real answer, and it must not read as a broken
+      // panel: nobody has answered YET is different from the survey being
+      // broken, and the difference is whether it has been offered at all.
+      html += '<div style="font-size:12px;color:#6b7280;background:#f9fafb;border:1px solid #eee;border-radius:6px;padding:11px 13px">'
+        + (d.dismissed
+            ? 'Nobody has answered yet — but it has been shown and dismissed ' + d.dismissed + ' times, so it is reaching people.'
+            : 'Nothing yet. If this survey is live, nobody has reached a page it targets.')
+        + '</div>';
+      panel.innerHTML = html;
+      return;
+    }
+
+    d.questions.forEach(function(q){
+      html += '<div style="margin-bottom:16px;padding-top:12px;border-top:1px solid #f3f4f6">'
+        + '<div style="font-size:12.5px;font-weight:600;color:#374151;margin-bottom:7px">'+svyEsc(q.prompt)
+        + ' <span style="font-weight:400;color:#9ca3af">&middot; '+q.answered+' answered</span></div>';
+      if (q.dist) {
+        var max = Math.max.apply(null, Object.keys(q.dist).map(function(k){ return q.dist[k]; }).concat([1]));
+        Object.keys(q.dist).forEach(function(k){ html += svyBar(k, q.dist[k], max); });
+        if (q.type === 'nps') {
+          html += (q.nps == null)
+            ? '<div style="font-size:11.5px;color:#9ca3af;margin-top:5px">NPS needs '+d.minForStats+' answers before it means anything — '+q.answered+' so far.</div>'
+            : '<div style="font-size:12px;color:#374151;margin-top:6px"><b>NPS '+q.nps+'</b> <span style="color:#6b7280">&middot; '+q.promoters+' promoters, '+q.passives+' passives, '+q.detractors+' detractors</span></div>';
+        } else {
+          html += (q.mean == null)
+            ? '<div style="font-size:11.5px;color:#9ca3af;margin-top:5px">An average over '+q.answered+' answers would be noise — it shows at '+d.minForStats+'.</div>'
+            : '<div style="font-size:12px;color:#374151;margin-top:6px"><b>'+q.mean+'</b> average</div>';
+        }
+      } else if (q.counts) {
+        var mx = Math.max.apply(null, q.options.map(function(o){ return q.counts[o]; }).concat([1]));
+        q.options.forEach(function(o){ html += svyBar(o, q.counts[o], mx); });
+        if (q.many) html += '<div style="font-size:11px;color:#9ca3af;margin-top:4px">People could pick more than one, so these do not add to '+q.answered+'.</div>';
+      } else if (q.texts) {
+        html += q.texts.length
+          ? q.texts.map(function(t){
+              return '<div style="font-size:12px;color:#374151;background:#f9fafb;border-left:3px solid #d1d5db;border-radius:0 5px 5px 0;padding:7px 10px;margin-bottom:5px;line-height:1.45">'
+                + svyEsc(t.text) + '<div style="font-size:10.5px;color:#9ca3af;margin-top:3px">' + svyEsc(t.org||'') + ' &middot; ' + svyEsc(t.report||'') + '</div></div>';
+            }).join('')
+          : '<div style="font-size:11.5px;color:#9ca3af">Nobody wrote anything here.</div>';
+      }
+      html += '</div>';
+    });
+    panel.innerHTML = html;
+  }
 
   // ── Project-update composer ──────────────────────────────────────────
   function updEsc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
@@ -17971,6 +18802,67 @@ app.get("/", (req, res) => {
     } catch(e) { alert('Error: ' + e.message); }
   }
   </script>
+  <!-- ── Survey builder modal ── -->
+  <div id="svy-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;overflow-y:auto;padding:40px 16px">
+    <div style="background:#fff;border-radius:10px;max-width:760px;margin:0 auto;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.3)">
+      <div style="padding:20px 24px;background:#2c2c2c;color:#fff;display:flex;align-items:center;justify-content:space-between">
+        <div>
+          <div style="font-weight:700;font-size:15px">&#128221; Surveys</div>
+          <div style="font-size:11px;color:#aaa;margin-top:2px">Ask partners a question on the reports they already use. Never shown on a customer-facing page.</div>
+        </div>
+        <button onclick="closeSvy()" style="background:none;border:none;color:#aaa;font-size:20px;cursor:pointer;padding:4px">&#10005;</button>
+      </div>
+      <div style="padding:20px 24px">
+
+        <div id="svy-compose">
+          <label style="display:block;font-size:12px;font-weight:600;color:#374151;margin-bottom:4px">Title <span style="color:#9ca3af;font-weight:400">&mdash; the heading on the card</span></label>
+          <input id="svy-title" type="text" placeholder="e.g. How is the new rental schedule working out?" style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:5px;font-size:13px;box-sizing:border-box" />
+
+          <label style="display:block;font-size:12px;font-weight:600;color:#374151;margin:12px 0 4px">Intro <span style="color:#9ca3af;font-weight:400">&mdash; optional, one line</span></label>
+          <input id="svy-intro" type="text" placeholder="e.g. Two quick questions, about 30 seconds." style="width:100%;padding:8px 10px;border:1px solid #ddd;border-radius:5px;font-size:13px;box-sizing:border-box" />
+
+          <div style="display:flex;align-items:center;justify-content:space-between;margin:16px 0 6px">
+            <label style="font-size:12px;font-weight:600;color:#374151">Questions</label>
+            <button onclick="svyAddQ()" style="font-size:11.5px;padding:5px 11px;background:#eef2ff;border:1px solid #c7d2fe;border-radius:5px;color:#3730a3;cursor:pointer;font-weight:600">+ Add question</button>
+          </div>
+          <div id="svy-qs" style="display:flex;flex-direction:column;gap:10px"></div>
+
+          <div style="margin-top:18px;padding-top:16px;border-top:1px solid #eee">
+            <label style="display:block;font-size:12px;font-weight:600;color:#374151;margin-bottom:6px">Who sees it</label>
+            <label style="font-size:12px;display:flex;align-items:center;gap:6px;cursor:pointer;margin-bottom:6px"><input type="checkbox" id="svy-all-orgs" checked onchange="svyToggleAll()" /> All orgs <span style="color:#aaa">(incl. future)</span></label>
+            <div id="svy-orgs" style="display:none;flex-wrap:wrap;gap:6px;max-height:150px;overflow:auto;border:1px solid #eee;border-radius:6px;padding:10px"></div>
+          </div>
+
+          <div style="margin-top:14px">
+            <label style="display:block;font-size:12px;font-weight:600;color:#374151;margin-bottom:6px">Where it appears</label>
+            <label style="font-size:12px;display:flex;align-items:center;gap:6px;cursor:pointer;margin-bottom:6px"><input type="checkbox" id="svy-all-reports" checked onchange="svyToggleAllReports()" /> Every admin surface</label>
+            <div id="svy-reports" style="display:none;flex-wrap:wrap;gap:6px;max-height:190px;overflow:auto;border:1px solid #eee;border-radius:6px;padding:10px"></div>
+            <div style="margin-top:7px;font-size:11px;color:#6b7280;background:#f9fafb;border:1px solid #eee;border-radius:5px;padding:7px 9px">Customer-facing pages &mdash; the public calendar, rental calendar and campsite map &mdash; are not on this list and cannot be targeted. They do not load the survey code at all.</div>
+          </div>
+
+          <div style="display:flex;gap:14px;margin-top:14px;flex-wrap:wrap">
+            <div><label style="display:block;font-size:11.5px;color:#6b7280;margin-bottom:3px">Starts (optional)</label><input id="svy-starts" type="date" style="padding:6px 9px;border:1px solid #ddd;border-radius:5px;font-size:12.5px;font-family:inherit" /></div>
+            <div><label style="display:block;font-size:11.5px;color:#6b7280;margin-bottom:3px">Ends (optional)</label><input id="svy-ends" type="date" style="padding:6px 9px;border:1px solid #ddd;border-radius:5px;font-size:12.5px;font-family:inherit" /></div>
+          </div>
+
+          <div id="svy-error" style="margin-top:12px;color:#e55;font-size:12px;display:none"></div>
+          <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;align-items:center">
+            <span id="svy-editing" style="margin-right:auto;font-size:11.5px;color:#6b7280;display:none"></span>
+            <button onclick="svyReset()" style="padding:8px 14px;background:#f3f4f6;border:1px solid #e5e7eb;border-radius:6px;font-size:12.5px;cursor:pointer;color:#374151">Clear</button>
+            <button onclick="svySave('draft')" style="padding:8px 14px;background:#fff;border:1px solid #d1d5db;border-radius:6px;font-size:12.5px;cursor:pointer;color:#374151;font-weight:600">Save draft</button>
+            <button onclick="svySave('live')" style="padding:8px 16px;background:#2563eb;border:none;border-radius:6px;font-size:12.5px;cursor:pointer;color:#fff;font-weight:700">Publish</button>
+          </div>
+        </div>
+
+        <div style="margin-top:22px;padding-top:16px;border-top:1px solid #eee">
+          <div style="font-size:12px;font-weight:700;color:#374151;margin-bottom:8px">Surveys</div>
+          <div id="svy-list" style="display:flex;flex-direction:column;gap:8px"></div>
+        </div>
+
+        <div id="svy-results" style="display:none;margin-top:18px;padding-top:16px;border-top:1px solid #eee"></div>
+      </div>
+    </div>
+  </div>
   <!-- ── Add Project Update Modal ── -->
   <div id="upd-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;overflow-y:auto;padding:40px 16px">
     <div style="background:#fff;border-radius:10px;max-width:600px;margin:0 auto;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.3)">
