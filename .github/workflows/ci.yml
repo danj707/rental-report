@@ -223,6 +223,14 @@ jobs:
       - name: No card CTE scans the whole platform
         run: node scripts/card-org-scope.spec.js
 
+      # Card 17301 v7.1 — the payment aggregates are on the base tables now.
+      # The SHAPE is the guard: v7 made the same move, OR'd the two arms into
+      # one CTE, and timed out past 200s for every org but Pawnee. None of the
+      # regressions this catches changes a value on screen; the card just stops
+      # answering.
+      - name: Card 17301 — the payment arms stay off the item log, and apart
+        run: node scripts/memberships-card-base-tables.spec.js
+
       # Card 19273 inferred a claim from a timestamp that really marked the
       # EXPIRY SWEEP — of 5,371 grants it called claimed, 5,371 were already
       # expired and ZERO were still open. Conversion read 63% where the truth

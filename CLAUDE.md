@@ -1691,6 +1691,141 @@ Any adoption figure has to count every usage event, exactly as
 `getReportActivity()` does, or it reports the platform's most-used surfaces as
 unused.
 
+## CARD 17301 v7.1 — THE MEMBERSHIPS FIX, PUSHED (2026-09-11)
+
+Dan: *"yes, start on the memberships fix."* Pushed to card 17301 and **the
+report is DOWN for all 29 orgs until the date tags are flipped** — measured
+through the public endpoint immediately after the push: `An error occurred.
+(HTTP 400)` in **0.1s**, the refusal tell. Flip link
+https://rec.metabaseapp.com/question/17301
+
+**THE TWO ARMS NEVER SHARE A CTE, and that sentence is the whole fix.** v7 made
+the same move to the base tables and timed out past 200s for every org but
+Pawnee; the mechanism is in `sql/report-cards/17301-v7-DIAGNOSIS.md` and it is
+that an OR spanning three tables cannot be evaluated until every column in it is
+available, so **both** index-usable predicates were demoted into a `Join Filter`
+on the outermost nested loop and `win` survived only as two hashed SubPlans
+evaluated LAST. v7.1 gives each arm its own CTE: `tx_oi` drives FROM the window
+INTO `order_item_transaction_order_item_id_index` and **needs no joins at all**
+(order_item_id and amount are both columns there), and `tx_cust` is driven from
+the orphan pairs.
+
+### PROVING THE EXACT TEXT, because inheriting a proof is how v7 shipped broken
+
+**Three layers, and the first is the one that makes the other two sufficient.**
+
+1. **The change is provably LOCALISED.** Comment-stripped and whitespace-
+   normalised, everything before `win` and everything from the final SELECT
+   onward is **byte-identical** to v6 (tail md5 `62bc5fe813d12d95e1a1f54bd4206665`
+   on both sides), and **`win` itself is byte-identical too.** So the card's
+   output depends on the change only through the two relations `tx_oi` and
+   `tx_cust`. Same lesson as card 17295 v9: *when a change is localised, prove
+   the localised thing.*
+2. **Those two relations are md5-identical to the item log's**, per group, over
+   the same `win`:
+
+| | groups | item log vs base tables |
+|---|---|---|
+| pawnee, 2025-09-04..2026-09-30 | 96 | md5 `df597571a55b492e2657cb8bccfb6577` both |
+| **apex-sandbox, UNWINDOWED** (the shape prewarm sends) | **17,369** | md5 `f083cde4878c1efd3e158a893497be7d` both, $660,341.55 paid / $26,111.59 refunded either way |
+
+3. **The whole final SELECT was RUN**, not wrapped in a summary probe — the
+   card-21682 failure. pawnee 13mo returns **100 rows**, which is the figure this
+   file already records for v6 over that exact window, and apex over September
+   returns 727.
+
+### THE FALLBACK CANNOT BE PROVEN ON A REAL ORPHAN, so it was proven on real money
+
+Re-measured 2026-09-11: **10 orphan rows on the entire platform — 5
+apex-park-and-recreation-district, 5 apex-sandbox** — and **the item log finds
+ZERO transactions for any of them.** So `cu_n=0` on both sides is the only
+answer a real orphan can ever give, and a test over it proves 0 = 0.
+
+It was therefore driven with **every real (customer, product) pair pawnee has,
+as if each were an orphan**: 102 pairs → **66 groups, $5,750.00 paid,
+$610.00 refunded, md5 `e1ed906f5002a8005fa9860576d0e444` both ways.** That is
+the gap the diagnosis explicitly listed as owed (*"the customer/product fallback
+rebuilt on base tables is untested here"*), closed on money that exists.
+
+**Generalise it: when the production data cannot exercise a branch, feed the
+branch real data it was not built for rather than settling for an empty-set
+match.**
+
+### THE `amount` COLUMN'S OWN COMMENT IS WRONG, and believing it flips every net
+
+`order_item_transaction.amount` is documented as *"Positive for payments,
+negative for refunds"*. Measured at pawnee over the filtered set: **134 refund
+rows, ALL POSITIVE; 1,217 payment rows, all positive; zero rows carrying neither
+a payment nor a refund.** So the sign convention matches the item log and the
+card's `paid - refunded` is right as written — an `ABS()` or a unary minus added
+on the strength of that comment would silently invert Net Collected on every
+row. Pinned by the spec. *Third instance in this file of a comment sending the
+next person the wrong way* (the false `section_name` comment on card 17296, the
+*"organization.config holds no timezone key"* note on 21649).
+
+### The three base-side filters, re-derived rather than copied
+
+`deleted_at IS NULL AND confirmed_at IS NOT NULL AND credit_id IS NULL` is the
+partial predicate on `order_item_transaction_item_log_period_index` — the item
+log's own notion of a countable transaction — and it is what makes the md5s
+match. `order_item.deleted_at` is deliberately **not** filtered, settled
+empirically over 157k groups on 2026-09-04. Note `credit_id` is **not surfaced
+by the schema tool** (it is flagged deprecated) but is very much there; the
+table's own `reportIntent` says *"exactly one of payment_id/refund_id/credit_id
+is set per row"*.
+
+### Speed, honestly
+
+**Measure it again after the flip through the public endpoint — the replica was
+badly loaded during this work** (a bare `pg_indexes` query timed out at 60s
+twice, and a trivial `organization` lookup took 53s). What is comparable,
+because each pair ran minutes apart on the same load:
+
+| | v6 (item log) | v7.1 (base tables) |
+|---|---|---|
+| pawnee 13mo, the payment aggregates | **46.1s** | **8.1s** |
+| apex-sandbox unwindowed, same | **59.0s** | **35.3s** |
+
+Both figures include the same scan of the 132 MB purchases view for `win`, which
+is now the floor rather than the 1230 MB item log.
+
+**AND THE 60s MCP CEILING IS A REAL CONSTRAINT ON THIS KIND OF WORK.** One scan
+of `materialized.item_log_report` alone measured **31.9s** for pawnee, so any
+v6-side query is 40-60s before it does anything, and clarksville all-time and
+the full v6 card both exceeded the tool's limit outright. **The trick that made
+the gate possible is an md5 FINGERPRINT per side rather than a FULL OUTER JOIN
+across both** — each side then fits in its own query and the comparison happens
+outside the database. Worth reaching for on any card of this shape.
+
+### Guards
+
+`scripts/memberships-card-base-tables.spec.js` (**67 assertions, in CI**).
+Mutation-tested **seventeen ways, all failing by name**: the item log back,
+`org_ilr` reintroduced, the two arms OR'd back together (the v7 bug), `tx_oi`
+driven from the ledger instead of from the window, `tx_oi` growing a join to
+`order_item` (the 2.7s → 45.9s shape), each of `deleted_at` / `confirmed_at` /
+`credit_id` / `organization_id` dropped, the refunds ABSed on the comment's
+say-so, `tx_cust` filtering `order_item.deleted_at`, `tx_cust` dropping
+`product_type`, `win_orphan` taking every purchase rather than the orphans, the
+bottom `[[ ]]` filter deleted, the trailing `ORDER BY` dropped (the card-17300
+failure), an output column renamed, and `tx_cust` joined for every row rather
+than only for orphans.
+
+**The push read back BYTE-IDENTICAL**, trailing `ORDER BY` and both `[[ ]]`
+pairs intact. **THREE tags, not six** — the card was updated rather than
+re-saved on top of an earlier push — but all three came back **`text`**, so both
+dates need the flip.
+
+### STILL OWED
+
+- **The flip**, then a cache-independent sign-off through the public endpoint
+  for pawnee, norman and apex. Until then the report is down.
+- **An apex verdict.** apex over September ran 727 rows in 41.8s here on a loaded
+  replica; v6 at apex has never been measured at all. Do not claim apex is fixed
+  until the post-flip probe says so.
+- The `pawnee, THIRTEEN MONTHS` manifest row is the one that discriminates —
+  re-run `verify-report-live` over the whole manifest after the flip.
+
 ## Card 17301 v7 — PUSHED AND IT IS A REGRESSION (2026-09-04)
 
 **READ THIS BEFORE ANYTHING BELOW.** v7 is live on card 17301 and it TIMES OUT
