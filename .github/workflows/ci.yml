@@ -63,6 +63,9 @@ jobs:
       - name: Delete-org source surgery spec (never push an unparseable server.js)
         run: node scripts/delete-org.spec.js
 
+      - name: Data Reports card is togglable from the admin org view
+        run: node scripts/admin-data-reports-toggle.spec.js
+
       - name: Breaking schema-drift spec (dropped tables/columns, no noise)
         run: node scripts/schema-break.spec.js
 
