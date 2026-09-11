@@ -2638,6 +2638,17 @@ function App() {
   const [selectedSiteTypes, setSelectedSiteTypes] = useState(null);
   const [allSiteTypes,      setAllSiteTypes]      = useState([]);
 
+  // WHETHER THE FEED CARRIES THE LIGHTING COLUMN AT ALL — asked of the RAW
+  // response, never of the mapped rows, because normalizeRow defaults it to ''
+  // and a value test could never tell "no rental is lit" from "this feed
+  // cannot say". Same presence-not-value rule as hasAbsent / ciHasStatus.
+  //
+  // Declared here with the rest of the state rather than beside its reader:
+  // the fetch that sets it runs earlier in the file, and these pages compile
+  // JSX in the browser, where Babel turns const into var — so a name read
+  // above its declaration is `undefined` two lines later instead of a throw.
+  const [hasLighting,       setHasLighting]      = useState(false);
+
   // ── Saved views ──────────────────────────────────────────────────
   // Shared per org, like the Fast Track pins: auth is one token per org, so
   // there is no per-user list to build yet.
@@ -2884,6 +2895,11 @@ function App() {
       .then(json => {
         const normalized = json.rows.map(normalizeRow);
         setRows(normalized);
+        // PRESENCE, from the raw response. Zero rows cannot answer either way,
+        // and that is correctly false: with nothing in the window there is
+        // nothing for the control to filter and the empty state already says
+        // the range is empty.
+        setHasLighting(json.rows.some(r => 'Lighting' in r));
         setMeta(json.meta || {});
         setLoadedStart(sd);
         setLoadedEnd(ed);
@@ -2984,6 +3000,13 @@ function App() {
             parseAddOnItems(r.addons).forEach(p => items.add(stripAddonPrice(p)));
           });
           const all = [...items].sort();
+          // Same merge as locations/sites/site types, so the denominator grows
+          // with the numerator and the badge cannot read 5/4.
+          setAllAddOns(prevAll => {
+            const merged = new Set(prevAll);
+            all.forEach(a => merged.add(a));
+            return [...merged].sort();
+          });
           if (prev === null) {
             // Respect shared URL addons param
             if (params.addons) {
@@ -3068,14 +3091,29 @@ function App() {
   // so historical locations always remain visible in the filter dropdowns.
   // They are updated in the fetch callback below (setAllLocations / setAllSites).
 
-  const allAddOns = useMemo(() => {
-    if (!rows) return [];
-    const items = new Set();
-    rows.forEach(r => {
-      parseAddOnItems(r.addons).forEach(p => items.add(stripAddonPrice(p)));
-    });
-    return [...items].sort();
-  }, [rows]);
+  // ADD-ONS WAS THE ONLY OPTION LIST THAT DID NOT ACCUMULATE, and that is the
+  // whole of the "Add Ons 5/4" badge Dan saw. selectedAddOns accumulates across
+  // windows (the reconcile effect only ever ADDS), while this list was a memo
+  // over the CURRENT rows — so narrow the dates to a window with fewer add-on
+  // types and the numerator keeps five while the denominator drops to four.
+  //
+  // It is not only cosmetic. `allSelected` is `size === length`, so 5 === 4 is
+  // false and the picker paints itself ACTIVE — amber border, badge showing —
+  // while the funnel's `size < length` is also false and nothing is actually
+  // filtered. A control that says it is narrowing when it is not is worse than
+  // one that is wrong, because there is nothing on screen to disagree with.
+  //
+  // Locations, sites and site types all accumulate (setAllX(prev => merged)),
+  // which is why none of them can show this. Add-ons now follows the same rule
+  // — and it is the rule the site-type block states out loud: never drop a
+  // historical one, so a previously-seen option stays tickable rather than
+  // becoming unreachable the moment the window moves off it.
+  const [allAddOns, setAllAddOns] = useState([]);
+
+  // Whether the FEED carries the Lighting column at all — asked of the raw
+  // response, never of the mapped rows, because normalizeRow defaults it to ''
+  // and a value test can never tell "no rental is lit" from "this feed cannot
+  // say". Same rule as colPresence on the Programs report.
 
   // ── Saved views: what a view STORES, and what it does when applied ─────────
   // ONE definition of "what is filtered right now", read by the view machinery
@@ -3352,7 +3390,23 @@ function App() {
       : { name: '', targetId: null, dateMode: 'current', relativeRange: defaultSavedRange() });
   }
 
-  const hasLighting = useMemo(() => rows && rows.some(muscoLit), [rows]);
+  // PRESENCE OF THE COLUMN, NOT A COUNT OF LIT ROWS — Dan's call, 2026-09-11:
+  // "it should show up on the filters section as the button, regardless of if
+  // any rentals have it. Click button, nothing shows up, org knows no rentals
+  // have musco."
+  //
+  // THIS REVERSES THE ABSENT-NOT-DISABLED RULE FOR THIS ONE CONTROL, and the
+  // reasoning is his: an empty result is itself the answer here. Hiding the
+  // button makes "does anything on this schedule drive Musco?" unanswerable —
+  // the reader cannot tell a report with no lit rentals from a report that
+  // cannot show lit rentals. That is a worse dead end than the empty table,
+  // which at least says something. The empty state names the reason, so the
+  // click is never a shrug.
+  //
+  // It is still gated on the COLUMN, because a feed cached before the card
+  // carried it genuinely cannot answer — that control could only ever empty
+  // the table for the wrong reason, which is the one case Dan's argument does
+  // not cover. Same presence-not-value rule as hasAbsent / ciHasStatus.
 
   // The column only exists where forms do, so an org that collects none never
   // sees an empty column and nothing has to be switched on per org.
@@ -4441,9 +4495,15 @@ function App() {
 
             {filteredRows && filteredRows.length === 0 && (
               <div style={{textAlign:'center',padding:'40px 0',color:'#888'}}>
-                {rows.length > 0
-                  ? 'No rentals match the current location filter.'
-                  : 'No rentals found for the selected date range.'}
+                {rows.length === 0
+                  ? 'No rentals found for the selected date range.'
+                  : filterLighting && !rows.some(muscoLit)
+                    // NAMES THE REASON. Dan wants the button to answer the
+                    // question even when the answer is "none" — and blaming the
+                    // LOCATION picker, which is what this used to say for every
+                    // empty table, would be a lie about which control did it.
+                    ? 'No rentals in this range have Musco lighting. The lights on these fields are not driven by Rec — a "Field Lights" add-on is a charge, not a schedule.'
+                    : 'No rentals match the current filters.'}
               </div>
             )}
           </>

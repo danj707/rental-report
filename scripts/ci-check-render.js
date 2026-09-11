@@ -1402,7 +1402,26 @@ const STUBS = [
       topSite: { name: "Site 12", opens: 9 } }) },
   // One feed, both tabs: Camping filters it to campsite rows and Outdoor Events
   // to its three types, so each tab has to do its own scoping.
-  { match: /\/facility\/api\/data/,        body: () => ({ rows: campsiteRows().concat(outdoorRows()).concat(fieldRows()).concat(addonFormRows()), meta: { org_id: "org-uuid-1" } }) },
+  // stubMode "nolit" keeps the Lighting COLUMN and empties every value — an org
+  // on the current card with nothing wired for Musco, which is the state Dan
+  // asked the button to survive: "regardless of if any rentals have it. Click
+  // button, nothing shows up, org knows no rentals have musco."
+  // stubMode "prelit" drops the column entirely, i.e. a cache entry from before
+  // the card carried it. THERE the control genuinely cannot answer and must
+  // stay hidden — the one case Dan's argument does not cover, and the only
+  // thing separating the two is presence of the key rather than its value.
+  { match: /\/facility\/api\/data/,        body: () => {
+      const base = campsiteRows().concat(outdoorRows()).concat(fieldRows()).concat(addonFormRows());
+      const LIT = ["Lighting", "Lighting Sync", "Lit From", "Lit Until", "Lit Window",
+                   "Lit Start Source", "Lit End Source", "Lighting Error"];
+      let rows = base;
+      if (STUB_MODE === "nolit") {
+        rows = base.map(r => { const c = Object.assign({}, r); LIT.forEach(k => { c[k] = null; }); return c; });
+      } else if (STUB_MODE === "prelit") {
+        rows = base.map(r => { const c = Object.assign({}, r); LIT.forEach(k => { delete c[k]; }); return c; });
+      }
+      return { rows, meta: { org_id: "org-uuid-1" } };
+    } },
   /* THE HUB'S OWN FEED (card 19570), and it was never stubbed — it fell through
      to the catch-all /api/ and got `rows: []`. So every vertical badge on the
      Facilities hub read 0 and the Aquatics tab short-circuited to its "no
@@ -2424,6 +2443,59 @@ const CASES = [
       });
     },
     needs: "body[data-musco-state=\"on\"][data-musco-rows=\"3\"]" },
+
+  // THE BUTTON SHOWS EVEN WHEN NOTHING IS LIT. Dan: "where did my musco button
+  // go? it should show up on the filters section as the button, regardless of
+  // if any rentals have it. Click button, nothing shows up, org knows no
+  // rentals have musco."
+  //
+  // No source assertion can show this: hasLighting is a boolean either way and
+  // only a render says whether the control is on screen for an org with no
+  // Musco at all.
+  { name: "facility · the Musco button shows with nothing lit", path: "/{org}/facility",
+    stubMode: "nolit",
+    act: async page => {
+      await page.evaluate(() => {
+        const btn = document.querySelector('[data-musco-filter]');
+        document.body.setAttribute('data-musco-btn', btn ? '1' : '0');
+        document.body.setAttribute('data-lit-rows',
+          String(document.querySelectorAll('.data-row.musco-lit').length));
+      });
+    },
+    // Present, and genuinely nothing lit — asserting the button alone would
+    // pass on a fixture that still had a lit row.
+    needs: "body[data-musco-btn=\"1\"][data-lit-rows=\"0\"]" },
+
+  // CLICKING IT SAYS WHY. Dan's "org knows no rentals have musco" only holds if
+  // the empty table names the reason — otherwise showing the button just moves
+  // the dead end one click later.
+  { name: "facility · clicking it with nothing lit names the reason", path: "/{org}/facility",
+    stubMode: "nolit",
+    act: async page => {
+      await page.click('[data-musco-filter]');
+      await page.waitForFunction(() =>
+        document.querySelector('[data-musco-filter="on"]'), { timeout: 8000 });
+      await page.evaluate(() => {
+        const t = document.body.textContent;
+        document.body.setAttribute('data-musco-msg',
+          t.indexOf('have Musco lighting') >= 0 ? '1' : '0');
+        // ...and it must NOT blame the location picker, which is what the old
+        // generic message said for every empty table.
+        document.body.setAttribute('data-musco-blames-loc',
+          t.indexOf('current location filter') >= 0 ? '1' : '0');
+        document.body.setAttribute('data-musco-rows',
+          String(document.querySelectorAll('.data-row').length));
+      });
+    },
+    needs: "body[data-musco-msg=\"1\"][data-musco-blames-loc=\"0\"][data-musco-rows=\"0\"]" },
+
+  // THE ONE CASE THAT STAYS HIDDEN: a feed from before the card carried the
+  // column cannot answer, so a button there could only ever empty the table for
+  // the wrong reason. Presence of the KEY is the only thing separating this
+  // from the case above.
+  { name: "facility · no Musco button on a pre-column feed", path: "/{org}/facility",
+    stubMode: "prelit",
+    needs: ".data-row", absent: "[data-musco-filter]" },
 
   // The Forms column links to the rental's Required Information tab.
   { name: "facility · forms link",    path: "/{org}/facility",

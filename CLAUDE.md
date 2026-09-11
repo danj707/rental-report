@@ -179,6 +179,60 @@ reasoning is worth not re-deriving:
   structurally cannot. Worth revisiting only if an org ever has enough rejected
   schedules for that to be a real query — today the answer is the ⚠ on the row.
 
+### THE BUTTON NOW SHOWS EVEN WHEN NOTHING IS LIT — a reversal, Dan's call
+
+*"where did my musco button go? it should show up on the filters section as the
+button, regardless of if any rentals have it. Click button, nothing shows up,
+org knows no rentals have musco."*
+
+**THIS DELIBERATELY REVERSES THE ABSENT-NOT-DISABLED RULE FOR THIS ONE
+CONTROL.** `hasLighting` gated on a row actually being lit, so with every
+platform schedule `removed` the button vanished for everybody — which is what
+Dan hit. His argument is the right one and it is not the usual dead-end case:
+**hiding it makes "does anything here drive Musco?" unanswerable**, because a
+reader cannot tell a schedule with no lit rentals from one that cannot show lit
+rentals. An empty table is a worse answer than no answer only when it says
+nothing; this one says why.
+
+**GATED ON THE COLUMN, NOT ON A VALUE** — `json.rows.some(r => 'Lighting' in r)`,
+asked of the RAW response. `normalizeRow` defaults `lighting` to `''`, so a
+value test could never separate *"nothing is lit"* from *"this feed cannot
+say"*. That distinction is the one case Dan's argument does not cover: a feed
+cached before the card carried the column genuinely cannot answer, and a button
+there could only ever empty the table for the wrong reason. Same
+presence-not-value rule as `hasAbsent` / `ciHasStatus`.
+
+**THE EMPTY STATE NAMES THE REASON**, or showing the button just moves the dead
+end one click later — and the old message *blamed the LOCATION picker for every
+empty table*, which was already a lie whenever any other filter did it.
+
+### "ADD ONS 5/4" — the numerator accumulated and the denominator did not
+
+From the same screenshot: the add-on picker's badge read **5/4**, more selected
+than exist.
+
+`selectedAddOns` accumulates across windows (the reconcile effect only ever
+ADDS), and `allAddOns` was a `useMemo` over the CURRENT rows. Narrow the dates
+to a window with fewer add-on types and the numerator stays at five while the
+denominator drops to four.
+
+**NOT COSMETIC.** `allSelected` is `size === length`, so `5 === 4` is false and
+the picker paints itself **ACTIVE** — amber border, badge showing — while the
+funnel's `size < length` is *also* false and nothing is filtered. **A control
+that says it is narrowing when it is not is worse than one that is simply
+wrong**, because there is nothing on screen to disagree with.
+
+**Locations, sites and site types all ACCUMULATE their option lists**
+(`setAllX(prev => merged)`), which is why none of them can show this — add-ons
+was the only one that did not. It follows the same rule now, which is also the
+rule the site-type block already states out loud: *never drop a historical one,
+so a previously-seen option stays tickable rather than becoming unreachable the
+moment the window moves off it.*
+
+Guarded four ways at once: the three neighbours' merges are asserted alongside
+the new one, so the invariant — **every picker's option list must grow at least
+as fast as its selection** — cannot regress by a different route.
+
 ### THE TOGGLE PASSED NONE OF THE FOUR GATES — FIXED (2026-09-11)
 
 Dan: *"the filter lighting needs to hit the pdf and printed versions."*

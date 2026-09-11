@@ -438,8 +438,33 @@ ok(!/addons/.test(btnJsx),
 // this repo keeps writing down.
 ok(/\{hasLighting && \(/.test(src),
    "the Musco filter should be gated on there being a schedule to filter to");
-ok(/hasLighting\s*=\s*useMemo\(\(\)\s*=>\s*rows && rows\.some\(muscoLit\)/.test(src),
-   "hasLighting should read muscoLit, so an add-on can never summon the control");
+// THE CONTROL SHOWS WHENEVER THE FEED CAN ANSWER, not only when something is
+// lit. Dan, 2026-09-11: "it should show up on the filters section as the
+// button, regardless of if any rentals have it. Click button, nothing shows
+// up, org knows no rentals have musco."
+//
+// This DELIBERATELY REVERSES absent-not-disabled for this one control, and the
+// reasoning is his: hiding it makes "does anything here drive Musco?"
+// unanswerable — a reader cannot tell a schedule with no lit rentals from one
+// that cannot show lit rentals. The empty state names the reason so the click
+// is not a shrug.
+ok(/const \[hasLighting,\s+setHasLighting\]\s+= useState\(false\)/.test(src),
+   "hasLighting should be state, not a count over the mapped rows");
+ok(/setHasLighting\(json\.rows\.some\(r => 'Lighting' in r\)\)/.test(src),
+   "it should be PRESENCE of the column in the RAW response — normalizeRow defaults Lighting to '', so a value test cannot tell 'nothing is lit' from 'this feed cannot say'");
+ok(!/hasLighting[\s\S]{0,120}muscoLit/.test(src),
+   "hasLighting must NOT gate on any row being lit — that is the bug Dan reported");
+
+// The empty state has to say WHICH filter emptied the table, or showing the
+// button just moves the dead end one click later.
+const emptyBlock = src.slice(src.indexOf("filteredRows && filteredRows.length === 0 &&"),
+                             src.indexOf("filteredRows && filteredRows.length === 0 &&") + 1200);
+ok(/filterLighting && !rows\.some\(muscoLit\)/.test(emptyBlock),
+   "the empty state should detect the Musco-filtered-to-nothing case specifically");
+ok(/Musco lighting/.test(emptyBlock) && /add-on/.test(emptyBlock),
+   "and name the reason, including that a Field Lights add-on is a charge rather than a schedule");
+ok(!/current location filter/.test(emptyBlock),
+   "the generic message must stop blaming the LOCATION filter for every empty table");
 
 // ── THE FIRST REAL ONE, END TO END ────────────────────────────────────────
 // Everything above this point was written against a shape nobody had ever
@@ -558,5 +583,36 @@ ok(/setFilterLighting\(!!f\.musco\)/.test(src),
    "applying a view must set the mode in BOTH directions");
 ok(/setFilterLighting\(false\)/.test(src),
    "Default view must turn it off — 'no filters' has to mean no mode either");
+
+// ── "ADD ONS 5/4" ─────────────────────────────────────────────────────────
+// Dan, from a screenshot of the toolbar: the add-on picker's badge read 5/4 —
+// more selected than exist.
+//
+// selectedAddOns ACCUMULATES across windows (the reconcile effect only ever
+// ADDS), and allAddOns was a memo over the CURRENT rows. Narrow the dates to a
+// window with fewer add-on types and the numerator stays at five while the
+// denominator drops to four.
+//
+// NOT COSMETIC: `allSelected` is `size === length`, so 5 === 4 is false and the
+// picker paints itself ACTIVE — amber border, badge showing — while the
+// funnel's `size < length` is also false and nothing is filtered. A control
+// that says it is narrowing when it is not is worse than one that is simply
+// wrong, because there is nothing on screen to disagree with.
+//
+// Locations, sites and site types all accumulate their option lists, which is
+// why none of them can show this. Add-ons was the only one that did not.
+ok(/const \[allAddOns, setAllAddOns\] = useState\(\[\]\)/.test(src),
+   "allAddOns should accumulate like its three neighbours, not be a memo over the current rows");
+ok(!/const allAddOns = useMemo/.test(src),
+   "the per-window memo is what let the denominator shrink under the numerator");
+ok(/setAllAddOns\(prevAll => \{[\s\S]{0,200}merged\.add\(a\)/.test(src),
+   "and it should merge, the same shape as setAllLocations/setAllSites/setAllSiteTypes");
+
+// THE INVARIANT ITSELF, stated so it cannot regress via a different route:
+// every picker's option list must grow at least as fast as its selection.
+["setAllLocations", "setAllSites", "setAllSiteTypes", "setAllAddOns"].forEach(fn => {
+  const i = src.indexOf(fn + "(prev");
+  ok(i > 0, fn + " should maintain its option list with a merge");
+});
 
 console.log(n + " assertions passed.");
