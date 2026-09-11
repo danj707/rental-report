@@ -7997,6 +7997,165 @@ Plus a browser check that the KPI **opens** the panel and closes again, and that
 sorting on the new column works — `ci-check-admin-js` proves the handler exists
 and parses, which is not the same claim.
 
+## THE SESSION SCHEDULE NEVER FINISHED LOADING (2026-09-11)
+
+Dan, on Watertown's programme calendar stuck on *"Loading…"*: *"hmm this
+watertown program calendar is never loading"*, then — *"it finally returned
+after about 3 min."*
+
+**TWO CAUSES THAT MULTIPLY, and neither is visible in the page or the card on
+its own.** Reproduced before anything was changed, through the public endpoint:
+
+| card 17298, watertown | alone | fired together, as the page does |
+|---|---|---|
+| the visible week (Sep 13-19) | **92.5s** | **180.3s** |
+| the filter-options sweep (today → +60) | **34.0s** | **196.9s** |
+
+The data route's budget is 60s + a 120s retry = 180s, so **both blow through
+it**, and the three minutes is the browser sitting on the retry.
+
+### THE CARD COMPUTED THREE CTEs FOR THE WHOLE PLATFORM
+
+`section_registration`, `program_activities` and `section_eligibility` carry no
+org filter at all — they aggregate **51,154 registration windows, 9,695
+program-activity rows and 31,380 eligibility lookups** and then LEFT JOIN the
+2% that can survive. Watertown holds **775 of the platform's 58,429 sections**.
+
+**`section_eligibility` ALONE MEASURED 54.9s BUILDING 31,127 GROUPS — more than
+the whole card (49.8s).** It *is* the card. Its per-row work is a `STRING_AGG`
+over a `CASE` ladder doing `SPLIT_PART`/`::numeric`/`ROUND` on every eligibility
+rule on the platform, to label one org's sections.
+
+**SCOPING IT THROUGH A JOIN TO `section` BARELY HELPED — 55s → 42s — and the
+plan says why.** Reading `EXPLAIN (COSTS OFF)` for SHAPE rather than trusting a
+wall clock (the rule this file already records for 17301 v7):
+
+```
+->  Hash Join
+      Hash Cond: (ergl.section_id = osec.id)
+      ->  Seq Scan on eligibility_rule_group_lookup ergl      ← the whole table
+```
+
+A 47x cut in OUTPUT against a 24% cut in TIME is the tell: the scan is the
+floor, and scoping by join only saves the aggregation on top of it.
+
+**THE TABLE CARRIES ITS OWN INDEXED `organization_id`, AND THE CARD NEVER READ
+IT.** So do all six tables these CTEs touch — checked, not assumed:
+
+| table | size | own `organization_id` | indexed |
+|---|---|---|---|
+| `eligibility_rule` | 36 MB | yes | yes |
+| `registration_window` | 26 MB | yes | yes |
+| `eligibility_rule_group_lookup` | 14 MB | yes | yes |
+| `eligibility_rule_group` | 10 MB | yes | yes |
+| `program_activity` | 2.4 MB | yes | yes |
+| `activity` | 1.1 MB | yes | yes |
+
+Filtering on it turns the seq scan into a `Bitmap Index Scan on
+eligibility_rule_group_lookup_organization_id_index`. **Watertown's week:
+49.8s → 7.2s, 62 rows either way and a byte-identical row-level fingerprint
+(`5f5d6d4e2b36e07dffe6fa8d451f3bcb`).**
+
+*Generalise it: I reached for a join to scope, got a seq scan, and the key was
+sitting on the table all along. Before scoping through a relationship, check
+whether the table already carries the column.*
+
+### THE OBVIOUS FORM OF THE FIX IS WRONG, AND IT WOULD HAVE SHIPPED SILENTLY
+
+`AND ca.organization_id = {{org_id}}` on `program_activities` is the version
+that matches the other two and it is a real regression. **`program_activity.
+organization_id` is NULL on one live row: SF Rec & Park's *"Tennis Lesson with
+Vern"* — a program with 215 SECTIONS.** Scoping on that column drops it, and
+every one of those sections silently relabels from **Tennis** to
+**Uncategorized** — a plausible-looking word in a filter dropdown, on an org
+nobody was testing.
+
+Measured, all three forms side by side against production:
+
+| | result |
+|---|---|
+| deployed (unscoped) | `Tennis` |
+| scoped through the PROGRAM (shipped) | `Tennis` |
+| scoped on `ca.organization_id` | **NULL** |
+
+So that CTE is scoped through `program`, whose org is correct by construction
+and equally indexed. The other two were cleared the same way and have **ZERO**
+mismatching or NULL rows platform-wide — **which is the equivalence proof for
+every org rather than for a sampled few**, and is stronger than any number of
+per-org fingerprints.
+
+### THE PAGE FIRED BOTH QUERIES ON MOUNT
+
+`calendar.html` asks for the visible week AND a today→+60 sweep to fill the
+Activity/Location dropdowns. Both effects ran on mount, so they did not queue —
+**they contended, and each roughly doubled the other** (the table at the top).
+
+**NEITHER WINDOW IS EVER PRE-WARMED, so this is every cold open.** Prewarm
+writes the base key and this month; `feedCacheKey` includes the parameter
+string, so a specific week and a rolling today→+60 span are each their own
+entry, and the 60-day one **moves every day by construction**.
+
+The filter-options fetch now waits for the visible window's fetch. It costs the
+dropdowns nothing — they are not on screen until the table is — and **the month
+branch releases the same gate**, or an org landing in month view never gets
+filter options at all.
+
+### Guards
+
+`scripts/calendar-card-scope.spec.js` (**27 assertions, in CI**).
+Mutation-tested eleven ways, all failing by name: each of the three CTEs
+unscoped, `program_activities` scoped on `ca.organization_id` **with the program
+join still present** (the SF regression, and the one mutation that proves that
+assertion discriminates rather than being caught by its neighbour), the trailing
+`ORDER BY` dropped (the card-17300 failure), the `[[ ]]` clauses made
+non-optional, the `DATE()` cast dropped, an output column renamed, the page
+firing both fetches again, and only one of the two view branches releasing the
+gate.
+
+**And this page had NO render coverage at all** — part of why it could hang for
+three minutes with nothing noticing. Two cases now, and the second is the only
+thing that can see the fix: **no source assertion can prove an ordering**, since
+the effect reads correctly either way and what regressed is a RACE. It spies on
+`fetch`, and **keys on the GAP between the two request starts rather than on
+their order** — two requests issued together still arrive in some order, so an
+order-only check passes on the bug. Verified to fail by name on the real
+regression while the baseline case keeps passing.
+
+**The stub is registered ABOVE the generic `/api/data` one**, per the recorded
+trap, and **the two windows answer DIFFERENT rows** (the wide one carries a
+third activity): a fixture where both answered the same thing could not tell a
+sequenced page from a concurrent one.
+
+**THE SHARED CALENDAR CARD HAD NO MANIFEST ROW AT ALL** — the fourth time this
+gap has been found, after waitlist, checkins and the shared roster. Added, and
+**Watertown rather than the heaviest org on purpose**: the card dates every row
+by the org's majority `location.timezone` while Metabase renders Pacific, so a
+Pacific org structurally cannot catch a conversion regression here. `daysAhead`,
+not `days` — a schedule looks FORWARD. 37 → 38.
+
+### NOT PUSHED — card 17298 is shared by all 29 orgs
+
+The mirror at `sql/report-cards/17298-calendar-schedule.sql` carries the fix and
+is verified; **the live card is untouched**. An `update_question` push
+regenerates every template tag as Text, and on the card every org's Session
+Schedule reads that is downtime for all of them until a human re-flips. The date
+bounds are written `DATE({{start_date}})::timestamp`, so they survive a Text tag
+— but the six-parameter duplication does not, and that is the half that 400s.
+Dan's call whether to paste or to push-and-flip.
+https://rec.metabaseapp.com/question/17298
+
+**`pkill` SELF-MATCHED A FOURTH TIME, in a new form.** I assembled the `node`
+needle at runtime as the note here says — and then put the sweep and
+`node scripts/ci-check-render.js` **in the same shell command**, so that shell's
+own cmdline contained both needles and the sweep killed it. The rule is stronger
+than "assemble the needle": *neither needle may appear anywhere in the command,
+including in a later part of the same pipeline.* Run the sweep in its own call.
+
+**AND A FILTERED RENDER RUN THAT MATCHES NOTHING REPORTS SUCCESS**, which is how
+"this page has no coverage" first read as "the coverage passes":
+`node scripts/ci-check-render.js calendar` printed **"✓ 0 page(s) render with no
+uncaught errors"**. Read the count, not the tick.
+
 ## THE RENTAL SCHEDULE'S COLUMNS NEVER GREW — a dead CSS rule (2026-09-11)
 
 Dan, with Euclid's schedule open and most of the column checkboxes turned off:

@@ -1521,6 +1521,37 @@ const STUBS = [
                                        delete c["Section First Session"]; return c; })
         : progSchedRows(),
       meta: { org_id: "org-uuid-1", dataAt: new Date().toISOString() } }) },
+  /* Card 17298 (Calendar Schedule) — the Session Schedule page.
+     REGISTERED ABOVE THE GENERIC /api/data STUB ON PURPOSE. STUBS is searched
+     with .find, and /\/api\/data/ matches /:org/calendar/api/data too, so a
+     stub placed below it never answers and the page renders another report's
+     shape. The diagnostic signature is memorable: a row-COUNT case passes while
+     every case about a VALUE fails.
+
+     The two windows answer DIFFERENTLY — the week carries 2 rows, the
+     today→+60 filter-options sweep carries a third activity ("Pickleball") that
+     the week does not. That asymmetry is what makes the ordering case able to
+     tell the two fetches apart at all; if both answered the same rows, a page
+     that fired them concurrently and one that sequenced them would look
+     identical. */
+  { match: /\/calendar\/api\/data/, body: (url) => {
+      const u = new URL(url, "http://x");
+      const from = u.searchParams.get("start_date") || "";
+      const to   = u.searchParams.get("end_date") || "";
+      // A span over three weeks is the filter-options sweep, not the visible week.
+      const wide = (new Date(to) - new Date(from)) > 21 * 86400000;
+      const row = (sec, act, loc) => ({
+        Date: from, Day: "Sun", Begin: "09:00 AM", End: "10:00 AM", "Begin Sort": "09:00",
+        Program: "Youth " + act, Section: sec, Price: "$40.00", Activity: act,
+        Location: loc, Status: "Open",
+        "Section URL": "https://www.rec.us/sections/" + sec,
+        Description: "", Eligibility: "Ages 6-10",
+      });
+      const rows = [row("sec-swim", "Swimming", "Victory Field"),
+                    row("sec-yoga", "Yoga", "Watertown Senior Center")];
+      if (wide) rows.push(row("sec-pickle", "Pickleball", "Filippello Park"));
+      return { rows, meta: { org_id: "org-uuid-1" } };
+    } },
   { match: /\/api\/data/,                   body: () => ({ rows: campsiteRows(),
       meta: { window: { start: "2026-08-19", end: "2026-08-26" } } }) },
   { match: /\/api\/pulse/,                  body: () => ({ items: [], generated: null }) },
@@ -1813,6 +1844,65 @@ const EUCLID_COLUMNS = async page => {
 
 const CASES = [
   { name: "facilities · camping",  path: "/{org}/facilities?tab=camping", needs: ".camp-cal .cc-hd" },
+
+  /* ── The Session Schedule (card 17298) ───────────────────────────────────
+     THIS PAGE HAD NO RENDER COVERAGE AT ALL, which is part of why it could sit
+     on "Loading…" for three minutes without anything noticing. */
+
+  // Baseline: the week's own rows reach the grid. Keyed on the COUNT, so a page
+  // served another report's shape by a mis-ordered stub fails here rather than
+  // rendering something plausible.
+  { name: "calendar · the week's rows render",
+    path: "/{org}/calendar",
+    needs: "#report-ready[data-cal-rows='2']" },
+
+  /* THE FILTER-OPTIONS FETCH WAITS FOR THE VISIBLE WEEK'S FETCH.
+     No source assertion can see this — the effect reads correctly either way,
+     and what regressed is a RACE. Fired together these are two concurrent
+     queries against one Metabase card and they contend: measured at Watertown,
+     92.5s and 34.0s alone became 180.3s and 196.9s together, past the data
+     route's 60s+120s budget.
+
+     stubDelayMs holds every response open, so a concurrent page starts both
+     requests inside the same tick and a sequenced one cannot start the second
+     until the first has resolved. The assertion is on the GAP between the two
+     request starts, not merely on their order — two requests issued together
+     still arrive in some order, so an order-only check passes on the bug. */
+  { name: "calendar · filter options wait for the week",
+    path: "/{org}/calendar",
+    stubDelayMs: 2500,
+    pre: async (page) => {
+      await page.evaluateOnNewDocument(() => {
+        window.__calReq = [];
+        const orig = window.fetch;
+        window.fetch = function (input) {
+          const u = typeof input === "string" ? input : (input && input.url) || "";
+          if (u.indexOf("/calendar/api/data") !== -1) {
+            window.__calReq.push({ url: u, t: Date.now() });
+          }
+          return orig.apply(this, arguments);
+        };
+      });
+    },
+    act: async (page) => {
+      // Wait for BOTH requests, then stamp the verdict where `needs` can read it.
+      await page.waitForFunction(() => (window.__calReq || []).length >= 2, { timeout: 40000 });
+      await page.evaluate(() => {
+        const r = window.__calReq;
+        const span = (u) => {
+          const p = new URL(u, location.origin).searchParams;
+          return (new Date(p.get("end_date")) - new Date(p.get("start_date"))) / 86400000;
+        };
+        const week = r.find(x => span(x.url) <= 21);
+        const widE = r.find(x => span(x.url) > 21);
+        const gap = (week && widE) ? widE.t - week.t : -1;
+        // The stub holds each response ~2500ms. Sequenced, the wide request
+        // cannot be issued until the week's has come back, so the gap clears
+        // the delay; fired together it is a few milliseconds.
+        document.body.setAttribute("data-cal-seq", gap > 1500 ? "1" : "0");
+      });
+    },
+    needs: "body[data-cal-seq='1']" },
 
   /* ── The Program Schedule (card 21649) ───────────────────────────────────
      This report shipped with NO render coverage at all, which is the state the

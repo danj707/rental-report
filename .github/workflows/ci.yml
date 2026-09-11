@@ -206,6 +206,16 @@ jobs:
       - name: Card 17295 v9 — the window is applied before the work, not after
         run: node scripts/programs-card-window.spec.js
 
+      # Card 17298's three CTEs aggregated the WHOLE PLATFORM and threw ~98%
+      # away: section_eligibility alone measured 54.9s over 31,127 groups — more
+      # than the whole card — to serve an org holding 775 of 58,429 sections.
+      # Every table involved carries its own indexed organization_id the card
+      # never used. Also pins that the page does not fire its two heavy fetches
+      # concurrently: alone 92.5s and 34.0s, together 180.3s and 196.9s, which
+      # is the three-minute "Loading…" this fixed.
+      - name: Card 17298 — the calendar CTEs are scoped to the org
+        run: node scripts/calendar-card-scope.spec.js
+
       # Card 19273 inferred a claim from a timestamp that really marked the
       # EXPIRY SWEEP — of 5,371 grants it called claimed, 5,371 were already
       # expired and ZERO were still open. Conversion read 63% where the truth

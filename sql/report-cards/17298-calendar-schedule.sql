@@ -31,6 +31,11 @@ section_registration AS (
     WHERE rw.deleted_at IS NULL
       AND rw.type = 'default'
       AND rw.section_id IS NOT NULL
+      -- ORG-SCOPED. registration_window carries its own organization_id and it
+      -- is indexed; without this the CTE aggregates all 51,154 rows on the
+      -- platform to serve one org's sections. Verified safe: 0 rows platform-
+      -- wide where rw.organization_id disagrees with its section's org.
+      AND rw.organization_id = {{org_id}}::uuid
     GROUP BY rw.section_id
 ),
 program_activities AS (
@@ -39,6 +44,15 @@ program_activities AS (
         STRING_AGG(DISTINCT act.name, ', ' ORDER BY act.name) AS activity_names
     FROM program_activity ca
     JOIN activity act ON act.id = ca.activity_id AND act.deleted_at IS NULL
+    -- ORG-SCOPED THROUGH THE PROGRAM, deliberately NOT through
+    -- ca.organization_id. That column is NULL on one live row - SF Rec & Park's
+    -- "Tennis Lesson with Vern", a program with 215 sections - so filtering on
+    -- it would silently relabel every one of those sections "Uncategorized".
+    -- The program's own org is correct by construction and indexed.
+    JOIN program pa_prog
+      ON pa_prog.id = ca.program_id
+     AND pa_prog.organization_id = {{org_id}}::uuid
+     AND pa_prog.deleted_at IS NULL
     WHERE ca.deleted_at IS NULL
     GROUP BY ca.program_id
 ),
@@ -73,6 +87,14 @@ section_eligibility AS (
         AND er.attribute_name IN ('age', 'grade')
     WHERE ergl.deleted_at IS NULL
       AND ergl.section_id IS NOT NULL
+      -- ORG-SCOPED, AND THIS IS THE ONE THAT MATTERS. Unscoped this CTE alone
+      -- measured 54.9s building 31,127 groups - more than the whole card - and
+      -- its plan opened with a Seq Scan on the 14 MB lookup table. The table
+      -- carries its own indexed organization_id; filtering on it turns that
+      -- into a Bitmap Index Scan. Watertown is 656 of those 31,127 groups.
+      -- Verified safe: 0 rows platform-wide where ergl.organization_id
+      -- disagrees with its section's org.
+      AND ergl.organization_id = {{org_id}}::uuid
     GROUP BY ergl.section_id
 )
 SELECT
