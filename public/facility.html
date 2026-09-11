@@ -3172,8 +3172,12 @@ function App() {
 
   const viewsUrl = suffix => withToken('/' + orgSlug + '/facility/api/views' + (suffix || ''));
 
+  // `cache: 'no-store'` as well as the route's own header. The header is the
+  // real fix; this is the half that works for a browser still holding an entry
+  // cached BEFORE that header shipped — which is exactly the reader who has
+  // the problem today.
   const loadViews = useCallback(() => {
-    return fetch(viewsUrl())
+    return fetch(viewsUrl(), { cache: 'no-store' })
       .then(r => (r.ok ? r.json() : null))
       .then(j => { if (j) setViews(j.views || []); return j; })
       .catch(() => null);
@@ -3286,7 +3290,14 @@ function App() {
         if (!window.confirm('A view named "' + payload.name + '" already exists. Replace it?')) return;
         return submitView(Object.assign({}, form, { replace: true }));
       }
-      if (!resp.ok) { alert(data.error || 'Could not save the view.'); return; }
+      if (!resp.ok) {
+        // A 404 means this view is already gone — someone else deleted it, or
+        // this list was stale. Refresh so the ghost row disappears instead of
+        // erroring on every click, and say which of the two it was.
+        if (resp.status === 404) { await loadViews(); alert('That view no longer exists — the list has been refreshed.'); return; }
+        alert(data.error || 'Could not save the view.');
+        return;
+      }
       await loadViews();
       setActiveViewId(data.view.id);
       try { localStorage.setItem(LS_LAST_VIEW + orgSlug, data.view.id); } catch (_) {}
@@ -3304,7 +3315,14 @@ function App() {
     setRowMenu(null);
     try {
       const resp = await fetch(viewsUrl('/' + v.id), { method: 'DELETE', headers: { 'x-token': URL_TOKEN || '' } });
-      if (!resp.ok) { const d = await resp.json().catch(() => ({})); alert(d.error || 'Could not delete the view.'); return; }
+      if (!resp.ok) {
+        const d = await resp.json().catch(() => ({}));
+        // Already deleted is not an error worth a scary message — the list was
+        // stale, and refreshing it IS the outcome the click asked for.
+        if (resp.status === 404) { await loadViews(); return; }
+        alert(d.error || 'Could not delete the view.');
+        return;
+      }
       if (activeViewId === v.id) setActiveViewId(null);
       await loadViews();
       setUndoView({ id: v.id, name: v.name });

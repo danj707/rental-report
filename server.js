@@ -10360,6 +10360,32 @@ function normalizeViewInput(report, body, existing) {
   return { view };
 }
 
+// SAVED VIEWS MUST NEVER BE SERVED FROM THE BROWSER CACHE.
+//
+// Dan, 2026-09-11: "saving a view or deleted a saved view doesn't remove or add
+// it. you have to do a hard refresh to update the saved view list, it should be
+// automatic."
+//
+// The client was right all along — submitView and deleteView both `await
+// loadViews()`. The REFETCH was the problem: express sets an ETag on res.json()
+// and this route set no Cache-Control at all, which is a response with no
+// explicit freshness, so the browser is free to HEURISTICALLY cache it and
+// reuse it without revalidating. The page-level no-store middleware is
+// registered BELOW these routes and only covers HTML, so it never applied here.
+// Verified rather than inferred: the response carried
+// `ETag: W/"cf-5AQ..."` and no Cache-Control.
+//
+// It also explains the "No such view" alert in the same report: a stale list
+// offers a view that is already deleted, and the PATCH/DELETE against it
+// correctly 404s. One root cause, two symptoms.
+//
+// Scoped to the four view routes rather than all of /api/: the report feeds
+// below are deliberately cacheable and this is a small shared mutable list.
+app.use("/:org/:report/api/views", (req, res, next) => {
+  res.set("Cache-Control", "no-store, no-cache, must-revalidate");
+  next();
+});
+
 app.get("/:org/:report/api/views", (req, res) => {
   if (!savedViewsGate(req, res)) return;
   const rows = liveViews(listSavedViews(readSavedViews(), req.params.org, req.params.report));

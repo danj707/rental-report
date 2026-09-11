@@ -7997,6 +7997,70 @@ Plus a browser check that the KPI **opens** the panel and closes again, and that
 sorting on the new column works — `ci-check-admin-js` proves the handler exists
 and parses, which is not the same claim.
 
+## THE SAVED-VIEW LIST WAS THE BROWSER'S CACHE (2026-09-11)
+
+Dan: *"saving a view or deleted a saved view doesn't remove or add it. you have
+to do a hard refresh to update the saved view list, it should be automatic."*
+
+**THE CLIENT WAS ALREADY CORRECT.** `submitView` and `deleteView` both `await
+loadViews()`. What failed was the refetch: **Express stamps an `ETag` on every
+`res.json()` and this route set no `Cache-Control` at all**, which is a response
+with no explicit freshness — so the browser is free to serve it from cache
+without revalidating.
+
+Verified rather than inferred, by booting a local server and reading the
+headers back:
+
+```
+ETag: W/"cf-5AQni21WWkuqe5qEFai3r5lUv7I"
+(no Cache-Control)
+```
+
+**The page-level `no-store` middleware exists and could not help** — it is
+registered ~800 lines BELOW these routes and only covers HTML pages. Express
+matches in registration order, which is the same trap already recorded here for
+the campmap beacon route.
+
+### ONE ROOT CAUSE, TWO SYMPTOMS — and the second one reads as a different bug
+
+The *"No such view"* alert in the same report is this: a stale list offers a
+view that is already deleted, and the PATCH/DELETE behind it **correctly** 404s.
+So a report about a missing view is a report about a cached list.
+
+Both 404 branches now REFRESH the list rather than only complaining — an error
+on every click leaves no way back to a correct list, which is the dead-end
+pattern this file keeps writing down. The save's branch says which of the two it
+was; the delete's is silent, because "already deleted" IS the outcome the click
+asked for.
+
+**Scoped to the four view routes, not all of `/api/`.** The report feeds below
+are deliberately cacheable for four hours; this is a small shared mutable list.
+
+**`cache: 'no-store'` on the fetch as well, and it is not belt-and-braces.** The
+header fixes every future request; the fetch option is the half that works for a
+browser still holding an entry cached BEFORE the header shipped — which is
+exactly the reader with the problem today.
+
+### Guards
+
+`facility-saved-views.spec.js` 76 → **80 assertions**. The header assertions are
+**LIVE**, on the real spawned server, because **no source assertion can see
+this**: a middleware registered below the routes appears in the source exactly
+the same and does nothing. Mutation-tested five ways, all failing by name: the
+middleware deleted (the bug as Dan hit it), **the middleware moved below the
+routes** (the plausible half-fix, and the one only the live read catches), the
+header copied onto the GET alone (so the DELETE loses it), `loadViews` back to a
+plain fetch, and the delete's 404 branch dropped.
+
+**`pkill` was not the problem this time; a stray server was.**
+`facilities-beacons.spec.js` failed with *"nothing reached events.jsonl"* on a
+clean tree — a leftover `node server.js` from my own header verification was
+holding **port 3997**, which that spec also uses, so its own spawn lost the port
+and its POST went to the stray server's `DATA_DIR`. Third instance of the
+stray-server trap in this file. **Kill strays before reading a live-half failure
+as a regression**, and find them by reading `/proc/*/cmdline` — the cmdline is
+the bare `node server.js`, not an absolute path.
+
 ## THE SUBTOTAL NUMBERS WERE UNDER THE WRONG HEADERS (2026-09-10)
 
 Dan, with four screenshots across the custom data reports: *"remove the

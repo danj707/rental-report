@@ -273,6 +273,18 @@ src(/"view-apply"/.test(SERVER),
   "and `view-apply` must be on the log route's ALLOWED list, or the beacon "
   + "400s and, being fire-and-forget, never complains");
 
+// ── 14b. The list refetch must not be answered from cache ──────────────────
+// The route's no-store header (asserted live below) is the real fix. This is
+// the half that works for a browser still holding an entry cached BEFORE that
+// header shipped — which is exactly the reader who has the problem today.
+src(/fetch\(viewsUrl\(\), \{ cache: 'no-store' \}\)/.test(PAGE),
+  "loadViews must ask for a fresh list — a save or a delete already awaits it, "
+  + "so a cached answer is what makes the picker need a hard refresh");
+eq((PAGE.match(/resp\.status === 404/g) || []).length, 2,
+  "and both the save and the delete must treat a 404 as 'this list was stale' "
+  + "and REFRESH it — a stale list offers a view that is gone, and erroring on "
+  + "every click leaves no way back to a correct list");
+
 // ── 15. Live: drive the real routes ─────────────────────────────────────────
 (async () => {
   const PORT = 3987;
@@ -305,7 +317,7 @@ src(/"view-apply"/.test(SERVER),
       headers: Object.assign({ "x-token": token }, body ? { "Content-Type": "application/json" } : {}) },
       r => { let b = ""; r.on("data", d => b += d); r.on("end", () => {
         let j = null; try { j = JSON.parse(b); } catch {}
-        res({ status: r.statusCode, body: b, json: j });
+        res({ status: r.statusCode, headers: r.headers, body: b, json: j });
       }); });
     req.on("error", rej);
     req.on("timeout", () => { req.destroy(); rej(new Error("timeout")); });
@@ -330,6 +342,24 @@ src(/"view-apply"/.test(SERVER),
     ok(Array.isArray(list0.json && list0.json.views), "and answer with a list");
     ok(Array.isArray(list0.json && list0.json.ranges) && list0.json.ranges.length > 0,
       "and with the ranges this report offers, so the dialog cannot invent one");
+
+    // THE VIEWS API MUST NOT BE CACHEABLE. Express stamps an ETag on every
+    // res.json() and sets no Cache-Control, which leaves the response with no
+    // explicit freshness — so a browser is free to reuse it without
+    // revalidating. Both saving and deleting already await loadViews(); what
+    // Dan hit was that refetch being answered from cache, so a saved view did
+    // not appear and a deleted one did not leave until a hard refresh. The
+    // downstream symptom is worse than a stale list: a stale list offers a view
+    // that is gone, and the PATCH/DELETE behind it correctly 404s with
+    // "No such view".
+    //
+    // ONLY A LIVE READ CAN PROVE THIS. The middleware is one app.use() and it
+    // is inert unless it is registered ABOVE these four routes — a source
+    // assertion passes just as happily on one registered below them.
+    ok(/no-store/.test(String(list0.headers["cache-control"] || "")),
+      "GET the views list must answer no-store, or the browser may serve a "
+      + "stale list after a save or a delete. Got: "
+      + JSON.stringify(list0.headers["cache-control"] || null));
 
     // A view carrying every allowed filter survives the server's allowlist
     // BYTE FOR BYTE. The order is the allowlist's own, so this also proves the
@@ -388,6 +418,11 @@ src(/"view-apply"/.test(SERVER),
     // Delete is soft, so the Undo in the toast is a restore.
     const del = await call("DELETE", V("/" + made.json.view.id));
     eq(del.status, 200, "a view must delete. Got: " + del.body);
+    ok(/no-store/.test(String(del.headers["cache-control"] || "")),
+      "and every verb on this route is covered, not just the GET — the header "
+      + "comes from one middleware over the path, so a per-route copy that "
+      + "missed one is the thing this catches. Got: "
+      + JSON.stringify(del.headers["cache-control"] || null));
     const afterDel = await call("GET", V());
     ok(!afterDel.json.views.some(v => v.id === made.json.view.id),
       "and leave the list");
