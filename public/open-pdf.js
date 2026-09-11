@@ -306,6 +306,75 @@
     if (cur !== "" || row.length) { row.push(cur); rows.push(row); }
     return rows.map(function (r) { return r.join("\t"); }).join("\n");
   }
+
+  /* ── THE REPORT WINDOW: refuse a HALF-OPEN one, and stamp the real one ───────
+     Marina at Norman asked for 1–31 August and got 1 August → today, 17% high
+     ($96,293 against August's real $82,258). Her End Date box was empty.
+
+     THE DEFECT IS THE HALF-OPEN WINDOW, not an empty box. Every report page
+     omits a blank date from the query string (`if (ed) qs.set('end_date', ed)`),
+     and `buildMetabaseParams` only backfills a default window when BOTH dates
+     are missing — so exactly one missing date falls through untouched, the
+     card's optional `[[ AND ... <= {{end_date}} ]]` block drops out, and the
+     report silently runs to today. Reproduced against card 17299 with
+     start_date alone: 338 rows / $96,293.47, her file to the cent.
+
+     BOTH BLANK IS LEGAL AND MUST STAY LEGAL. The waitlist report opens
+     all-time, is in NO_DATE_REPORTS, and carries an explicit "Clear dates —
+     back to all-time" button; elsewhere both-blank hits the server's own 7-day
+     default. Neither is the bug. So this answers one narrow question — is this
+     window half-open — and says nothing about the empty case.
+
+     The message names the CONSEQUENCE rather than the rule, because "pick an
+     end date" does not tell a reader what they are about to get. */
+  window.recWindowProblem = function (start, end) {
+    var s = String(start == null ? "" : start).trim();
+    var e = String(end == null ? "" : end).trim();
+    if (!s && !e) return "";                       // all-time, or the server's default — deliberate
+    if (!s) return "Pick a start date — with only an end date this runs from the beginning of the org's history.";
+    if (!e) return "Pick an end date — with only a start date this runs through today.";
+    // ISO dates compare correctly as strings; no Date object, so no timezone.
+    if (s > e) return "The end date is before the start date — this returns nothing.";
+    return "";
+  };
+
+  /* A window a person can read, BUILT FROM THE DATE'S OWN PARTS.
+     `new Date("2026-08-01")` is UTC midnight and renders as July 31 anywhere
+     west of UTC — five instances of that are already written down in this
+     repo, so the string is never handed to a Date at all. */
+  var RW_MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  function rwOneDate(v) {
+    var s = String(v == null ? "" : v).trim();
+    var m = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (!m) return s;                              // already a label, or empty
+    return RW_MONTHS[+m[2] - 1] + " " + (+m[3]) + ", " + m[1];
+  }
+  window.recWindowLabel = function (start, end) {
+    var s = rwOneDate(start), e = rwOneDate(end);
+    if (!s && !e) return "All dates";
+    // A one-sided window is named for what it actually covers, never left as a
+    // dangling dash — that is what the on-screen header did, and it is why a
+    // 41-day file passed for a 31-day one.
+    if (!s) return "Through " + e;
+    if (!e) return "From " + s + " through today";
+    if (s === e) return s;
+    return s + " – " + e;
+  };
+
+  /* The two rows every Excel export opens with: a title carrying the window,
+     then a blank spacer, with the table itself starting at A3.
+
+     THE SHAPE IS gl.html's, WHICH HAS ALWAYS DONE THIS — the other nine
+     workbooks are being brought up to it rather than given something new. It is
+     at the TOP because that is where a reader looks: Marina renamed the file,
+     so the one existing tell (the auto filename, which would have read
+     `products-daily-2026-08-01_all.xlsx`) was gone by the time anyone saw it.
+
+     Callers must start their data at A3. Any row-index formatting loop moves
+     with it — that off-by-two is what the render cases exist to catch. */
+  window.recExportTitleRows = function (title, start, end) {
+    return [[String(title || "Report") + " — " + window.recWindowLabel(start, end)], []];
+  };
 })();
 
 /* ── THE SERVER'S OWN ERROR MESSAGE ───────────────────────────────────────────

@@ -258,6 +258,9 @@ jobs:
       - name: GL code multi-select (unmapped money is an option; None sticks; one menu)
         run: node scripts/gl-code-filter.spec.js
 
+      - name: Report window (a half-open range is refused; every export states the window it loaded)
+        run: node scripts/report-window.spec.js
+
       - name: Report settings (one cache-key builder; a setting seeds and never overrides; TTL floor)
         run: node scripts/report-settings.spec.js
 

@@ -255,8 +255,16 @@ ok(/if \(params\.pii != null\) return;[\s\S]{0,120}setItem\('col_email'/.test(sr
   "and the email persist effect the same way");
 
 // ── the Excel half, which no render case can see ──
-const xl = src.slice(src.indexOf("function downloadExcel()"),
-                     src.indexOf("function downloadExcel()") + 3000);
+// Bounded by the function's OWN END, not a magic character count: a fixed-length
+// slice silently stops covering the tail of the function the moment anything is
+// added to it, and then the assertions below pass by not reaching the code they
+// name. That is exactly what adding the export's window title did — the column
+// widths fell off the end of a 3000-character window.
+const xl = (() => {
+  const a = src.indexOf("function downloadExcel()");
+  const b = src.indexOf("saveWorkbookViaPopup", a);
+  return src.slice(a, b > a ? b : a + 3000);
+})();
 ok(xl.length > 100, "downloadExcel should be findable");
 ok(!/'Reservee', 'Phone', 'Email'/.test(xl),
   "the Excel header must not carry Phone/Email unconditionally — an export that "

@@ -23,6 +23,7 @@
   .toolbar input[type="date"] { padding: 4px 6px; border: 1px solid rgba(255,255,255,.25); border-radius: 4px; background: #3a3a3a; color: #fff; font-size: 11.5px; font-family: inherit; color-scheme: dark; }
   .toolbar .date-row { display: flex; gap: 4px; align-items: center; }
   .toolbar .date-clear { padding: 3px 7px !important; font-size: 11px !important; }
+  .toolbar .win-warn { color: #fbbf24; font-size: 11px; line-height: 1.25; max-width: 260px; }
   .toolbar button { padding: 6px 14px; border: 1px solid rgba(255,255,255,.25); border-radius: 4px; background: rgba(255,255,255,.08); color: #fff; font-size: 12px; font-family: inherit; cursor: pointer; transition: background .15s; white-space: nowrap; }
   .toolbar button:hover { background: rgba(255,255,255,.18); }
   .toolbar .btn-excel { background: #16803c; border-color: #16803c; font-weight: 600; }
@@ -411,7 +412,16 @@ function App() {
   const [fbMode, setFbMode] = useState(null);
   const [fbComment, setFbComment] = useState('');
 
+  /* BOTH BLANK IS THE ALL-TIME MODE AND STAYS LEGAL — this report is in
+     NO_DATE_REPORTS and carries its own "Clear dates" button. What is refused
+     is the HALF-OPEN window: with only one bound set, the missing date was
+     omitted from the query string, the card's optional clause dropped out, and
+     the report silently widened. There is no Run button here (the fetch is
+     driven by the dates themselves), so the guard is on the fetch. */
+  const windowProblem = window.recWindowProblem(startDate, endDate);
+
   useEffect(() => {
+    if (windowProblem) { setLoading(false); return; }   // keep the last good rows on screen
     setLoading(true); setError(null);
     const qs = new URLSearchParams();
     if (SP.get('_nocache') === '1' || SP.get('_refresh') === '1') qs.set('_nocache', '1');
@@ -423,7 +433,7 @@ function App() {
       .then(json => { setRows((json.rows || []).map(normalizeRow)); setMeta(json.meta || {}); })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false));
-  }, [startDate, endDate]);
+  }, [startDate, endDate, windowProblem]);
 
   const seasons = useMemo(() => {
     if (!rows) return [];
@@ -577,7 +587,10 @@ function App() {
       'Median Claim Hours': r.medClaimH, 'Avg Claim Hours': r.avgClaimH, 'Oldest Active Join': r.oldestJoin,
       'Start Date': r.startDate, 'End Date': r.endDate,
     }));
-    const ws = XLSX.utils.json_to_sheet(data);
+    /* THE WINDOW, AT THE TOP OF THE FILE — and on this report it may honestly
+       read "All dates", which is its own answer rather than a missing one. */
+    const ws = XLSX.utils.aoa_to_sheet(recExportTitleRows('Waitlist Demand', startDate, endDate));
+    XLSX.utils.sheet_add_json(ws, data, { origin: 'A3' });
     ws['!cols'] = [{wch:28},{wch:28},{wch:14},{wch:11},{wch:16},{wch:20},{wch:8},{wch:8},{wch:10},{wch:14},{wch:10},{wch:10},{wch:12},{wch:8},{wch:12},{wch:13},{wch:16},{wch:20},{wch:16},{wch:14},{wch:16},{wch:11},{wch:11}];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Waitlist Demand');
@@ -646,6 +659,7 @@ function App() {
                       onClick={() => { setStartDate(''); setEndDate(''); }}>✕</button>
             )}
           </span>
+          {windowProblem && <span className="win-warn" data-window-problem>{windowProblem}</span>}
         </label>
         <span className="toolbar-spacer" />
         <span className="row-count">{bodyState !== 'ready' ? '…' : tableRows.length.toLocaleString() + ' section' + (tableRows.length !== 1 ? 's' : '') + ' · ' + fmtInt(agg.waitlisted) + ' waitlisted'}</span>

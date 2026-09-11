@@ -76,6 +76,10 @@
       border-color: rgba(255,255,255,.55);
     }
     .toolbar .btn-run { background: #16a34a; border-color: #16a34a; font-weight: 600; }
+    /* A half-open window is refused, and the reason sits beside the button that
+       is refusing — a disabled control with no explanation is the dead end this
+       repo keeps writing down. */
+    .toolbar .win-warn { color: #fbbf24; font-size: 11px; line-height: 1.25; max-width: 260px; }
     .toolbar .btn-run:hover { background: #15803d; }
     .toolbar .btn-run:disabled { opacity: .5; cursor: not-allowed; }
     .toolbar .btn-excel { background: #16803c; border-color: #16803c; font-weight: 600; }
@@ -631,8 +635,17 @@ function App() {
   useEffect(() => { fetchData(loadedStart, loadedEnd, true); /* eslint-disable-next-line */ }, []);
 
   const datesChanged = startDate !== loadedStart || endDate !== loadedEnd;
+  /* Read at call time, not module scope: open-pdf.js is deferred. A blank End
+     box used to be omitted from the query string, which dropped the card's
+     optional end bound and ran the report through today — Norman's August came
+     back as Aug 1 → Sep 11, 17% high. */
+  const windowProblem = window.recWindowProblem(startDate, endDate);
 
-  function handleRun() { logClientEvent('run'); fetchData(startDate, endDate, false); }
+  function handleRun() {
+    if (window.recWindowProblem(startDate, endDate)) return; // the button is one way in, not the only one
+    logClientEvent('run');
+    fetchData(startDate, endDate, false);
+  }
   function setThisYear() {
     const now = new Date();
     const s = toISO(new Date(now.getFullYear(), 0, 1)), e = toISO(now);
@@ -860,7 +873,11 @@ function App() {
       const header = byDesk
         ? ['Product Name', 'Desk Location', 'Qty Sold', 'Revenue ($)', 'Refunds ($)', 'Net Revenue ($)']
         : ['Product Name', 'Qty Sold', 'Revenue ($)', 'Refunds ($)', 'Net Revenue ($)'];
-      const aoa = [header];
+      /* THE WINDOW, AT THE TOP OF THE FILE. Marina at Norman exported "August"
+         and got Aug 1 → today because her End Date box was empty; the file said
+         nothing, and she had renamed it, so the one tell (the auto filename) was
+         gone. Data starts at A3 — every row-index loop below moves with it. */
+      const aoa = [...recExportTitleRows('Product Sales', loadedStart, loadedEnd), header];
       itemSummary.forEach(r => {
         aoa.push(byDesk
           ? [r.product, r.desk, r.qty, r.revenue, r.refunds, r.net]
@@ -883,7 +900,11 @@ function App() {
     const header = byDesk
       ? ['Date', 'Product Name', 'Desk Location', 'Qty Sold', 'Revenue ($)', 'Refunds ($)', 'Net Revenue ($)']
       : ['Date', 'Product Name', 'Qty Sold', 'Revenue ($)', 'Refunds ($)', 'Net Revenue ($)'];
-    const aoa = [header];
+    /* THE WINDOW, AT THE TOP OF THE FILE. Marina at Norman exported "August"
+       and got Aug 1 → today because her End Date box was empty; the file said
+       nothing, and she had renamed it, so the one tell (the auto filename) was
+       gone. Data starts at A3 — every row-index loop below moves with it. */
+    const aoa = [...recExportTitleRows('Product Sales', loadedStart, loadedEnd), header];
     groups.forEach(g => {
       g.rows.forEach(r => {
         const dp = (r.dateISO || '').split('-');
@@ -926,9 +947,10 @@ function App() {
           <button onClick={setThisYear}>This Year</button>
           <button onClick={setLastYear}>Last Year</button>
           <button onClick={setRolling12}>Rolling 12</button>
-          <button className="btn-run" onClick={handleRun} disabled={loading || !datesChanged}>
+          <button className="btn-run" onClick={handleRun} disabled={loading || !datesChanged || !!windowProblem}>
             {loading ? <><span className="btn-spinner" />Loading…</> : 'Run'}
           </button>
+          {windowProblem && <span className="win-warn" data-window-problem>{windowProblem}</span>}
           <span className="divider" />
 
           <div ref={deskBoxRef} style={{ position: 'relative' }}>

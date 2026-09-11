@@ -287,8 +287,20 @@ for (const [report, tabs] of Object.entries(CARD_TABS)) {
      + "report should still return to Summary, so the reset stays — gated");
   src(/fetchData\(startDate, endDate, true\);/.test(PROGRAMS),
      "and the mount effect passes it");
-  src(/onClick=\{\(\) => fetchData\(startDate, endDate\)\}/.test(PROGRAMS),
-     "while Run Report does NOT, so re-running still returns to Summary");
+  // THE INTENT IS THE ARGUMENT COUNT, NOT THE ONCLICK'S EXACT TEXT. This used to
+  // pin `onClick={() => fetchData(startDate, endDate)}` literally, so adding the
+  // half-open-window guard to the button broke it with nothing about tabs having
+  // changed — the same brittleness already recorded in this repo for
+  // SLACK_NOTIFY and the log route's ALLOWED array. What must stay true is that
+  // Run does NOT pass `initial`, so the tab reset still runs on a re-run.
+  {
+    const runBtn = PROGRAMS.slice(PROGRAMS.indexOf('className="btn-run"'),
+                                  PROGRAMS.indexOf('className="btn-run"') + 400);
+    src(/fetchData\(startDate, endDate\)/.test(runBtn),
+       "while Run Report does NOT, so re-running still returns to Summary");
+    src(!/fetchData\(startDate, endDate,/.test(runBtn),
+       "…and Run Report passes no third argument — handing it `initial` would keep the tab across a re-run");
+  }
 
   src(/const ensureTabData = useCallback/.test(PROGRAMS),
      "kicking a tab's lazy feed is needed from a click AND from a deep link, so it is ONE "

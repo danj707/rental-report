@@ -80,6 +80,10 @@
     }
     .toolbar .btn-run:hover { background: #15803d; }
     .toolbar .btn-run:disabled { opacity: .5; cursor: not-allowed; }
+    /* A half-open window is refused, and the reason sits beside the button that
+       is refusing it — a disabled control with no explanation is the dead end
+       this repo keeps writing down. */
+    .win-warn { color: #fbbf24; font-size: 11px; line-height: 1.25; max-width: 260px; }
     .toolbar .btn-pdf {
       background: #3b82f6;
       border-color: #3b82f6;
@@ -3083,9 +3087,19 @@ function App() {
     return () => clearTimeout(timer);
   }, []);
 
-  function handleRunReport() { fetchData(startDate, endDate); }
+  function handleRunReport() {
+    if (window.recWindowProblem(startDate, endDate)) return; // the button is one way in, not the only one
+    fetchData(startDate, endDate);
+  }
 
   const datesChanged = startDate !== loadedStart || endDate !== loadedEnd;
+  /* Read at CALL TIME, not module scope: open-pdf.js is deferred.
+     A blank date box was omitted from the query string, which dropped the
+     card's optional bound and silently ran the report through today — Norman's
+     August product sales came back as Aug 1 → Sep 11, 17% high. Both blank is
+     still legal (the server's own default window); only a HALF-OPEN one is
+     refused. */
+  const windowProblem = window.recWindowProblem(startDate, endDate);
 
   // allLocations / allSites are now STATE that accumulates across fetches
   // so historical locations always remain visible in the filter dropdowns.
@@ -3678,10 +3692,15 @@ function App() {
       return row;
     });
 
-    const wsData = [headers, ...dataRows];
+    /* THE WINDOW, AT THE TOP OF THE FILE. Marina at Norman exported "August"
+       and got Aug 1 → today because her End Date box was empty; the file said
+       nothing, and she had renamed it, so the one tell (the auto filename) was
+       gone. Data starts at A3 — every row-index loop below moves with it. */
+    const wsData = [...recExportTitleRows('Facility Rental Schedule', loadedStart, loadedEnd), headers, ...dataRows];
     const ws = XLSX.utils.aoa_to_sheet(wsData, { cellDates: true });
-    // Format date column as MM/DD/YY
-    for (let rowIdx = 1; rowIdx <= dataRows.length; rowIdx++) {
+    // Format date column as MM/DD/YY — bounded by the sheet, not by dataRows,
+    // so the two title rows cannot shift it off the last two bookings.
+    for (let rowIdx = 3; rowIdx < wsData.length; rowIdx++) {
       const cellAddr = XLSX.utils.encode_cell({ r: rowIdx, c: 1 });
       if (ws[cellAddr] && ws[cellAddr].t === 'd') ws[cellAddr].z = 'MM/DD/YY';
     }
@@ -3702,14 +3721,14 @@ function App() {
     ];
     if (showTotal) {
       const totalColIdx = headers.indexOf('Total');
-      for (let rowIdx = 1; rowIdx <= dataRows.length; rowIdx++) {
+      for (let rowIdx = 3; rowIdx < wsData.length; rowIdx++) {
         const cellAddr = XLSX.utils.encode_cell({ r: rowIdx, c: totalColIdx });
         if (ws[cellAddr] && typeof ws[cellAddr].v === 'number') ws[cellAddr].z = '"$"#,##0.00';
       }
     }
     if (showAddons) {
       const afColIdx = headers.indexOf('Add-On Fees');
-      for (let rowIdx = 1; rowIdx <= dataRows.length; rowIdx++) {
+      for (let rowIdx = 3; rowIdx < wsData.length; rowIdx++) {
         const cellAddr = XLSX.utils.encode_cell({ r: rowIdx, c: afColIdx });
         if (ws[cellAddr] && typeof ws[cellAddr].v === 'number') ws[cellAddr].z = '"$"#,##0.00';
       }
@@ -3957,11 +3976,12 @@ function App() {
         <button
           className="btn-run"
           onClick={handleRunReport}
-          disabled={loading}
+          disabled={loading || !!windowProblem}
           style={datesChanged && !loading ? {boxShadow:'0 0 0 2px #4ade80'} : {}}
         >
           {loading ? <><span className="btn-spinner" />Loading…</> : '▶ Run Report'}
         </button>
+        {windowProblem && <span className="win-warn" data-window-problem>{windowProblem}</span>}
 
         {allLocations.length > 0 && selectedLocations && (
           <>
