@@ -2336,6 +2336,48 @@ const CASES = [
     // alone would pass on a row that never rendered.
     needs: "body[data-lit-count=\"3\"][data-addon-row-found=\"1\"][data-addon-row-lit=\"0\"]" },
 
+  // THE CONTROL HAS TO NAME MUSCO ON SCREEN. Dan: "How are we filtering for
+  // when musco lighting is configured. An 'add on' for field lighting is NOT
+  // the same as the musco/rec integration." The predicate was already right;
+  // the LABEL was not, and no source assertion can show what the two controls
+  // look like sitting next to each other. This fixture renders both: a
+  // "Field Lights" add-on checkbox AND the Musco button, so a button reading
+  // only "Lighting" is provably ambiguous in the DOM rather than in argument.
+  { name: "facility · the Musco filter names Musco, beside a Field Lights add-on",
+    path: "/{org}/facility",
+    act: async page => {
+      await page.evaluate(() => {
+        const btn = document.querySelector('[data-musco-filter]');
+        const txt = btn ? btn.textContent.trim() : '';
+        document.body.setAttribute('data-musco-btn', txt.indexOf('Musco') >= 0 ? '1' : '0');
+        // The add-on picker builds its options from the rows, so this is the
+        // collision the label has to survive — assert it is actually there,
+        // or the naming assertion above proves nothing about ambiguity.
+        const all = document.body.textContent;
+        document.body.setAttribute('data-addon-opt',
+          all.indexOf('Field Lights') >= 0 ? '1' : '0');
+      });
+    },
+    needs: "body[data-musco-btn=\"1\"][data-addon-opt=\"1\"]" },
+
+  // Clicking it filters to the three real schedules and does NOT keep the
+  // add-on row. Keyed on the COUNT: "the button did something" passes on a
+  // filter that empties the table or one that keeps everything.
+  { name: "facility · the Musco filter keeps schedules, drops the add-on row",
+    path: "/{org}/facility",
+    act: async page => {
+      await page.click('[data-musco-filter]');
+      await page.waitForFunction(() =>
+        document.querySelector('[data-musco-filter="on"]'), { timeout: 8000 });
+      await page.evaluate(() => {
+        const rows = Array.from(document.querySelectorAll('.data-row'));
+        document.body.setAttribute('data-musco-shown', String(rows.length));
+        document.body.setAttribute('data-musco-addon-shown',
+          document.body.textContent.indexOf('Field Lights ($25.00)') >= 0 ? '1' : '0');
+      });
+    },
+    needs: "body[data-musco-shown=\"3\"][data-musco-addon-shown=\"0\"]" },
+
   // The Forms column links to the rental's Required Information tab.
   { name: "facility · forms link",    path: "/{org}/facility",
     needs: "a[href$=\"tab=requiredInformation\"]" },

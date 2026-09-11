@@ -395,4 +395,38 @@ ok(!/r\.lighting === 'Yes'/.test(filterBlock),
 ok(!/tone\s*===\s*'ok'/.test(filterBlock) && !/lightingSyncState/.test(filterBlock),
    "the Lit Only filter should not narrow to confirmed schedules");
 
+// ── THE CONTROL HAS TO NAME MUSCO ─────────────────────────────────────────
+// Dan, looking at the shipped toolbar: "How are we filtering for when musco
+// lighting is configured. An 'add on' for field lighting is NOT the same as
+// the musco/rec integration."
+//
+// The predicate was already right — muscoLit never reads r.addons, and the
+// assertions above pin that. What was wrong was the LABEL: the button read
+// "Lighting", and the add-on picker two controls over builds its options from
+// the rows' own add-on names, so on an org that bills for lighting a checkbox
+// reading "Field Lights" sits inches from it. Correct behaviour behind an
+// ambiguous label is indistinguishable from the bug, which is why this is
+// asserted rather than left to review.
+const btnStart = src.indexOf("className={'musco-btn'");
+ok(btnStart > 0, "the Musco filter button should be in the toolbar");
+const btnJsx = src.slice(btnStart, btnStart + 700);
+ok(/Musco Lighting/.test(btnJsx),
+   "the filter button should name Musco when off, not just 'Lighting'");
+ok(/Musco Only/.test(btnJsx),
+   "the filter button should name Musco when on, not just 'Lit Only'");
+ok(!/>\s*Lighting\s*</.test(btnJsx) && !/'Lighting'/.test(btnJsx),
+   "the filter button must not read a bare 'Lighting' — the add-on picker beside it can say 'Field Lights'");
+ok(/add-on/i.test(btnJsx),
+   "the button's tooltip should say this is the integration and not the add-on");
+ok(!/addons/.test(btnJsx),
+   "the filter button must not read the add-on list");
+
+// ABSENT, NOT DISABLED, where nothing in the window carries a schedule. A
+// control whose only possible effect is to empty the table is the dead end
+// this repo keeps writing down.
+ok(/\{hasLighting && \(/.test(src),
+   "the Musco filter should be gated on there being a schedule to filter to");
+ok(/hasLighting\s*=\s*useMemo\(\(\)\s*=>\s*rows && rows\.some\(muscoLit\)/.test(src),
+   "hasLighting should read muscoLit, so an add-on can never summon the control");
+
 console.log(n + " assertions passed.");

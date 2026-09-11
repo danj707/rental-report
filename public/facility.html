@@ -3912,13 +3912,30 @@ function App() {
             />
           </>
         )}
+        {/* THE CONTROL HAS TO NAME MUSCO, because the filter beside it does not.
+            The add-on picker builds its options from the rows' own add-on
+            names, and "Field Lights" / "Field Light Fee" are among the
+            most-attached add-ons on the platform — so on an org that bills
+            for lighting, a checkbox reading "Field Lights" sits inches from
+            this button and the two are indistinguishable if this one says
+            only "Lighting". They answer opposite questions: the add-on says
+            somebody was CHARGED for lights, this says a Musco schedule will
+            actually turn them ON. Dan: "An 'add on' for field lighting is NOT
+            the same as the musco/rec integration."
+
+            ABSENT, NOT DISABLED, where no rental in the window carries a
+            schedule — a filter whose only possible effect is to empty the
+            table is the dead end this repo keeps writing down. */}
         {hasLighting && (
           <>
             <div className="divider" />
             <button type="button" className={'musco-btn' + (filterLighting ? ' active' : '')}
+              data-musco-filter={filterLighting ? 'on' : 'off'}
               onClick={() => setFilterLighting(!filterLighting)}
-              title={filterLighting ? 'Show all reservations' : 'Show only reservations with Musco lighting'}>
-              💡 {filterLighting ? 'Lit Only' : 'Lighting'}
+              title={filterLighting
+                ? 'Show all reservations'
+                : 'Show only rentals with a Musco lighting schedule (the Rec\u2013Musco integration \u2014 not a "Field Lights" add-on, which is a charge and turns nothing on)'}>
+              💡 {filterLighting ? 'Musco Only' : 'Musco Lighting'}
             </button>
           </>
         )}
