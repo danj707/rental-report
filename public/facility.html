@@ -398,6 +398,28 @@
     }
     .data-row:nth-child(even) { background: #fafaf8; }
 
+    /* A rental that actually drives a Musco lighting schedule. Dan asked for a
+       yellow bar so these are pickable out of a full day at a glance — Midland
+       was wired for Musco on 2026-09-09/10 (73 sites, 6 locations) and 87% of
+       their next month's reservations sit on a lit site, so this goes from
+       never firing to being the thing staff scan for.
+
+       IT KEYS ON THE SCHEDULE, NOT ON AN ADD-ON. An add-on called "Field
+       Lights" is a $25 line item that turns nothing on; 409 rentals carry one.
+       The class comes from muscoLit(), which never reads r.addons.
+
+       print-color-adjust because the PDF is the surface a grounds crew
+       actually holds, and a highlight the printer drops is not a highlight.
+       Declared after the nth-child rule: both are (0,2,0), so source order is
+       what makes this win. */
+    .data-row.musco-lit,
+    .sub-row.musco-lit {
+      background: #fffbeb;
+      box-shadow: inset 3px 0 0 0 #f59e0b;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+
     .data-row .cell {
       overflow: hidden;
       text-overflow: ellipsis;
@@ -1444,6 +1466,12 @@ function normalizeRow(raw) {
     litFrom:      raw['Lit From']       || '',
     litUntil:     raw['Lit Until']      || '',
     lightingSync: raw['Lighting Sync']  || '',
+    litWindow:    raw['Lit Window']     || '',
+    // The schedule's RULE, not just its clock. A sunset-anchored schedule has
+    // no lit_from at all, so "Lit Window" arrives as a bare end time.
+    litStartSource: raw['Lit Start Source'] || '',
+    litEndSource:   raw['Lit End Source']   || '',
+    lightingError:  raw['Lighting Error']   || '',
     multiDayDays: raw['Multi-Day Days'] || null,
     multiDayNum:  raw['Multi-Day Day#'] || null,
   };
@@ -1811,6 +1839,152 @@ function addonItemsTotalLabel(items) {
     if (p != null) total = (total == null ? 0 : total) + p;
   });
   return total == null ? undefined : formatMoney(total);
+}
+
+/* The lit window, in the FACILITY'S timezone rather than the reader's.
+
+   Card 17294 emits "Lit Window" pre-formatted (2026-09-10), the same way it
+   already emits Begin/End, so the common path does no date arithmetic at all.
+   That is the whole fix: `Lit From`/`Lit Until` are timestamptz, and the old
+   `new Date(s).getHours()` rendered them in whatever zone the BROWSER sits in
+   — Dan read Midland's 6:00pm Central as 7:00pm Eastern, on a row whose Begin
+   and End two columns over were correctly Central.
+
+   The legacy path is kept as a FALLBACK and nothing more. Feeds cache four
+   hours, so a pre-push response is still live after the card changes and its
+   rows carry no "Lit Window"; falling back to the reader's clock is wrong by
+   an offset, where rendering nothing would look like a rental that has no
+   lighting at all. It ages out on its own within one TTL. */
+/* Musco can anchor an end of the window to a RULE rather than a clock:
+   start_source 'sunset' means the field comes on at dusk, which moves every
+   day of a recurring rental, so nothing is stored in lit_from — measured,
+   NULL on both such rows of the 9 schedules on the platform, and the card's
+   CONCAT_WS then yields the END ALONE. Printing that raw gives "Lit: 11:00pm"
+   for a field that comes on at dusk and goes off at 11, which is the opposite
+   of what it says. Only a rule gets a word; a real clock always renders as a
+   clock, so 'reservation' and 'set_time' are deliberately absent here. */
+var LIT_SOURCE_WORDS = { sunset: 'Sunset', sunrise: 'Sunrise' };
+function litSourceWord(src) {
+  return LIT_SOURCE_WORDS[String(src || '').trim().toLowerCase()] || '';
+}
+
+function litWindowLabel(r) {
+  if (!r) return '';
+  // ONE display rule for a time on this page. formatTime is what every Begin
+  // and End cell already goes through, and the card emits Lit Window in the
+  // same 'HH12:MIam' shape it emits those in — so without this the note would
+  // read "06:00pm" beside a Begin cell reading "6:00pm", on the same row. It
+  // also folds the fallback's "6:00 PM" into the same shape, so the two paths
+  // cannot render one booking two ways.
+  var a, b;
+  var aWord = litSourceWord(r.litStartSource);
+  var bWord = litSourceWord(r.litEndSource);
+  if (r.litWindow) {
+    // CLOCKS ARE ASSIGNED TO THE ENDS THAT ARE NOT RULE-DRIVEN, in order,
+    // rather than read positionally out of the string. A rule-driven end
+    // contributes no clock at all, so a one-sided "11:00pm" is the END when
+    // the start is sunset and the START when the end is — and splitting on
+    // position cannot tell those apart. With no source columns at all (a feed
+    // cached before the card carried them) both words are empty and this is
+    // byte-for-byte the old behaviour, which ages out within one TTL.
+    var clocks = String(r.litWindow).split(' - ')
+      .map(function (x) { return x.trim(); })
+      .filter(Boolean);
+    if (clocks.length === 2) {
+      // Both ends resolved, so position is unambiguous and a rule simply
+      // overrides the clock it produced: the stored instant is ONE day's
+      // sunset and a recurring rental moves, so the rule is the true
+      // statement about the booking.
+      a = aWord || formatTime(clocks[0]);
+      b = bWord || formatTime(clocks[1]);
+    } else {
+      a = aWord || formatTime(clocks.shift() || '');
+      b = bWord || formatTime(clocks.shift() || '');
+    }
+  } else {
+    var raw = function (s) {
+      if (!s) return '';
+      try {
+        var d = new Date(s);
+        if (isNaN(d.getTime())) return '';
+        var h = d.getHours(), m = d.getMinutes();
+        var ap = h >= 12 ? 'pm' : 'am';
+        h = h % 12 || 12;
+        return h + ':' + String(m).padStart(2, '0') + ap;
+      } catch (e) { return ''; }
+    };
+    a = aWord || formatTime(raw(r.litFrom));
+    b = bWord || formatTime(raw(r.litUntil));
+  }
+  if (a && b) return a + ' - ' + b;
+  return a || b || '';
+}
+
+/* DOES THIS RENTAL ACTUALLY DRIVE A MUSCO SCHEDULE?
+   One predicate, read by the note, the "Lit Only" filter, the row highlight
+   and the Excel export — four surfaces that must not disagree about whether a
+   field's floodlights are on this booking.
+
+   IT KEYS ON THE SCHEDULE AND NEVER ON AN ADD-ON. An add-on called "Field
+   Lights" is money: it bills someone for lighting and turns nothing on, and
+   409 rentals on the platform carry one. Nothing here reads r.addons.
+
+   The 'removed' test is belt-and-braces for the four-hour feed cache. Card
+   17294 drops removed schedules in its own join now, but a response fetched
+   before that change still says Lighting = 'Yes' with a sync status of
+   'removed' — so this keeps the page honest for the one TTL where both shapes
+   are live. Denylist on the one bad status, like the card's join: a status we
+   cannot classify is more likely live than removed, and the failure direction
+   has to be "tell someone" rather than "hide it". */
+function muscoLit(r) {
+  if (!r || r.lighting !== 'Yes') return false;
+  return String(r.lightingSync || '').trim().toLowerCase() !== 'removed';
+}
+
+/* WILL THE LIGHTS ACTUALLY COME ON? "Lighting Sync" has been on card 17294
+   all along and was read by NO surface, so an errored push drew exactly the
+   same confident 💡 as a healthy one — a booked team at a dark field.
+
+   THE VOCABULARY IS THE PLATFORM'S, NOT MEASURED, and that is worth knowing
+   before trusting it: the staff MCP tool documents 'error' (carrying the
+   vendor message in lastError) and 'synced' (Musco holds the schedule), but
+   sync_status has only ever held 'removed' in data, synced_at is NULL on all
+   9 schedules ever written and last_error is NULL on all 9. So this map is
+   the place to correct once a live one exists.
+
+   ONLY 'synced' IS A CONFIRMATION. Anything unrecognised — including a blank
+   — reports as unconfirmed rather than drawing the confident lamp, because
+   the two ways to be wrong are not symmetric: a healthy row shown as
+   unconfirmed is noise, and an unhealthy row shown as confident is the dark
+   field this column exists to prevent. */
+var LIGHTING_SYNC_STATES = {
+  synced:  { icon: '💡', tone: 'ok',
+             label: 'Musco has this schedule — the lights are set' },
+  error:   { icon: '⚠', tone: 'bad',
+             label: 'Musco rejected this schedule — the lights will NOT come on' },
+  pending: { icon: '🕓', tone: 'warn',
+             label: 'Queued for Musco — not confirmed yet' },
+  removed: { icon: '', tone: 'off',
+             label: 'Lighting was taken off this rental' },
+};
+function lightingSyncState(r) {
+  var status = String((r && r.lightingSync) || '').trim().toLowerCase();
+  var known = LIGHTING_SYNC_STATES[status];
+  if (known) {
+    var out = { status: status, icon: known.icon, tone: known.tone, label: known.label };
+    // The vendor's own message is the difference between "something failed"
+    // and "Musco rejected this field id", so it rides along where there is one.
+    if (status === 'error' && r && r.lightingError) out.label += ' — ' + r.lightingError;
+    return out;
+  }
+  return {
+    status: status,
+    icon: '🕓',
+    tone: 'warn',
+    label: status
+      ? 'Musco sync state "' + status + '" is not recognised — treat as unconfirmed'
+      : 'Musco has not confirmed this schedule',
+  };
 }
 
 function addonNoteFragment(items) {
@@ -3160,7 +3334,7 @@ function App() {
       : { name: '', targetId: null, dateMode: 'current', relativeRange: defaultSavedRange() });
   }
 
-  const hasLighting = useMemo(() => rows && rows.some(r => r.lighting === 'Yes'), [rows]);
+  const hasLighting = useMemo(() => rows && rows.some(muscoLit), [rows]);
 
   // The column only exists where forms do, so an org that collects none never
   // sees an empty column and nothing has to be switched on per org.
@@ -3202,7 +3376,13 @@ function App() {
       });
     }
     if (filterLighting) {
-      result = result.filter(r => r.lighting === 'Yes');
+      // DELIBERATELY "has a Musco schedule", not "will be lit". I proposed the
+      // narrower reading first and it is the wrong one: a schedule Musco
+      // rejected is the row most worth finding, and a filter that hides the
+      // broken ones is how a broken one goes unnoticed. Same failure direction
+      // as the card's own denylist. The ⚠ makes the state visible INSIDE the
+      // filter instead.
+      result = result.filter(muscoLit);
     }
     return result;
   }, [rows, selectedLocations, allLocations, selectedSites, allSites, selectedSiteTypes, allSiteTypes,
@@ -3378,7 +3558,7 @@ function App() {
     if (showSiteType)  headers.push('Site Type');
     if (showResident)  headers.push('Resident?');
     if (showBookType)  headers.push('Booking Type');
-    if (showLighting)  headers.push('Lighting', 'Lit From', 'Lit Until');
+    if (showLighting)  headers.push('Lighting', 'Musco Sync', 'Lit Window', 'Lit From', 'Lit Until');
 
     const dataRows = filteredRows.map(r => {
       const dp = (r.date || '').split('T')[0].split('-');
@@ -3397,7 +3577,9 @@ function App() {
       if (showSiteType) row.push(siteTypeLabel(siteTypeKey(r)));
       if (showResident) row.push(r.resident || '');
       if (showBookType) row.push(r.bookingType || '');
-      if (showLighting) { row.push(r.lighting || ''); row.push(r.litFrom || ''); row.push(r.litUntil || ''); }
+      // Through muscoLit, not r.lighting, or a stale pre-card feed exports a
+      // removed schedule as lit — the export has to agree with the screen.
+      if (showLighting) { row.push(muscoLit(r) ? 'Yes' : ''); row.push(muscoLit(r) ? lightingSyncState(r).status : ''); row.push(litWindowLabel(r)); row.push(r.litFrom || ''); row.push(r.litUntil || ''); }
       return row;
     });
 
@@ -3421,7 +3603,7 @@ function App() {
       ...(showSiteType?[{wch:14}]:[]),
       ...(showResident?[{wch:10}]:[]),
       ...(showBookType?[{wch:14}]:[]),
-      ...(showLighting?[{wch:8},{wch:14},{wch:14}]:[]),
+      ...(showLighting?[{wch:8},{wch:11},{wch:20},{wch:14},{wch:14}]:[]),
     ];
     if (showTotal) {
       const totalColIdx = headers.indexOf('Total');
@@ -4105,7 +4287,8 @@ function App() {
                         </div>
                         {locRows.map((r, i) => (
                           <div key={i}>
-                            <div className="data-row">
+                            <div className={'data-row' + (muscoLit(r) ? ' musco-lit' : '')}
+                              data-musco-lit={muscoLit(r) ? lightingSyncState(r).tone : undefined}>
                               <span className="cell col-start">{r.multiDayDays && !r.start && !r.end ? 'All Day' : formatTime(r.start)}</span>
                               <span className="cell col-end">{formatTime(r.end)}</span>
                               <span className="cell col-site">
@@ -4176,9 +4359,17 @@ function App() {
                               var parts = [];
                               if (showNotes) {
                                 var litStr = '';
-                                if (r.lighting === 'Yes') {
-                                  var _fmt = function(s) { if (!s) return ''; try { var d = new Date(s); var h = d.getHours(); var m = d.getMinutes(); var ap = h >= 12 ? 'PM' : 'AM'; h = h % 12 || 12; return h + ':' + String(m).padStart(2,'0') + ' ' + ap; } catch(e) { return s; } };
-                                  litStr = '💡 Lit: ' + _fmt(r.litFrom) + ' – ' + _fmt(r.litUntil);
+                                if (muscoLit(r)) {
+                                  var litWin = litWindowLabel(r);
+                                  var ls = lightingSyncState(r);
+                                  // The ICON carries the sync state, so a
+                                  // schedule Musco rejected cannot read as a
+                                  // lit field. renderNotes escapes this, so
+                                  // the title is plain text by the time it
+                                  // lands.
+                                  litStr = (ls.icon || '💡') + ' Lit'
+                                    + (litWin ? ': ' + litWin : '')
+                                    + (ls.tone === 'ok' ? '' : ' (' + ls.label + ')');
                                 }
                                 if (litStr) parts.push(litStr);
                                 if (r.instructions) parts.push("📝 " + r.instructions);
@@ -4193,7 +4384,7 @@ function App() {
                               }
                               if (!parts.length) return null;
                               return (
-                                <div className="sub-row"
+                                <div className={'sub-row' + (muscoLit(r) ? ' musco-lit' : '')}
                                   data-addon-icons={addonItems.length ? String(addonItems.length) : undefined}
                                   data-addon-total={addonItems.length ? addonItemsTotalLabel(addonItems) : undefined}
                                   dangerouslySetInnerHTML={{__html: renderNotes(parts.join(' | '))}} />
