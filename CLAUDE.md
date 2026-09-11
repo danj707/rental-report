@@ -8223,6 +8223,107 @@ including in a later part of the same pipeline.* Run the sweep in its own call.
 `node scripts/ci-check-render.js calendar` printed **"✓ 0 page(s) render with no
 uncaught errors"**. Read the count, not the tick.
 
+## THE AUDIT: DOES ANY OTHER CARD SCAN THE PLATFORM? (2026-09-11)
+
+Dan, straight after the 17298 fix: *"did we check other reports to ensure the
+same thing--we're not scanning the entire DB"*
+
+**No other card has it at a cost that matters, and one has it in miniature.**
+Swept every CTE of all 31 SQL mirrors plus the six shared cards that have no
+mirror, read live (17297 court-utilization, 17299 products, 17887 retention,
+17920 qbr-stats, 17953 section-detail, 19174 selfservice).
+
+### THE ONE HIT: card 21683's `fac` — the same shape, 1/100th the cost
+
+```sql
+fac AS (
+  SELECT sf.section_id, string_agg(DISTINCT ... ) AS instructor
+  FROM section_facilitator sf
+  JOIN instructor i ON i.id = sf.facilitator_id
+  JOIN users u      ON u.id = i.user_id
+  GROUP BY 1
+)
+```
+
+No org filter, no join to a scoped set — it is 17298's `section_eligibility`
+exactly. Measured: **Seq Scan on `section_facilitator`, 36,183 rows, 35,883
+groups built** to label El Segundo's ~83 aquatic sections. **487 ms.**
+
+`section_facilitator` carries its own indexed `organization_id`, so the fix is
+the same one line. **NOT DONE, and that is a judgement rather than an
+oversight:** card 21683 is El Segundo-only, the card runs in ~2s, and it is in
+the UI-paste carve-out (an API save wipes the hardcoded `org_id` default and
+the Date tags), so the fix costs Dan a paste to buy 0.4s. Flagged, his call.
+
+### THE SEQ SCAN WAS NEVER 17298's COST — and this corrects the write-up above
+
+Card 21649's `elig` reads **the same 14 MB `eligibility_rule_group_lookup`**
+and **still opens with a Seq Scan** — 32,618 rows — and that scan costs
+**14 ms**. So "it seq-scans a platform-wide table" is not on its own a finding.
+
+What made 17298 cost 54.9s is WHERE the restriction lands in the plan. 21649
+hash-joins the lookup to its windowed `sections` set **before** the two
+nested-loop index probes into `eligibility_rule_group` and `eligibility_rule`,
+so those loops run **507 times**. 17298 had no restriction at all, so they ran
+for every one of the platform's 46,548 lookup rows on cold buffers — which is
+also why scoping 17298 through a join to `section` only bought 55s → 42s
+despite cutting the output 47x: **it restricted at the wrong point in the
+plan.** Filtering on the table's own indexed `organization_id` moves the
+restriction to the scan itself, which is why that is the version that worked.
+
+**So the audit question is not "is there a seq scan" but "how many rows reach
+the expensive work above it".**
+
+### EVERYTHING ELSE IS SCOPED BY CONSTRUCTION, checked rather than assumed
+
+A CTE that reads a base table is fine when it is INNER-joined to an
+already-scoped set on an indexed key, because the restriction lands first:
+
+| card | CTE | why it is fine |
+|---|---|---|
+| 17294 | `rental_items` / `item_tx` / `paid_rollup` | joined to the windowed `base` on `order_item_transaction_order_item_id_index` |
+| 17294 | `rental_notes` | `note` is 22k rows / 7 MB; its seq scan is **4 ms** |
+| 17294 · 17301 · 17788 | `resident_households` / `resident_users` | inner join to `res_group` (a handful of rows) on `membership_group_id_index` |
+| 19570 | `res_fin` / `fr_loc` / `inv_pay` | **this card has already been through this exercise** — its own v2.1 header records the same fix |
+| 21649 | `run` / `enr` / `sfac` | drive FROM `win`, which is org-scoped and windowed |
+| 21683 | `sec_loc` / `sess` | inner join to `aquatic_sections` |
+| credit-balances | `all_time` / `led` | inner join to `acct` on `credit_credit_account_id_index` |
+| all-users | `hh` | `h.id IN (SELECT ... org_users)` |
+| 17297 | `dated_res` | inner join through `reservation_court` into the org-scoped `courts` |
+| 17953 · 19174 · 17887 | every CTE | carry `organization_id = {{org_id}}` outright |
+
+**Every table involved carries its own indexed `organization_id` except `users`
+and `household`, which have no org column at all** — already recorded, and the
+reason `all-users` scopes through `organization_association` instead.
+
+### TWO THINGS THIS FOUND THAT ARE A DIFFERENT BUG, and both are already known
+
+- **Org-scoped but UNWINDOWED** — card 17887's `section_dates` aggregates the
+  org's entire session history, and 17294's `rental_notes` every one of apex's
+  8,253 rentals. That is the 17295 `sec_win` class, not this one, and both are
+  cheap today (an index scan, not a platform scan).
+- **The `materialized` schema** — card 17299 reads `item_log_report`, which has
+  exactly one index (its pkey), so `WHERE organization_id = …` IS a full scan
+  however it is written. That is the index ask already pinned in this file, on
+  a fifth card. **No SQL change can fix it**, which is precisely why it is
+  pinned rather than parked.
+
+### The method, so it is not re-derived
+
+1. Split each mirror's CTEs and flag any whose driving table gets no
+   `alias.organization_id =` at the CTE's own top level.
+2. Discard the ones INNER-joined to a scoped CTE on an indexed key — those
+   restrict first and the driving-FROM is syntax, not plan order.
+3. For what is left, read `EXPLAIN (ANALYZE, BUFFERS, COSTS OFF)` and ask **how
+   many rows reach the work above the scan**, not whether the scan is a scan.
+4. Before adding a filter, count platform-wide rows where the table's own
+   `organization_id` disagrees with its parent's — that proves equivalence for
+   every org at once, which beats any number of per-org fingerprints.
+
+**Run the probes one at a time.** This replica's load varies enough that a bare
+catalog query has timed out at 60s, and I broke that rule twice in the session
+that produced the fix above.
+
 ## THE RENTAL SCHEDULE'S COLUMNS NEVER GREW — a dead CSS rule (2026-09-11)
 
 Dan, with Euclid's schedule open and most of the column checkboxes turned off:

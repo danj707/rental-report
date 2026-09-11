@@ -216,6 +216,13 @@ jobs:
       - name: Card 17298 — the calendar CTEs are scoped to the org
         run: node scripts/calendar-card-scope.spec.js
 
+      # ...and the generalisation: NO card CTE may read a base table with no org
+      # filter anywhere and no join to an already-scoped CTE. That is the exact
+      # shape that cost 17298 three minutes. Every current exception is measured
+      # and named in the spec's ALLOW list.
+      - name: No card CTE scans the whole platform
+        run: node scripts/card-org-scope.spec.js
+
       # Card 19273 inferred a claim from a timestamp that really marked the
       # EXPIRY SWEEP — of 5,371 grants it called claimed, 5,371 were already
       # expired and ZERO were still open. Conversion read 63% where the truth
