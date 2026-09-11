@@ -5888,7 +5888,7 @@ async function generatePdf(orgSlug, reportType, startDate, endDate, filters = {}
   // CLIENT gates (the page's getParams whitelist, its state, its export paths)
   // looks exactly like working — the screen and the browser's own Print are
   // both correct — and the SERVER-rendered PDF still carried the columns.
-  ["locations", "location", "sites", "location_name", "site_type", "desks", "methods", "by_desk", "by_item", "hide_zero", "chart_net", "metric", "programs", "closures", "hrs", "section_name", "section_id", "status", "questions", "cols", "search", "tab", "instructor", "split", "book_type", "addons", "participant", "view", "tyler", "glq", "gl_codes", "refunds", "quarter", "insights"].forEach(k => {
+  ["locations", "location", "sites", "location_name", "site_type", "desks", "methods", "by_desk", "by_item", "hide_zero", "chart_net", "metric", "programs", "closures", "hrs", "section_name", "section_id", "status", "questions", "cols", "search", "tab", "instructor", "split", "book_type", "addons", "musco", "participant", "view", "tyler", "glq", "gl_codes", "refunds", "quarter", "insights"].forEach(k => {
     if (filters[k]) qsObj[k] = filters[k];
   });
   // `pii` CANNOT RIDE THE LOOP ABOVE, and that is the whole bug this line fixes.
@@ -10199,7 +10199,7 @@ const SAVED_VIEW_PARAMS = {
   // the same reason, and more sharply — a view that turned somebody's contact
   // columns back on would put phone numbers on a colleague's screen because
   // they opened a saved filter.
-  facility: ["locations", "sites", "site_types", "book_type", "addons"],
+  facility: ["locations", "sites", "site_types", "book_type", "addons", "musco"],
 };
 // Relative ranges a view of this report may STORE. Same vocabulary the email
 // subscriptions use (getDateRange), so a view could later feed one unchanged.

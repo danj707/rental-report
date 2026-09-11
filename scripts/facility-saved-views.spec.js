@@ -114,7 +114,11 @@ src(/className="view-warn"/.test(PAGE), "and there must be somewhere to render i
 const allowRe = /facility: \["([^\]]+)\]/.exec(SERVER.slice(SERVER.indexOf("const SAVED_VIEW_PARAMS")));
 ok(allowRe, "server.js should register SAVED_VIEW_PARAMS.facility");
 const allow = ('["' + allowRe[1] + "]").match(/"([^"]+)"/g).map(s => s.slice(1, -1));
-eq(allow.join(","), "locations,sites,site_types,book_type,addons",
+// The literal is deliberately NOT derived from the server: both halves would
+// then be the same copy of the same guess. `musco` joined on 2026-09-11 and is
+// LAST, because appending is the only change to this list that cannot make an
+// existing saved view read as edited the instant it is applied.
+eq(allow.join(","), "locations,sites,site_types,book_type,addons,musco",
   "the server's allowlist, in order. Got: " + allow.join(","));
 
 // The page's own list, and the order currentFilterParams actually emits in.

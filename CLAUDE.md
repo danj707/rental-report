@@ -179,15 +179,60 @@ reasoning is worth not re-deriving:
   structurally cannot. Worth revisiting only if an org ever has enough rejected
   schedules for that to be a real query — today the answer is the ⚠ on the row.
 
-**AND IT SURFACED ONE THING THAT IS STILL TRUE AND STILL NOT FIXED:
-`filterLighting` PASSES NONE OF THE FOUR GATES.** It is local state and reaches
-neither the URL, the share link, the saved view, nor the PDF — so a reader who
-narrows to lit rentals and hits Print gets **every rental back, silently**. That
-is this file's own standing rule broken on a live control. Fixing it is four
-one-line additions (`getParams`, the share builder, `currentFilterParams`,
-`generatePdf`'s forward list) plus `SAVED_VIEW_PARAMS.facility` — and it needs a
-decision first, because the toggle's saved-view semantics are the same
-empty-vs-all question the picker raised. Not done; not forgotten.
+### THE TOGGLE PASSED NONE OF THE FOUR GATES — FIXED (2026-09-11)
+
+Dan: *"the filter lighting needs to hit the pdf and printed versions."*
+
+`filterLighting` was local state and reached **neither the URL, the share link,
+the saved view, nor the PDF** — so a reader who narrowed to lit rentals and hit
+Print got **every rental back, silently.** Fourth instance after `gl_codes`,
+`refunds` and `pii`, and the first on a control this file had already written
+the standing rule for.
+
+It rides as **`musco=1`**, and the semantics question the picker raised
+evaporates because it is a BOOLEAN: the default is OFF and nothing persists it,
+so an absent parameter resolves to exactly the default. **It may therefore ride
+`generatePdf`'s truthy loop** and needs none of the presence handling `pii` and
+`site_types` require — whose defaults are ON, which is the whole reason those
+two had to be special-cased.
+
+Saved views carry it too, **appended LAST** to both `SAVED_VIEW_PARAMS.facility`
+and the page's own `FACILITY_VIEW_PARAMS`: appending is the only change to those
+lists that cannot make an existing view read as *edited* the instant it is
+applied, and without the page's copy a stale `musco=` outlives its view — the
+bug already recorded here for `refunds`. An apply sets it in **both directions**
+and `clearView` turns it off, or a plain view opened after a lit one stays
+filtered.
+
+**TWO OF MY OWN GUARDS WERE DEFECTIVE, and mutation is what showed both.**
+
+- The gate-1 assertion `/musco:\s*p\.get\('musco'\)/` **SURVIVED its own
+  mutation**: `parseViewParams` reads the same key off a saved view's params and
+  satisfied a file-wide regex on its own, so removing it from `getParams`
+  changed nothing. Scoped to the sliced `getParams` now. *A guard that is
+  satisfied by different code is not guarding the thing it names.*
+- `generatePdf`'s forward list is **LIFTED AND RUN**, not regexed, because a
+  render case at `?musco=1` proves the PAGE reads it and says nothing about
+  whether the server SENDS it — which is exactly how the other three shipped.
+
+**AND A LATENT HARNESS GAP, found by being the first to hit it:
+`renderToolbar()` RETURNS NULL UNDER `?_print=1`**, and `ci-check-render.js`
+waits for `.prompt-panel, .toolbar, .card` before running a case's `act` hook.
+So an act-driven print case could never resolve that wait — it hung for the full
+45s and reported as an *uncaught error*, which reads as the page being broken
+rather than as the harness waiting for something deliberately absent. No print
+case had ever used `act`, so it stayed latent. `.report-header` is in the wait
+list now; it renders in both modes.
+
+Guards: `facility-lighting.spec.js` 111 → **122 assertions**, mutation-tested
+six ways (off the whitelist, state not seeded from the URL, `generatePdf`
+dropping it, a view that can only turn it on, either allowlist reordered) — all
+failing by name. Three `ci-check-render.js` cases, keyed on the row COUNT and
+the add-on row's absence rather than on print mode rendering: `?_print=1&musco=1`
+shows the three real schedules, the same URL **without** it still prints
+everything (so the first proves the parameter rather than something about print
+mode), and `?musco=1` lands filtered on screen. The bug as it shipped fails two
+of the three.
 
 ### A REVERSAL, STATED: "Lit Only" still means HAS a schedule
 

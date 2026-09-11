@@ -505,4 +505,58 @@ const PRE = Object.assign({}, LIVE, { litStartSource: "", litEndSource: "" });
 ok(litWindowLabel(PRE) === "10:00pm",
    "a pre-column feed should degrade to the bare end rather than inventing a start");
 
+// ── THE FOUR GATES. The toggle passed NONE of them ────────────────────────
+// Dan, 2026-09-11: "the filter lighting needs to hit the pdf and printed
+// versions."
+//
+// filterLighting was local state. It reached neither the URL, the share link,
+// the saved view nor the PDF — so a reader who narrowed to lit rentals and hit
+// Print got EVERY rental back, silently. That is this repo's own standing rule
+// broken on a live control, and it is the fourth instance after gl_codes,
+// refunds and pii.
+//
+// The print page is this page under ?_print=1, rendered by Puppeteer with an
+// EMPTY localStorage, so the URL is the only channel this mode has.
+// SCOPED TO getParams, because parseViewParams reads the same key off a saved
+// view's params and satisfies a file-wide regex on its own — this assertion
+// SURVIVED its own mutation until it was scoped, which is the difference
+// between a guard and a thing that happens to be true.
+const gpStart = src.indexOf("function getParams() {");
+const gpEnd = src.indexOf("\n}", gpStart);
+ok(gpStart > 0 && gpEnd > gpStart, "getParams should be sliceable");
+const getParamsSrc = src.slice(gpStart, gpEnd);
+ok(/musco:\s*p\.get\('musco'\)/.test(getParamsSrc),
+   "gate 1: musco should be in getParams()'s explicit whitelist, or the deep link reads undefined and silently does nothing");
+ok(/useState\(params\.musco === '1'\)/.test(src),
+   "the toggle should seed FROM THE URL — local state cannot reach the print page");
+ok((src.match(/qs\.set\('musco', '1'\)/g) || []).length >= 3,
+   "gates 2+3: musco should ride the share link, the view params and the export params");
+
+const server = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
+// LIFTED AND RUN, not regexed. A render case drives the PAGE at ?musco=1,
+// which proves the page READS it and says NOTHING about whether the server
+// SENDS it — which is exactly how gl_codes, refunds and pii each shipped with
+// a PDF that disagreed with the screen.
+const qsA = server.indexOf("const qsObj = { start_date: startDate");
+const qsB = server.indexOf("const qs = new URLSearchParams(qsObj);", qsA);
+ok(qsA > 0 && qsB > qsA, "generatePdf's query builder should be sliceable");
+const buildQs = new Function("filters", "startDate", "endDate", "orgTok",
+                             server.slice(qsA, qsB) + "return qsObj;");
+eq(buildQs({ musco: "1" }, "2026-12-01", "2026-12-31", null).musco, "1",
+   "gate 4: generatePdf must forward musco, or the PDF shows rows the reader excluded");
+eq(buildQs({}, "2026-12-01", "2026-12-31", null).musco, undefined,
+   "and an unset musco should not appear in the PDF URL — off IS the default");
+
+// A SAVED VIEW CARRIES IT, IN BOTH DIRECTIONS. A view that could only turn a
+// mode ON could never turn it off, so opening a plain view after a lit one
+// would stay filtered — the bug already recorded here for `refunds`.
+ok(/facility: \["locations", "sites", "site_types", "book_type", "addons", "musco"\]/.test(server),
+   "musco should be storable in a saved view, and LAST — cleanViewParams emits in this order and the page compares the result as a string");
+ok(/const FACILITY_VIEW_PARAMS = \['locations', 'sites', 'site_types', 'book_type', 'addons', 'musco'\]/.test(src),
+   "the page's own copy of that list must match IN ORDER, or a stale musco= outlives its view");
+ok(/setFilterLighting\(!!f\.musco\)/.test(src),
+   "applying a view must set the mode in BOTH directions");
+ok(/setFilterLighting\(false\)/.test(src),
+   "Default view must turn it off — 'no filters' has to mean no mode either");
+
 console.log(n + " assertions passed.");

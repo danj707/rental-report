@@ -2381,6 +2381,50 @@ const CASES = [
     },
     needs: "body[data-musco-shown=\"3\"][data-musco-addon-shown=\"0\"]" },
 
+  // THE PRINT PATH. Dan: "the filter lighting needs to hit the pdf and printed
+  // versions." The print page is this page under ?_print=1 with an EMPTY
+  // localStorage, so the URL is the only channel this mode has — and before
+  // this the toggle was local state, so a reader who narrowed to lit rentals
+  // and hit Print got every rental back with nothing saying so.
+  //
+  // Keyed on the row COUNT and on the add-on row's ABSENCE: "the page rendered
+  // in print mode" passes just as happily on the version that ignored it.
+  { name: "facility · the print view honours ?musco=1", path: "/{org}/facility?_print=1&musco=1",
+    act: async page => {
+      await page.evaluate(() => {
+        document.body.setAttribute('data-musco-rows',
+          String(document.querySelectorAll('.data-row').length));
+        document.body.setAttribute('data-musco-addon-shown',
+          document.body.textContent.indexOf('Field Lights ($25.00)') >= 0 ? '1' : '0');
+      });
+    },
+    // The three rentals with a real schedule — synced, sunset, rejected — and
+    // the Field Lights add-on row gone, because it drives no floodlights.
+    needs: "body[data-musco-rows=\"3\"][data-musco-addon-shown=\"0\"]" },
+
+  // AND THE SAME URL WITHOUT IT still prints everything, so the case above is
+  // proving the parameter rather than something about print mode.
+  { name: "facility · the print view without it prints everything", path: "/{org}/facility?_print=1",
+    act: async page => {
+      await page.evaluate(() => {
+        document.body.setAttribute('data-musco-addon-shown',
+          document.body.textContent.indexOf('Field Lights ($25.00)') >= 0 ? '1' : '0');
+      });
+    },
+    needs: "body[data-musco-addon-shown=\"1\"]" },
+
+  // The on-screen deep link, which is what Copy Link now produces.
+  { name: "facility · ?musco=1 lands filtered", path: "/{org}/facility?musco=1",
+    act: async page => {
+      await page.evaluate(() => {
+        const btn = document.querySelector('[data-musco-filter]');
+        document.body.setAttribute('data-musco-state', btn ? btn.getAttribute('data-musco-filter') : 'none');
+        document.body.setAttribute('data-musco-rows',
+          String(document.querySelectorAll('.data-row').length));
+      });
+    },
+    needs: "body[data-musco-state=\"on\"][data-musco-rows=\"3\"]" },
+
   // The Forms column links to the rental's Required Information tab.
   { name: "facility · forms link",    path: "/{org}/facility",
     needs: "a[href$=\"tab=requiredInformation\"]" },
@@ -5600,7 +5644,14 @@ function waitForServer(started) {
       // click), and a case that cannot reach them can only ever prove the
       // landing screen renders.
       if (c.act) {
-        await page.waitForSelector(".prompt-panel, .toolbar, .card", { timeout: PAGE_TIMEOUT_MS });
+        // `.report-header` is here because A PRINT-MODE CASE CANNOT WAIT FOR
+        // THE TOOLBAR: facility.html's renderToolbar() returns null under
+        // ?_print=1, so this wait could never resolve and every act-driven
+        // print case hung for the full timeout and reported as an uncaught
+        // error — which reads as the page being broken rather than as the
+        // harness waiting for something that is deliberately absent. No print
+        // case had ever used `act`, so the gap was latent until one did.
+        await page.waitForSelector(".prompt-panel, .toolbar, .card, .report-header", { timeout: PAGE_TIMEOUT_MS });
         await c.act(page);
       }
       try { await page.waitForSelector(c.needs, { timeout: PAGE_TIMEOUT_MS }); found = true; } catch (_) {}

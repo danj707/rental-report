@@ -1295,6 +1295,12 @@ function getParams() {
     site_types:    p.get('site_types'), // comma-separated, from share/PDF URL
     sitetype:      p.get('sitetype'),   // 1|0 - whether the Site Type COLUMN shows
     pii:           p.get('pii'),        // phone,email - which PII columns to show
+    // THE MUSCO TOGGLE. Unlike `pii` and `site_types` this may ride
+    // generatePdf's TRUTHY loop and needs no presence test: it is a boolean
+    // whose default is OFF and which is not persisted anywhere, so an absent
+    // parameter resolves to exactly the default. `pii` needs the presence
+    // test precisely because ITS default is ON.
+    musco:         p.get('musco'),      // 1 = only rentals with a Musco schedule
   };
 }
 
@@ -2343,13 +2349,14 @@ function defaultSavedRange() {
 // currentFilterParams builds in this one, and the "edited" marker is a string
 // comparison between the two. A different order makes every freshly-saved view
 // read as dirty the instant it is applied.
-const FACILITY_VIEW_PARAMS = ['locations', 'sites', 'site_types', 'book_type', 'addons'];
+const FACILITY_VIEW_PARAMS = ['locations', 'sites', 'site_types', 'book_type', 'addons', 'musco'];
 
 function parseViewParams(params) {
   const p = new URLSearchParams(params || '');
   const csv = k => { const v = p.get(k); return v ? v.split(',').map(x => x.trim()).filter(Boolean) : null; };
   return { locations: csv('locations'), sites: csv('sites'), siteTypes: csv('site_types'),
-           bookType: p.get('book_type') || '', addons: csv('addons') };
+           bookType: p.get('book_type') || '', addons: csv('addons'),
+           musco: p.get('musco') === '1' };
 }
 
 const FAC_BOOK_TYPE_LABELS = { instant: 'Instant book only', managed: 'Staff-booked only' };
@@ -2362,6 +2369,7 @@ function viewFilterSummary(v) {
   if (f.locations)  bits.push(many(f.locations,  x => x, 'locations'));
   if (f.sites)      bits.push(many(f.sites,      x => x, 'sites'));
   if (f.siteTypes)  bits.push(many(f.siteTypes,  x => siteTypeLabel(x), 'site types'));
+  if (f.musco)      bits.push('Musco lighting');
   // `all` is the ABSENCE of a booking-type filter, so naming it would read as a
   // filter where there is none and every unfiltered view would say "All".
   if (f.bookType && f.bookType !== 'all') bits.push(FAC_BOOK_TYPE_LABELS[f.bookType] || f.bookType);
@@ -2542,7 +2550,12 @@ function App() {
     if (fromUrl !== null) return fromUrl === '1';
     try { return localStorage.getItem('col_sitetype') === 'true'; } catch { return false; }
   });
-  const [filterLighting, setFilterLighting] = useState(false);
+  // SEEDED FROM THE URL. The print page is this page under ?_print=1, rendered
+  // by Puppeteer with an EMPTY localStorage — so the URL is the only way this
+  // mode can reach it. Before this the toggle was local state and reached none
+  // of the four gates: a reader who narrowed to lit rentals and hit Print got
+  // every rental back, silently.
+  const [filterLighting, setFilterLighting] = useState(params.musco === '1');
   const [bookTypeFilter, setBookTypeFilter] = useState(params.book_type || 'all');
   const [showMetrics, setShowMetrics] = useState(() => {
     try { return localStorage.getItem('facility_metrics') === 'true'; } catch { return false; }
@@ -2656,6 +2669,7 @@ function App() {
       activeFilters.push([...selectedAddOns].length + ' of ' + allAddOns.length + ' add-ons');
     }
     if (bookTypeFilter !== 'all') activeFilters.push('Booking: ' + bookTypeFilter);
+    if (filterLighting) activeFilters.push('Musco lighting only');
 
     // ONE definition of "what is filtered right now", shared with the saved
     // views. This used to build its own string and had already drifted: it
@@ -2826,6 +2840,7 @@ function App() {
       if (selectedSites)     { const a = [...selectedSites];     if (a.length) qs.set('sites',     a.join(',')); }
       if (bookTypeFilter && bookTypeFilter !== 'all') qs.set('book_type', bookTypeFilter);
       if (selectedAddOns)    { const a = [...selectedAddOns];    if (a.length) qs.set('addons',    a.join(',')); }
+      if (filterLighting) qs.set('musco', '1');
       // Same condition and same empty-is-real rule as downloadPdf, so Copy Link
       // and PDF cannot disagree about what the reader was looking at.
       if (selectedSiteTypes && allSiteTypes.length > 0 && selectedSiteTypes.size < allSiteTypes.length) {
@@ -2838,7 +2853,7 @@ function App() {
     };
     return () => { try { delete window.recShareLink; } catch (e) { window.recShareLink = undefined; } };
   }, [loadedStart, loadedEnd, startDate, endDate, selectedLocations, selectedSites, selectedAddOns,
-      selectedSiteTypes, allSiteTypes, bookTypeFilter, showSiteType, showPhone, showEmail]);
+      selectedSiteTypes, allSiteTypes, bookTypeFilter, filterLighting, showSiteType, showPhone, showEmail]);
 
   useEffect(() => {
     if (params._print === '1') document.body.classList.add('print-mode');
@@ -3091,9 +3106,10 @@ function App() {
     if (selectedAddOns && allAddOns.length > 0 && selectedAddOns.size < allAddOns.length) {
       qs.set('addons', [...selectedAddOns].join(','));
     }
+    if (filterLighting) qs.set('musco', '1');
     return qs.toString();
   }, [selectedLocations, allLocations, selectedSites, allSites, selectedSiteTypes,
-      allSiteTypes, bookTypeFilter, selectedAddOns, allAddOns]);
+      allSiteTypes, bookTypeFilter, selectedAddOns, allAddOns, filterLighting]);
 
   const activeView = useMemo(
     () => views.find(v => v.id === activeViewId) || null,
@@ -3137,6 +3153,7 @@ function App() {
     // a filter ON could never turn it off, so opening an unfiltered view after
     // an instant-book one would silently keep the old narrowing.
     setBookTypeFilter(f.bookType || 'all');
+    setFilterLighting(!!f.musco);
 
     // EXCLUDED, NEVER HIDDEN. A view naming values this window has no rows for
     // falls back to everything rather than blanking the report — and then says
@@ -3193,6 +3210,7 @@ function App() {
     setSelectedSiteTypes(new Set(allSiteTypes));
     setSelectedAddOns(new Set(allAddOns));
     setBookTypeFilter('all');
+    setFilterLighting(false);
     setActiveViewId(null);
     setViewWarn(null);
     try { localStorage.removeItem(LS_LAST_VIEW + orgSlug); } catch (_) {}
@@ -3453,6 +3471,11 @@ function App() {
     }
     if (bookTypeFilter && bookTypeFilter !== 'all') qs.set('book_type', bookTypeFilter);
     if (selectedAddOns)    { const a = [...selectedAddOns];    if (a.length) qs.set('addons',    a.join(',')); }
+    // Truthy-only is CORRECT here and is not the `pii` mistake one line down:
+    // this mode defaults OFF, so an omitted parameter on the print page
+    // resolves to off, which is what the reader had. `pii` defaults ON, which
+    // is why it must be sent even when empty.
+    if (filterLighting) qs.set('musco', '1');
     // ALWAYS SET, even when neither is on. The print page has no localStorage,
     // so an omitted parameter there resolves to the default - which is ON. An
     // explicit empty value is therefore the ONLY way a reader who switched both
