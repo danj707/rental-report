@@ -356,14 +356,22 @@ green**; all **65 CI specs** green.
 API save regenerates every tag as Text, taking the rental schedule down for all
 29 orgs. Flip link https://rec.metabaseapp.com/question/17294
 
-### NOT BUILT, and it is the obvious next one
+### NOT BUILT — and CLOSED, not deferred (Dan, 2026-09-11)
 
-**`site_lighting_configuration` is not read anywhere.** It is the only thing
-that can say *"this field has Musco control and nobody scheduled lights"* —
-1,229 of Midland's 1,230 upcoming reservations on a lit site, today. Its
-`lighting_product_id` (NULL on all 73 rows) is also the intended bridge between
-the wired site and the Rec add-on, which is the question underneath Dan's:
-whether the $25 someone paid actually turned anything on.
+**`site_lighting_configuration` is not read anywhere, and it is not going to
+be.** Dan: *"not important, we only want to surface rentals with the lights
+already scheduled."* That is exactly what the report does today, so this is a
+decision that the current behaviour is the wanted behaviour — **do not raise it
+again as an obvious next step.**
+
+Kept because the measurements are real and the reasoning should not be
+re-derived if the question ever changes: the table is the only thing that can
+say *"this field has Musco control and nobody scheduled lights"* (1,229 of
+Midland's 1,230 upcoming reservations sit on a lit site), and its
+`lighting_product_id` (NULL on all 73 rows) is the intended bridge between the
+wired site and the Rec add-on — i.e. whether the $25 someone paid actually
+turned anything on. Both are questions about UNSCHEDULED sites, which is the
+half Dan does not want surfaced.
 
 **`pkill -f` SELF-MATCHED AGAIN**, this time because the *grep argument in the
 same command line* contained the needle. Exit 144, no output. Assemble the
@@ -511,7 +519,12 @@ https://rec.metabaseapp.com/question/17294
 all**, so pasting the repo copy to make a two-line change would have broken the
 card outright. Read the live card first; the mirror is a mirror.
 
-## PINNED: "Happening Today" belongs on the org DASHBOARD (Dan, 2026-09-10)
+## ~~PINNED~~ DONE ELSEWHERE: "Happening Today" on the org DASHBOARD
+
+**Dan, 2026-09-11: *"already done on another thread."*** It is off this
+project's open list — do not raise it here. The notes below stay because they
+are the specification and the traps are measured; check rec-dashboard for what
+actually shipped before re-deriving any of it.
 
 *"the 'Happening today' is an awesome thought for a new card on the dashboard.
 Pin that thought for the weekend."*
@@ -1620,7 +1633,11 @@ Note `scripts/ci-check-html.js` cannot run in this sandbox
 has no JSX for it to compile anyway. The page's single inline block was
 parse-checked directly instead.
 
-## PINNED: feature-adoption sparklines on the ORG DASHBOARD (Dan, 2026-09-08)
+## ~~PINNED~~ DONE ELSEWHERE: feature-adoption sparklines on the ORG DASHBOARD
+
+**Dan, 2026-09-11: *"already done on another thread."*** Off this project's open
+list. The notes below stay for the four traps, which are measured and still
+apply to whatever draws that line.
 
 *"pin a quick item for the org-dashboard feature adoption, the sparklines
 showing trends on feature adoption and use."*
@@ -3984,8 +4001,12 @@ window, and exactly **one** of them was created after the 177 was measured
 
 **v9 DID NOT FIX APEX, and Dan's call is to leave it parked** (*"leave it
 parked"*), which is the same call recorded on the manifest row: *"we'll address
-this when we move to an api direct model."* Said plainly so nobody reads the
-Watertown win as a platform win:
+this when we move to an api direct model."*
+
+**RE-CONFIRMED AND CLOSED 2026-09-11: *"park, don't ask me again."*** So this is
+not an open item and must not be re-offered as a next step — apex on card 17295
+waits for the API-direct move and nothing before it. Said plainly so nobody
+reads the Watertown win as a platform win:
 
 - **Mid-size orgs get it.** Watertown's dominant CTE went 14.0s / 9,194 order
   items to 0.08s / 890.
@@ -9045,6 +9066,13 @@ page state.
   button is hidden and the route 503s.
 
 ## The `materialized` schema has no secondary indexes (PINNED, spec'd 2026-08-21)
+
+**RE-PINNED AGAINST THE API / SEMANTIC-LAYER UPDATE (Dan, 2026-09-11):
+*"pin for the api update"*.** So this is not a SQL job and not a card job — it
+travels with the direct-connection work, which is exactly where it starts to
+matter: going direct inherits these seq scans **without** the 4-hour feed cache
+hiding them, which is the finding that killed the Report Wizard. Raise it in
+that conversation, not on its own.
 
 **PINNED, not being worked (Dan, 2026-08-21).** The table view eng is building
 may make this moot, and the one surface that felt the pain — the Tyler export —
