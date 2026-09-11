@@ -2197,6 +2197,20 @@ fail.
 - **Always hand over the direct Metabase card link** whenever a card needs Dan to
   touch it (the date-tag flip after any programmatic save, most often) —
   `https://rec.metabaseapp.com/question/<id>`. Don't just name the card id.
+- **ALWAYS PUSH A CARD VIA THE API AND HAND OVER THE FLIP LINK — never hand
+  Dan a paste.** His words, 2026-09-11: *"always push and flip, never paste.
+  what is this, 1995?"* This REVERSES the older "hand over the paste" habit
+  recorded in the card sections below, and it holds even for a shared card
+  serving all 29 orgs: the push→flip window is a real outage and it is accepted,
+  because a human re-typing 170 lines of SQL is worse. What does NOT change is
+  everything around the push — read the live card first (the mirror is a
+  mirror), diff the pushed SQL back byte-for-byte, say plainly that the report
+  is DOWN until the flip, and sign off cache-independently through the public
+  endpoint AFTER the flip rather than before.
+  **The one carve-out is a card whose parameters a human has already
+  configured** — cards 21682-21685 carry El Segundo's hardcoded `org_id`
+  default, which an API save silently wipes along with the tag types, and that
+  is a loss a flip cannot undo. Those still go through the UI.
 - **Wire a Slack activity notification into every new user-facing surface** —
   new features, buttons, export/download options, and other notable interactions
   should ping the Slack activity feed, without being asked. Dan wants visibility
@@ -8133,16 +8147,33 @@ by the org's majority `location.timezone` while Metabase renders Pacific, so a
 Pacific org structurally cannot catch a conversion regression here. `daysAhead`,
 not `days` — a schedule looks FORWARD. 37 → 38.
 
-### NOT PUSHED — card 17298 is shared by all 29 orgs
+### PUSHED — and it behaved exactly as this file predicts
 
-The mirror at `sql/report-cards/17298-calendar-schedule.sql` carries the fix and
-is verified; **the live card is untouched**. An `update_question` push
-regenerates every template tag as Text, and on the card every org's Session
-Schedule reads that is downtime for all of them until a human re-flips. The date
-bounds are written `DATE({{start_date}})::timestamp`, so they survive a Text tag
-— but the six-parameter duplication does not, and that is the half that 400s.
-Dan's call whether to paste or to push-and-flip.
-https://rec.metabaseapp.com/question/17298
+Dan, asked paste-or-push: *"always push and flip, never paste. what is this,
+1995?"* Recorded as a standing preference at the top of this file.
+
+Read live and diffed against the mirror BEFORE writing: **no drift**, the live
+card was byte-identical to the pre-edit mirror. Pushed via
+`construct_native_query` + `update_question`, then **diffed straight back:
+byte-identical**, trailing `ORDER BY "Date", "Begin Sort", "Location"` intact
+and all three org filters present. That check exists because card 17300
+silently lost its `ORDER BY` to transcription.
+
+**THREE tags came back, not six** — the card was updated rather than re-saved on
+top of an earlier push, so there was no `string/=` duplicate set to flip away.
+But all three came back **`type: "text"`**, so `start_date`/`end_date` need the
+usual flip to Date.
+
+**AND THE REPORT WAS DOWN FOR ALL 29 ORGS UNTIL THAT FLIP.** Measured
+immediately after the push through the public endpoint with the app's own
+parameter shape: **`An error occurred. (HTTP 400)` in 0.1s** — the 0.1s is the
+tell, a refusal rather than load. The `DATE({{start_date}})` cast means the SQL
+itself parses fine under a Text tag; what 400s is that `buildMetabaseParams`
+hardcodes `date/single` and Metabase rejects a `date/single` value against a
+Text-typed tag. **So the cast protects the SQL, not the feed** — worth stating,
+because the cast is easy to read as making a card push safe and it does not.
+
+Flip link: https://rec.metabaseapp.com/question/17298
 
 **`pkill` SELF-MATCHED A FOURTH TIME, in a new form.** I assembled the `node`
 needle at runtime as the note here says — and then put the sweep and

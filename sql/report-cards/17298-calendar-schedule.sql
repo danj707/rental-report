@@ -3,6 +3,16 @@
 -- populated 1:1 with section.class_id). This file is the live card SQL with
 -- ONLY that mechanical rename applied - no logic or output changes.
 -- Card 17298: ✅Calendar Schedule
+--
+-- 2026-09-11 v2 — ORG-SCOPED CTEs. section_registration, program_activities and
+-- section_eligibility carried no org filter at all: they aggregated 51,154 /
+-- 9,695 / 31,380 rows platform-wide and then discarded ~98%. section_eligibility
+-- ALONE measured 54.9s over 31,127 groups — more than the whole card (49.8s) —
+-- and its plan opened with a Seq Scan on the 14 MB lookup table. Every table
+-- involved carries its OWN INDEXED organization_id this card never read.
+-- Watertown's week: 49.8s -> 7.2s, 62 rows either way, identical row-level
+-- fingerprint 5f5d6d4e2b36e07dffe6fa8d451f3bcb. Inputs only; no output moved.
+-- See the per-CTE notes below, especially program_activities.
 -- 2026-08-05: replaced section_price join with section.pricing_policy jsonb
 -- (section_price table being dropped by Long Nguyen)
 WITH cfg AS (
