@@ -258,7 +258,10 @@ test("the exports go through the shared writer, the popup and the BOM", () => {
   assert.match(page, /saveTextViaPopup\([\s\S]{0,200}bom: true/,
     "with the BOM — Excel sniffs bytes, and a sandboxed iframe's own download is dropped");
   assert.match(page, /saveWorkbookViaPopup\(XLSX, wb/, "and Excel through the same popup");
-  assert.match(page, /XLSX\.utils\.aoa_to_sheet\(table\)/,
+  // The claim is that both files come from ONE flat table, not that the sheet is
+  // built from a bare `table` identifier — the workbook now opens with the
+  // report window, which the CSV deliberately does not carry.
+  assert.match(page, /XLSX\.utils\.aoa_to_sheet\(\[[\s\S]{0,200}\.\.\.table\s*\]\)|XLSX\.utils\.aoa_to_sheet\(table\)/,
     "built from the SAME flat table, so the two files cannot disagree");
 });
 

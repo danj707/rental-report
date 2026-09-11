@@ -72,6 +72,10 @@
     .toolbar .btn-run { background: #16a34a; border-color: #16a34a; font-weight: 600; }
     .toolbar .btn-run:hover { background: #15803d; }
     .toolbar .btn-run:disabled { opacity: .5; cursor: not-allowed; }
+    /* A half-open window is refused, and the reason sits beside the button that
+       is refusing it — a disabled control with no explanation is the dead end
+       this repo keeps writing down. */
+    .win-warn { color: #fbbf24; font-size: 11px; line-height: 1.25; max-width: 260px; }
     .toolbar .btn-pdf { background: #3b82f6; border-color: #3b82f6; font-weight: 600; }
     .toolbar .btn-pdf:hover { background: #2563eb; }
     .toolbar .btn-pdf:disabled { opacity: .5; cursor: not-allowed; }
@@ -684,6 +688,13 @@ function App() {
 
   const isPrint      = params._print === '1';
   const datesChanged = startDate !== loadedStart || endDate !== loadedEnd;
+  /* Read at CALL TIME, not module scope: open-pdf.js is deferred.
+     A blank date box was omitted from the query string, which dropped the
+     card's optional bound and silently ran the report through today — Norman's
+     August product sales came back as Aug 1 → Sep 11, 17% high. Both blank is
+     still legal (the server's own default window); only a HALF-OPEN one is
+     refused. */
+  const windowProblem = window.recWindowProblem(startDate, endDate);
 
   var filteredRows = useMemo(function() {
     if (!rows) return null;
@@ -843,11 +854,15 @@ function App() {
         r.instructions || '', r.notes || '', r.addOns || ''
       ];
     });
-    var wsData = [headers].concat(dataRows);
+    /* THE WINDOW, AT THE TOP OF THE FILE. Marina at Norman exported "August"
+       and got Aug 1 → today because her End Date box was empty; the file said
+       nothing, and she had renamed it, so the one tell (the auto filename) was
+       gone. Data starts at A3 — every row-index loop below moves with it. */
+    var wsData = recExportTitleRows('Historic Rentals', loadedStart, loadedEnd).concat([headers]).concat(dataRows);
     var ws = XLSX.utils.aoa_to_sheet(wsData);
     ws['!cols'] = [{wch:30},{wch:28},{wch:24},{wch:10},{wch:20},{wch:14},{wch:28},{wch:6},{wch:6},{wch:10},{wch:30},{wch:30},{wch:40}];
     var totalColIdx = headers.indexOf('Total');
-    for (var ri = 1; ri <= dataRows.length; ri++) {
+    for (var ri = 3; ri < wsData.length; ri++) {
       var addr = XLSX.utils.encode_cell({ r: ri, c: totalColIdx });
       if (ws[addr] && typeof ws[addr].v === 'number') ws[addr].z = '"$"#,##0.00';
     }
@@ -872,12 +887,13 @@ function App() {
         <button onClick={() => setMonth(1)}  style={{fontSize:11,padding:'4px 8px'}}>Next Month</button>
         <button
           className="btn-run"
-          onClick={() => fetchData(startDate, endDate)}
-          disabled={loading}
+          onClick={() => { if (windowProblem) return; fetchData(startDate, endDate); }}
+          disabled={loading || !!windowProblem}
           style={datesChanged && !loading ? {boxShadow:'0 0 0 2px #4ade80'} : {}}
         >
           {loading ? <><span className="btn-spinner" />Loading…</> : '▶ Run Report'}
         </button>
+        {windowProblem && <span className="win-warn" data-window-problem>{windowProblem}</span>}
         {allLocations.length > 0 && selectedLocations && (
           <LocationFilter allLocations={allLocations} selectedLocations={selectedLocations} onChange={setSelectedLocations} />
         )}

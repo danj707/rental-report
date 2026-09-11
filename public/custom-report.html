@@ -24,6 +24,9 @@
   .toolbar button:disabled { opacity: .45; cursor: not-allowed; }
   .toolbar .btn-run { background: #2563eb; border-color: #2563eb; font-weight: 600; }
   .toolbar .btn-run:hover { background: #1d4ed8; }
+  /* A half-open window is refused, and the reason sits beside the button that
+     is refusing it — a disabled control with no explanation is a dead end. */
+  .toolbar .win-warn { color: #fbbf24; font-size: 11px; line-height: 1.25; max-width: 260px; }
   .toolbar .btn-excel { background: #16803c; border-color: #16803c; font-weight: 600; }
   .toolbar .btn-excel:hover { background: #15692f; }
   .toolbar input[type="search"] { padding: 5px 8px; border: 1px solid rgba(255,255,255,.25); border-radius: 4px; background: #3a3a3a; color: #fff; font-size: 12px; font-family: inherit; width: 170px; }
@@ -769,8 +772,15 @@ function App() {
   const hydratedFilters = useRef(false);
   useEffect(() => { saveHidden(hidden); }, [hidden]);
   const runSeq = useRef(0);
+  /* Read at CALL TIME, not module scope: open-pdf.js is deferred. Both blank
+     stays legal; only a HALF-OPEN window is refused. */
+  const windowProblem = window.recWindowProblem(pending.start, pending.end);
 
   const run = useCallback((sd, ed, loc) => {
+    // The button is one way in, not the only one. A blank date box was omitted
+    // from the query string, which dropped the card's optional bound and ran
+    // the report through today.
+    if (window.recWindowProblem(sd, ed)) return;
     const seq = ++runSeq.current;
     setLoading(true); setError(null);
     const qs = new URLSearchParams();
@@ -920,7 +930,14 @@ function App() {
     if (!shownRows.length) return;
     const ec = exportCols();
     const table = flatTable(shownRows, ec);
-    const ws = XLSX.utils.aoa_to_sheet(table);
+    /* THE WINDOW, AT THE TOP OF THE FILE, on the Excel copy only. The CSV
+       beside it stays rows-only: this report's own rule is that a data file
+       gets re-aggregated by whoever opens it, and the CSV is the feed while
+       the workbook is the thing a person reads. */
+    const ws = XLSX.utils.aoa_to_sheet([
+      ...recExportTitleRows(REPORT_LABEL, applied.start, applied.end),
+      ...table
+    ]);
     ws['!cols'] = ec.map(c => ({ wch: Math.min(38, Math.max(11, c.length + 4)) }));
     const wb = XLSX.utils.book_new();
     // Excel refuses a sheet name over 31 chars or carrying : \ / ? * [ ]
@@ -992,9 +1009,10 @@ function App() {
             </select>
           </label>
         )}
-        <button className="btn-run" data-run onClick={() => run(pending.start, pending.end, pending.location)} disabled={loading}>
+        <button className="btn-run" data-run onClick={() => run(pending.start, pending.end, pending.location)} disabled={loading || !!windowProblem}>
           {loading ? 'Running…' : 'Run report'}
         </button>
+        {windowProblem && <span className="win-warn" data-window-problem>{windowProblem}</span>}
         {/* One box across every column, hidden ones included. It is deliberately
             NOT a per-column control: on a report whose menus run to 145 values
             a checkbox list is a wall of text, and a reader hunting for a name

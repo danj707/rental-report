@@ -94,6 +94,10 @@
     }
     .btn-run:hover { background: #16a34a !important; }
     .btn-run:disabled { opacity: .6; cursor: wait; }
+    /* A half-open window is refused, and the reason sits beside the button that
+       is refusing it — a disabled control with no explanation is the dead end
+       this repo keeps writing down. */
+    .win-warn { color: #fbbf24; font-size: 11px; line-height: 1.25; max-width: 260px; }
     .btn-spinner {
       display: inline-block; width: 12px; height: 12px;
       border: 2px solid rgba(255,255,255,.3);
@@ -1635,6 +1639,13 @@ function normalizeRow(raw) {
       }
 
       const datesChanged = startDate !== loadedStart || endDate !== loadedEnd;
+      /* Read at CALL TIME, not module scope: open-pdf.js is deferred.
+         A blank date box was omitted from the query string, which dropped the
+         card's optional bound and silently ran the report through today — Norman's
+         August product sales came back as Aug 1 → Sep 11, 17% high. Both blank is
+         still legal (the server's own default window); only a HALF-OPEN one is
+         refused. */
+      const windowProblem = window.recWindowProblem(startDate, endDate);
 
       // Fetch check-ins for a window only if they aren't already loaded for it —
       // keeps the Check-Ins tab in sync with the report's selected date range.
@@ -1826,6 +1837,7 @@ function normalizeRow(raw) {
 
 
       function handleRunReport() {
+        if (window.recWindowProblem(startDate, endDate)) return; // the button is one way in, not the only one
         fetchData(startDate, endDate);
         // Run refreshes check-ins for the new window whenever they're on screen
         // or already loaded, so switching back to the tab never shows a stale count.
@@ -2403,11 +2415,14 @@ function normalizeRow(raw) {
           'Usage Count': rows.reduce((s, x) => s + safeNum(x['Usage Count']), 0),
           'Attendance Count': rows.reduce((s, x) => s + safeNum(x['Attendance Count']), 0),
         });
-        const ws = XLSX.utils.json_to_sheet(rows, { cellDates: true });
+        /* THE WINDOW, AT THE TOP OF THE FILE. Data starts at A3, so the date
+           loop below starts there too. */
+        const ws = XLSX.utils.aoa_to_sheet(recExportTitleRows('Memberships', loadedStart, loadedEnd));
+        XLSX.utils.sheet_add_json(ws, rows, { origin: 'A3', cellDates: true });
         const dateCols = ['Start Date','End Date','Next Renewal','Canceled At','Created At','Last Used'];
         const hdr = Object.keys(rows[0] || {});
         const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
-        for (let ri = 1; ri <= range.e.r; ri++) {
+        for (let ri = 3; ri <= range.e.r; ri++) {
           dateCols.forEach(dc => {
             const ci = hdr.indexOf(dc); if (ci < 0) return;
             const addr = XLSX.utils.encode_cell({ r: ri, c: ci });
@@ -2839,11 +2854,12 @@ function normalizeRow(raw) {
               <button
                 className="btn-run"
                 onClick={handleRunReport}
-                disabled={loading}
+                disabled={loading || !!windowProblem}
                 style={datesChanged && !loading ? {boxShadow:'0 0 0 2px #4ade80'} : {}}
               >
                 {loading ? <><span className="btn-spinner" />Loading…</> : '▶ Run Report'}
               </button>
+              {windowProblem && <span className="win-warn" data-window-problem>{windowProblem}</span>}
 
               {(activeTab === 'memberships') && <React.Fragment>
               <div className="divider" />
