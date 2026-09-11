@@ -7997,6 +7997,85 @@ Plus a browser check that the KPI **opens** the panel and closes again, and that
 sorting on the new column works — `ci-check-admin-js` proves the handler exists
 and parses, which is not the same claim.
 
+## THE RENTAL SCHEDULE'S COLUMNS NEVER GREW — a dead CSS rule (2026-09-11)
+
+Dan, with Euclid's schedule open and most of the column checkboxes turned off:
+*"Turning off almost all checkboxes on the rental report, and expecting the
+data to fit on the page (clearly it is truncating, and shouldn't). Also, lets
+drop the 'Weekly' from the rental schedule and just call it the Facility Rental
+Schedule."*
+
+**`.data-row` IS A FLEXBOX IN WHICH NOTHING HAD flex-grow.** Every column
+carried a fixed `width`; the one rule that grew —
+
+```css
+.col-name    { flex: 1; }
+```
+
+— names a class **no element in this file has**. It has been dead for as long
+as the column set has looked like this (`col-site` / `col-reservee` /
+`col-purpose` replaced it), so **every pixel of leftover width was dead space**,
+and with Euclid's five columns that is ~350px sitting empty while Reservee
+clipped at 150px and Purpose at 160px.
+
+**A DEAD RULE IS WORSE THAN NO RULE**, and that is most of why this went
+unnoticed: `flex: 1` in the column block reads as *"the row grows"* to anyone
+skimming the stylesheet. Deleted rather than left.
+
+The text columns are `flex: G 1 <their old width>` now, so **the fix only acts
+where there IS spare width** — with every column ticked the widths already fill
+the row, nothing grows, and the layout is unchanged. Purpose takes the largest
+share (3) because it holds the longest free text.
+
+### `.col-purpose` WAS LOSING THE CASCADE, and its three siblings are the evidence
+
+`.data-row .cell` is **(0,2,0)** and sets `white-space: nowrap` +
+`text-overflow: ellipsis`. A bare `.col-x` is **(0,1,0)** and loses. So
+
+```css
+.col-purpose { width: 160px; white-space: normal; word-break: break-word; }
+```
+
+**never wrapped** — it ellipsised, which is exactly what Dan photographed.
+`.col-site`, `.col-phone` and `.col-email` all carry `!important` on the same
+three properties, which is the tell: whoever wrote them hit this and patched
+around it **one column at a time** rather than noticing the pattern. Reservee
+and Purpose carry it now too.
+
+**`min-width: 0` is load-bearing**, not tidiness: a flex item defaults to
+`min-width: auto` and refuses to shrink below its content, so without it a
+narrow page would push the row wider than the page instead of wrapping.
+
+### "Weekly" is gone — and the page had been disagreeing with its own exports
+
+`server.js` has called this **"Facility Rental Schedule"** in seven places all
+along: `REPORT_DIRECTORY`'s label, `reportLabel`'s CASE ladder (three call
+sites), the email subject and the dashboard card. **Only the page said
+"Weekly"**, so the header on screen disagreed with the footer of its own PDF.
+`public/index.html` carried the same two strings and was changed with it.
+
+The spec **derives the name from `server.js`** rather than transcribing it —
+a spec carrying its own copy of a name agrees with itself and nothing else.
+
+### Guards
+
+`scripts/facility-columns.spec.js` (**46 assertions, in CI**): the name matches
+the server's, "Weekly" cannot come back, `.col-name` is gone, each growable
+column has its old width as a `flex-basis` plus `min-width: 0`, the ten narrow
+columns carry no `flex` at all, and every wrapping column carries `!important`
+on all three properties — with a preceding assertion that `.data-row .cell`
+still truncates by default, or the overrides are being checked against nothing.
+
+**Five `ci-check-render.js` cases, because the geometry is the claim and no
+source assertion can see it** — the stylesheet reads plausibly either way.
+Driven through `pre` + `evaluateOnNewDocument` with Euclid's own column set in
+`localStorage`: Reservee measurably wider than its 150px basis, **and** the last
+column's right edge within 24px of the row's (the two together, since "a column
+got wider" passes on a build that widened one and left the rest empty). Plus
+the computed `white-space`/`text-overflow` on the cells, the row not
+overflowing with every column ticked (what `min-width: 0` buys), and the header
+staying over its own column to within a pixel.
+
 ## THE SAVED-VIEW LIST WAS THE BROWSER'S CACHE (2026-09-11)
 
 Dan: *"saving a view or deleted a saved view doesn't remove or add it. you have

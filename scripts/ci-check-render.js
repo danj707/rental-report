@@ -2505,6 +2505,127 @@ const CASES = [
   { name: "facility · no forms, no link", path: "/{org}/facility",
     needs: "[data-forms-empty=\"1\"]" },
 
+  // ── THE COLUMNS FILL THE PAGE (Dan, 2026-09-11, with Euclid's schedule open
+  // and most of the checkboxes off: "expecting the data to fit on the page
+  // (clearly it is truncating, and shouldn't)").
+  //
+  // NO SOURCE ASSERTION CAN SEE THIS. `.data-row` is a flexbox, and whether
+  // its columns actually reach the right-hand edge is a question about the
+  // rendered boxes — the shipped version had every column at a fixed `width`
+  // and the one rule with flex-grow named a class no element has, so hundreds
+  // of pixels sat dead while Reservee clipped at 150px. The stylesheet reads
+  // plausibly either way.
+  //
+  // EUCLID'S OWN SHAPE: Begin, End, Facility/Site, Reservee, Purpose and
+  // nothing else.
+  { name: "facility · the columns fill the page when most are switched off",
+    path: "/{org}/facility",
+    pre: async page => { await page.evaluateOnNewDocument(() => {
+      try {
+        ['phone', 'email', 'headcount', 'total', 'forms', 'paid', 'permit',
+         'notes', 'resident', 'booktype', 'addon_fees']
+          .forEach(k => localStorage.setItem('col_' + k, 'false'));
+        ['link', 'sitetype', 'lighting'].forEach(k => localStorage.removeItem('col_' + k));
+      } catch (e) {}
+    }); },
+    act: async page => {
+      await page.waitForSelector(".data-row .cell.col-purpose", { timeout: 30000 });
+      await page.evaluate(() => {
+        const row = document.querySelector('.data-row');
+        const last = row.lastElementChild;
+        // 8px of row padding is the whole of what should be left over.
+        const slack = Math.round(row.getBoundingClientRect().right
+                                 - last.getBoundingClientRect().right);
+        const res = document.querySelector('.data-row .cell.col-reservee');
+        document.body.setAttribute('data-col-slack', String(slack));
+        document.body.setAttribute('data-col-res-grew',
+          Math.round(res.getBoundingClientRect().width) > 150 ? '1' : '0');
+      });
+    },
+    // BOTH HALVES. "Reservee got wider" alone passes on a build that widened
+    // one column and left the rest of the page empty; "nothing is left over"
+    // alone passes on a build that grew a column nobody reads.
+    needs: "body[data-col-res-grew=\"1\"]",
+    note: "the row's columns must reach the right-hand edge" },
+  { name: "facility · ...leaving no dead space to the right",
+    path: "/{org}/facility",
+    pre: async page => { await page.evaluateOnNewDocument(() => {
+      try {
+        ['phone', 'email', 'headcount', 'total', 'forms', 'paid', 'permit',
+         'notes', 'resident', 'booktype', 'addon_fees']
+          .forEach(k => localStorage.setItem('col_' + k, 'false'));
+        ['link', 'sitetype', 'lighting'].forEach(k => localStorage.removeItem('col_' + k));
+      } catch (e) {}
+    }); },
+    act: async page => {
+      await page.waitForSelector(".data-row .cell.col-purpose", { timeout: 30000 });
+      await page.evaluate(() => {
+        const row = document.querySelector('.data-row');
+        const last = row.lastElementChild;
+        const slack = Math.round(row.getBoundingClientRect().right
+                                 - last.getBoundingClientRect().right);
+        document.body.setAttribute('data-col-tight', slack <= 24 ? '1' : '0');
+        document.body.setAttribute('data-col-slack', String(slack));
+      });
+    },
+    needs: "body[data-col-tight=\"1\"]" },
+  // AND THE CELLS WRAP RATHER THAN ELLIPSISING. `.col-purpose` said
+  // `white-space: normal` without `!important`, so `.data-row .cell` (0,2,0)
+  // beat it and it truncated anyway — the three columns above it carry
+  // `!important` because whoever wrote them hit this one at a time. Computed
+  // style, because the declaration is present either way.
+  { name: "facility · ...and the text wraps instead of being cut off",
+    path: "/{org}/facility",
+    act: async page => {
+      await page.waitForSelector(".data-row .cell.col-purpose", { timeout: 30000 });
+      await page.evaluate(() => {
+        const pick = (sel) => {
+          const cs = getComputedStyle(document.querySelector(sel));
+          return cs.whiteSpace + '|' + cs.textOverflow;
+        };
+        document.body.setAttribute('data-col-purpose-wrap', pick('.data-row .cell.col-purpose'));
+        document.body.setAttribute('data-col-res-wrap', pick('.data-row .cell.col-reservee'));
+      });
+    },
+    needs: "body[data-col-purpose-wrap=\"normal|clip\"][data-col-res-wrap=\"normal|clip\"]" },
+  // THE FIX MUST NOT PUSH THE ROW OFF THE PAGE with every column ticked, which
+  // is what `min-width: 0` is for — a flex item defaults to `min-width: auto`
+  // and refuses to shrink below its content.
+  { name: "facility · every column on still fits the page width",
+    path: "/{org}/facility",
+    pre: async page => { await page.evaluateOnNewDocument(() => {
+      try {
+        ['phone', 'email', 'headcount', 'total', 'forms', 'paid', 'permit',
+         'notes', 'resident', 'booktype', 'addon_fees']
+          .forEach(k => localStorage.removeItem('col_' + k));
+        ['link', 'sitetype', 'lighting'].forEach(k => localStorage.setItem('col_' + k, 'true'));
+      } catch (e) {}
+    }); },
+    act: async page => {
+      await page.waitForSelector(".data-row", { timeout: 30000 });
+      await page.evaluate(() => {
+        const row = document.querySelector('.data-row');
+        document.body.setAttribute('data-col-noscroll',
+          row.scrollWidth <= row.clientWidth + 1 ? '1' : '0');
+      });
+    },
+    needs: "body[data-col-noscroll=\"1\"]" },
+  // THE HEADER AND THE BODY SHARE THE COLUMN CLASSES, so they grow together —
+  // and a header that drifted off its own values is the one way this change
+  // could look right and read wrong.
+  { name: "facility · the headings stay over their own columns",
+    path: "/{org}/facility",
+    act: async page => {
+      await page.waitForSelector(".col-header-row .col-purpose", { timeout: 30000 });
+      await page.evaluate(() => {
+        const h = document.querySelector('.col-header-row .col-purpose').getBoundingClientRect();
+        const c = document.querySelector('.data-row .cell.col-purpose').getBoundingClientRect();
+        document.body.setAttribute('data-col-aligned',
+          Math.abs(h.left - c.left) <= 1 && Math.abs(h.width - c.width) <= 1 ? '1' : '0');
+      });
+    },
+    needs: "body[data-col-aligned=\"1\"]" },
+
   // ── PII columns (Dan, 2026-09-09: "we don't want to include PII here unless
   // the org wants it", then "phone and email should be checked by default").
   // They start ON, as they always have, so no org loses a column it was using.
