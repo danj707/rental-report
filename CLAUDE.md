@@ -9645,11 +9645,21 @@ the only one of the three writers that never called `enforceMemoryCap` at all �
 
 ### `SELECT k, v FROM feed_cache` SHIPPED THE WHOLE PLATFORM ON EVERY BOOT
 
-That is memory **and** egress — rental-report's NETWORK_TX runs ~113 GB/week,
-~485 GB/month, which is the 27% line on the receipt. `cacheAll` is no longer on
-any boot path. `cacheIndex` asks `pg_column_size(v)` — what would this cost me,
-without moving a byte of it — and `selectHydrateKeys` decides what fits before
-`cacheMany` fetches those keys in ONE round trip.
+`cacheAll` is no longer on any boot path. `cacheIndex` asks `pg_column_size(v)` —
+what would this cost me, without moving a byte of it — and `selectHydrateKeys`
+decides what fits before `cacheMany` fetches those keys in ONE round trip.
+
+**CORRECTED 2026-09-12: this is a MEMORY fix, not a network one, and I wrote the
+opposite first.** I had this paragraph saying those bytes were "the 27% line on
+the receipt", on the strength of rental-report's NETWORK_TX (~115 GB/week,
+~493 GB/month measured over 7 days). Dan then read the host back:
+**`postgres.railway.internal`** — private networking, which Railway does not
+bill. So app↔Postgres traffic was free the whole time and cannot be any part of
+that line. The change still stands on its own: it is the difference between
+holding the platform's entire warm set resident and holding what the budget
+allows. *A number that is real (493 GB of TX) plus a mechanism that is real (the
+boot shipped every payload) is not a cause until the two are actually connected
+— and the connecting fact here was one env var I had not read.*
 
 **`continue`, not `break`, on an entry that does not fit.** A small entry behind
 an oversized one still fits, and the budget is better spent on ten small reports
@@ -9721,14 +9731,30 @@ names.*
 is the residency and popularity rules, which are unchanged — with a header
 saying where the real governor is tested.
 
-### NOT DONE — the second half of the network line
+### THE NETWORK LINE IS NOT THE DATABASE — answered, and it is a no-op
 
 `STORE_DATABASE_URL`'s HOST decides whether every query between the app and
 Postgres is free or metered: `postgres.railway.internal` is private networking
 and costs nothing, `*.proxy.rlwy.net` is public egress and is billed on both
 ends. **Railway redacts variable VALUES for an OAuth caller**, so it cannot be
 read from a session — only Dan can say which it is, and only the host half of it
-is needed.
+is needed. He did, 2026-09-12: **`postgres.railway.internal:5432/railway`.**
+Already private, nothing to change, and it takes the database off the list of
+candidates for the $22.98.
+
+**So the 27% is still UNEXPLAINED**, and the shape of it is worth keeping for
+whoever picks it up. Measured over 7 days on rental-report: **NETWORK_TX avg
+0.0114 GB per 60s sample over 10,081 samples (~115 GB/week, ~493 GB/month), max
+2.05 GB in a SINGLE minute**; RX ~46.5 GB/week, so TX is ~2.5x RX. At ~$0.05/GB
+that is essentially all of the network line. A 2 GB minute is not a person
+loading a report — that is a bulk transfer, so look for one: outbound feeds, the
+daily gist backup, prewarm, or a response path that is not compressed.
+**`app.use(compression())` is at server.js:7029** and Express applies middleware
+only to routes registered AFTER it, so the first thing to check is whether the
+report data routes sit above that line — this repo has already been bitten twice
+by exactly that ordering (the `no-store` middleware below the saved-view routes,
+the campmap beacon route below the generic one). Not chased; Dan approved the
+memory fix only.
 
 ## THE RENTAL SCHEDULE'S COLUMNS NEVER GREW — a dead CSS rule (2026-09-11)
 
