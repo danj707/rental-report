@@ -1669,7 +1669,7 @@ function App() {
   /* Fetch data */
   useEffect(function() {
     fetch(withToken(basePath + '/api/data' + ((SP.get('_nocache')==='1'||SP.get('_refresh')==='1') ? '?_nocache=1' : '')))
-      .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+      .then(async function(r) { if (!r.ok) throw await reportFetchError(r); return r.json(); })
       .then(function(json) {
         var raw = Array.isArray(json) ? json : (json.rows || []);
         var userR = raw.filter(function(r){ return r['Row Type'] === 'user'; });
@@ -1916,7 +1916,7 @@ function App() {
     if (ciData || ciLoading) return;
     setCiLoading(true);
     fetch(withToken('/' + orgSlug + '/users/api/data'))
-      .then(function(r){ if(!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
+      .then(async function(r){ if(!r.ok) throw await reportFetchError(r); return r.json(); })
       .then(function(j){
         var r = j.rows||j.data||j||[];
         setCiData(r);

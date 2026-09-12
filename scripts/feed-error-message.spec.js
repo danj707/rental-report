@@ -130,9 +130,27 @@ function report() {
   ok(withShared.length >= 7, 'the shared file is loaded by the report pages (' + withShared.length + ')');
   withShared.forEach(f => {
     const s = fs.readFileSync(P('public/' + f), 'utf8');
-    if (!/Server returned/.test(s) && !/reportFetchError/.test(s)) return;  // no data fetch
-    ok(!/throw new Error\(`Server returned \$\{r\.status\}`\)/.test(s),
-       f + ' no longer throws away the response body');
+    /* NO EARLY RETURN. The old gate skipped any page mentioning neither
+       `Server returned` nor `reportFetchError` — so a page reverted ALL the
+       way to `'HTTP ' + r.status` was skipped entirely, and the assertion
+       went quiet on precisely the page carrying the bug. Found by mutation:
+       reverting products.html to the form Dan hit SURVIVED. The per-line
+       shape test below is the discriminator; it needs no gate above it. */
+    /* THE SHAPE, NOT ONE SPELLING. The first version of this assertion named
+       `Server returned ${r.status}` and nothing else, so `'HTTP ' + r.status`,
+       `'Server returned ' + r.status` and a bare `Error(r.status)` all passed —
+       five report feeds kept printing the transport instead of the remedy, and
+       products.html is the one Dan hit. A feed fetch is the shape that throws
+       from the status and then returns r.json(); an action POST that reads
+       `json.error` off the body is not this bug and is left alone. */
+    s.split('\n').forEach((ln, i) => {
+      const feed = /\.then\((async\s+)?(function\s*\(\s*\w+\s*\)|\(?\s*\w+\s*\)?\s*=>)\s*\{\s*if\s*\(\s*!\s*\w+\.ok\s*\)\s*throw new Error\(/.test(ln)
+                && /\.json\(\)/.test(ln);
+      if (!feed) return;
+      if (/\.text\(\)|json\.error|j\.error/.test(ln)) return;   // already reads the body
+      ok(/reportFetchError/.test(ln),
+         f + ':' + (i + 1) + ' reads the body rather than throwing the bare status');
+    });
     /* AND THE OWNING ARROW IS ASYNC. `throw await` inside a non-async arrow is
        a SyntaxError that takes the whole babel block with it — the blank-page
        class this repo has shipped twice — and it is invisible to node --check
@@ -142,7 +160,8 @@ function report() {
       lines.forEach((ln, i) => {
         if (!/throw await reportFetchError/.test(ln)) return;
         const ctx = lines.slice(Math.max(0, i - 4), i + 1).join('\n');
-        ok(/async r\s*=>/.test(ctx), f + ':' + (i + 1) + ' sits inside an ASYNC arrow');
+        ok(/async\s+\w+\s*=>|async\s*\(\s*\w+\s*\)\s*=>|async\s+function\s*\(/.test(ctx),
+           f + ':' + (i + 1) + ' sits inside an ASYNC arrow or function');
       });
     }
   });

@@ -16022,13 +16022,42 @@ app.post("/api/admin/announcements/delete", express.json(), (req, res) => {
 const SURVEY_MIN_FOR_STATS = 5;
 const SURVEY_READOUT_DAYS  = 400;
 
-function surveyReadout(surveyId, days) {
+/* THE 9/6 BOUNDARY LIVES IN ONE PLACE. The readout panel and the per-org
+   dashboard column both classify an NPS answer, and two copies of a threshold
+   is how one surface starts calling somebody a promoter while the other calls
+   them passive. NPS is a CLASSIFICATION, never a mean — 0-6 detractor, 7-8
+   passive, 9-10 promoter — and `npsScore` is the only arithmetic either
+   surface runs on it. */
+function npsBucket(v) {
+  return v >= 9 ? "promoter" : v <= 6 ? "detractor" : "passive";
+}
+function npsScore(promoters, detractors, n) {
+  return n ? Math.round(((promoters - detractors) / n) * 100) : null;
+}
+
+/* `org` SCOPES THE WHOLE READOUT TO ONE ORGANISATION, and it is an argument
+   here rather than a second function because the per-org panel and the
+   per-survey panel must never disagree about what an answer means. A second
+   aggregator is a second chance to get the 9/6 boundary, the floor, or the
+   NPS-is-never-a-mean rule wrong — the same argument that put npsBucket and
+   npsScore in one place.
+
+   The FLOOR still applies, and scoped to one org it will usually bite: five
+   answers is a lot for a single organisation, so most orgs render bars with
+   no mean and no NPS. That is the honest reading and not a degradation —
+   the distribution IS the answer, and a confident "4.2 average" off two
+   ratings is exactly the number that gets quoted back at us. */
+function surveyReadout(surveyId, days, org) {
   const survey = getSurveys().find(s => s.id === surveyId);
   if (!survey) return null;
+  const only = org ? String(org) : null;
   const rows = [];
   let dismissed = 0;
   for (const e of readEvents(days || SURVEY_READOUT_DAYS)) {
     if (!e || e.surveyId !== surveyId) continue;
+    // Scope dismissals too, or a per-org panel reports the PLATFORM's
+    // "said not now" count beside one org's answers.
+    if (only && e.org !== only) continue;
     if (e.event === "survey-dismiss") { dismissed++; continue; }
     if (e.event !== "survey-response") continue;
     if (e.answers && typeof e.answers === "object") rows.push(e);
@@ -16053,10 +16082,10 @@ function surveyReadout(surveyId, days) {
       if (q.type === "nps") {
         // NEVER a mean. An NPS of 7.4 is meaningless: the scale is a
         // classification, and promoters minus detractors is what it means.
-        const promoters  = vals.filter(v => v >= 9).length;
-        const detractors = vals.filter(v => v <= 6).length;
+        const promoters  = vals.filter(v => npsBucket(v) === "promoter").length;
+        const detractors = vals.filter(v => npsBucket(v) === "detractor").length;
         out.nps = vals.length >= SURVEY_MIN_FOR_STATS
-          ? Math.round(((promoters - detractors) / vals.length) * 100) : null;
+          ? npsScore(promoters, detractors, vals.length) : null;
         out.promoters = promoters;
         out.passives = vals.length - promoters - detractors;
         out.detractors = detractors;
@@ -16094,6 +16123,122 @@ function surveyReadout(surveyId, days) {
     // reporting a short history as a quiet survey — the campmap `covers` rule.
     covers: days || SURVEY_READOUT_DAYS,
     questions,
+  };
+}
+
+/* ── PER-ORG SURVEY SCORES ───────────────────────────────────────────
+   Dan: "adding their responses as a CSAT or NPS score on their admin
+   dashboard card".
+
+   CSAT AND NPS ARE NEVER BLENDED INTO ONE FIGURE. CSAT is the share of 1-5
+   satisfaction ratings that came back 4 or 5; NPS is promoters minus
+   detractors over a 0-10 CLASSIFICATION. They are different scales measuring
+   different things, and an org that answered both gets both numbers — an
+   average of the two is a number with no definition. Same rule the readout
+   already enforces by setting `out.mean = null` on an NPS question.
+
+   THE QUESTION'S TYPE COMES FROM THE SURVEY'S OWN DEFINITION, NEVER FROM THE
+   ANSWER. A rating5 answer of 5 and an NPS answer of 5 are the same integer,
+   so reading the value alone cannot tell a top mark from a detractor — which
+   is exactly how a 1-5 rating ends up inside an NPS and drags it to -100. It
+   is the same argument as reading a submitted answer back by question id
+   rather than positionally, one surface over.
+
+   AN UNCLASSIFIABLE ANSWER IS COUNTED ON NEITHER SIDE. A survey deleted since
+   it was answered has no definition left to read, so its numbers go into
+   neither score while the response itself still counts as a response —
+   `unscored` says how many. Defaulting one into CSAT would put an NPS 3 in a
+   1-5 scale, and a score that quietly invents a reading is worse than one
+   that says it could not tell (the `unreadable` rule in buildFeedback).
+
+   IT COVERS THE SURVEY'S WHOLE LIFE, not the 30 days its neighbours in the
+   usage table cover, and the column says so. A survey is a CAMPAIGN with a
+   start and an end rather than a continuous stream like a thumbs-up: a
+   30-day cut of one that closed last month reads as "this org never
+   answered" when they did, and a campaign's answers are its answers whenever
+   they arrived. Two windows, each labelled — the same treatment the feedback
+   KPI (30 days) and its list (everything on record) already get. */
+// 4 or 5 out of 5 is a satisfied answer.
+const SURVEY_CSAT_TOP = 4;
+
+// ONE aggregator, read by the platform tile and the per-org column. Two
+// surfaces deriving this separately is how a dashboard starts disagreeing with
+// itself about what an org's CSAT is.
+//
+// Deliberately NOT exposed on an open /api/admin GET: dashboardAuth guards
+// only "/" (its first line is `if (req.path !== "/") return next()`), so such
+// a route would hand per-org satisfaction scores about us to anyone who asks.
+// The readout that carries the verbatim text is a POST for the same reason.
+function buildSurveyScores(daysBack) {
+  const days = daysBack || SURVEY_READOUT_DAYS;
+  // surveyId -> questionId -> type, out of the DEFINITION. Built once: a
+  // per-answer lookup through getSurveys() would re-read the store per row.
+  const qType = {};
+  for (const s of getSurveys()) {
+    const m = (qType[s.id] = {});
+    for (const q of (s.questions || [])) m[q.id] = q.type;
+  }
+  const blank = () => ({
+    responses: 0, dismissed: 0, unscored: 0,
+    csatTop: 0, csatN: 0,
+    promoters: 0, passives: 0, detractors: 0, npsN: 0,
+  });
+  const byOrg = {};
+  const all = blank();
+  let oldest = null;
+  for (const e of readEvents(days)) {
+    if (!e || !e.org || !e.surveyId) continue;
+    const isResp = e.event === "survey-response";
+    if (!isResp && e.event !== "survey-dismiss") continue;
+    const o = byOrg[e.org] || (byOrg[e.org] = blank());
+    if (!isResp) { o.dismissed++; all.dismissed++; continue; }
+    if (!e.answers || typeof e.answers !== "object") continue;
+    o.responses++; all.responses++;
+    if (e.ts && (!oldest || e.ts < oldest)) oldest = e.ts;
+    const types = qType[e.surveyId] || {};
+    for (const qid of Object.keys(e.answers)) {
+      const v = e.answers[qid];
+      if (typeof v !== "number") continue;         // choice and text are not a score
+      const t = types[qid];
+      if (t === "rating5" || t === "stars") {
+        o.csatN++; all.csatN++;
+        if (v >= SURVEY_CSAT_TOP) { o.csatTop++; all.csatTop++; }
+      } else if (t === "nps") {
+        o.npsN++; all.npsN++;
+        const b = npsBucket(v);
+        if (b === "promoter")       { o.promoters++;  all.promoters++; }
+        else if (b === "detractor") { o.detractors++; all.detractors++; }
+        else                        { o.passives++;   all.passives++; }
+      } else {
+        o.unscored++; all.unscored++;
+      }
+    }
+  }
+  /* null, NEVER 0, under the floor. "Too few answers to say" and "nobody is
+     satisfied" are different facts, and a confident 0% CSAT off one answer is
+     the kind of number that gets quoted — the same reason the readout withholds
+     a mean. It reads SURVEY_MIN_FOR_STATS rather than declaring a second floor:
+     two floors is two answers to one question, and the panel and the column
+     would eventually disagree about whether a score exists. */
+  const score = o => {
+    o.csat = o.csatN >= SURVEY_MIN_FOR_STATS
+      ? Math.round((o.csatTop / o.csatN) * 100) : null;
+    o.nps = o.npsN >= SURVEY_MIN_FOR_STATS
+      ? npsScore(o.promoters, o.detractors, o.npsN) : null;
+    return o;
+  };
+  Object.values(byOrg).forEach(score);
+  score(all);
+  return {
+    byOrg,
+    totals: all,
+    orgs: Object.keys(byOrg).length,
+    minForStats: SURVEY_MIN_FOR_STATS,
+    csatTop: SURVEY_CSAT_TOP,
+    // A log that does not reach back far enough must say so rather than
+    // reporting a short history as a quiet platform — the campmap `covers` rule.
+    covers: days,
+    oldest,
   };
 }
 
@@ -16179,6 +16324,61 @@ app.post("/api/admin/surveys/responses", express.json(), (req, res) => {
   const out = surveyReadout(String((req.body && req.body.id) || ""), Number(req.body && req.body.days) || 0);
   if (!out) return res.status(404).json({ error: "Unknown survey" });
   res.json(out);
+});
+
+/* ── POST /api/admin/surveys/org — ONE ORG'S ANSWERS, ACROSS EVERY SURVEY ──
+   The CSAT · NPS cell on the usage table is a score, and a score with nowhere
+   to go is the dead end this codebase keeps writing down (the Failed check-ins
+   tile, the "2 ending soon" count). This is where that cell goes.
+
+   IT IS A POST WITH THE PASSWORD, for the same reason the per-survey readout
+   is: it returns the verbatim sentences named organisations typed about us,
+   which is the most sensitive thing this server holds outside the reports, and
+   `dashboardAuth` guards only "/" — its first line is
+   `if (req.path !== "/") return next()`, so an /api/admin GET is OPEN. It
+   fails closed: no DASHBOARD_PASSWORD means nobody.
+
+   It reuses surveyReadout per survey rather than aggregating separately, so
+   the panel cannot disagree with the one the survey's own readout renders. */
+app.post("/api/admin/surveys/org", express.json(), (req, res) => {
+  if (dashboardPasswordBlocked(req, res)) return;
+  const slug = String((req.body && req.body.org) || "");
+  if (!slug) return res.status(400).json({ error: "Missing org" });
+  const days = Number(req.body && req.body.days) || 0;
+
+  /* Every survey this org has TOUCHED, not every survey that exists — a
+     panel listing surveys they never saw is noise, and a survey deleted
+     since they answered has no definition left to read, so its answers
+     cannot be attributed to a question and are reported as a count only.
+     Same asymmetry as `unscored` in buildSurveyScores. */
+  const touched = new Map();
+  let orphaned = 0;
+  for (const e of readEvents(days || SURVEY_READOUT_DAYS)) {
+    if (!e || e.org !== slug || !e.surveyId) continue;
+    if (e.event !== "survey-response" && e.event !== "survey-dismiss") continue;
+    touched.set(e.surveyId, true);
+  }
+
+  const surveys = [];
+  for (const id of touched.keys()) {
+    const out = surveyReadout(id, days, slug);
+    if (out) surveys.push(out);
+    else orphaned++;
+  }
+  // Busiest first: the survey they engaged with most is the one worth reading.
+  surveys.sort((a, b) => (b.responses - a.responses) || (b.dismissed - a.dismissed));
+
+  const scores = buildSurveyScores(days || SURVEY_READOUT_DAYS);
+  res.json({
+    org: slug,
+    orgName: (ORGS[slug] && ORGS[slug].displayName) || slug,
+    scores: scores.byOrg[slug] || null,
+    minForStats: scores.minForStats,
+    csatTop: scores.csatTop,
+    covers: days || SURVEY_READOUT_DAYS,
+    orphaned,
+    surveys,
+  });
 });
 
 // ── POST /api/admin/toggle-public-mode — show/hide admin chrome on org page ──
@@ -17685,6 +17885,10 @@ app.get("/", (req, res) => {
          Its header states the window and the date it reaches back to. */
   const fb30  = buildFeedback(30, { limit: 0 });
   const fbAll = buildFeedback(null, { limit: 200 });
+  /* Survey scores ride in the same table and cover a DIFFERENT window on
+     purpose — see buildSurveyScores. A survey is a campaign, so a 30-day cut
+     of one that closed last month would read as "this org never answered". */
+  const svy = buildSurveyScores(null);
   // Daily usage sparkline (last 30 days)
   const usageDaily = (() => {
     const evts = readEvents(30);
@@ -17774,10 +17978,31 @@ app.get("/", (req, res) => {
             fb30.upPct != null ? ' \u00b7 ' + fb30.upPct + '% up' : ''
           } <span class="fb-open">${fbAll.total ? "view " + fbAll.total : ""}</span></div>
         </div>
+        <div class="usage-kpi" title="Every survey answer on record &mdash; NOT the 30 days the tiles beside it count, because a survey is a campaign rather than a continuous stream. CSAT is the share of 1&ndash;5 ratings that came back 4 or 5; NPS is promoters minus detractors. Neither shows under 5 answers. Open &#128221; Surveys for the readout.">
+          <div class="usage-kpi-v">${
+            /* AN EMPTY READOUT IS A REAL ANSWER and must not read as a broken
+               tile: nobody-has-answered-yet is a fact, and it is the honest
+               state on the day a survey ships. `dismissed` is what separates
+               it from the-survey-is-not-reaching-anyone, which is the whole
+               reason dismissals are recorded. */
+            svy.totals.responses === 0
+              ? '<span class="usage-dot">\u00b7</span>'
+              : [
+                  svy.totals.csat != null ? 'CSAT ' + svy.totals.csat + '%' : null,
+                  svy.totals.nps  != null ? 'NPS ' + (svy.totals.nps > 0 ? '+' : '') + svy.totals.nps : null,
+                ].filter(Boolean).join(' <span class="usage-dot">\u00b7</span> ') || svy.totals.responses
+          }</div>
+          <div class="usage-kpi-l">Surveys${
+            svy.totals.responses
+              ? ' \u00b7 ' + svy.totals.responses + ' answer' + (svy.totals.responses === 1 ? '' : 's') +
+                (svy.totals.dismissed ? ', ' + svy.totals.dismissed + ' dismissed' : '')
+              : ''
+          }</div>
+        </div>
         <div class="usage-kpi usage-kpi-spark"><span style="font-size:11px;color:#9ca3af">30-day trend</span><svg viewBox="0 0 200 32" style="width:180px;height:28px"><polyline points="${sparkPts}" fill="none" stroke="#6d28d9" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></div>
       </div>
       <table class="usage-table">
-        <thead><tr><th onclick="sortUsage(this,0)" style="cursor:pointer">Organization<span class="usort"></span></th><th style="width:76px">30d</th><th class="num" onclick="sortUsage(this,2)" style="cursor:pointer;width:118px" title="Views, with the last 15 days against the prior 15">Views<span class="usort"></span></th><th class="num" onclick="sortUsage(this,3)" style="cursor:pointer">Exports<span class="usort"></span></th><th class="num" onclick="sortUsage(this,4)" style="cursor:pointer" title="AI insights">AI<span class="usort"></span></th><th class="num" onclick="sortUsage(this,5)" style="cursor:pointer" title="Thumbs up and down, last 30 days. Sorted on the two together, like Subs &middot; Email &mdash; who is telling us anything at all.">&#128077; &middot; &#128078;<span class="usort"></span></th><th class="num" onclick="sortUsage(this,6)" style="cursor:pointer" title="Subscribers and emails sent, sorted on the two together">Subs &middot; Email<span class="usort"></span></th><th class="num" onclick="sortUsage(this,7)" style="cursor:pointer">Reports<span class="usort"></span></th><th style="width:28px"></th></tr></thead>
+        <thead><tr><th onclick="sortUsage(this,0)" style="cursor:pointer">Organization<span class="usort"></span></th><th style="width:76px">30d</th><th class="num" onclick="sortUsage(this,2)" style="cursor:pointer;width:118px" title="Views, with the last 15 days against the prior 15">Views<span class="usort"></span></th><th class="num" onclick="sortUsage(this,3)" style="cursor:pointer">Exports<span class="usort"></span></th><th class="num" onclick="sortUsage(this,4)" style="cursor:pointer" title="AI insights">AI<span class="usort"></span></th><th class="num" onclick="sortUsage(this,5)" style="cursor:pointer" title="Thumbs up and down, last 30 days. Sorted on the two together, like Subs &middot; Email &mdash; who is telling us anything at all.">&#128077; &middot; &#128078;<span class="usort"></span></th><th class="num" onclick="sortUsage(this,6)" style="cursor:pointer;width:104px" title="Survey scores, over every survey this org has ever answered &mdash; NOT the 30 days the columns beside it cover, because a survey is a campaign and a 30-day cut of one that closed last month reads as never answered. CSAT is the share of 1&ndash;5 ratings that came back 4 or 5; NPS is promoters (9&ndash;10) minus detractors (0&ndash;6). Neither shows under 5 answers. Sorted on the number of ANSWERS, not on a score &mdash; the two scales do not rank against each other, and 100% off five answers is not ahead of 80% off five hundred. Open &#128221; Surveys for the readout.">CSAT &middot; NPS<span class="usort"></span></th><th class="num" onclick="sortUsage(this,7)" style="cursor:pointer" title="Subscribers and emails sent, sorted on the two together">Subs &middot; Email<span class="usort"></span></th><th class="num" onclick="sortUsage(this,8)" style="cursor:pointer">Reports<span class="usort"></span></th><th style="width:28px"></th></tr></thead>
         <tbody id="usage-tbody">${usageRows.map((r, i) => `<tr${i >= USAGE_VISIBLE_ROWS ? ' class="usage-tail" style="display:none"' : ''}>
           <td data-sort="${(r.name || '').toLowerCase().replace(/"/g, '')}"><a href="#org-${r.slug}" class="usage-org-name" style="text-decoration:none;color:#1e1b4b" onclick="event.preventDefault();var el=document.getElementById('org-'+'${r.slug}');if(el){el.scrollIntoView({behavior:'smooth',block:'start'});var body=el.querySelector('.org-body');if(body&&body.style.display==='none'){body.style.display='';var chev=el.querySelector('.org-collapse-chevron');if(chev)chev.style.transform='rotate(90deg)'}}">${r.name}</a><span class="usage-slug">${r.slug}</span></td>
           <td><svg viewBox="0 0 64 16" style="width:64px;height:14px;display:block">${(() => { const mx = Math.max(...r.sparkDays, 1); const pts = r.sparkDays.map((v, i2) => (i2 / 29 * 62 + 1).toFixed(1) + ',' + (14 - v / mx * 12 + 1).toFixed(1)).join(' '); return '<polyline points="' + pts + '" fill="none" stroke="#6d28d9" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round"/>'; })()}</svg></td>
@@ -17799,11 +18024,59 @@ app.get("/", (req, res) => {
                 + (f.down ? '<b style="color:#dc2626">' + f.down + '</b>' : '<span class="usage-dot">0</span>');
             return `<td class="num usage-pair" data-sort="${n}" data-fb-org="${r.slug}" title="${f.up} up, ${f.down} down in the last 30 days">${cell}</td>`;
           })()}
+          ${(() => {
+            /* TWO SCALES, NEVER AVERAGED TOGETHER, and each is absent rather
+               than zeroed when there is nothing to say. Under the floor the
+               ANSWER COUNT is printed instead of a percentage — 100% off one
+               rating is the number that gets quoted, and a faint dot where
+               there is nothing at all, because a grid of 0s reads as data.
+               Sorted on answers: a CSAT and an NPS do not rank against each
+               other, and neither does 100% off five against 80% off five
+               hundred. */
+            const v = svy.byOrg[r.slug] || null;
+            const n = v ? v.responses : 0;
+            let cell, tip;
+            if (!n) {
+              cell = '<span class="usage-dot">\u00b7</span>';
+              /* Asked-and-closed and never-asked are different facts, and
+                 separating them is the whole reason dismissals are recorded.
+                 The cell is a dot either way — a dismissal is not a score —
+                 but it must not report the first as the second. */
+              tip = v && v.dismissed
+                ? 'No answers \u2014 the card was dismissed ' + v.dismissed + ' time' + (v.dismissed === 1 ? '' : 's')
+                : 'No survey answers on record';
+            } else {
+              const parts = [];
+              if (v.csat != null) parts.push('<b title="CSAT">' + v.csat + '%</b>');
+              if (v.nps != null)  parts.push('<b title="NPS">' + (v.nps > 0 ? '+' : '') + v.nps + '</b>');
+              cell = parts.length
+                ? parts.join(' <span class="usage-dot">\u00b7</span> ')
+                : '<span class="usage-dot">' + n + '</span>';
+              const bits = [n + ' answer' + (n === 1 ? '' : 's')];
+              if (v.dismissed) bits.push(v.dismissed + ' dismissed');
+              if (v.csat != null) bits.push('CSAT ' + v.csat + '% (' + v.csatTop + ' of ' + v.csatN + ' rated ' + svy.csatTop + '+)');
+              else if (v.csatN)   bits.push('CSAT needs ' + (svy.minForStats - v.csatN) + ' more rating' + ((svy.minForStats - v.csatN) === 1 ? '' : 's'));
+              if (v.nps != null)  bits.push('NPS ' + (v.nps > 0 ? '+' : '') + v.nps + ' (' + v.promoters + ' promoters, ' + v.passives + ' passive, ' + v.detractors + ' detractors)');
+              else if (v.npsN)    bits.push('NPS needs ' + (svy.minForStats - v.npsN) + ' more answer' + ((svy.minForStats - v.npsN) === 1 ? '' : 's'));
+              if (!v.csatN && !v.npsN) bits.push('no rating or NPS question answered');
+              bits.push('click to read the answers');
+              tip = bits.join(' \u00b7 ');
+              /* CLICKABLE ONLY WHERE THERE IS SOMETHING TO OPEN. A cell with
+                 no answers stays an inert dot rather than a control that
+                 opens an empty panel \u2014 absent, not disabled, which is the
+                 rule everywhere else here. */
+              cell = '<span class="svy-open" role="button" tabindex="0"'
+                + ' onclick="svyOrgResults(\'' + r.slug + '\')"'
+                + ' onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();svyOrgResults(\'' + r.slug + '\')}">'
+                + cell + '</span>';
+            }
+            return `<td class="num usage-pair" data-sort="${n}" data-svy-org="${r.slug}" title="${tip}">${cell}</td>`;
+          })()}
           <td class="num usage-pair" data-sort="${r.subscribers + r.emailsSent}" title="${r.subscribers} subscriber${r.subscribers === 1 ? '' : 's'}, ${r.emailsSent} email${r.emailsSent === 1 ? '' : 's'} sent">${(r.subscribers || r.emailsSent) ? '<b>' + r.subscribers + '</b> &middot; <b>' + r.emailsSent + '</b>' : '<span class="usage-dot">·</span>'}</td>
           <td class="num" data-sort="${r.active}">${r.active}/${r.reports}</td>
           <td style="text-align:center"><a href="/${r.slug}?token=${ORGS[r.slug]?.token || ''}" target="_blank" title="Open ${r.name} reports" style="color:#9ca3af;text-decoration:none"><i class="ph ph-arrow-square-out" style="font-size:14px"></i></a></td>
         </tr>`).join('')}</tbody>
-        ${usageTailRows > 0 ? `<tfoot><tr class="usage-more" id="usage-more-row"><td colspan="9" onclick="showAllUsage()">Show all ${usageRows.length} organizations &mdash; ${usageTailRows} more, ${usageTailViews.toLocaleString()} view${usageTailViews === 1 ? '' : 's'} between them &#9662;</td></tr></tfoot>` : ''}
+        ${usageTailRows > 0 ? `<tfoot><tr class="usage-more" id="usage-more-row"><td colspan="10" onclick="showAllUsage()">Show all ${usageRows.length} organizations &mdash; ${usageTailRows} more, ${usageTailViews.toLocaleString()} view${usageTailViews === 1 ? '' : 's'} between them &#9662;</td></tr></tfoot>` : ''}
       </table>
       ${feedbackListHtml}
     </div>`;
@@ -17910,6 +18183,12 @@ app.get("/", (req, res) => {
     .usage-delta { font-size: 10px; font-weight: 600; margin-left: 6px; }
     .usage-pair { color: #6b7280; }
     .usage-pair b { color: #374151; font-weight: 600; }
+    /* The score is a way in, so it has to LOOK like one — an underline on
+       hover and a real focus ring, because a control reachable only by
+       mouse is a control half the people here cannot use. */
+    .svy-open { cursor: pointer; border-radius: 4px; padding: 1px 3px; }
+    .svy-open:hover { background: #eef2ff; text-decoration: underline; }
+    .svy-open:focus-visible { outline: 2px solid #6366f1; outline-offset: 1px; }
     /* A grid of 0s reads as data. Most orgs are zero in most columns, so an
        absent number should look absent. */
     .usage-dot { color: #d8d5d0; }
@@ -18590,6 +18869,16 @@ app.get("/", (req, res) => {
       return;
     }
 
+    html += svyQuestionBlocks(d);
+    panel.innerHTML = html;
+  }
+
+  /* ONE QUESTION RENDERER, TWO PANELS — the per-survey readout and the
+     per-org one. A second copy is how one panel starts calling somebody a
+     promoter while the other calls them passive on the same answer, which is
+     exactly the duplication npsBucket was extracted to end one layer down. */
+  function svyQuestionBlocks(d){
+    var html = '';
     d.questions.forEach(function(q){
       html += '<div style="margin-bottom:16px;padding-top:12px;border-top:1px solid #f3f4f6">'
         + '<div style="font-size:12.5px;font-weight:600;color:#374151;margin-bottom:7px">'+svyEsc(q.prompt)
@@ -18620,7 +18909,77 @@ app.get("/", (req, res) => {
       }
       html += '</div>';
     });
-    panel.innerHTML = html;
+    return html;
+  }
+
+  /* ── One org's answers, opened from the CSAT · NPS cell ──────────────── */
+  function closeSvyOrg(){ document.getElementById('svyorg-overlay').style.display='none'; }
+
+  async function svyOrgResults(slug){
+    var pwd = getDashPwd('Read survey answers');
+    if (!pwd) return;
+    var ov = document.getElementById('svyorg-overlay');
+    var body = document.getElementById('svyorg-body');
+    ov.style.display = 'block';
+    ov.scrollTop = 0;
+    document.getElementById('svyorg-title').textContent = slug;
+    body.innerHTML = '<div style="font-size:12px;color:#9ca3af">Loading…</div>';
+    var d;
+    try {
+      var r = await fetch('/api/admin/surveys/org', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ password:pwd, org:slug }) });
+      d = await r.json();
+      if (!r.ok) { if (r.status === 401) clearDashPwd(); body.innerHTML = '<div style="font-size:12px;color:#e55">'+svyEsc(d.error||'Failed')+'</div>'; return; }
+    } catch(e){ body.innerHTML = '<div style="font-size:12px;color:#e55">Error: '+svyEsc(e.message)+'</div>'; return; }
+
+    document.getElementById('svyorg-title').textContent = d.orgName || slug;
+
+    var s = d.scores;
+    var head = [];
+    if (s) {
+      head.push('<b>'+s.responses+'</b> answer'+(s.responses===1?'':'s'));
+      if (s.dismissed) head.push(s.dismissed+' said not now');
+      /* The two scales are never blended here either, and each is absent
+         rather than zeroed under the floor — the same rule the cell obeys,
+         because the panel it opens must not contradict it. */
+      if (s.csat != null) head.push('CSAT <b>'+s.csat+'%</b>');
+      else if (s.csatN)   head.push('CSAT needs '+(d.minForStats - s.csatN)+' more rating'+((d.minForStats - s.csatN)===1?'':'s'));
+      if (s.nps != null)  head.push('NPS <b>'+(s.nps>0?'+':'')+s.nps+'</b>');
+      else if (s.npsN)    head.push('NPS needs '+(d.minForStats - s.npsN)+' more answer'+((d.minForStats - s.npsN)===1?'':'s'));
+      if (s.unscored) head.push(s.unscored+' unscorable');
+    }
+
+    var html = '<div data-svyorg-surveys="'+d.surveys.length+'" style="font-size:11.5px;color:#6b7280;margin-bottom:14px">'
+      + (head.length ? head.join(' &middot; ') : 'No answers on record') + '</div>';
+
+    if (!d.surveys.length) {
+      html += '<div style="font-size:12px;color:#6b7280;background:#f9fafb;border:1px solid #eee;border-radius:6px;padding:11px 13px">'
+        + 'This org has not been shown a survey yet, or was shown one and never opened a page it targets.</div>';
+      body.innerHTML = html;
+      return;
+    }
+
+    /* A survey deleted since it was answered has no definition left to read,
+       so its answers can be counted and not attributed. Saying so beats
+       silently showing fewer surveys than the cell counted answers for. */
+    if (d.orphaned) {
+      html += '<div style="font-size:11.5px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:8px 11px;margin-bottom:12px">'
+        + d.orphaned + ' survey' + (d.orphaned===1?' has':'s have') + ' been deleted since being answered, so those answers cannot be shown by question.</div>';
+    }
+
+    d.surveys.forEach(function(sv){
+      var offered = sv.responses + sv.dismissed;
+      html += '<div style="margin-bottom:22px;border:1px solid #eee;border-radius:8px;padding:13px 15px">'
+        + '<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:4px">'
+        +   '<div style="font-size:13px;font-weight:700;color:#111827">'+svyEsc(sv.survey.title)+'</div>'
+        +   '<div style="font-size:11.5px;color:#6b7280"><b>'+sv.responses+'</b> from this org'
+        +     (offered > sv.responses ? ' &middot; '+sv.dismissed+' said not now' : '')+'</div>'
+        + '</div>';
+      html += sv.responses
+        ? svyQuestionBlocks(sv)
+        : '<div style="font-size:12px;color:#6b7280">Shown and dismissed here, never answered.</div>';
+      html += '</div>';
+    });
+    body.innerHTML = html;
   }
 
   // ── Project-update composer ──────────────────────────────────────────
@@ -18982,6 +19341,19 @@ app.get("/", (req, res) => {
 
         <div id="svy-results" style="display:none;margin-top:18px;padding-top:16px;border-top:1px solid #eee"></div>
       </div>
+    </div>
+  </div>
+  <!-- ── One org's survey answers, opened from the CSAT &middot; NPS cell ── -->
+  <div id="svyorg-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;overflow-y:auto;padding:40px 16px">
+    <div style="background:#fff;border-radius:10px;max-width:720px;margin:0 auto;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.3)">
+      <div style="padding:20px 24px;background:#2c2c2c;color:#fff;display:flex;align-items:center;justify-content:space-between">
+        <div>
+          <div style="font-weight:700;font-size:15px">&#128221; Survey answers</div>
+          <div id="svyorg-title" style="font-size:12px;color:#bbb;margin-top:2px"></div>
+        </div>
+        <button onclick="closeSvyOrg()" style="background:none;border:none;color:#bbb;font-size:22px;cursor:pointer;line-height:1">&times;</button>
+      </div>
+      <div id="svyorg-body" style="padding:20px 24px"></div>
     </div>
   </div>
   <!-- ── Add Project Update Modal ── -->
