@@ -9586,6 +9586,150 @@ reason `all-users` scopes through `organization_association` instead.
 catalog query has timed out at 60s, and I broke that rule twice in the session
 that produced the fix above.
 
+## MEMORY WAS 69% OF THE RAILWAY BILL, AND THE CAP COULD NOT SEE IT (2026-09-12)
+
+Dan, with the receipt: *"oof anyway we can cut this cost down?"* — $84.04 for the
+month, of which **memory $57.58 (69%)**, network $22.98 (27%), disk $1.75, vCPU
+$1.69.
+
+Measured over seven days rather than guessed: rental-report **3.74 GB average,
+10.45 GB peak, against 0.49 GB on a fresh boot** — Postgres 1.33 GB,
+rec-dashboard 0.89 GB, org-features 0.09 GB. So one service is three quarters of
+the memory line and it climbs ~7x away from where it starts.
+
+### THE CAP WAS 300 ENTRIES, AND AN ENTRY IS ANYWHERE BETWEEN 2 KB AND 16.8 MB
+
+`MAX_MEMORY_ENTRIES` bounds a number that has nothing to do with the bill.
+norman/memberships alone is **16.8 MB** — a fact this file already recorded, in
+`cacheFreshKeys`'s own comment, as the reason that function returns KEYS and not
+payloads. The same argument was never applied to the thing that decides what
+stays in RAM. 300 entries is a few megabytes or several gigabytes and the
+governor cannot tell which.
+
+`MAX_MEMORY_BYTES` (256 MB, `CACHE_MAX_MEMORY_BYTES`) is the cap that bounds the
+bill. The count cap stays beside it, because a very large number of small
+entries is its own kind of leak.
+
+**THE SIZE IS MEASURED ONCE AND CARRIED ON THE ENTRY.** Every writer already has
+it for free — `setCache` has the string it just serialized, the disk hydrate has
+the file it just read, the store hydrate has `pg_column_size`. `entryBytes`
+memoises, because the cap runs on every write and re-measuring a 16 MB payload
+per write is not a governor, it is a second cost.
+
+### A PIN IS A PREFERENCE, NOT A LICENCE TO GROW
+
+`enforceMemoryCap` could only ever evict UNPINNED entries, and the pinned set is
+not small: `ALWAYS_WARM_REPORTS` is three reports across every configured org,
+plus everything learned hot. So a budget could be exceeded by an arbitrary
+amount with nothing able to bring it back — which is the shape of the whole
+defect. There is a **second pass that evicts pinned entries too**, oldest-touched
+first, and it runs only once everything unpinned has gone. Both orderings are
+mutation-tested; an unpinned entry goes before a pinned one even when it was
+touched more recently.
+
+### THE BOOT HYDRATE WAS THE ONE WRITER THAT NEVER ASKED THE COST
+
+`hydrateCacheEntries` loaded **every** stored payload into `dataCache` and was
+the only one of the three writers that never called `enforceMemoryCap` at all —
+~2,900 entries, some of them 16 MB, times two replicas. That is the 10.45 GB.
+
+- **The cap is enforced INSIDE the loop, not after it.** A sweep afterwards is
+  not a fix: the PEAK is what the container is charged for. The spec wraps
+  `dataCache.set` and asserts the resident set never exceeded the budget at any
+  point during the loop, not merely that it ends under it.
+- **It applies the same residency rule `setCache` applies** — a heavy payload for
+  a report nobody opens belongs on L2 and is served from there.
+- **An entry of UNKNOWN size is KEPT, not shed.** Unreadable size is far more
+  likely to be a small feed than an export, and the L2 read it would force is the
+  cheap failure either way.
+
+### `SELECT k, v FROM feed_cache` SHIPPED THE WHOLE PLATFORM ON EVERY BOOT
+
+That is memory **and** egress — rental-report's NETWORK_TX runs ~113 GB/week,
+~485 GB/month, which is the 27% line on the receipt. `cacheAll` is no longer on
+any boot path. `cacheIndex` asks `pg_column_size(v)` — what would this cost me,
+without moving a byte of it — and `selectHydrateKeys` decides what fits before
+`cacheMany` fetches those keys in ONE round trip.
+
+**`continue`, not `break`, on an entry that does not fit.** A small entry behind
+an oversized one still fits, and the budget is better spent on ten small reports
+than on one export. Most-recently-written first, because a stale entry is the one
+worth leaving on L2.
+
+### THE DISK HYDRATE HAD BEEN LOADING ZERO ENTRIES, and it said so in a healthy line
+
+Found trying to MEASURE the fix rather than argue it — a boot against a 47 MB
+fixture cache hydrated nothing. `ttlForKey` → `reportTtlMs` →
+`reportSettingsEnabled` reads **`REPORT_SETTINGS_SCHEMA`, a `const` declared
+~8,000 lines BELOW the call site**, so every entry threw
+`Cannot access 'REPORT_SETTINGS_SCHEMA' before initialization` into the per-file
+`catch {}` and the boot printed
+`[cache] Hydrated from disk: 0 report entries, 0 expired/skipped` — which reads
+as an empty cache, not as a broken one. Every restart in disk mode has started
+cold since report settings shipped (2026-08-27), and
+`invalidateFacilitiesCacheOnUuidChange` walked an empty map for the same reason.
+
+**It is the temporal-dead-zone class this file already records for `CACHE_DIR`,
+one layer deeper** — and the comment directly above `ttlForKey` explains why it
+is a function DECLARATION rather than a const arrow, having got the function
+right and missed the const it READS. *A hoisting fix covers the function, not
+what the function reaches.*
+
+`bootWarmCaches()` now runs the three of them just before `app.listen`, past
+every const they touch. **Access stats load FIRST**: the hydrate enforces the
+budget while it loads, and which entries are pinned is a question about what
+people have been opening — load them afterwards and the first boot after a
+restart evicts the org's hottest reports.
+
+### Measured, on a real boot rather than in the spec
+
+12 pinned `gl` entries totalling **47 MB** on disk: unconstrained the boot logs
+`47 MB resident`; with `CACHE_MAX_MEMORY_BYTES=20MB` it logs **`19 MB
+resident`** — the pinned second pass doing the thing it was written for, on real
+bytes. `/api/admin/cache-stats` reports `residentMB` / `residentCapMB`, because
+entry count was never the number the bill is made of.
+
+### Guards
+
+`scripts/cache-memory-budget.spec.js` (**48 assertions, in CI**), which LIFTS AND
+RUNS the governor — a regex over eviction arithmetic passes on an inverted
+comparison, and every defect here is arithmetic about sizes. Mutation-tested
+**nineteen ways, all failing by name**: the cap reverted to entries only (the bug
+as it shipped), the pinned second pass deleted, the two passes swapped, the boot
+hydrate never enforcing (the other half of the bug), the boot hydrate sweeping
+AFTER the loop instead of during it, `entryBytes` no longer memoising,
+`selectHydrateKeys` stopping at the first oversized entry, either of its two caps
+ignored, the boot hydrate carrying a heavy cold payload, an unknown size shed
+rather than kept, `CACHE_ADAPTIVE=0` no longer an escape hatch, the hydrate back
+to `cacheAll`, `cacheIndex` shipping payloads beside their sizes, `cacheMany`
+querying one key at a time, `setCache` and the disk hydrate each no longer
+recording the size they already have, the disk hydrate called back above
+`REPORT_SETTINGS_SCHEMA`, and access stats loaded after the hydrate.
+
+**Two of my own mutations were bad and one of my assertions was satisfied by dead
+code**, all three found by the runner rather than by review: a mutation that
+added `if (false) enforceMemoryCap()` beside the real call and therefore changed
+nothing; a "swap the passes" mutation that only inverted one of them, so it was
+caught by a name that did not describe it; and
+`/entry\.bytes = serialized\.length/`, which still matched after the line was
+disabled with `if (false)`. The assertion pins the guard as well as the
+assignment now. *An assertion satisfied by dead code is not guarding the thing it
+names.*
+
+**`scripts/adaptive-cache.spec.js` MIRRORS rather than lifts**, so its copy of
+`enforceMemoryCap` is the entry-count version. Left deliberately — what it pins
+is the residency and popularity rules, which are unchanged — with a header
+saying where the real governor is tested.
+
+### NOT DONE — the second half of the network line
+
+`STORE_DATABASE_URL`'s HOST decides whether every query between the app and
+Postgres is free or metered: `postgres.railway.internal` is private networking
+and costs nothing, `*.proxy.rlwy.net` is public egress and is billed on both
+ends. **Railway redacts variable VALUES for an OAuth caller**, so it cannot be
+read from a session — only Dan can say which it is, and only the host half of it
+is needed.
+
 ## THE RENTAL SCHEDULE'S COLUMNS NEVER GREW — a dead CSS rule (2026-09-11)
 
 Dan, with Euclid's schedule open and most of the column checkboxes turned off:

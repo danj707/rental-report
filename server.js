@@ -334,6 +334,13 @@ const dataCache = new Map();
 const CACHE_ADAPTIVE     = process.env.CACHE_ADAPTIVE !== "0";
 const MAX_MEMORY_ENTRIES = Number(process.env.CACHE_MAX_MEMORY_ENTRIES || 300);
 const HEAVY_ENTRY_BYTES  = Number(process.env.CACHE_HEAVY_BYTES || 1500000); // ~1.5 MB serialized
+// THE ENTRY COUNT WAS NEVER THE THING THAT COSTS MONEY. Railway bills memory on
+// actual usage, and a cached feed spans KB to 16.8 MB (norman/memberships), so
+// 300 entries is anywhere between a few megabytes and several gigabytes — a cap
+// that cannot say which. This is the one that bounds the bill; the count cap
+// stays beside it because a very large number of small entries is its own kind
+// of leak.
+const MAX_MEMORY_BYTES   = Number(process.env.CACHE_MAX_MEMORY_BYTES || 256 * 1024 * 1024);
 const HOT_WINDOW_MS      = Number(process.env.CACHE_HOT_WINDOW_MS || 7 * 24 * 60 * 60 * 1000);
 const HOT_MIN_HITS       = Number(process.env.CACHE_HOT_MIN_HITS || 3); // opens within window ⇒ "hot"
 // Small, high-traffic reports we always keep warm for every configured org.
@@ -384,19 +391,53 @@ function isPinnedKey(key) {
   return ALWAYS_WARM_REPORTS.has(parts[1]) || isReportHot(parts[0], parts[1]);
 }
 
-// Evict least-recently-used, non-pinned entries until under the cap. Evicted
-// entries remain on the disk cache, so they're still served fast (L2).
+// How much RAM an entry actually costs, measured ONCE and carried on the entry.
+// Every writer already has the number for free — setCache has the serialized
+// string it just wrote, the disk hydrate has the file it just read, the store
+// hydrate has pg_column_size — so the stringify below is a fallback that should
+// never run on a boot path. It is memoised either way, because the cap is
+// enforced on every write and re-measuring a 16 MB payload per write is not a
+// governor, it is a second cost.
+function entryBytes(e) {
+  if (!e) return 0;
+  if (typeof e.bytes === "number") return e.bytes;
+  try { e.bytes = JSON.stringify(e.data).length; } catch { e.bytes = 0; }
+  return e.bytes;
+}
+
+function residentBytes() {
+  let total = 0;
+  for (const v of dataCache.values()) total += entryBytes(v);
+  return total;
+}
+
+// Evict least-recently-used entries until BOTH caps are satisfied. Evicted
+// entries remain on the disk cache and in the store, so they are still served
+// fast (L2) — eviction costs a local read, never a Metabase query.
 function enforceMemoryCap() {
-  if (!CACHE_ADAPTIVE || dataCache.size <= MAX_MEMORY_ENTRIES) return;
-  const evictable = [];
-  for (const [k, v] of dataCache) {
-    if (isPinnedKey(k)) continue;
-    evictable.push([k, v.lastRead || v.ts]);
+  if (!CACHE_ADAPTIVE) return;
+  let total = residentBytes();
+  if (dataCache.size <= MAX_MEMORY_ENTRIES && total <= MAX_MEMORY_BYTES) return;
+  const rows = [];
+  for (const [k, v] of dataCache) rows.push([k, v.lastRead || v.ts, entryBytes(v), isPinnedKey(k)]);
+  rows.sort((a, b) => a[1] - b[1]); // oldest-touched first
+  const over = () => dataCache.size > MAX_MEMORY_ENTRIES || total > MAX_MEMORY_BYTES;
+  // Pass 1: unpinned, oldest first — the cheap eviction, and usually enough.
+  for (const r of rows) {
+    if (!over()) return;
+    if (r[3]) continue;
+    if (dataCache.delete(r[0])) total -= r[2];
   }
-  evictable.sort((a, b) => a[1] - b[1]); // oldest-touched first
-  let i = 0;
-  while (dataCache.size > MAX_MEMORY_ENTRIES && i < evictable.length) {
-    dataCache.delete(evictable[i++][0]);
+  // Pass 2: PINNED entries too. A pin is a preference about what is worth
+  // keeping, NOT a licence to grow without bound — and pinning is not a small
+  // set: ALWAYS_WARM_REPORTS is three reports across every configured org, plus
+  // everything learned hot. Without this pass a budget can be exceeded by an
+  // arbitrary amount with nothing able to bring it back, which is the shape of
+  // the bug this whole change exists to fix.
+  for (const r of rows) {
+    if (!over()) return;
+    if (!r[3]) continue;
+    if (dataCache.delete(r[0])) total -= r[2];
   }
 }
 
@@ -430,7 +471,7 @@ async function getDiskCached(key, orgSlug, reportType) {
     if (Date.now() - entry.ts > ttl) return null; // too stale for a normal hit
     cacheStats.hits++;
     if (isWarmTarget(orgSlug, reportType)) {
-      dataCache.set(key, { data: entry.data, ts: entry.ts, rt: entry.rt || '', hist: !!entry.hist, lastRead: Date.now() });
+      dataCache.set(key, { data: entry.data, ts: entry.ts, rt: entry.rt || '', hist: !!entry.hist, lastRead: Date.now(), bytes: entry.bytes });
       enforceMemoryCap();
     }
     return { data: entry.data, ts: entry.ts };
@@ -714,7 +755,9 @@ function setCacheUsers(orgSlug, data) {
   usersCache.set(orgSlug, entry);
   try {
     const rec = { key: 'users:' + orgSlug, data: entry.data, ts: entry.ts, rt: 'users' };
-    fs.writeFile(path.join(CACHE_DIR, 'users_' + orgSlug + '.json'), JSON.stringify(rec), 'utf8', () => {});
+    const serialized = JSON.stringify(rec);
+    entry.bytes = serialized.length;
+    fs.writeFile(path.join(CACHE_DIR, 'users_' + orgSlug + '.json'), serialized, 'utf8', () => {});
     stateStore.cacheSet(rec.key, rec, USERS_CACHE_TTL);
   } catch {}
 }
@@ -760,6 +803,7 @@ function setCache(key, data, reportType, hist) {
   // Memory policy: hold resident unless it's a big payload for a report that
   // isn't a warm target (those serve from disk instead). Then LRU-cap the set.
   const heavy = serialized ? serialized.length > HEAVY_ENTRY_BYTES : false;
+  if (serialized) entry.bytes = serialized.length; // free here; never re-measured
   const keepResident = !CACHE_ADAPTIVE || !heavy || isWarmTarget(key.split(":")[0], rt);
   if (keepResident) {
     dataCache.set(key, entry);
@@ -819,24 +863,44 @@ async function getStaleCached(orgSlug, reportType, exactKey) {
 // Takes the entries as an array so the SOURCE can be the volume or the store
 // without the residency policy below being written twice — two copies of "which
 // entries are worth holding in memory" would drift the first time either moved.
+//
+// EACH ENTRY CARRIES ITS OWN SIZE (`bytes`) where the source knows it — the
+// disk read has the file string, the store read has pg_column_size. Boot is the
+// one path that inserts thousands of entries at once, so it is also the one
+// path where measuring a payload by stringifying it would be unaffordable.
 function hydrateCacheEntries(entries, source) {
-  let loaded = 0, expired = 0, userLoaded = 0;
+  let loaded = 0, expired = 0, userLoaded = 0, shed = 0;
   for (const entry of entries) {
     try {
       if (!entry || !entry.key || !entry.data || !entry.ts) continue;
       const ttl = ttlForKey(entry.key, entry.rt, entry.hist);
       if (Date.now() - entry.ts > ttl * 12) { expired++; continue; } // stale data beats 502
+      const bytes = typeof entry.bytes === 'number' ? entry.bytes : undefined;
+      const parts = entry.key.split(':');
+      // THE SAME RESIDENCY RULE setCache APPLIES, which boot did not: a heavy
+      // payload for a report nobody opens belongs on L2 and is served from
+      // there. Boot was the one writer that loaded everything the store held
+      // and never asked what it cost — ~2,900 entries, some of them 16 MB,
+      // times two replicas.
+      if (CACHE_ADAPTIVE && bytes > HEAVY_ENTRY_BYTES &&
+          !isWarmTarget(parts[0], entry.key.startsWith('users:') ? 'users' : parts[1])) { shed++; continue; }
       if (entry.key.startsWith('users:')) {
-        usersCache.set(entry.key.replace('users:', ''), { data: entry.data, ts: entry.ts });
+        usersCache.set(entry.key.replace('users:', ''), { data: entry.data, ts: entry.ts, bytes });
         userLoaded++;
       } else {
-        dataCache.set(entry.key, { data: entry.data, ts: entry.ts, rt: entry.rt || '', hist: !!entry.hist });
+        dataCache.set(entry.key, { data: entry.data, ts: entry.ts, rt: entry.rt || '', hist: !!entry.hist, bytes });
         loaded++;
+        // ENFORCED INSIDE THE LOOP, not after it. The defect was never that the
+        // resident set ended up too big — it is that boot built the WHOLE set
+        // first, so the peak is what the container is charged for whatever a
+        // later sweep does about it.
+        enforceMemoryCap();
       }
     } catch {}
   }
   console.log('[cache] Hydrated from ' + source + ': ' + loaded + ' report entries, ' +
-              userLoaded + ' users entries, ' + expired + ' expired/skipped');
+              userLoaded + ' users entries, ' + expired + ' expired/skipped, ' +
+              shed + ' left on L2, ' + Math.round(residentBytes() / 1048576) + ' MB resident');
   return loaded + userLoaded;
 }
 
@@ -845,9 +909,41 @@ function hydrateCacheEntries(entries, source) {
 // deploy would put a cold instance into rotation and prewarm would fan out
 // across ~28 orgs against production Metabase — the storm shape that 502'd the
 // facility Summary once already.
+// IT ASKS WHAT IS THERE BEFORE IT CARRIES IT. The old shape was one
+// `SELECT k, v FROM feed_cache` — every payload the platform holds, over the
+// wire, on every boot of every replica. That is memory AND egress, and Railway
+// meters both; the index below is a few kilobytes and answers the only question
+// boot actually has, which is which entries are worth the budget.
+function selectHydrateKeys(index) {
+  const keys = [];
+  let bytes = 0, skipped = 0;
+  // Most recently written first: a stale entry is the one worth leaving on L2.
+  const rows = (index || []).filter(r => r && r.k)
+    .sort((a, b) => (Number(b.updatedAt) || 0) - (Number(a.updatedAt) || 0));
+  for (const r of rows) {
+    const n = Number(r.bytes) || 0;
+    if (CACHE_ADAPTIVE && (bytes + n > MAX_MEMORY_BYTES || keys.length >= MAX_MEMORY_ENTRIES)) {
+      // `continue`, not `break`: a small entry after a large one still fits,
+      // and the budget is better spent on ten small reports than one export.
+      skipped++;
+      continue;
+    }
+    keys.push(r.k);
+    bytes += n;
+  }
+  return { keys, bytes, skipped };
+}
+
 async function hydrateCacheFromStore() {
   if (!stateStore.readsDb()) return 0;
-  try { return hydrateCacheEntries(await stateStore.cacheAll(), 'the store'); }
+  try {
+    const index = await stateStore.cacheIndex();
+    if (!index || !index.length) return hydrateCacheEntries([], 'the store');
+    const pick = selectHydrateKeys(index);
+    console.log('[cache] store holds ' + index.length + ' entries; fetching ' + pick.keys.length +
+                ' (~' + Math.round(pick.bytes / 1048576) + ' MB), leaving ' + pick.skipped + ' on L2');
+    return hydrateCacheEntries(await stateStore.cacheMany(pick.keys), 'the store');
+  }
   catch (e) { console.log('[cache] store hydrate failed: ' + e.message); return 0; }
 }
 
@@ -857,13 +953,15 @@ function hydrateCacheFromDisk() {
     const entries = [];
     for (const file of files) {
       try {
-        const entry = JSON.parse(fs.readFileSync(path.join(CACHE_DIR, file), 'utf8'));
+        const raw = fs.readFileSync(path.join(CACHE_DIR, file), 'utf8');
+        const entry = JSON.parse(raw);
         if (!entry.key || !entry.data || !entry.ts) continue;
         const ttl = ttlForKey(entry.key, entry.rt, entry.hist);
         if (Date.now() - entry.ts > ttl * 12) {
           fs.unlink(path.join(CACHE_DIR, file), () => {});
           continue;
         }
+        entry.bytes = raw.length; // free — we just read it
         entries.push(entry);
       } catch {}
     }
@@ -2954,9 +3052,19 @@ const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
 fs.mkdirSync(DATA_DIR, { recursive: true });
 const CACHE_DIR = path.join(DATA_DIR, "cache");
 fs.mkdirSync(CACHE_DIR, { recursive: true });
-hydrateCacheFromDisk();
-loadAccessStats();
-invalidateFacilitiesCacheOnUuidChange();
+// THE DISK HYDRATE MOVED TO THE END OF MODULE INIT, and it had to: ttlForKey →
+// reportTtlMs → reportSettingsEnabled reads REPORT_SETTINGS_SCHEMA, a `const`
+// declared ~8,000 lines BELOW this point. Called from here it threw
+// "Cannot access 'REPORT_SETTINGS_SCHEMA' before initialization" into the
+// per-file catch for every single entry, so the disk cache hydrated ZERO
+// entries and every restart in disk mode started cold — silently, with a
+// perfectly healthy-looking "[cache] Hydrated from disk: 0 report entries" line
+// to say so. Same temporal-dead-zone class as the original CACHE_DIR bug this
+// function's own comment records, one layer deeper: ttlForKey was correctly
+// made a function declaration, and the const it READS is the one in the dead
+// zone. `invalidateFacilitiesCacheOnUuidChange` walks the hydrated set, so it
+// was inert for the same reason and moves with it.
+// See bootWarmCaches(), called just before app.listen().
 // Pre-warm bookkeeping — records when a full warm cycle last completed so a
 // restart shortly after one can serve the hydrated disk cache instead of
 // re-querying Metabase for every org.
@@ -16799,6 +16907,10 @@ app.get("/api/admin/cache-stats", (req, res) => {
     healthCacheHits: cacheStats.healthCacheHits,
     healthProbes: cacheStats.healthProbes,
     entries: entries.length,
+    // The number the memory bill is actually made of. Entry count says nothing
+    // about it: a cached feed spans KB to 16.8 MB.
+    residentMB: Math.round(residentBytes() / 1048576),
+    residentCapMB: Math.round(MAX_MEMORY_BYTES / 1048576),
     usersCache: usersCache.size,
     pulseCache: pulseCache.size,
     detail: entries.sort((a, b) => a.ageMin - b.ageMin),
@@ -22988,6 +23100,18 @@ function shutdown(signal) {
 }
 process.on("SIGTERM", () => shutdown("SIGTERM"));
 process.on("SIGINT",  () => shutdown("SIGINT"));
+
+// Everything that reads the warm cache, run once every const it reaches is
+// initialised. ACCESS STATS FIRST: the hydrate enforces the memory budget while
+// it loads, and which entries are pinned is a question about what people have
+// been opening — load them afterwards and the first boot after a restart evicts
+// the org's hottest reports.
+function bootWarmCaches() {
+  loadAccessStats();
+  hydrateCacheFromDisk();
+  invalidateFacilitiesCacheOnUuidChange();
+}
+bootWarmCaches();
 
 // The timeout wraps the WHOLE of storeBoot now. Bounding only the connect left
 // everything after it — the cache hydrate, and previously the import — able to
