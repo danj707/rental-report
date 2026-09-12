@@ -127,6 +127,12 @@ jobs:
       - name: Store wiring spec (server.js reads through the store, not around it)
         run: node scripts/store-live.spec.js
 
+      # Memory is 69% of the Railway bill, and the cap was 300 ENTRIES while a
+      # cached feed spans KB to 16.8 MB. Lifts and RUNS the governor: a regex
+      # over eviction arithmetic passes on an inverted comparison.
+      - name: Cache memory budget spec (the cap is BYTES, and boot obeys it while it loads)
+        run: node scripts/cache-memory-budget.spec.js
+
 
       # One loading state across every report, and a progress bar whose estimate
       # is measured rather than invented. Lifts and RUNS both the curve and the

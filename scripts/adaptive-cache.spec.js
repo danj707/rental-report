@@ -1,4 +1,11 @@
 // Logic spec for the adaptive cache governor in server.js.
+//
+// IT MIRRORS rather than lifts, so it is only ever as current as the last hand
+// copy — and the copy of enforceMemoryCap below is the ENTRY-COUNT version,
+// kept deliberately: what it pins is the residency and popularity rules, which
+// are unchanged. The BYTE budget that actually bounds resident memory is in
+// scripts/cache-memory-budget.spec.js, which lifts and RUNS the real thing.
+//
 // Mirrors the decision functions verbatim and asserts the intended behavior:
 // heavy-cold reports are not held resident, hot reports are promoted/pinned,
 // the LRU cap evicts oldest non-pinned first, and popularity respects the
