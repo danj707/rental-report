@@ -550,14 +550,18 @@ function SummaryCard({ color, label, value, sub }) {
 }
 
 // ── READ THE INSIGHTS OUT LOUD ────────────────────────────────────────────
-// PROTOTYPE, this page only. The browser's own speechSynthesis: no API key,
-// no server route, no per-call cost, and the text never leaves the machine —
-// which matters more here than usual, because an insight quotes this org's
-// own revenue.
+// PROTOTYPE, this page only. TWO voices behind one button:
 //
-// `speakScript` is the ONE seam. Swapping to ElevenLabs is a different body
-// for that function — fetch the audio from a server route, play it — with
-// every call site, the script and the stop button unchanged.
+//   1. the Rec voice, from /api/speak — the same ElevenLabs voice and model
+//      the training videos use, so a report read aloud sounds like the rest of
+//      the product rather than like a robot reading a spreadsheet;
+//   2. the browser's own speechSynthesis, whenever that route is not
+//      configured, refuses, or fails mid-flight.
+//
+// THE FALLBACK IS THE POINT, not a leftover. The route 404s wherever
+// ELEVENLABS_API_KEY is unset, which is every PR preview and every local boot,
+// so the button has to keep working without it — and if it did not, a missing
+// env var would read as a broken feature rather than as a plainer voice.
 const TTS_OK = typeof window !== "undefined" && "speechSynthesis" in window;
 
 // The type is a VISUAL category and only two of its three values carry meaning
@@ -579,7 +583,9 @@ function insightLines(ins) {
 // truncates a long utterance at around fifteen seconds, so a single string
 // stops mid-sentence — which reads as the feature being broken rather than as
 // a browser limit. Short queued utterances also make Stop feel immediate.
-function speakScript(lines, onDone) {
+// That split is a BROWSER workaround and nothing more, which is why the Rec
+// voice sends the whole script in one request instead.
+function speakBrowser(lines, onDone) {
   if (!TTS_OK) { onDone(); return; }
   window.speechSynthesis.cancel();   // never let two readings overlap
   let i = 0;
@@ -593,6 +599,62 @@ function speakScript(lines, onDone) {
   };
   next();
 }
+
+// Set the instant Listen is pressed, cleared by Stop. The Rec voice takes a
+// second or two to generate, so Stop can land BEFORE there is any audio to
+// stop — without this flag that clip arrives afterwards and starts playing.
+let _speakWanted = false;
+
+// The one audio element the Rec voice plays through, held at module scope so
+// Stop can reach it. Two readings must never overlap, and a reading must not
+// survive the panel being refreshed underneath it.
+let _recAudio = null;
+
+function stopSpeech() {
+  _speakWanted = false;
+  if (_recAudio) {
+    _recAudio.pause();
+    try { URL.revokeObjectURL(_recAudio.src); } catch (_) {}
+    _recAudio = null;
+  }
+  if (TTS_OK) window.speechSynthesis.cancel();
+}
+
+// `speakScript` is the ONE seam every caller goes through. It resolves which
+// voice actually spoke — the callers care, because the beacon reports it.
+async function speakScript(lines, onDone, onVoice) {
+  stopSpeech();
+  _speakWanted = true;
+  const text = lines.join("\n");
+  const parts = window.location.pathname.split('/').filter(Boolean);
+  if (parts.length >= 2) {
+    try {
+      const r = await fetch(withToken('/' + parts[0] + '/' + parts[1] + '/api/speak'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+      });
+      // ANY refusal falls through to the browser voice rather than surfacing:
+      // 404 is "no key here", 429 is "budget spent", 502 is ElevenLabs being
+      // down. A reader wants the insights read, not a diagnosis.
+      if (r.ok) {
+        // Stop may have landed while the clip was generating, and that press
+        // wins: play nothing rather than starting a reading nobody asked for.
+        if (!_speakWanted) { onDone(); return; }
+        const a = new Audio(URL.createObjectURL(await r.blob()));
+        _recAudio = a;
+        a.onended = () => { _recAudio = null; onDone(); };
+        a.onerror = () => { _recAudio = null; speakBrowser(lines, onDone); };
+        if (onVoice) onVoice('rec');
+        await a.play();
+        return;
+      }
+    } catch (_) { /* network or decode — fall through to the browser voice */ }
+  }
+  if (onVoice) onVoice('browser');
+  speakBrowser(lines, onDone);
+}
+
 
 function App() {
   const orgSlug = window.location.pathname.split('/').filter(Boolean)[0] || '';
@@ -922,7 +984,7 @@ function App() {
   }, [buildInsightsBlob]);
 
   const stopSpeaking = useCallback(() => {
-    if (TTS_OK) window.speechSynthesis.cancel();
+    stopSpeech();
     setSpeaking(false);
   }, []);
 
@@ -930,17 +992,30 @@ function App() {
     if (!TTS_OK || !insights || !insights.length) return;
     const lines = insights.reduce((acc, ins) => acc.concat(insightLines(ins)), []);
     if (!lines.length) return;
-    setSpeaking(true);
-    speakScript(lines, () => setSpeaking(false));
-    logClientEvent('insights-listen', '&n=' + insights.length);
+    // SPEAKING IS SET BEFORE THE AWAIT, not after it. The Rec voice takes a
+    // second or two to generate, and a button that stays on "Listen" through
+    // that reads as a click that did nothing — so the state goes to
+    // "preparing" immediately and the voice resolves it.
+    setSpeaking('pending');
+    speakScript(
+      lines,
+      () => setSpeaking(false),
+      voice => {
+        setSpeaking(voice);
+        // WHICH VOICE actually spoke. Without it the feed cannot tell a
+        // listen on the Rec voice from one that fell back to the browser,
+        // which is the whole question while this is a prototype.
+        logClientEvent('insights-listen', '&n=' + insights.length + '&voice=' + voice);
+      }
+    );
   }, [insights]);
 
   // Refreshing the insights must stop the old ones being read, or the panel is
-  // narrating numbers that are no longer on screen. Unmount cancels too:
-  // speechSynthesis hangs off the WINDOW, not off this page, so it carries on
-  // talking after a navigation otherwise.
+  // narrating numbers that are no longer on screen. Unmount stops too: both the
+  // audio element and speechSynthesis hang off the WINDOW rather than off this
+  // page, so without it the browser carries on talking after a navigation.
   useEffect(() => {
-    return () => { if (TTS_OK) window.speechSynthesis.cancel(); };
+    return () => stopSpeech();
   }, [insights]);
 
   function exportExcel() {
@@ -1170,10 +1245,11 @@ function App() {
               {insights && insights.length > 0 && !insightsLoading && TTS_OK && (
                 <button type="button"
                         className={'listen-btn' + (speaking ? ' speaking' : '')}
-                        data-listen={speaking ? 'speaking' : 'idle'}
+                        data-listen={speaking === 'pending' ? 'pending' : speaking ? 'speaking' : 'idle'}
+                        data-voice={speaking === 'rec' || speaking === 'browser' ? speaking : undefined}
                         onClick={speaking ? stopSpeaking : speakInsights}
                         title={speaking ? 'Stop reading' : 'Read these insights out loud'}>
-                  {speaking ? '■ Stop' : '🔊 Listen'}
+                  {speaking === 'pending' ? '■ Preparing…' : speaking ? '■ Stop' : '🔊 Listen'}
                 </button>
               )}
               {insights && !insightsLoading && (

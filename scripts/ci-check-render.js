@@ -1602,6 +1602,13 @@ const STUBS = [
      the case "nolisten" drives.
      ABOVE the catch-all deliberately: STUBS is searched with .find, and
      /\/api\// matches this path too. */
+  /* The Rec voice is NOT configured here, and that is the realistic case: the
+     route 404s wherever ELEVENLABS_API_KEY is unset, which is every PR preview
+     and every local boot. So this stub reproduces the refusal rather than the
+     happy path, and what the cases prove is that the button still works
+     through it. (Answering 200 with JSON would be a response the real server
+     can never send, and the page would try to play it as audio.) */
+  { match: /\/api\/speak/, status: 404, body: () => ({ ok: false, error: "Voice not configured" }) },
   { match: /\/api\/insights(\?|$)/, body: () => ({
       ok: true, traceId: "trace-stub",
       insights: STUB_MODE === "noinsights" ? [] : [
@@ -4652,6 +4659,34 @@ const CASES = [
   /* ...and NOT when the feed answered with nothing to read. `insights` is an
      empty ARRAY there, which is truthy — so a button gated on `insights` alone
      renders over an empty grid and does nothing when clicked. */
+  /* ...and it ASKS FOR THE REC VOICE FIRST, falling back without breaking.
+     Only a browser can show this: the page looks identical either way, and the
+     thing that regresses is that the request was never made. Keyed on the POST
+     rather than on the button's state, because headless Chromium reports
+     speechSynthesis present with ZERO voices — so whether it ends up speaking
+     is the machine's business, not ours. */
+  { name: "products · listen asks for the Rec voice, then falls back",
+    path: "/{org}/products",
+    async pre(page) {
+      await page.evaluateOnNewDocument(() => {
+        window.__speakCalls = 0;
+        const f = window.fetch;
+        window.fetch = function (u, o) {
+          try { if (String(u).includes("/api/speak")) window.__speakCalls++; } catch (_) {}
+          return f.apply(this, arguments);
+        };
+      });
+    },
+    async act(page) {
+      await page.waitForSelector(".insights-btn", { timeout: 30000 });
+      await page.click(".insights-btn");
+      await page.waitForSelector(".listen-btn", { timeout: 30000 });
+      await page.click(".listen-btn");
+      await page.waitForFunction(() => window.__speakCalls > 0, { timeout: 15000 });
+      await page.evaluate(() => document.body.setAttribute("data-asked-rec", "1"));
+    },
+    needs: 'body[data-asked-rec="1"] .listen-btn' },
+
   { name: "products · no listen button with nothing to read", path: "/{org}/products",
     stubMode: "noinsights",
     needs: ".insights-section",

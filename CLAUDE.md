@@ -245,6 +245,100 @@ Dan: *"stupid question--can we read the rec AI insights outloud?"* then
 half-open window was found on. A `🔊 Listen` button beside Rec Insights that
 reads the panel and turns into `■ Stop` while it does.
 
+### THE REC VOICE IS WIRED — and the browser voice is the fallback (2026-09-11)
+
+Dan: *"don't we have the dan voice we could use here?"* then, on where it lives:
+*"it lives here"* — `danj707/rec-training-video-skill`.
+
+**IT IS NOT A CLONE OF DAN, and that is worth saying before anyone is
+surprised by it.** The skill's `config.json` names
+`voiceId: pNInz6obpgDQGcFmaJgB` / `voiceName: "Adam"` — ElevenLabs' **stock**
+Adam. It is "the Dan voice" in the sense that it is the voice Rec's training
+videos are narrated in, not in the sense that it sounds like him.
+
+**THE KEY IN THAT REPO IS PUBLIC.** `credentials.json` is COMMITTED to a public
+repository and carries `elevenLabsApiKey` plus the Rec University login. It is
+not in the skill's `.gitignore` (which lists only `node_modules/`, `work/`,
+`*.mp4`). So that key must be treated as burned — rotated, and the fresh one set
+in Railway rather than reused. Nothing here reads it.
+
+`POST /:org/:report/api/speak` calls ElevenLabs with the skill's exact voice,
+model and settings, so a report read aloud and a training video sound like one
+product. What matters about it:
+
+- **AN ABSENT KEY IS A CONFIGURATION, NOT A FAILURE.** With no
+  `ELEVENLABS_API_KEY` the route 404s (marked `refuse404`, or every click posts a
+  DEAD LINK alert) and the page falls back to `speechSynthesis`. Same
+  omit-when-unset shape as `SHARED_UUIDS`: it deploys before the key exists and
+  lights up the moment one is set, with no redeploy. **Every PR preview and
+  every local boot is that case**, so a page that surfaced the refusal would
+  report a missing env var as a broken feature.
+- **EVERY refusal falls through, not just the missing key** — 404 no key, 429
+  budget spent, 502 ElevenLabs down, a network failure, and audio that fails
+  mid-playback. A reader wants the insights read, not a diagnosis.
+- **ONE REQUEST FOR THE WHOLE SCRIPT.** The per-line split is a **Chrome bug
+  being dodged** (it truncates an utterance at ~15s), not a property of speech —
+  so it belongs to `speakBrowser` alone. ElevenLabs returns a complete clip, and
+  one pass is cheaper (one cache entry, one round trip) and reads better,
+  because the prosody carries across sentences instead of resetting at every
+  full stop.
+- **THE ROUTE SPENDS MONEY, so it is bounded on both axes.** A cache keyed on
+  `voice|model|text` means re-listening — or two staff at one org listening to
+  the same report — bills once; a per-org **daily character budget** means a page
+  in a retry loop, or somebody scripting against a valid org token, cannot
+  quietly run up a bill. **The cache is checked BEFORE the budget**, or the
+  budget punishes a reader for the button working.
+- **An ElevenLabs failure is logged by STATUS and its body is never echoed** — a
+  401 from them quotes the key back.
+- **`_speakWanted` exists because Stop can land before there is audio to stop.**
+  The clip takes a second or two to generate; without the flag it arrives
+  afterwards and starts playing. It is declared ABOVE `speakScript` for the
+  Babel `const`→`var` reason this file keeps recording — a read before the
+  declaration is `undefined` rather than a throw.
+- **The button has THREE states now** (`idle` / `pending` / speaking), because a
+  button that stays on "Listen" through a two-second generation reads as a click
+  that did nothing.
+- **The beacon carries WHICH VOICE spoke**, clamped server-side, and Slack says
+  so. A fallback means the key is unset, the budget is spent or ElevenLabs is
+  down, and **none of those announce themselves anywhere else**.
+
+**THE COMPONENT NO LONGER TOUCHES `speechSynthesis` AT ALL.** It goes through
+`speakScript` and `stopSpeech`, so the browser voice became an implementation
+detail of one function rather than something every caller knows about — which is
+what the seam was for, demonstrated rather than claimed.
+
+**THE TEXT NOW LEAVES THE PLATFORM when the key is set**, and that is the one
+real cost. A sentence like *"Westwood sold 41 passes in August against 78 in
+July"* is POSTed to a third party to be spoken. The browser path does not have
+that question to answer, which is why it stays as the fallback rather than being
+deleted.
+
+### Guards
+
+`insights-listen.spec.js` 34 → **57 assertions**. Mutation-tested twelve ways,
+**all twelve caught by an assertion naming the defect**: the key gate removed,
+the length clamp removed, the daily budget removed, ElevenLabs' body echoed
+back, the voice unclamped, Slack no longer naming it, the browser fallback
+removed, the Stop-while-generating guard removed, Stop no longer stopping the
+audio element, the script split per request again, the component reaching
+`speechSynthesis` directly, and `_speakWanted` declared below its reader.
+
+**TWO OF MY OWN ASSERTIONS WERE SATISFIED BY DIFFERENT CODE, and mutation is
+what showed both** — the recurring lesson in this file, twice in one pass:
+
+- the fallback check matched `speakBrowser(lines, onDone)` **in `a.onerror`**, so
+  deleting the refusal path entirely SURVIVED. Scoped past the `try/catch` now.
+- the Stop check matched `_recAudio.pause()` **inside a branch mutated to
+  `if (false)`**. It asserts the guard as well as the call now.
+
+**The render stub answers `/api/speak` with a 404**, deliberately: that is what
+an unconfigured server really sends, and answering 200 with JSON would be a
+response the real route can never produce — the page would try to play it as
+audio. The new case is keyed on **the POST having been made**, not on the
+button's state, because headless Chromium reports `speechSynthesis` present with
+zero voices; what regresses is that the request was never attempted. Verified to
+fail **alone** while the other five products cases keep passing.
+
 ### THE BROWSER ALREADY DOES THIS, and that is why the prototype is free
 
 `window.speechSynthesis` — no API key, no server route, no per-call cost, and

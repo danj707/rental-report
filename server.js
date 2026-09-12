@@ -5086,10 +5086,14 @@ function notifySlack(rec) {
     text = `${meta.emoji} ${orgName} (\`${rec.org}\`) opened *Fields* on the facilities report${on}`;
   } else if (rec.event === "insights-listen") {
     // The COUNT is the whole reason this carries an extra: without it the
-    // message cannot separate a click from a listen.
+    // message cannot separate a click from a listen. The VOICE is the other
+    // half while two of them exist — a fallback to the browser voice means
+    // the key is unset, the budget is spent or ElevenLabs is down, and none
+    // of those announce themselves anywhere else.
     const n = rec.insights;
     const many = n == null ? "" : ` \u2014 ${n} insight${n === 1 ? "" : "s"}`;
-    text = `${meta.emoji} ${orgName} (\`${rec.org}\`) listened to Rec Insights on *${rec.report}*${many}`;
+    const voice = rec.voice === "browser" ? " (browser voice)" : rec.voice === "rec" ? " (Rec voice)" : "";
+    text = `${meta.emoji} ${orgName} (\`${rec.org}\`) listened to Rec Insights on *${rec.report}*${many}${voice}`;
   } else if (rec.event === "panel-csv") {
     // NAME THE PANEL, or the message reads "downloaded chart data from
     // *facility*" and says nothing about which chart — which is the only part
@@ -8102,11 +8106,15 @@ app.post("/:org/:report/api/log", resolveOrg, (req, res) => {
               // names, emails and phone numbers, so the segment and the head
               // count are the record of who took what — the thing that pays
               // for the download being direct at all.
-              // HOW MANY insights were read aloud. The count is the only part
-              // worth carrying: it separates somebody trying the button from
-              // somebody actually listening to the panel.
+              // HOW MANY insights were read aloud, and IN WHICH VOICE. The
+              // count separates somebody trying the button from somebody
+              // actually listening; the voice separates a listen on the Rec
+              // voice from one that fell back to the browser, which is the
+              // question this prototype exists to answer. Both are clamped
+              // here rather than echoed — the query string is the caller's.
               : event === "insights-listen"
-                ? { insights: Number.isFinite(ciN) && ciN >= 0 && ciN <= 99 ? Math.round(ciN) : undefined }
+                ? { insights: Number.isFinite(ciN) && ciN >= 0 && ciN <= 99 ? Math.round(ciN) : undefined,
+                    voice: req.query.voice === "rec" || req.query.voice === "browser" ? req.query.voice : undefined }
               : event === "intel-csv"
                 ? { segment: String(req.query.segment || "").slice(0, 60),
                     contacts: Number.isFinite(ciN) && ciN >= 0 && ciN <= 9999999 ? Math.round(ciN) : undefined }
@@ -8960,6 +8968,101 @@ app.post("/:org/directors-report/api/insights", express.json(), async (req, res)
   } catch (e) {
     console.error("[directors-report] insights " + slug + " " + key + ": " + e.message);
     res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// ── READ THE INSIGHTS OUT LOUD — the Rec voice ────────────────────────────
+// The voice, model and settings are lifted from the rec-training-video skill's
+// own config.json, so a report read aloud and a training video sound like one
+// product rather than two. Adam (pNInz6obpgDQGcFmaJgB) is ElevenLabs' stock
+// voice, not a clone of anybody — it is simply the voice Rec's training videos
+// already use.
+//
+// AN ABSENT KEY IS A CONFIGURATION, NOT A FAILURE. With no ELEVENLABS_API_KEY
+// this route 404s and the page falls back to the browser's own speechSynthesis,
+// which is what it did before this existed. Same omit-when-unset shape as
+// SHARED_UUIDS: it deploys before the key exists and lights up the moment one
+// is set, with no redeploy and no page change.
+const ELEVEN_KEY   = process.env.ELEVENLABS_API_KEY || "";
+const ELEVEN_VOICE = process.env.ELEVENLABS_VOICE_ID || "pNInz6obpgDQGcFmaJgB";
+const ELEVEN_MODEL = process.env.ELEVENLABS_MODEL || "eleven_turbo_v2_5";
+const ELEVEN_VOICE_SETTINGS = { stability: 0.5, similarity_boost: 0.75, style: 0.0, use_speaker_boost: true };
+
+// ONE REQUEST FOR THE WHOLE SCRIPT, deliberately. The client splits the script
+// per line for speechSynthesis because Chrome silently truncates an utterance
+// at around fifteen seconds — that is a browser bug being dodged, not a
+// property of speech. ElevenLabs returns a complete clip, and generating it in
+// one pass is both cheaper (one cache entry, one round trip) and better: the
+// prosody carries across the sentences instead of resetting at every full stop.
+const ELEVEN_MAX_CHARS = 4000;          // four insights is ~700; this is a clamp, not a target
+
+// THE ROUTE SPENDS MONEY, so it is bounded on both axes. The cache means
+// re-listening to the same insights — or two staff at one org listening to the
+// same report — bills once. The daily budget means a page in a retry loop, or
+// somebody scripting against a valid org token, cannot quietly run up a bill:
+// past it the route refuses and the page falls back to the browser voice, which
+// is a worse voice rather than no feature.
+const ELEVEN_DAILY_CHARS = Number(process.env.ELEVENLABS_DAILY_CHARS || 50000);
+const _speakCache  = new Map();         // sha256(voice|model|text) -> Buffer
+const _speakSpend  = new Map();         // orgSlug -> { day, chars }
+const SPEAK_CACHE_MAX = 120;
+
+function speakBudgetOk(orgSlug, chars) {
+  const day = new Date().toISOString().slice(0, 10);
+  const cur = _speakSpend.get(orgSlug);
+  if (!cur || cur.day !== day) { _speakSpend.set(orgSlug, { day, chars }); return true; }
+  if (cur.chars + chars > ELEVEN_DAILY_CHARS) return false;
+  cur.chars += chars;
+  return true;
+}
+
+app.post("/:org/:report/api/speak", resolveOrg, express.json({ limit: "64kb" }), async (req, res) => {
+  const { orgSlug, reportType } = req;
+  // Marked deliberate: noteDeadLink() alerts on "a 404 that arrived with a
+  // valid-looking token", which is byte-identical to this refusal.
+  if (!ELEVEN_KEY) return refuse404(res, { ok: false, error: "Voice not configured" });
+
+  const text = String((req.body && req.body.text) || "").replace(/\s+/g, " ").trim();
+  if (!text) return res.status(400).json({ ok: false, error: "Nothing to read" });
+  if (text.length > ELEVEN_MAX_CHARS) {
+    return res.status(413).json({ ok: false, error: "Script too long to read aloud" });
+  }
+
+  const key = crypto.createHash("sha256")
+    .update(ELEVEN_VOICE + "|" + ELEVEN_MODEL + "|" + text).digest("hex");
+
+  const hit = _speakCache.get(key);
+  if (hit) {
+    res.set("Content-Type", "audio/mpeg");
+    return res.send(hit);
+  }
+
+  if (!speakBudgetOk(orgSlug, text.length)) {
+    return res.status(429).json({ ok: false, error: "Daily voice budget reached" });
+  }
+
+  try {
+    const r = await fetch(
+      "https://api.elevenlabs.io/v1/text-to-speech/" + ELEVEN_VOICE + "?output_format=mp3_44100_128",
+      {
+        method: "POST",
+        headers: { "xi-api-key": ELEVEN_KEY, "Content-Type": "application/json" },
+        body: JSON.stringify({ text, model_id: ELEVEN_MODEL, voice_settings: ELEVEN_VOICE_SETTINGS }),
+      }
+    );
+    if (!r.ok) {
+      // NEVER echo ElevenLabs' body: a 401 from them quotes the key back.
+      console.warn("[speak] " + orgSlug + "/" + reportType + ": ElevenLabs " + r.status);
+      return res.status(502).json({ ok: false, error: "Voice service unavailable" });
+    }
+    const buf = Buffer.from(await r.arrayBuffer());
+    if (_speakCache.size >= SPEAK_CACHE_MAX) _speakCache.delete(_speakCache.keys().next().value);
+    _speakCache.set(key, buf);
+    res.set("Content-Type", "audio/mpeg");
+    res.send(buf);
+  } catch (e) {
+    console.warn("[speak] " + orgSlug + "/" + reportType + ": " + e.message);
+    res.status(502).json({ ok: false, error: "Voice service unavailable" });
   }
 });
 
