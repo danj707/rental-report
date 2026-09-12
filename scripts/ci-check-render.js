@@ -1649,6 +1649,35 @@ const STUBS = [
   // answers 401 the way the real route does.
   { match: /\/api\/settings-unlock/, status: 401,
     body: () => ({ error: "That password is not right. 4 attempts left.", left: 4 }) },
+  /* Rec Insights, for the read-aloud prototype on Product Sales. The catch-all
+     below answers {ok:true, rows:[]}, which leaves `insights` an EMPTY ARRAY —
+     truthy, so the Listen button would render with nothing to read. That is
+     the case "nolisten" drives.
+     ABOVE the catch-all deliberately: STUBS is searched with .find, and
+     /\/api\// matches this path too. */
+  /* The Rec voice is NOT configured here, and that is the realistic case: the
+     route 404s wherever ELEVENLABS_API_KEY is unset, which is every PR preview
+     and every local boot. So this stub reproduces the refusal rather than the
+     happy path, and what the cases prove is that the button still works
+     through it. (Answering 200 with JSON would be a response the real server
+     can never send, and the page would try to play it as audio.) */
+  { match: /\/api\/speak/, status: 404, body: () => ({ ok: false, error: "Voice not configured" }) },
+  { match: /\/api\/insights(\?|$)/, body: () => ({
+      ok: true, traceId: "trace-stub",
+      insights: STUB_MODE === "noinsights" ? [] : [
+        { type: "risk",        title: "Westwood pass sales are slipping",
+          detail: "Westwood sold 41 passes in August against 78 in July, a 47% drop.",
+          action: "Check the August price change" },
+        { type: "opportunity", title: "Norman day passes are pacing up",
+          detail: "Norman day passes are up 22% on July at $4,180 collected.",
+          action: "Extend the summer bundle" },
+        { type: "signal",      title: "Desk sales hold steady",
+          detail: "Desk-sold items held at 61% of volume across both months.",
+          action: "" },
+        { type: "signal",      title: "Refunds are unchanged",
+          detail: "Refunds stayed at 1.2% of collected revenue.",
+          action: "No action needed" },
+      ] }) },
   { match: /\/api\//,                       body: () => ({ ok: true, rows: [] }) },
 ];
 
@@ -4877,6 +4906,60 @@ const CASES = [
       });
     },
     needs: 'body[data-px-title="1"][data-px-blank="1"][data-px-hdr="1"][data-px-row="1"]' },
+
+  /* THE PANEL CAN BE READ OUT LOUD. Prototype, this page only.
+     Headless Chromium reports "speechSynthesis" in window and getVoices() ===
+     [], so TTS_OK is true and the button renders — which is what these key on.
+     Whether a voice actually speaks is the reader's machine, not ours. */
+  { name: "products · listen appears with the insights", path: "/{org}/products",
+    needs: ".insights-section .listen-btn[data-listen=\"idle\"]",
+    async act(page) {
+      await page.waitForSelector(".insights-btn", { timeout: 30000 });
+      await page.click(".insights-btn");
+      await page.waitForSelector(".insight-card", { timeout: 30000 });
+    } },
+
+  /* ...and NOT when the feed answered with nothing to read. `insights` is an
+     empty ARRAY there, which is truthy — so a button gated on `insights` alone
+     renders over an empty grid and does nothing when clicked. */
+  /* ...and it ASKS FOR THE REC VOICE FIRST, falling back without breaking.
+     Only a browser can show this: the page looks identical either way, and the
+     thing that regresses is that the request was never made. Keyed on the POST
+     rather than on the button's state, because headless Chromium reports
+     speechSynthesis present with ZERO voices — so whether it ends up speaking
+     is the machine's business, not ours. */
+  { name: "products · listen asks for the Rec voice, then falls back",
+    path: "/{org}/products",
+    async pre(page) {
+      await page.evaluateOnNewDocument(() => {
+        window.__speakCalls = 0;
+        const f = window.fetch;
+        window.fetch = function (u, o) {
+          try { if (String(u).includes("/api/speak")) window.__speakCalls++; } catch (_) {}
+          return f.apply(this, arguments);
+        };
+      });
+    },
+    async act(page) {
+      await page.waitForSelector(".insights-btn", { timeout: 30000 });
+      await page.click(".insights-btn");
+      await page.waitForSelector(".listen-btn", { timeout: 30000 });
+      await page.click(".listen-btn");
+      await page.waitForFunction(() => window.__speakCalls > 0, { timeout: 15000 });
+      await page.evaluate(() => document.body.setAttribute("data-asked-rec", "1"));
+    },
+    needs: 'body[data-asked-rec="1"] .listen-btn' },
+
+  { name: "products · no listen button with nothing to read", path: "/{org}/products",
+    stubMode: "noinsights",
+    needs: ".insights-section",
+    absent: ".listen-btn",
+    async act(page) {
+      await page.waitForSelector(".insights-btn", { timeout: 30000 });
+      await page.click(".insights-btn");
+      await page.waitForFunction(
+        () => !document.querySelector(".ai-spinner"), { timeout: 30000 });
+    } },
 
   /* BOTH BLANK STAYS LEGAL, and only a browser can show it. waitlist opens
      all-time and carries its own "Clear dates" button, so a rule tightened into
