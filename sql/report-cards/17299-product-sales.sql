@@ -37,7 +37,21 @@
 -- eleven months nobody asked about. The date moves from `Filter` to
 -- `Index Cond` once the cast comes off the column.
 --
---   norman, August 2026, EXPLAIN (ANALYZE):   106.7s  ->  7.15s
+--   norman, August 2026:   106.7s  ->  1.9s
+--
+-- THAT 1.9s IS THIS FILE'S OWN TEXT, RUN. The whole final SELECT, literals
+-- substituted, wrapped in a counting outer query so the column list and the
+-- trailing ORDER BY execute without shipping 498 rows through a tool:
+-- **498 rows, $81,772.22 net, 10,137 sold, 1.9s.** That step is here because
+-- its absence is what let card 21682 ship with "ORDER BY position 9 is not in
+-- select list" — a summary probe around the CTEs proves the CTEs and never
+-- runs the card.
+--
+-- THE THREE JOINS ARE NOT THE COST, measured rather than assumed: over the
+-- same month they drop NOTHING — 11,105 rows in, 11,105 after order_item,
+-- 11,105 after product_purchase — and only `p.type='product'` filters, to
+-- 10,210 (8%). So this is a semi-join written as inner joins, and all four
+-- arms together run in 2.1s.
 --
 -- THE TWO FORMS ARE EXACTLY EQUIVALENT, and that is a property of the type
 -- rather than of this month's data: datetime_at_primary_timezone is

@@ -234,7 +234,7 @@
       "timeout": 120
     },
     {
-      "label": "products / norman (card 17299, ADDED 2026-09-12 — the card had NO manifest row and it is the one that 504'd. It is DATED and dated to a MONTH on purpose: a dateless probe asks for the org's whole history, and the 7-day default the page sends passed on the broken card throughout. One month at norman was 106.7s on v1 against the app's 60s+120s budget, and 7.15s on v2; a row that stops discriminating is a row that stopped testing the thing it names.)",
+      "label": "products / norman (card 17299, ADDED 2026-09-12 — the card had NO manifest row and it is the one that 504'd. It is DATED and dated to a MONTH on purpose: a dateless probe asks for the org's whole history, and the 7-day default the page sends passed on the broken card throughout. One month at norman was 106.7s on v1 against the app's 60s+120s budget, and 1.9s on v2 — 498 rows, $81,772.22 net, measured by running the card's own final SELECT; a row that stops discriminating is a row that stopped testing the thing it names.)",
       "card": "b9678f5f-b5fb-48f7-96da-f22a1b4e8d8a",
       "org": "574923bd-9e7b-43e0-9e5f-7ce256189cbf",
       "days": 30,

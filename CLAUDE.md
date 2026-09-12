@@ -28,8 +28,29 @@ the column in a cast:
 `organization_id` alone and the date fell into a `Filter`, so the query read and
 threw away eleven months of an org's history to answer a question about one. Two
 characters. `EXPLAIN (COSTS OFF)` shows the date moving from `Filter` to
-`Index Cond` the moment the cast comes off, and `EXPLAIN (ANALYZE)` over the same
-norman month: **106.7s → 7.15s.**
+`Index Cond` the moment the cast comes off. Over the same norman month:
+**106.7s → 1.9s.**
+
+**AND THAT 1.9s IS THE EXACT TEXT BEING HANDED OVER, RUN** — the whole final
+SELECT with literals substituted, wrapped in a counting outer query so the
+column list and the trailing `ORDER BY` execute without shipping rows:
+**498 rows, $81,772.22 net, 10,137 sold.** That step exists because its absence
+is what let card 21682 ship with *"ORDER BY position 9 is not in select list"*:
+a summary probe around the CTEs proves the CTEs and never runs the card.
+
+**THE THREE JOINS ARE NOT THE COST, and that was measured rather than assumed**
+after two timeouts made it look like they were: over the same month they drop
+NOTHING — 11,105 rows in, 11,105 after `order_item`, 11,105 after
+`product_purchase` — and only `p.type='product'` filters, to 10,210 (8%). It is
+a semi-join written as inner joins, and all four arms together run in 2.1s.
+
+**TWO 60s TIMEOUTS IN A ROW WERE NOT EVIDENCE ABOUT THE QUERY.** I had them, and
+was one step from writing down that the joins were the remaining cost — the next
+call came back **`Service Unavailable: server draining`**, i.e. Metabase itself
+was restarting. A bare scan of the same window then returned **15,071 rows in
+1.4s**. *"Two rounds in a row" is the health check's rule for a CARD; it is not a
+rule about a tool that can be pointed at a server which is going away. Get a
+cheap control query to answer before believing a slow one.*
 
 *So the ask being granted is not the fix. An index is a capability; a query has
 to be written to be able to use it.*
