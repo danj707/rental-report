@@ -9742,19 +9742,66 @@ is needed. He did, 2026-09-12: **`postgres.railway.internal:5432/railway`.**
 Already private, nothing to change, and it takes the database off the list of
 candidates for the $22.98.
 
-**So the 27% is still UNEXPLAINED**, and the shape of it is worth keeping for
-whoever picks it up. Measured over 7 days on rental-report: **NETWORK_TX avg
-0.0114 GB per 60s sample over 10,081 samples (~115 GB/week, ~493 GB/month), max
-2.05 GB in a SINGLE minute**; RX ~46.5 GB/week, so TX is ~2.5x RX. At ~$0.05/GB
-that is essentially all of the network line. A 2 GB minute is not a person
-loading a report — that is a bulk transfer, so look for one: outbound feeds, the
-daily gist backup, prewarm, or a response path that is not compressed.
-**`app.use(compression())` is at server.js:7029** and Express applies middleware
-only to routes registered AFTER it, so the first thing to check is whether the
-report data routes sit above that line — this repo has already been bitten twice
-by exactly that ordering (the `no-store` middleware below the saved-view routes,
-the campmap beacon route below the generic one). Not chased; Dan approved the
-memory fix only.
+### THE 493 GB IS THE BOOT HYDRATE, AND IT IS FREE — chased 2026-09-12
+
+Dan: *"yes check the compression ordering, I can't imagine we're using that much
+network capacity."* He was right to disbelieve it, and the number is real — the
+two are not in conflict, because **almost none of that traffic is billable.**
+
+**COMPRESSION WAS NEVER THE PROBLEM, and that was checked rather than assumed.**
+`const app = express()` is server.js:7028 and `app.use(compression())` is 7029,
+with **zero** routes or middleware registered above it — verified by listing
+every `app.get|post|use` line and filtering to those before 7029, which returns
+nothing. So every response is compressed, and the ordering trap this repo has
+been bitten by twice (the `no-store` middleware below the saved-view routes, the
+campmap beacon route below the generic one) does not apply here.
+
+**NO HUMAN IS MOVING THAT DATA EITHER.** 22 minutes of the Railway *http* proxy
+log: **181 of 201 requests were `/healthz`**, against four actual feed fetches.
+Public egress on this service is megabytes a day. A 2 GB minute is not somebody
+loading a report, so it was never going to be found in the response path.
+
+**IT IS THE BOOT CACHE HYDRATE, and the arithmetic closes to within 10%.**
+Production's own boot log, one line per replica:
+
+```
+11:25:52  [cache] Hydrated from the store: 1873 report entries, 7 users entries, 1486 expired/skipped
+11:25:54  [cache] Hydrated from the store: 1873 report entries, ...   ← the second replica
+```
+
+That is `SELECT k, v FROM feed_cache` pulling **all 3,359 payloads in one
+query**, and it matches the measured RX spike exactly — **0.88 GB in a single
+minute**, against a 7-day RX max of 0.882 GB.
+
+| | |
+|---|---|
+| per replica | ~0.9 GB |
+| × 2 replicas | **~1.8 GB per deploy** |
+| production deploys, Sep 10 14:19 → Sep 12 11:10 | **20 in two days**, so ~70/week |
+| 70 × 1.8 GB | **~126 GB/week** |
+| measured | **115 GB/week** |
+
+**AND IT IS PRIVATE, SO IT IS NOT ON THE BILL.** It travels app↔Postgres over
+`postgres.railway.internal`, which Railway does not meter. Postgres' own metrics
+corroborate the direction rather than being assumed: it **sent** 20.5 GB/week and
+**received** 1.19 GB.
+
+**SO THE $22.98 IS STILL NOT ATTRIBUTED, and this is where inferring from
+metrics stops being useful.** What is now established is what it is NOT: not
+uncompressed responses, not user traffic, and not the database. The remaining
+honest move is the receipt's own line-item detail, which says what was actually
+metered — a number I can measure is not the same as a number somebody billed.
+
+*Generalise it: a metric named NETWORK_TX and a charge named Network are not the
+same quantity. Before optimising against a usage figure, establish that the
+figure is the one being priced — here 493 GB/month is real, correct, and free.*
+
+**The memory fix still helps, for a different reason than the one I first gave.**
+Replacing `cacheAll` with `cacheIndex` + `selectHydrateKeys` + `cacheMany` cuts
+that per-deploy transfer from "every stored payload" to "what fits in the 256 MB
+budget". That is fewer bytes and a faster boot on a service deploying ten times a
+day; it is not a saving on the network line, and the section above no longer
+claims it is.
 
 ## THE RENTAL SCHEDULE'S COLUMNS NEVER GREW — a dead CSS rule (2026-09-11)
 
