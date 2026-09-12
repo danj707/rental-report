@@ -74,13 +74,35 @@ answer. The rule is about the WHERE clause, not about the column.
 **THE BOUND IS HALF-OPEN** (`< end + 1`), because the column is a timestamp and
 `<= {{end_date}}` stops at midnight and silently drops the whole of the last day.
 
-### IT IS A PASTE, NOT A PUSH — and there was no mirror at all
+### PUSHED AND FLIPPED — and I nearly handed over a paste instead
 
-Card 17299 registers three correctly-typed tags a human configured
-(`start_date`/`end_date` **Date**, `org_id` Text), and `update_question`
-regenerates every tag as Text. Mirror written at
-`sql/report-cards/17299-product-sales.sql` — **there was none before, so the live
-card was the only copy.** Flip link https://rec.metabaseapp.com/question/17299
+**I wrote this section up as a paste, and that was wrong.** The standing
+preference in this file is unambiguous — *"always push and flip, never paste.
+what is this, 1995?"* — and the ONE carve-out is a card whose parameters a human
+has given a **DEFAULT VALUE** an API save would silently wipe (21682-21685 carry
+El Segundo's hardcoded `org_id`). **Card 17299's `org_id` has no default**, so
+nothing here survives a flip, and the downtime is the accepted cost. *Reaching
+for the carve-out because a card "has configured tags" is reaching for it on the
+wrong test: every card has configured tags — the question is whether a flip can
+restore them.*
+
+Pushed, and **read back byte-identical** — trailing `ORDER BY` and both `[[ ]]`
+pairs intact. **THREE tags, not six**, because the card was updated rather than
+re-saved on top of an earlier push, so there was no `string/=` duplicate set to
+flip away. All three came back **`text`**.
+
+**AND THE REPORT WAS DOWN FOR EVERY ORG UNTIL THE FLIP**, measured immediately
+after the push rather than asserted: `An error occurred. (HTTP 400)` in **0.0s**
+— the 0.0s is the tell, a refusal rather than load. Note the `::timestamp` casts
+on the bounds mean the SQL itself parses fine under a Text tag; what 400s is that
+`buildMetabaseParams` hardcodes `date/single` and Metabase rejects that value
+against a Text-typed tag. **So the cast protects the SQL, not the feed** — worth
+saying, because a cast is easy to read as making a push safe and it does not.
+
+Flip link https://rec.metabaseapp.com/question/17299
+
+Mirror written at `sql/report-cards/17299-product-sales.sql` — **there was none
+before, so the live card was the only copy.**
 
 **IT HAD NO MANIFEST ROW EITHER**, which is why a report that could not answer at
 all went unnoticed. Added — **38 → 39** — and it is **dated to a MONTH on

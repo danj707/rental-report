@@ -6,11 +6,21 @@
 -- before writing to it, then mirror the result back here. There was no mirror
 -- at all before this; the live card was the only copy.
 --
--- PASTE THIS IN THE UI. Do NOT push it through the API. The card registers
--- three correctly-typed tags a human has already configured — start_date and
--- end_date as Date, org_id as Text — and `update_question` regenerates every
--- tag as Text, which takes the Product Sales report down for the org until
--- somebody re-flips them by hand.
+-- PUSHED VIA THE API 2026-09-12, and read back byte-identical — trailing
+-- ORDER BY and both `[[ ]]` pairs intact. Three tags came back, not six (the
+-- card was updated rather than re-saved on top of an earlier push), but all
+-- three came back `text`, so BOTH DATES NEED FLIPPING BACK TO Date and the
+-- report is DOWN for every org until that happens: measured immediately after
+-- the push through the public endpoint, `An error occurred. (HTTP 400)` in
+-- 0.0s — the 0.0s is the tell, a refusal rather than load. The cast on the
+-- bounds protects the SQL under a Text tag; what 400s is that
+-- buildMetabaseParams hardcodes `date/single` and Metabase rejects that value
+-- against a Text-typed tag. Flip link: https://rec.metabaseapp.com/question/17299
+--
+-- (The paste carve-out does NOT apply here: it is for a card whose parameters
+-- a human has configured with a DEFAULT VALUE an API save would silently wipe —
+-- 21682-21685 carry El Segundo's hardcoded org_id. 17299's org_id has no
+-- default, so a flip restores everything the push cost.)
 --
 -- ── WHAT CHANGED, AND WHY (v1 -> v2) ───────────────────────────────────────
 -- Dan, 2026-09-11, with norman/products on screen: "the report you pointed me
