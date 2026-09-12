@@ -1,5 +1,241 @@
 # Project notes for Claude
 
+## THE PRODUCT SALES REPORT 504'd, AND THE INDEX WE ASKED FOR HAD ARRIVED (2026-09-12)
+
+Dan, with `norman/products` on screen reading **"Couldn't load report: HTTP 504"**:
+*"the report you pointed me to never loads."*
+
+**IT WAS NOT THE APP.** Measured cache-independently through the public endpoint:
+card 17299 at norman ran **past 300s** over 8.5 months and **106.7s over ONE
+MONTH**, against the app's 60s first try and 120s retry. Every load was past the
+budget; the 504 was the honest answer.
+
+### THE PLATFORM GRANTED THE INDEX THIS FILE HAS ASKED FOR SINCE 2026-08-21
+
+```
+item_log_report_organization_id_datetime_index
+  ON materialized.item_log_report (organization_id, datetime_at_primary_timezone)
+```
+
+…and **no card could use its second column**, because every one of them wrapped
+the column in a cast:
+
+```sql
+[[ AND ilr.datetime_at_primary_timezone::date >= {{start_date}} ]]
+```
+
+**WRAPPING THE COLUMN MAKES THE PREDICATE NON-SARGABLE.** The index matched on
+`organization_id` alone and the date fell into a `Filter`, so the query read and
+threw away eleven months of an org's history to answer a question about one. Two
+characters. `EXPLAIN (COSTS OFF)` shows the date moving from `Filter` to
+`Index Cond` the moment the cast comes off, and `EXPLAIN (ANALYZE)` over the same
+norman month: **106.7s → 7.15s.**
+
+*So the ask being granted is not the fix. An index is a capability; a query has
+to be written to be able to use it.*
+
+### THE EQUIVALENCE IS A PROPERTY OF THE TYPE, and it was proven ROW BY ROW
+
+`datetime_at_primary_timezone` is `timestamp WITHOUT time zone` — the view has
+already localised it, which is why nothing in these cards writes `AT TIME ZONE` —
+so `x::date >= S` is `x >= S` at midnight and `x::date <= E` is `x < E+1` at
+midnight. Exactly, with no timezone in play.
+
+Proven by **XOR over every row rather than by comparing two totals**, because two
+totals can agree while individual rows differ: over **all 119,488 of norman's
+item-log rows the two predicates disagree on ZERO**, with 0 null timestamps and
+15,071 rows inside the window on both sides.
+
+**THE OUTPUT CAST STAYS.** `datetime_at_primary_timezone::date AS "Date"` is not
+a predicate — it is what groups the rows by day — and removing it changes the
+answer. The rule is about the WHERE clause, not about the column.
+
+**THE BOUND IS HALF-OPEN** (`< end + 1`), because the column is a timestamp and
+`<= {{end_date}}` stops at midnight and silently drops the whole of the last day.
+
+### IT IS A PASTE, NOT A PUSH — and there was no mirror at all
+
+Card 17299 registers three correctly-typed tags a human configured
+(`start_date`/`end_date` **Date**, `org_id` Text), and `update_question`
+regenerates every tag as Text. Mirror written at
+`sql/report-cards/17299-product-sales.sql` — **there was none before, so the live
+card was the only copy.** Flip link https://rec.metabaseapp.com/question/17299
+
+**IT HAD NO MANIFEST ROW EITHER**, which is why a report that could not answer at
+all went unnoticed. Added — **38 → 39** — and it is **dated to a MONTH on
+purpose**: a dateless probe asks for the org's whole history, and the 7-day window
+the page sends passes on the broken card. `days: 30`, not a pinned month, or the
+row goes stale. *A manifest row that stops discriminating has stopped testing the
+thing it names.*
+
+### THE AUDIT: who else casts the column, and who already did it right
+
+| | |
+|---|---|
+| **already sargable** | `gl-code-report.sql` (17293 — the most-loaded GL card), `21683`, `21684`, `21685` |
+| **non-sargable, on `item_log_report`** | **17299 (fixed)**, `gl-account-detail.sql` (20197), `programs-revenue-by-month.sql` (21055) |
+| **non-sargable, on `transaction_report`** | `17920-transactions-count.sql` — **and whether THAT table got an index is unverified**: the catalog query timed out at 60s twice, which is this file's own documented tell that the replica is loaded |
+
+Neither of the other two is being changed tonight, and both are decisions rather
+than gaps: **20197 is PARKED and its button is off for every org**, so it costs
+nothing today; and **21055 is bounded by its own `generate_series` and measures
+1.9s for 12 rows at apex**, so the cast is not what it would be waiting on. Each
+is one paste and its own equivalence gate when somebody wants it.
+
+**AND THE MIRRORS MUST NOT BE "FIXED" AHEAD OF THE CARDS.** A mirror that carries
+a change the live card does not is the drift that nearly deleted the facility
+card's whole `Paid?` feature — so those two files stay as they are until their
+cards are pasted.
+
+## THE PAGE THREW THE ANSWER AWAY, ON NINE MORE REPORTS (2026-09-12)
+
+Found on the way to the 504 above. `public/products.html` did
+
+```js
+.then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+```
+
+so Dan was shown **"Couldn't load report: HTTP 504"** while the route had already
+sent back the sentence that says what to do — *"try a shorter date range or
+refresh"*. **Same defect the 2026-09-04 section fixed on eight pages, and this is
+seventeen more call sites across nine** — products, programs (four), fasttrack
+(two), facilities (four), users (four), waitlist, instructor-payout and qoq. All
+nine already load `open-pdf.js`, so `reportFetchError(r)` was one `await` away on
+every one of them.
+
+**`throw await` NEEDS AN ASYNC ARROW**, and the sweep hit both spellings — `r =>`
+and `function (r)`. A non-async one is a SyntaxError that takes the whole Babel
+block with it, i.e. the blank-page class, and `node --check` cannot see it because
+the code is a string inside an HTML file.
+
+**AND MY OWN SWEEP FLATTENED A USEFUL MESSAGE.** `qoq.html` answered a 400 with
+*"No GL revenue data available for this organization"* — which is more useful than
+anything the route can put in a body, because it names the org's configuration
+rather than the transport. It is an explicit branch above the generic one now.
+*A bulk rewrite that improves the average message can still make one of them
+worse; read the diff, not the count.*
+
+### TWO OF MY OWN GUARDS WERE DEFECTIVE, and mutation is what showed both
+
+- **The async check knew ONE spelling.** `/async\s+\w+\s*=>/` fails on
+  `async function (r)`, so six assertions failed on correct code. *A guard that
+  names one spelling of a thing is not a guard against the thing.*
+- **THE SPEC WENT QUIET ON PRECISELY THE PAGE CARRYING THE BUG.** It opened with
+  an inherited early return — *skip any page that mentions neither
+  `Server returned` nor `reportFetchError`* — and a page reverted to Dan's exact
+  bug mentions neither. So reverting `products.html` to the shipped defect
+  **SURVIVED**. The gate is gone and the assertion is a per-line SHAPE test
+  instead: a `.then` that throws on `!r.ok` and returns `r.json()`. It
+  immediately surfaced a **sixth** bare throw (`programs.html`'s
+  *"Failed to load detail"*), which was fixed rather than excused. *An
+  early-return gate that skips the broken case is the most expensive kind of
+  vacuous assertion, because the suite stays green.*
+
+`scripts/feed-error-message.spec.js` 32 → **43 assertions**.
+
+## CSAT AND NPS PER ORG, ON OUR ADMIN DASHBOARD (2026-09-12)
+
+Dan, on the survey builder: *"confirming we're saving their answers somewhere,
+pushing it to slack and adding their responses as a CSAT or NPS score on their
+admin dashboard card?"* — then, on where: *"on the admin dashboard side."*
+
+The first two shipped with the builder. The third is a **`CSAT · NPS` column** on
+the usage table and a tile in the KPI row, both off one aggregator.
+
+### THE TWO SCALES ARE NEVER BLENDED, AND NEVER READ OFF THE ANSWER
+
+CSAT is the share of 1–5 ratings that came back **4 or 5**; NPS is promoters
+(9–10) minus detractors (0–6) over a **classification**. An org that answered both
+gets both numbers, because **an average of the two is a number with no
+definition** — the same rule the readout already enforces by setting
+`out.mean = null` on an NPS question.
+
+**THE QUESTION'S TYPE COMES FROM THE SURVEY'S OWN DEFINITION, NEVER FROM THE
+ANSWER.** A `rating5` answer of 5 and an `nps` answer of 5 are the same integer,
+so the value alone cannot tell a top mark from a detractor — and that is not a
+theoretical failure, it is the one that produces a plausible wrong number: five
+delighted 5-star ratings read as NPS are five detractors and the org reports
+**−100 while its CSAT is 100%**. The spec drives exactly that case, in both
+directions. Same argument as reading a submitted answer back by question id
+rather than positionally, one surface earlier.
+
+**AN UNCLASSIFIABLE ANSWER IS COUNTED ON NEITHER SIDE.** A survey deleted since it
+was answered has no definition left to read, so its numbers go into neither score
+while the response still counts as a response — `unscored` says how many. Same
+asymmetry as `unreadable` in `buildFeedback`.
+
+### IT COVERS THE SURVEY'S WHOLE LIFE, and the column says so
+
+Every other column in that table is 30 days. This one is not, deliberately: **a
+survey is a CAMPAIGN with a start and an end rather than a continuous stream**, so
+a 30-day cut of one that closed last month reads as *"this org never answered"*
+when they did. Two windows, each labelled — the same treatment the feedback KPI
+(30 days) and its list (everything on record) already get.
+
+**That distinction is only guarded by a SOURCE assertion, and mutation is why.**
+The unit half proves the function's own default reaches back a year; changing the
+dashboard's call to `buildSurveyScores(30)` **SURVIVED** it, because the function
+was never the thing that moved. The spec reads the call site now.
+
+### THE FLOOR IS THE READOUT'S FLOOR, and under it the COUNT is printed
+
+`SURVEY_MIN_FOR_STATS` is read rather than re-declared: **two floors is two
+answers to one question**, and the panel and the column would eventually disagree
+about whether a score exists at all. Under it the cell prints the answer count
+and the tooltip says how many more it needs — *"CSAT needs 3 more ratings"* —
+rather than a confident `100%` off one rating. A **real** 0% still shows.
+
+`null`, never `0`: *"too few answers to say"* and *"nobody is satisfied"* are
+different facts.
+
+### THE 9/6 BOUNDARY IS WRITTEN ONCE
+
+`npsBucket(v)` and `npsScore(p, d, n)`, read by **both** `surveyReadout` and
+`buildSurveyScores`. They had a copy each until mutation testing pointed at it:
+two copies of a threshold is how one surface calls somebody a promoter while the
+other calls them passive, on the same answer.
+
+### DELIBERATELY NOT ON AN OPEN `/api/admin` GET
+
+`dashboardAuth` guards only `/` — its first line is
+`if (req.path !== "/") return next()` — so an `/api/admin` GET is open. Per-org
+satisfaction scores about us are not something to hand to anyone who asks, and
+the readout that carries the verbatim text is a POST for exactly that reason.
+
+### ADDING A COLUMN IS THE CHANGE THAT SHIFTS A FOOTER
+
+The table went 9 columns to 10, so the tail row's `colspan` and two `sortUsage`
+indices moved with it. **`sortUsage` reads `cells[col]` positionally**, so an
+index one out sorts a neighbouring column while looking completely correct, and a
+short `colspan` shifts every figure after the gap. Both are now asserted against
+the header's OWN column count rather than against a literal, so the next column
+added fails the spec instead of the table.
+
+### Guards
+
+`scripts/surveys.spec.js` 75 → **94 assertions**, the new half LIFTING AND RUNNING
+`buildSurveyScores` over answers whose values are deliberately ambiguous.
+Mutation-tested twelve ways, all failing by name: an NPS answer folded into CSAT,
+the scale read from the answer instead of the definition, the floor removed,
+`null` defaulted to `0`, NPS computed as a mean, the promoter boundary moved to 8,
+the footer `colspan` left at 9, a `sortUsage` index one out, the column scoped to
+30 days, an unclassifiable answer counted as satisfied, a dismissal counted as a
+response, and the readout re-deriving its own 9/6 split.
+
+**Verified live rather than asserted**: a real boot over a seeded log renders 10
+header columns, `colspan="10"`, 10 cells on all 29 rows, apex at **67% · +20**
+with the full split in its tooltip, and norman below the floor showing its raw
+count plus *"CSAT needs 3 more ratings"*.
+
+### NOT BUILT
+
+- **No per-report or per-survey breakdown in the column** — an org that answered
+  two surveys gets one figure. Which survey is in 📝 Surveys, which is where the
+  verbatim text lives anyway.
+- **No trend.** A CSAT that moved is the more useful number and needs two windows
+  with a floor in each, which today's volume cannot support.
+
+
 ## THE SURVEY BUILDER — admin surfaces only, and that is structural (2026-09-11)
 
 Dan: *"lets build the survey tool, i need some feedback"*, then, on the shape:

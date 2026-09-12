@@ -329,8 +329,209 @@ test("whitespace-only text is not an answer", () => {
   assert.strictEqual(answered, 0);
 });
 
+/* ── CSAT / NPS per org, LIFTED AND RUN ───────────────────────────────
+   Dan: "adding their responses as a CSAT or NPS score on their admin
+   dashboard card". A regex over this passes on an inverted comparison and on
+   the one mistake that matters most — a 1-5 rating folded into the NPS,
+   where a perfectly plausible number comes out and nothing on screen
+   disagrees with it. So it is executed against answers whose VALUES are
+   deliberately ambiguous: a rating5 of 5 and an NPS of 5 are the same
+   integer, and only the survey's own definition tells them apart. */
+const SCORES = new Function("getSurveys", "readEvents", `
+  ${liftConst(srv, "SURVEY_MIN_FOR_STATS")}
+  ${liftConst(srv, "SURVEY_READOUT_DAYS")}
+  ${liftConst(srv, "SURVEY_CSAT_TOP")}
+  ${liftFn(srv, "npsBucket")}
+  ${liftFn(srv, "npsScore")}
+  ${liftFn(srv, "buildSurveyScores")}
+  return { buildSurveyScores, SURVEY_MIN_FOR_STATS, SURVEY_CSAT_TOP };
+`);
+
+// One survey carrying BOTH scales, so every answer value is ambiguous on its own.
+const SCORE_SURVEY = [{
+  id: "s1", title: "T",
+  questions: [
+    { id: "q1", type: "rating5", prompt: "How is it?" },
+    { id: "q2", type: "nps",     prompt: "Recommend?" },
+    { id: "q3", type: "text",    prompt: "Why?" },
+  ],
+}];
+const resp = (org, answers) => ({ ts: "2026-09-01T00:00:00.000Z", org, event: "survey-response", surveyId: "s1", answers });
+const scores = (events, surveys) =>
+  SCORES(() => surveys || SCORE_SURVEY, () => events).buildSurveyScores(null);
+
+test("CSAT is the share of 1–5 ratings that came back 4 or 5", () => {
+  // 5,5,4,3,1 → three of five satisfied
+  const out = scores([5, 5, 4, 3, 1].map(v => resp("apex", { q1: v })));
+  assert.strictEqual(out.byOrg.apex.csat, 60);
+});
+test("NPS is promoters minus detractors over the total, NEVER a mean", () => {
+  // 10,9,8,6,0 → 2 promoters, 1 passive, 2 detractors → 0
+  const out = scores([10, 9, 8, 6, 0].map(v => resp("apex", { q2: v })));
+  const o = out.byOrg.apex;
+  assert.strictEqual(o.nps, 0, "promoters minus detractors over 5 is 0");
+  assert.strictEqual(o.promoters, 2);
+  assert.strictEqual(o.passives, 1);
+  assert.strictEqual(o.detractors, 2);
+  // A mean of those five is 6.6, which is the number a blended score would print.
+  assert.ok(!("mean" in o), "an NPS must not carry a mean anywhere near it");
+});
+test("A 1–5 RATING IS NEVER FOLDED INTO THE NPS — the value alone cannot tell them apart", () => {
+  // Five top marks on the 1-5 scale. Read as NPS they are all detractors (5 <= 6)
+  // and the org would report NPS -100 while its CSAT is 100%.
+  const out = scores([5, 5, 5, 5, 5].map(v => resp("apex", { q1: v })));
+  assert.strictEqual(out.byOrg.apex.csat, 100);
+  assert.strictEqual(out.byOrg.apex.npsN, 0, "a rating5 answer reached the NPS bucket");
+  assert.strictEqual(out.byOrg.apex.nps, null);
+});
+test("...and an NPS answer is never counted as a satisfaction rating", () => {
+  // Five NPS 10s. Read as CSAT they are all >= 4 and would print 100%.
+  const out = scores([10, 10, 10, 10, 10].map(v => resp("apex", { q2: v })));
+  assert.strictEqual(out.byOrg.apex.nps, 100);
+  assert.strictEqual(out.byOrg.apex.csatN, 0, "an NPS answer reached the CSAT bucket");
+  assert.strictEqual(out.byOrg.apex.csat, null);
+});
+test("the two scales are never averaged into one figure", () => {
+  const out = scores([
+    ...[5, 5, 5, 5, 5].map(v => resp("apex", { q1: v })),
+    ...[0, 0, 0, 0, 0].map(v => resp("apex", { q2: v })),
+  ]);
+  const o = out.byOrg.apex;
+  assert.strictEqual(o.csat, 100);
+  assert.strictEqual(o.nps, -100);
+  assert.ok(!("score" in o), "a single blended score has no definition");
+});
+test("under the floor a score is null, NEVER 0 — too few to say is not nobody is happy", () => {
+  const out = scores([1, 1, 1, 1].map(v => resp("apex", { q1: v })));  // 4 answers, all unhappy
+  assert.strictEqual(out.byOrg.apex.csatN, 4);
+  assert.strictEqual(out.byOrg.apex.csat, null, "a confident 0% off four answers is the number that gets quoted");
+});
+test("...and the floor is the READOUT's floor, not a second one", () => {
+  const out = scores([1].map(v => resp("apex", { q1: v })));
+  assert.strictEqual(out.minForStats, SCORES(() => [], () => []).SURVEY_MIN_FOR_STATS);
+  assert.ok(/SURVEY_MIN_FOR_STATS/.test(liftFn(srv, "buildSurveyScores")),
+    "it must read the readout's floor; two floors is two answers to one question");
+});
+test("a REAL 0% still shows once the floor is cleared", () => {
+  const out = scores([1, 1, 1, 2, 3].map(v => resp("apex", { q1: v })));
+  assert.strictEqual(out.byOrg.apex.csat, 0, "nobody satisfied over five ratings is an answer");
+});
+test("free text is not a score", () => {
+  const out = scores([resp("apex", { q3: "it is fine" })]);
+  assert.strictEqual(out.byOrg.apex.responses, 1);
+  assert.strictEqual(out.byOrg.apex.csatN, 0);
+  assert.strictEqual(out.byOrg.apex.npsN, 0);
+});
+test("an answer to a survey that no longer exists is counted on NEITHER side", () => {
+  // The definition is gone, so nothing can say which scale the 5 was on.
+  const out = scores([resp("apex", { q1: 5 })], []);
+  const o = out.byOrg.apex;
+  assert.strictEqual(o.responses, 1, "the response still happened");
+  assert.strictEqual(o.csatN, 0);
+  assert.strictEqual(o.npsN, 0);
+  assert.strictEqual(o.unscored, 1, "and it says so rather than going quiet");
+});
+test("a dismissal is not an answer, and is reported separately", () => {
+  const out = scores([
+    { ts: "2026-09-01T00:00:00.000Z", org: "apex", event: "survey-dismiss", surveyId: "s1" },
+    ...[5, 5, 5, 5, 5].map(v => resp("apex", { q1: v })),
+  ]);
+  assert.strictEqual(out.byOrg.apex.responses, 5);
+  assert.strictEqual(out.byOrg.apex.dismissed, 1);
+  assert.strictEqual(out.byOrg.apex.csat, 100, "a dismissal must not dilute the score");
+});
+test("scores are PER ORG — one org's answers never reach another's", () => {
+  const out = scores([
+    ...[5, 5, 5, 5, 5].map(v => resp("apex", { q1: v })),
+    ...[1, 1, 1, 1, 1].map(v => resp("norman", { q1: v })),
+  ]);
+  assert.strictEqual(out.byOrg.apex.csat, 100);
+  assert.strictEqual(out.byOrg.norman.csat, 0);
+  assert.strictEqual(out.totals.csat, 50, "the platform figure is both orgs together");
+});
+test("an org with no answers has no row at all, so the column can print nothing", () => {
+  const out = scores([resp("apex", { q1: 5 })]);
+  assert.strictEqual(out.byOrg.watertown, undefined);
+});
+test("it covers the SURVEY'S WHOLE LIFE, not the 30 days the columns beside it cover", () => {
+  const out = scores([resp("apex", { q1: 5 })]);
+  assert.ok(out.covers >= 365,
+    "a 30-day cut of a campaign that closed last month reads as never answered; covers was " + out.covers);
+});
+
 /* ── Source assertions ─────────────────────────────────────────────── */
 if (!SKIP_SOURCE) {
+  /* ── The admin dashboard column ────────────────────────────────────
+     Adding a column to the usage table is exactly the change that has left a
+     Grand Total row one column short twice in this repo — every figure after
+     it shifts left and the table still renders. So the footer's colspan is
+     compared to the header's own column count rather than to a literal, and
+     each sortUsage index is compared to the position of the header carrying
+     it: sortUsage reads `cells[col]` positionally, so an index one out sorts
+     a neighbouring column while looking completely correct. */
+  const usageThead = /<thead><tr>(<th[\s\S]*?)<\/tr><\/thead>/.exec(srv);
+  test("the usage table's footer spans every column, including the new one", () => {
+    assert.ok(usageThead, "the usage table header is not where this expects it");
+    const cols = (usageThead[1].match(/<th\b/g) || []).length;
+    const foot = /id="usage-more-row"><td colspan="(\d+)"/.exec(srv);
+    assert.ok(foot, "the usage table footer row is not where this expects it");
+    assert.strictEqual(Number(foot[1]), cols,
+      "the footer spans " + foot[1] + " of " + cols + " columns — every figure after the gap shifts left");
+  });
+  test("every sortUsage index names its own column, or a sort moves the wrong one", () => {
+    const ths = usageThead[1].split(/(?=<th\b)/).filter(Boolean);
+    ths.forEach((th, i) => {
+      const m = /sortUsage\(this,(\d+)\)/.exec(th);
+      if (!m) return;                       // not every column is sortable
+      assert.strictEqual(Number(m[1]), i,
+        "column " + i + " sorts on index " + m[1] + " — sortUsage reads cells[col] positionally");
+    });
+  });
+  test("the org rows carry a CSAT/NPS cell, read from the ONE aggregator", () => {
+    assert.ok(/data-svy-org=/.test(srv), "no CSAT/NPS cell on the usage rows");
+    assert.ok(/svy\.byOrg\[r\.slug\]/.test(srv),
+      "the cell must read buildSurveyScores, not re-derive a score beside it");
+  });
+  test("the 9/6 NPS boundary is written ONCE, and both surfaces read it", () => {
+    /* The readout panel and the dashboard column both classify an NPS answer.
+       Two copies of a threshold is how one surface calls somebody a promoter
+       while the other calls them passive, on the same answer. */
+    const fn = liftFn(srv, "npsBucket");
+    const outside = srv.split(fn).join("");
+    assert.ok(!/>= 9 \?|v >= 9\)|>= 9\)/.test(outside),
+      "the promoter threshold appears outside npsBucket");
+    assert.ok(!/<= 6 \?|v <= 6\)|<= 6\)/.test(outside),
+      "the detractor threshold appears outside npsBucket");
+    for (const f of ["surveyReadout", "buildSurveyScores"]) {
+      assert.ok(/npsBucket\(/.test(liftFn(srv, f)), f + " does not read npsBucket");
+    }
+  });
+  test("the dashboard asks for the WHOLE history, not the 30 days beside it", () => {
+    /* The unit half proves the function's default reaches back a year. That
+       says nothing about what the dashboard passes it — and a `30` here would
+       render a column that is empty for every survey that closed last month,
+       while every assertion about the aggregator keeps passing. */
+    const m = /const svy = buildSurveyScores\(([^)]*)\);/.exec(srv);
+    assert.ok(m, "the dashboard does not build survey scores");
+    assert.ok(/^\s*(null|)\s*$/.test(m[1]),
+      "the dashboard scopes the column to " + m[1].trim() + " — a survey is a campaign, not a stream");
+  });
+  test("a dismissed-only org is not reported as never asked", () => {
+    /* Both render a dot — a dismissal is not a score — but separating the two
+       is the entire reason dismissals are recorded at all. */
+    const i = srv.indexOf("data-svy-org=");
+    const cellBlock = srv.slice(Math.max(0, i - 2600), i + 200);
+    assert.ok(/No survey answers on record/.test(cellBlock), "the empty branch is not where this expects it");
+    assert.ok(/dismissed[\s\S]{0,200}No answers|No answers[\s\S]{0,200}dismissed/.test(cellBlock),
+      "the no-answers branch does not consult dismissed");
+  });
+  test("the column states its own window, because it is NOT the 30 days beside it", () => {
+    const th = usageThead[1].split(/(?=<th\b)/).find(t => /CSAT/.test(t));
+    assert.ok(th, "no CSAT column header");
+    assert.ok(/whole life|ever answered|all time/i.test(th),
+      "a survey column that does not say it covers everything reads as a 30-day one");
+  });
+
   test("the three customer pages do not load feedback-widget.js AT ALL", () => {
     for (const f of ["calendar", "rentalcalendar", "campmap"]) {
       const p = path.join(root, "public", f + ".html");
