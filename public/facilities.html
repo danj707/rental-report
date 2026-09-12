@@ -1174,6 +1174,19 @@
       const collectedOf = r => r['Collected'] != null ? num(r['Collected']) : (isCanceled(r) ? 0 : num(r['Total']));
       const refundedOf = r => num(r['Refunded']);
       const isInvoice = r => r['Source'] === 'Invoice';
+      // A RENTAL IS NOT A DATE. This feed is per RESERVATION, so a recurring
+      // rental contributes one row per date and `bookings` counts DATES. Card
+      // 19570 v2.3 emits "Rental ID" so the page can say how many rentals those
+      // dates belong to: Watertown over 2026 is 2,668 court dates across 1,683
+      // rentals, and its FIELDS are 3,486 dates across 148 — a 24x multiplier
+      // that was sitting under the single word "bookings".
+      // PRESENCE, NOT A COUNT, and asked of the whole response rather than of a
+      // value: feeds cache four hours, so a pre-v2.3 entry and a v2.3 one are
+      // both live at once, and a value test renders a confident "across 0
+      // rentals" on the old shape — which says the dates belong to nothing,
+      // rather than that this feed cannot tell us. Same rule as hasBilled above
+      // and as hasAbsent / ciHasStatus on the other reports.
+      const hasRentalId = scoped.some(r => 'Rental ID' in r) || rows.some(r => 'Rental ID' in r);
 
       // Invoice rows are MONEY, not bookings. The card unions invoice_v2 manual
       // lines (tournament fees, deposits, service fees) into the same feed, and
@@ -1205,6 +1218,14 @@
         instRev: scoped.filter(isInstant).reduce((s, r) => s + rev(r), 0),
         mgdRev: scoped.filter(r => !isInstant(r)).reduce((s, r) => s + rev(r), 0),
         sites: new Set(resRows.map(siteKey)).size,
+        // From resRows, exactly like bookings and sites. An invoice row DOES
+        // carry a real "Rental ID" (unlike "Site ID"), so counting over
+        // `scoped` would fold in rentals represented only by a fee line and
+        // disagree with the date count beside it.
+        hasRentalId,
+        rentals: hasRentalId
+          ? new Set(resRows.map(r => r['Rental ID']).filter(v => v != null && v !== '')).size
+          : null,
         // Authoritative revenue: billed (charged), collected (confirmed
         // payments), refunded, and outstanding A/R = billed − collected.
         hasBilled,
@@ -2402,7 +2423,8 @@
     function FacilitiesBanner({ a, tab }) {
       const theme = FBX_THEME[tab] || FBX_THEME.summary;
       const pills = a ? [
-        ['bookings', a.bookings.toLocaleString()],
+        [a.hasRentalId ? 'reservation dates' : 'bookings', a.bookings.toLocaleString()],
+        ...(a.hasRentalId ? [['rentals', a.rentals.toLocaleString()]] : []),
         ['charged', money(a.revenue)],
         ['active sites', a.sites.toLocaleString()],
         ['cancellation', a.bookings ? pct(a.canceled, a.bookings) : '—'],
@@ -2431,8 +2453,14 @@
         e('button', { onClick: props.thisYear }, 'This Year'),
         e('button', { className: 'btn-run', onClick: props.run }, '▶ Run Report'),
         e('span', { className: 'toolbar-spacer' }),
-        e('span', { className: 'row-count' }, props.loading ? 'loading…' :
-          (props.count == null ? '' : props.count.toLocaleString() + ' bookings · ' + props.sites.toLocaleString() + ' sites')),
+        e('span', { className: 'row-count', 'data-fac-dates': props.count == null ? '' : String(props.count),
+                    'data-fac-rentals': props.rentals == null ? '' : String(props.rentals),
+                    'data-fac-sites': String(props.sites) },
+          props.loading ? 'loading…' :
+          (props.count == null ? '' :
+            props.count.toLocaleString() + (props.rentals == null ? ' bookings' : ' dates')
+            + (props.rentals == null ? '' : ' · ' + props.rentals.toLocaleString() + ' rentals')
+            + ' · ' + props.sites.toLocaleString() + ' sites')),
         e('button', { onClick: () => window.print(), title: 'Print this view' }, '🖨️ Print'),
         e('button', { className: 'btn-pdf', disabled: !props.count || props.pdfLoading, onClick: props.onPdf, title: 'Download this view as a PDF' }, props.pdfLoading ? 'Generating…' : '📄 PDF'),
         e('button', { className: 'btn-lite', disabled: !props.count, onClick: props.onLite, title: 'Open a plain one-page revenue summary to print or save as PDF' }, '🧾 Summary'),
@@ -2471,7 +2499,14 @@
         { label: 'Charged', val: money(a.revenue), cls: 'sc-green', sub: 'excludes canceled' },
       ];
       const cards = [
-        { label: 'Bookings', val: a.bookings.toLocaleString(), cls: 'sc-blue', sub: 'facility reservations in view' },
+        a.hasRentalId
+          ? { label: 'Reservation Dates', val: a.bookings.toLocaleString(), cls: 'sc-blue',
+              sub: 'across ' + a.rentals.toLocaleString() + ' rental' + (a.rentals === 1 ? '' : 's'),
+              hook: 'dates',
+              title: 'One row per booked date. A recurring rental books many dates, so this is '
+                   + 'larger than the number of rentals it represents.' }
+          : { label: 'Bookings', val: a.bookings.toLocaleString(), cls: 'sc-blue',
+              sub: 'facility reservations in view', hook: 'bookings' },
         ...revCards,
         { label: 'Instant-Book', val: a.bookings ? pct(a.instant, a.bookings) : '—', cls: 'sc-purple', sub: a.instant.toLocaleString() + ' bkgs · ' + money(a.instRev) },
         { label: 'Managed', val: a.bookings ? pct(a.managed, a.bookings) : '—', cls: 'sc-amber', sub: a.managed.toLocaleString() + ' bkgs · ' + money(a.mgdRev) },
@@ -2480,7 +2515,8 @@
         { label: 'Active Sites', val: a.sites.toLocaleString(), cls: 'sc-muted', sub: 'with bookings in view' },
       ];
       return e('div', { className: 'sum-cards' },
-        cards.map((c, i) => e('div', { className: 'sum-card', key: i },
+        cards.map((c, i) => e('div', { className: 'sum-card', key: i, title: c.title || null,
+                                       'data-sc': c.hook || null, 'data-sc-sub': c.sub || null },
           e('div', { className: 'sc-label' }, c.label),
           e('div', { className: 'sc-val ' + c.cls }, c.val),
           e('div', { className: 'sc-sub' }, c.sub),
@@ -2707,7 +2743,8 @@
 
       return e('div', null,
         e('div', { className: 'sum-cards' },
-          cards.map((c, i) => e('div', { className: 'sum-card', key: i },
+          cards.map((c, i) => e('div', { className: 'sum-card', key: i, title: c.title || null,
+                                       'data-sc': c.hook || null, 'data-sc-sub': c.sub || null },
             e('div', { className: 'sc-label' }, c.label),
             e('div', { className: 'sc-val ' + c.cls }, c.val),
             e('div', { className: 'sc-sub' }, c.sub),
@@ -3794,7 +3831,8 @@
                                color: '#b8b5ad', marginLeft: 8 } }, since)),
         e('div', { className: 'sum-cards', style: { marginTop: 8, marginBottom: 0 },
                    'data-campmap-stats': String(t.views) },
-          cards.map((c, i) => e('div', { className: 'sum-card', key: i },
+          cards.map((c, i) => e('div', { className: 'sum-card', key: i, title: c.title || null,
+                                       'data-sc': c.hook || null, 'data-sc-sub': c.sub || null },
             e('div', { className: 'sc-label' }, c.label),
             e('div', { className: 'sc-val ' + c.cls }, c.val),
             e('div', { className: 'sc-sub' }, c.sub)))));
@@ -6642,6 +6680,9 @@
       // about the campground; blank is the truth about our knowledge of it.
       const count = (err || !bannerAgg) ? null : bannerAgg.bookings;
       const siteCount = (err || !bannerAgg) ? 0 : bannerAgg.sites;
+      // null, never 0, on a pre-v2.3 feed — the toolbar reads it as "we cannot
+      // say" and falls back to the old wording rather than claiming no rentals.
+      const rentalCount = (err || !bannerAgg) ? null : bannerAgg.rentals;
 
       // Exports mirror exactly what's on screen, like the other reports:
       // date range + status + site-type filters, and the active tab's scope
@@ -6807,7 +6848,7 @@
       }
 
       return e(React.Fragment, null,
-        isPrint ? null : e(Toolbar, { start, end, setStart, setEnd, thisMonth: setThisMonth, lastMonth: setLastMonth, thisYear: setThisYear, run: () => load(), loading: rows === null, count, sites: siteCount, onPdf: downloadPdf, onLite: exportLite, onExcel: exportExcel, pdfLoading, rows: viewRows }),
+        isPrint ? null : e(Toolbar, { start, end, setStart, setEnd, thisMonth: setThisMonth, lastMonth: setLastMonth, thisYear: setThisYear, run: () => load(), loading: rows === null, count, sites: siteCount, rentals: rentalCount, onPdf: downloadPdf, onLite: exportLite, onExcel: exportExcel, pdfLoading, rows: viewRows }),
         rows !== null ? e('div', { id: 'report-ready', 'data-ready': 'true', style: { display: 'none' } }) : null,
         e('div', { className: 'page' },
           e('div', { className: 'report-header' },

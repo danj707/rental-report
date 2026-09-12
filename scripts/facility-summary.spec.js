@@ -72,6 +72,7 @@ function resRow(i, status, total) {
     "Reservation ID": "res-" + i, "Date": "2026-08-" + String((i % 28) + 1).padStart(2, "0"),
     "Location": LOC, "Site ID": "court-" + site, "Facility": "Site " + String(site).padStart(2, "0"),
     "Site Type": "campsite", "Booking Type": i % 8 === 0 ? "Instant" : "Managed",
+    "Rental ID": status === "Canceled" ? "rent-can-" + i : "rent-" + (i % 50),
     "Status": status, "Source": "Reservation",
     "Total": status === "Canceled" ? 0 : total, "Billed": total, "Collected": total, "Refunded": 0,
   };
@@ -82,6 +83,7 @@ function invRow(i) {
     "Reservation ID": "oi-" + i, "Date": "2026-08-15",
     "Location": LOC, "Site ID": null, "Facility": FEE_NAMES[i % FEE_NAMES.length],
     "Site Type": "campsite",                       // inherited — this is why chips miss it
+    "Rental ID": "rent-inv-" + (i % 5),            // real, and NOT a booking
     "Booking Type": "Managed", "Status": "Confirmed", "Source": "Invoice",
     "Total": 380 / 48, "Billed": 380 / 48, "Collected": 380 / 48, "Refunded": 0,
   };
@@ -167,6 +169,69 @@ test("per-type rollups count bookings without fees but keep their money", () => 
   assert.strictEqual(t.bookings, 206, "fee lines are not bookings here either");
   assert.strictEqual(t.sites.size, 41, "nor sites");
   near(t.revenue, 2520 + 380, "but their revenue still lands in the type total");
+});
+
+// ── DATES ARE NOT RENTALS (card 19570 v2.3) ─────────────────────────────────
+// Dan, on Watertown's courts over 2026: "pretty sure there were not 2,668
+// bookings at watertown for courts this year." The 2,668 was right and it
+// counted reservation DATES. Measured against prod: 1,683 rentals, of which 116
+// recurring ones carried 1,101 of those dates — and the FIELDS tab hid a 24x
+// multiplier under the same word, 3,486 dates across 148 rentals.
+test("rentals are counted distinctly, and are fewer than the dates", () => {
+  const a = aggregate(ROWS, ALL_STATUS, CAMPSITE);
+  assert.strictEqual(a.bookings, 206, "206 reservation dates");
+  assert.strictEqual(a.rentals, 58, "...belonging to 58 rentals (50 live + 8 canceled)");
+  assert.ok(a.rentals < a.bookings, "and the whole point is that they differ");
+  // ...and they are not the site count wearing a different label either. The
+  // render case cannot make this distinction — its default scope holds one
+  // rental per site — so it is owned here, where the fixture is controlled.
+  assert.strictEqual(a.sites, 41, "41 sites");
+  assert.ok(a.rentals !== a.sites, "a rental count is not a site count: 58 vs 41");
+});
+
+test("a fee line's rental is NOT counted — the count comes from resRows", () => {
+  // The five rent-inv-* rentals exist only on invoice rows. Counting over
+  // the scoped set would report 63 and disagree with the date count beside it.
+  const a = aggregate(ROWS, ALL_STATUS, CAMPSITE);
+  assert.strictEqual(a.rentals, 58, "not 63");
+  assert.ok(!JSON.stringify(a).includes("rent-inv-"), "no fee-line rental leaks into the aggregate");
+});
+
+test("the status chips scope the rental count too", () => {
+  assert.strictEqual(aggregate(ROWS, LIVE_STATUS, CAMPSITE).rentals, 50,
+    "the 8 canceled-only rentals leave with their rows");
+});
+
+test("a pre-v2.3 feed reports null, never 0", () => {
+  // Feeds cache four hours, so the pre-column shape and the v2.3 one are both
+  // live at once. "across 0 rentals" says the dates belong to nothing; null is
+  // the page's signal to fall back to the word it used before.
+  const old = ROWS.map(r => { const c = Object.assign({}, r); delete c["Rental ID"]; return c; });
+  const a = aggregate(old, ALL_STATUS, CAMPSITE);
+  assert.strictEqual(a.hasRentalId, false, "the gate is presence, asked of the response");
+  assert.strictEqual(a.rentals, null, "not 0");
+  assert.strictEqual(a.bookings, 206, "and the date count is unaffected");
+});
+
+test("the gate is PRESENCE, not a value — one row carrying the key is enough", () => {
+  // A value test would read an org whose rows all carry a null rental as a
+  // pre-v2.3 feed, which is a different fact.
+  const blanked = ROWS.map(r => r["Source"] === "Reservation"
+    ? Object.assign({}, r, { "Rental ID": null }) : r);
+  const a = aggregate(blanked, ALL_STATUS, CAMPSITE);
+  assert.strictEqual(a.hasRentalId, true, "the column is there, so the feed can answer");
+  assert.strictEqual(a.rentals, 0, "...and the honest answer is that it named none");
+});
+
+test("the card mirror emits Rental ID on both arms of the union", () => {
+  const sql = fs.readFileSync(path.join(ROOT, "sql", "facilities-summary-v2.sql"), "utf8");
+  assert.ok(/fr\.id AS rental_id/.test(sql), "the res CTE carries it");
+  assert.ok(/res\.rental_id::text AS "Rental ID"/.test(sql), "the reservation arm emits it");
+  assert.ok(/inv\.order_item_id, inv\.fr_id::text,/.test(sql),
+    "and the invoice arm emits it in the SAME position — a UNION is positional, " +
+    "so a column added to one arm only shifts every column after it");
+  assert.ok(/ORDER BY "Date", "Location", "Facility"/.test(sql),
+    "the trailing ORDER BY survived the push (card 17300 lost one to transcription)");
 });
 
 test("a scope with only fee lines reports no bookings and no sites", () => {

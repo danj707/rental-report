@@ -1,5 +1,5 @@
 -- ============================================================================
--- FACILITIES_SUMMARY v2.2  — authoritative facility-revenue feed
+-- FACILITIES_SUMMARY v2.3  — authoritative facility-revenue feed
 -- Powers public/facilities.html. One card, all orgs. Metabase card 19570.
 -- Public UUID 4c070d95-ab02-4b9d-ac43-ac86257162d5 (FACILITIES_SUMMARY_UUID).
 -- Template tags: {{org_id}} (text, required), {{start_date}} + {{end_date}} (DATE).
@@ -18,22 +18,40 @@
 --      were silently dropped ($2.57M across orgs). An invoice row is MONEY, not
 --      a booking and not a site — see the v2.2 notes below and aggregate() in
 --      facilities.html.
---   3. BILLED vs COLLECTED — Billed = applied_pricing finalCents (real charge,
+--   3. RENTAL ID — the feed is per RESERVATION, so every count taken off it is
+--      a count of DATES. Nothing carried a rental identifier, so the page could
+--      not say how many rentals those dates belong to. Watertown 2026: courts
+--      are 2,668 dates across 1,683 rentals, FIELDS 3,486 across 148.
+--   4. BILLED vs COLLECTED — Billed = applied_pricing finalCents (real charge,
 --      NOT order_item.price); Collected/Refunded from confirmed
 --      order_item_transactions.
 -- ============================================================================
--- Card 19570: Facilities Summary v2 — v2.2 (v2.1 speed refactor + correctness)
--- v2.2 changes (2026-08-23), both about counts, neither about speed:
+-- Card 19570: Facilities Summary v2 — v2.3 (v2.1 speed refactor + correctness)
+-- v2.3 (2026-09-12): "Rental ID" (fr.id). ONE column, no logic change.
+--    The feed is per RESERVATION, so a recurring rental contributes one row per
+--    date and every count taken off it is a count of DATES. Nothing emitted a
+--    rental identifier, so the page could not say how many rentals those dates
+--    belong to, and the figure was labelled "bookings" — which reads as rentals.
+--    Measured at Watertown over 2026: courts are 2,668 dates across 1,683
+--    rentals (1,567 one-off plus 116 recurring ones carrying 1,101 dates), and
+--    FIELDS are 3,486 dates across 148 rentals — a 24x multiplier under one word.
+--    It is populated on invoice rows too (iv.facility_rental_id), because a fee
+--    line genuinely belongs to a rental — unlike "Site ID", which is NULL there
+--    because an invoice row's "Facility" is the FEE'S NAME and an id would be a
+--    lie. Counts still come from reservation rows only; see aggregate() in
+--    facilities.html and the "Site ID" note below.
+-- v2.2 changes (2026-08-23), both about COUNTS, neither about speed:
 -- 1. STATUS reads r.canceled_at, not just fr.status. A reservation can be
 --    canceled on its own while the RENTAL stays Confirmed or In-progress (one
 --    night dropped from a recurring stay). 8 such reservations in Douglas
---    County/Aug-2026 and 6 of them were reported as live bookings, putting $60
---    of canceled charges into Charged and reading the cancellation rate as
+--    County / Aug 2026, and 6 of them were reported as live bookings — putting
+--    $60 of canceled charges into Charged and reading the cancellation rate as
 --    2 of 254 instead of 8 of 206. The client zeroes a row whose Status says
 --    Canceled, so labelling them correctly is the whole fix.
 -- 2. "Site ID" (ct.id) is emitted, NULL on invoice rows, so counting sites is
---    counting identities and not display names. On an invoice row "Facility" is
---    the FEE'S NAME — 5 fee names were being counted as 5 campsites.
+--    counting identities rather than display names. On an invoice row
+--    "Facility" is the FEE'S NAME — 5 fee names were counted as 5 campsites,
+--    which is how a 41-site campground reported 46 active sites.
 --
 -- v2.1 EXPLAIN-driven speed work, unchanged (output identical):
 -- 1. inv: was seq-scanning ALL 2.6M order_items + 535k invoice_v2_order_item
@@ -45,7 +63,7 @@
 --    passes, ~3.2s+4.4s of cold I/O).
 WITH res AS (
   SELECT DISTINCT ON (r.id)
-    r.id AS reservation_id, fr.attendee_count AS head_count,
+    r.id AS reservation_id, fr.id AS rental_id, fr.attendee_count AS head_count,
     INITCAP(fr.booking_type) AS booking_type,
     CASE WHEN r.canceled_at IS NOT NULL THEN 'Canceled'
          ELSE INITCAP(fr.status) END AS status,
@@ -113,7 +131,8 @@ inv_pay AS (
 ),
 feed AS (
   SELECT
-    res.reservation_id AS "Reservation ID", res.local_date AS "Date", res.location AS "Location",
+    res.reservation_id AS "Reservation ID", res.rental_id::text AS "Rental ID",
+    res.local_date AS "Date", res.location AS "Location",
     res.site_id::text AS "Site ID",
     res.facility AS "Facility", res.site_type AS "Site Type", res.booking_type AS "Booking Type",
     res.status AS "Status", res.head_count AS "Head Cnt", 'Reservation' AS "Source",
@@ -123,8 +142,9 @@ feed AS (
   LEFT JOIN res_fin rr ON rr.reservation_id = res.reservation_id
   UNION ALL
   SELECT
-    inv.order_item_id, COALESCE(fl.local_date, inv.created_date), COALESCE(fl.location, '—'),
-    NULL::text,   -- "Site ID": an invoice line is money, not a site. "Facility" below is the FEE'S NAME.
+    inv.order_item_id, inv.fr_id::text,
+    COALESCE(fl.local_date, inv.created_date), COALESCE(fl.location, '—'),
+    NULL::text,   -- "Site ID": an invoice line is money, not a site
     inv.facility, fl.site_type, 'Managed', 'Confirmed', NULL::int, 'Invoice',
     inv.billed, inv.billed, COALESCE(ip.collected, 0), COALESCE(ip.refunded, 0)
   FROM inv

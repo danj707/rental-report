@@ -1,5 +1,119 @@
 # Project notes for Claude
 
+## "THERE WERE NOT 2,668 BOOKINGS" — there were 1,683 rentals (2026-09-12)
+
+Dan, on Watertown's Facilities Summary over 2026 with the site type narrowed to
+courts: *"examine this 'number of bookings' metric, pretty sure there were not
+2,668 bookings at watertown for courts this year."*
+
+**THE NUMBER WAS RIGHT AND THE WORD WAS WRONG.** Rebuilt from the base tables
+independently, every figure on that screen reproduces exactly — 2,668 court
+rows, 162 canceled, 1,671 instant / 997 managed, 21 sites — and the tab badges
+tie too (Fields 3,486, Ice 110, Outdoor 750 + 353 = 1,103).
+
+Card 19570 is **per RESERVATION**, so a recurring rental contributes one row per
+date and every count taken off the feed counts DATES:
+
+| Watertown, 2026 | dates | rentals |
+|---|---|---|
+| **courts** | 2,668 | **1,683** — 1,567 one-off, plus 116 recurring ones carrying 1,101 dates |
+| **fields** | 3,486 | **148** — a **24x** multiplier under the same word |
+| everything | 7,367 | 2,318 |
+
+Courts are only 1.6x, which is why courts still looked *almost* right and fields
+would have looked absurd. Seasonal shape is entirely plausible (1 booking in
+January, then 298 · 405 · 442 · 477 · 527 · 352 for Apr–Sep, 94% instant-book,
+~15/day across 21 courts), and all 21 sites are real courts.
+
+**THE PAGE COULD NOT SAY IT.** The feed emitted no rental identifier at all, so
+"how many rentals" was unanswerable from the client — which is why this cost a
+card push rather than a relabel. Dan: *"Show both, i'm here, will flip it."*
+
+### CARD 19570 v2.3 — ONE COLUMN, and the proof is the whole of the work
+
+`"Rental ID"` (`fr.id`), no logic change. **Proven additive BEFORE pushing** by
+running the whole final SELECT with literals both ways (the card-21682 lesson —
+a summary wrapper around the CTEs proves the CTEs and never executes the column
+list or the trailing `ORDER BY`):
+
+| | deployed v2.2 | v2.3 |
+|---|---|---|
+| rows | 7,402 | **7,402** |
+| md5 over all 14 existing columns | `92c23676c05cee98c3e422516151061c` | **identical** |
+
+plus 0 reservation rows and 0 of the 35 invoice rows missing the new id.
+
+- **IT IS POPULATED ON INVOICE ROWS, deliberately unlike `Site ID`.** A fee line
+  genuinely belongs to a rental (`iv.facility_rental_id`); `Site ID` is NULL
+  there because an invoice row's `Facility` is the FEE'S NAME and an id would be
+  a lie. **The count still comes from `resRows`** — counting over the scoped set
+  folds in rentals represented only by a fee line and disagrees with the date
+  count beside it. The spec's fixture plants five such rentals for exactly that.
+- **The invoice arm emits it in the SAME POSITION as the reservation arm.** A
+  UNION is positional; a column added to one arm only shifts every column after
+  it.
+- The live card was **read and diffed against the mirror first** (executable SQL
+  identical, only comment wording differs — second time this card has needed
+  that check), and the pushed SQL read back with the trailing `ORDER BY` intact.
+- Tags came back **Text, six parameters**, exactly as this file predicts; Dan
+  flipped to **three, correctly typed**. Signed off cache-independently through
+  the public endpoint afterwards: **7,404 rows in 21.2s**, courts **2,670 dates
+  / 1,685 rentals**, fields **3,486 / 148**, zero rows missing the id on either
+  arm. (2,670 against the 2,668 measured an hour earlier is the OPEN WINDOW, not
+  a discrepancy — the Clarksville rule.)
+
+### THE PAGE SHOWS BOTH, and the fallback is the careful half
+
+`aggregate()` gains `rentals`, counted distinctly from `resRows` like `bookings`
+and `sites`. The KPI card reads **Reservation Dates / 2,668 / "across 1,683
+rentals"**, the banner carries both pills, and the toolbar reads
+`2,668 dates · 1,683 rentals · 21 sites`.
+
+**`hasRentalId` IS PRESENCE, ASKED OF THE RESPONSE.** Feeds cache four hours, so
+a pre-v2.3 entry and a v2.3 one are both live at once, and a value test renders
+a confident *"across 0 rentals"* on the old shape — which says the dates belong
+to nothing rather than that this feed cannot tell us. On the old shape the page
+falls back to the exact wording it used before. Same rule as `hasBilled` beside
+it and `hasAbsent` / `ciHasStatus` elsewhere.
+
+**NOT renamed on the per-vertical tabs.** Their KPI sub-lines already say
+"<vertical> reservations in view", and giving each its own rental count means
+per-vertical rental sets — a separate decision, not a drive-by.
+
+### Guards
+
+`facility-summary.spec.js` 11 → **17 tests**, lifting and RUNNING the real
+`aggregate()` over a fixture of **206 dates / 58 rentals / 41 sites** — three
+different numbers on purpose, so a rental count cannot be a row count or a site
+count wearing a different label. Mutation-tested, all failing BY NAME: the count
+taken over the scoped set (so a fee line's rental counts), a pre-v2.3 feed
+reporting 0 instead of null, and the presence gate hardcoded true.
+
+Two `ci-check-render.js` cases, both mutation-tested in a browser: counting rows
+again (`11 dates · 11 rentals`), the KPI printing the date count so the two
+surfaces disagree (`8 rentals · KPI reads 11`), and the presence gate hardcoded
+true so a pre-v2.3 feed claims `0 rentals`.
+
+**ONE OF MY OWN CASES COULD NOT DISCRIMINATE, and the fixture is why.** It also
+required `rentals !== sites` — but the default scope holds one rental per site,
+so 8 and 8 is what a CORRECT page renders there too. Forcing them apart would
+have meant pinning the case to whichever rows the default filters admit. That
+claim moved to the spec, where the fixture is controlled; *an assertion that
+cannot separate the two implementations is not a guard, and neither is one that
+is only true of a scope you did not choose.*
+
+### AND THE HARNESS NEVER PRINTED WHAT A CASE MEASURED
+
+Every act-driven case in `ci-check-render.js` stamps a `data-rc-<x>-seen` string
+carrying the numbers behind its verdict, and **nothing read one** — so a
+failure said only *"rendered no [selector] — the page came up blank"* on a page
+that had rendered perfectly, with the explanation sitting on the element. It
+cost three blind debugging rounds here before being fixed. **Already fixed once
+in the org-features harness and never ported.** It reports `measured — …` now,
+and that line is what found the real defect underneath: the stub took the mode
+as its first argument while the harness calls `body(url, org)`, so the pre-v2.3
+case had been running against a v2.3 feed.
+
 ## THE PRODUCT SALES REPORT 504'd, AND THE INDEX WE ASKED FOR HAD ARRIVED (2026-09-12)
 
 Dan, with `norman/products` on screen reading **"Couldn't load report: HTTP 504"**:

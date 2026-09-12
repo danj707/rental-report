@@ -78,6 +78,10 @@ function campsiteRows() {
   const rows = [];
   const push = (site, date, dayNum, totDays, addOns, total) => rows.push({
     "Org Name": "Test Parks", "Reservation ID": site + "-" + date, "Date": date,
+    "Rental ID": "rent-camp-" + site + "-" + (() => {
+      const t = new Date(date + "T12:00:00"); t.setDate(t.getDate() - (dayNum - 1));
+      return t.toISOString().slice(0, 10);
+    })(),
     "Day": "Friday", "Begin": "01:00pm", "End": null,
     "Location": "Topaz Lake Recreation Area", "Facility": "Topaz Lake Recreation Area - " + site,
     "Site Type": "campsite", "Purpose": "Camping", "Head Cnt": 4,
@@ -179,6 +183,7 @@ function outdoorRows() {
   const rows = [];
   const push = (site, type, loc, date, begin, endT, dayNum, totDays, addOns, total, head) => rows.push({
     "Org Name": "Test Parks", "Reservation ID": site + "-" + date, "Date": date,
+    "Rental ID": "rent-out-" + site,
     "Day": "Saturday", "Begin": begin, "End": endT,
     "Location": loc, "Facility": loc + " - " + site,
     "Site Type": type, "Purpose": "Birthday party", "Head Cnt": head,
@@ -254,6 +259,7 @@ function fieldRows() {
   const d = n => { const t = new Date(Date.now() - n * 86400000); return t.toISOString().slice(0, 10); };
   const push = (site, loc, day, begin, endT, total, addOns, bookingType, head) => rows.push({
     "Org Name": "Test Parks", "Reservation ID": site + "-" + day + "-" + begin, "Date": d(day),
+    "Rental ID": "rent-fld-" + site,
     "Day": "Tuesday", "Begin": begin, "End": endT,
     "Location": loc, "Facility": loc + " - " + site,
     "Site Type": "field", "Purpose": "League practice", "Head Cnt": head,
@@ -1141,6 +1147,10 @@ function addonFormRows() {
   const d = n => { const t = new Date(Date.now() - n * 86400000); return t.toISOString().slice(0, 10); };
   const mk = (resId, site, addOns, addonFees, siteType) => ({
     "Org Name": "Test Parks", "Reservation ID": resId, "Date": d(3),
+    // res-addons and res-forms are ONE rental over two spaces at Arsenal Park;
+    // res-plain is its own. So sites > rentals here, and a count that reused
+    // the site key would read one too many.
+    "Rental ID": resId === "res-plain" ? "rent-res-plain" : "rent-arsenal-pair",
     "Day": "Sunday", "Begin": "10:00am", "End": "02:00pm",
     "Location": "Arsenal Park", "Facility": "Arsenal Park - " + site,
     "Site Type": siteType === undefined ? "gym" : siteType,
@@ -1451,9 +1461,14 @@ const STUBS = [
      disagree would let a tab pass on rows the hub says do not exist. The page
      applies refineRows() to this feed, which is what recovers the court-typed
      swim lanes into the aquatics vertical. */
-  { match: /\/facilities\/api\/summary/, body: () => ({
-      rows: campsiteRows().concat(outdoorRows()).concat(fieldRows()).concat(addonFormRows()),
-      meta: { org_id: "org-uuid-1" } }) },
+  { match: /\/facilities\/api\/summary/, body: () => {
+      const rows = campsiteRows().concat(outdoorRows()).concat(fieldRows()).concat(addonFormRows());
+      // A warm cache entry written before card 19570 v2.3 carries no "Rental
+      // ID" at all. The page must fall back to the old wording rather than
+      // report "across 0 rentals", which would say the dates belong to nothing.
+      if (STUB_MODE === "prev23") rows.forEach(r => { delete r["Rental ID"]; });
+      return { rows, meta: { org_id: "org-uuid-1" } };
+    } },
 
   // Two of the three fixture rentals have Required Information; the third has
   // none, which is the 62%-of-a-week case that must render as nothing.
@@ -3804,6 +3819,74 @@ const CASES = [
   { name: "facilities · fields peak hour", path: "/{org}/facilities?tab=fields",  needs: "[data-fld-peak=\"7p\"]" },
   { name: "facilities · fields sport note", path: "/{org}/facilities?tab=fields", needs: "[data-fld-sport-note]" },
   { name: "facilities · racket sports",    path: "/{org}/facilities?tab=racket",  needs: ".court-native .sum-cards" },
+  /* ── DATES ARE NOT RENTALS (card 19570 v2.3) ─────────────────────────────
+     Dan, on Watertown's courts over 2026: "pretty sure there were not 2,668
+     bookings at watertown for courts this year." The 2,668 was right and it
+     counted reservation DATES — 1,683 rentals, of which 116 recurring ones
+     carried 1,101 of those dates. On the FIELDS tab the same word hid a 24x
+     multiplier: 3,486 dates across 148 rentals.
+
+     THE CASE RECOMPUTES THE RENTAL COUNT FROM THE FEED rather than asserting a
+     number, because a page that counted rows again would render a perfectly
+     plausible figure — and it requires the two to DIFFER, or the fixture cannot
+     tell "distinct rentals" from "rows" at all. */
+  { name: "facilities · dates and rentals are counted separately",
+    path: "/{org}/facilities?tab=summary", needs: '[data-rc-facrent="1"]',
+    act: async (pg) => {
+      await pg.waitForSelector("[data-fac-dates]");
+      await pg.evaluate(() => {
+        const el = document.querySelector("[data-fac-dates]");
+        const dates   = Number(el.getAttribute("data-fac-dates"));
+        const rentals = Number(el.getAttribute("data-fac-rentals"));
+        const sites   = Number(el.getAttribute("data-fac-sites"));
+        // The KPI card must agree with the toolbar — two surfaces disagreeing
+        // about one window is worse than either of them being vague.
+        const card = document.querySelector('[data-sc="dates"]');
+        const sub  = card ? card.getAttribute("data-sc-sub") : "";
+        const kpiSays = Number(String(sub).replace(/[^0-9]/g, ""));
+        // WHAT ONLY A BROWSER CAN SAY: that the page WIRES the count through to
+        // both surfaces, and that they agree. A page counting feed rows again
+        // gives rentals === dates, which is what this rules out.
+        //
+        // It deliberately does NOT also require rentals !== sites. The default
+        // scope here happens to hold one rental per site, so the two are equal
+        // on a correct page as well as on a wrong one — an assertion that
+        // cannot separate them is not a guard, and forcing them apart would
+        // mean pinning this case to whichever rows the default filters admit.
+        // Distinguishing a rental count from a site count is owned by
+        // facility-summary.spec.js, where the fixture is fully controlled
+        // (41 sites against 58 rentals over 206 dates).
+        const good = rentals > 0 && rentals < dates && kpiSays === rentals;
+        document.body.setAttribute("data-rc-facrent", good ? "1" : "0");
+        document.body.setAttribute("data-rc-facrent-seen",
+          dates + " dates · " + rentals + " rentals · " + sites + " sites · KPI sub "
+          + JSON.stringify(sub) + " reads " + kpiSays);
+      });
+    } },
+  /* A WARM PRE-v2.3 CACHE ENTRY CANNOT SAY. Feeds cache four hours, so the old
+     shape and the new one are live at once. "across 0 rentals" would say the
+     dates belong to nothing; the page must fall back to the word it used
+     before. Keyed on the KPI hook rather than on text alone, because a card
+     that renders the right label off the wrong branch is the same bug. */
+  { name: "facilities · a pre-v2.3 feed keeps the old wording",
+    path: "/{org}/facilities?tab=summary", stubMode: "prev23",
+    needs: '[data-rc-facprev="1"]',
+    act: async (pg) => {
+      await pg.waitForSelector("[data-fac-dates]");
+      await pg.evaluate(() => {
+        const el = document.querySelector("[data-fac-dates]");
+        const rentals = el.getAttribute("data-fac-rentals");
+        const text = el.textContent || "";
+        const good = rentals === "" && /bookings/.test(text) && !/rentals/.test(text)
+                     && !!document.querySelector('[data-sc="bookings"]')
+                     && !document.querySelector('[data-sc="dates"]');
+        document.body.setAttribute("data-rc-facprev", good ? "1" : "0");
+        document.body.setAttribute("data-rc-facprev-seen",
+          JSON.stringify(text) + " · data-fac-rentals=" + JSON.stringify(rentals)
+          + " · bookings card=" + !!document.querySelector('[data-sc="bookings"]')
+          + " · dates card=" + !!document.querySelector('[data-sc="dates"]'));
+      });
+    } },
   // ── Court Utilization is retired as a tab (Dan, 2026-09-04) ─────────────
   // Two things, and neither is "the page rendered". The tab must be ABSENT from
   // the DOM — a greyed or merely unclicked tab is a different claim — and a
@@ -6331,7 +6414,7 @@ function waitForServer(started) {
     // wrong org's token would 404 before rendering anything.
     const url = `http://127.0.0.1:${PORT}` + c.path.replace("{org}", org)
       + (c.path.includes("?") ? "&" : "?") + "token=" + encodeURIComponent(c.token || token);
-    let found = false, bodyLen = 0;
+    let found = false, bodyLen = 0, seen = [];
     try {
       await page.goto(url, { waitUntil: "domcontentloaded", timeout: PAGE_TIMEOUT_MS });
       // Optional: drive the page before asserting. Some states are only reachable
@@ -6359,6 +6442,14 @@ function waitForServer(started) {
         if (stillThere) { found = false; errs.push('"' + c.absent + '" should NOT be present, but it is'); }
       }
       bodyLen = await page.evaluate(() => document.body.innerText.trim().length);
+      // WHAT THE CASE MEASURED, not just which selector was missing. Every
+      // act-driven case stamps a data-rc-<x>-seen string carrying the numbers
+      // that decided its verdict, and nothing read one — so a failure said only
+      // "the page came up blank" while the explanation sat on the element.
+      // Already fixed once in the org-features harness; this is the same gap.
+      seen = await page.evaluate(() => [...document.body.attributes]
+        .filter(a => /^data-rc-.*-seen$/.test(a.name))
+        .map(a => a.name.replace(/^data-rc-|-seen$/g, "") + ": " + a.value));
 
       // AN ESCAPE SEQUENCE THAT REACHED THE SCREEN. Checked on EVERY case, not
       // per-selector, because it is a class of bug rather than one panel's
@@ -6414,7 +6505,9 @@ function waitForServer(started) {
     if (c.after) { try { await c.after({ org, dataDir, token }); } catch (_) {} }
 
     if (errs.length) failures.push(`${c.name}: ${errs.length} uncaught error(s)\n      ` + errs.slice(0, 3).join("\n      "));
-    else if (!found) failures.push(`${c.name}: rendered no "${c.needs}" (body text ${bodyLen} chars) — the page came up blank`);
+    else if (!found) failures.push(`${c.name}: rendered no "${c.needs}" (body text ${bodyLen} chars)`
+      + (seen.length ? "\n      measured — " + seen.join("\n      measured — ")
+                     : " — the page came up blank"));
     else console.log(`  ✓ ${c.name}`);
   }
 
