@@ -224,7 +224,7 @@ const SAMPLE = {
                           SRC.indexOf('app.post("/:org/:report/api/insights"'));
   ok(route.length > 200, "found the speak route");
 
-  ok(/if \(!ELEVEN_KEY\) return refuse404\(res,/.test(route),
+  ok(/if \(!elevenKey\(\)\) return refuse404\(res,/.test(route),
      "no key means a DELIBERATE 404 -- noteDeadLink alerts on 'a 404 with a valid-looking token', which is byte-identical to this refusal");
   ok(/text\.length > ELEVEN_MAX_CHARS/.test(route),
      "the script is length-clamped -- without it the route is a free TTS proxy for anyone holding an org token");
@@ -241,8 +241,12 @@ const SAMPLE = {
   ok(/error: "Voice service unavailable"/.test(route) && !/ELEVEN_KEY/.test(route.slice(route.indexOf("res.status(502)"))),
      "...and the client is told nothing about the key either");
 
-  ok(/const ELEVEN_KEY\s*=\s*process\.env\.ELEVENLABS_API_KEY \|\| "";/.test(SRC),
+  // Read per REQUEST, not latched into a const at boot: an omit-when-unset
+  // key has to light the route up when it is set, not when the box restarts.
+  ok(/function elevenKey\(\) \{ return process\.env\.ELEVENLABS_API_KEY \|\| ""; \}/.test(SRC),
      "the key comes from the env and defaults to EMPTY -- never a committed literal");
+  ok(!/const ELEVEN_KEY\b/.test(SRC) && /"xi-api-key": elevenKey\(\)/.test(route),
+     "...and it is read PER REQUEST, so setting it in Railway does not wait for a restart");
   ok(/pNInz6obpgDQGcFmaJgB/.test(SRC) && /eleven_turbo_v2_5/.test(SRC),
      "the voice and model match the rec-training-video skill, so a report read aloud sounds like the training videos");
 

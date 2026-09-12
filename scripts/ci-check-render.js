@@ -1539,6 +1539,37 @@ const STUBS = [
                                        delete c["Section First Session"]; return c; })
         : progSchedRows(),
       meta: { org_id: "org-uuid-1", dataAt: new Date().toISOString() } }) },
+  /* Card 17298 (Calendar Schedule) — the Session Schedule page.
+     REGISTERED ABOVE THE GENERIC /api/data STUB ON PURPOSE. STUBS is searched
+     with .find, and /\/api\/data/ matches /:org/calendar/api/data too, so a
+     stub placed below it never answers and the page renders another report's
+     shape. The diagnostic signature is memorable: a row-COUNT case passes while
+     every case about a VALUE fails.
+
+     The two windows answer DIFFERENTLY — the week carries 2 rows, the
+     today→+60 filter-options sweep carries a third activity ("Pickleball") that
+     the week does not. That asymmetry is what makes the ordering case able to
+     tell the two fetches apart at all; if both answered the same rows, a page
+     that fired them concurrently and one that sequenced them would look
+     identical. */
+  { match: /\/calendar\/api\/data/, body: (url) => {
+      const u = new URL(url, "http://x");
+      const from = u.searchParams.get("start_date") || "";
+      const to   = u.searchParams.get("end_date") || "";
+      // A span over three weeks is the filter-options sweep, not the visible week.
+      const wide = (new Date(to) - new Date(from)) > 21 * 86400000;
+      const row = (sec, act, loc) => ({
+        Date: from, Day: "Sun", Begin: "09:00 AM", End: "10:00 AM", "Begin Sort": "09:00",
+        Program: "Youth " + act, Section: sec, Price: "$40.00", Activity: act,
+        Location: loc, Status: "Open",
+        "Section URL": "https://www.rec.us/sections/" + sec,
+        Description: "", Eligibility: "Ages 6-10",
+      });
+      const rows = [row("sec-swim", "Swimming", "Victory Field"),
+                    row("sec-yoga", "Yoga", "Watertown Senior Center")];
+      if (wide) rows.push(row("sec-pickle", "Pickleball", "Filippello Park"));
+      return { rows, meta: { org_id: "org-uuid-1" } };
+    } },
   { match: /\/api\/data/,                   body: () => ({ rows: campsiteRows(),
       meta: { window: { start: "2026-08-19", end: "2026-08-26" } } }) },
   { match: /\/api\/pulse/,                  body: () => ({ items: [], generated: null }) },
@@ -1593,6 +1624,28 @@ const STUBS = [
   // wrong password (report-settings-unlock.spec.js drives that for real, against
   // a booted server). What only a browser can show is that the page SURFACES the
   // refusal instead of silently reloading as though it worked, so this stub
+  /* The survey the widget offers. MUST sit above the generic /api/ catch-all
+     below, which answers `{ok:true, rows:[]}` — the widget reads `d.survey`,
+     so the catch-all silently produces "no survey" and every case asserting
+     the card is ABSENT would pass vacuously. Same fall-through already
+     recorded for the /api/data stub.
+
+     The fixture carries a REQUIRED rating, a choice and a text box, because
+     the interesting cases are the required gate and the answers being keyed by
+     question id. `nosurvey` is the other real state: an admin page with
+     nothing live, which must look different from a page that cannot be
+     surveyed at all. */
+  { match: /\/api\/survey-dismiss/,        body: () => ({ ok: true }) },
+  { match: /\/api\/survey/, body: () => (STUB_MODE === "nosurvey" ? { survey: null } : {
+      survey: {
+        id: "svy_fixture", title: "How is the schedule?", intro: "Two quick questions.",
+        questions: [
+          { id: "q1", type: "rating5", prompt: "Rate the schedule", required: true },
+          { id: "q2", type: "single",  prompt: "Which view?", options: ["Week", "Month"] },
+          { id: "q3", type: "text",    prompt: "Anything else?", placeholder: "Optional" },
+        ],
+      },
+    }) },
   // answers 401 the way the real route does.
   { match: /\/api\/settings-unlock/, status: 401,
     body: () => ({ error: "That password is not right. 4 attempts left.", left: 4 }) },
@@ -1859,7 +1912,217 @@ const EUCLID_COLUMNS = async page => {
 };
 
 const CASES = [
+
+  /* ── Surveys ─────────────────────────────────────────────────────────────
+     Dan's one hard rule — "just NEVER on a customer facing report ... ONLY on
+     admin stuff" — is honoured STRUCTURALLY: the three un-tokened customer
+     pages do not load feedback-widget.js, so there is no survey code on them
+     to gate. The campmap case below is what fails the day somebody adds the
+     widget to that page "for the banner".
+
+     Every case clears localStorage in `pre`. The widget deliberately asks once
+     per browser, so a case that answers or dismisses would leave the next one
+     looking at a page with no card — a green baseline turning red only when
+     run as part of the group, which is already recorded here for the
+     saved-views cases. */
+  { name: "survey · THE RULE — no survey code on the public campsite map",
+    path: "/{org}/campmap",
+    absent: ".rec-svy, script[src='/feedback-widget.js']",
+    needs: "#map" },
+
+  { name: "survey · the card is offered on an admin report",
+    path: "/{org}/facility",
+    pre: async (page) => { await page.evaluateOnNewDocument(() => { try { localStorage.clear(); } catch (e) {} }); },
+    needs: ".rec-svy[data-svy='svy_fixture']" },
+
+  // A corner card, never a modal: these readers are admins mid-task, and a
+  // dialog over the report they came to read is an interruption. Measured off
+  // the COMPUTED box rather than the class name — a rule that says `inset:0`
+  // renders an identical class.
+  { name: "survey · ...as a corner card that does not cover the report",
+    path: "/{org}/facility",
+    pre: async (page) => { await page.evaluateOnNewDocument(() => { try { localStorage.clear(); } catch (e) {} }); },
+    needs: "body[data-svy-corner='1']",
+    act: async (page) => {
+      await page.waitForSelector(".rec-svy", { timeout: 20000 });
+      await page.evaluate(() => {
+        const r = document.querySelector(".rec-svy").getBoundingClientRect();
+        if (r.width < window.innerWidth * 0.8 && r.height < window.innerHeight * 0.9) {
+          document.body.setAttribute("data-svy-corner", "1");
+        }
+      });
+    } },
+
+  // The required gate NAMES the question. On a scrolling card the one they
+  // missed may be off screen, so "fill in the required fields" is a dead end —
+  // and the case asserts NO request was made, because an error message over a
+  // request that already fired is the worse failure.
+  { name: "survey · a required question blocks Send and names itself",
+    path: "/{org}/facility",
+    pre: async (page) => {
+      await page.evaluateOnNewDocument(() => {
+        try { localStorage.clear(); } catch (e) {}
+        window.__svyPosts = [];
+        const f = window.fetch;
+        window.fetch = function (u, o) {
+          if (o && o.method === "POST" && String(u).includes("/api/survey")) window.__svyPosts.push(String(u));
+          return f.apply(this, arguments);
+        };
+      });
+    },
+    needs: "body[data-svy-blocked='1']",
+    act: async (page) => {
+      await page.waitForSelector(".rec-svy-send", { timeout: 20000 });
+      await page.click(".rec-svy-send");
+      await page.evaluate(() => {
+        const e = document.querySelector(".rec-svy-err");
+        const named = e && e.style.display !== "none" && /Rate the schedule/.test(e.textContent);
+        if (named && window.__svyPosts.length === 0) document.body.setAttribute("data-svy-blocked", "1");
+      });
+    } },
+
+  /* THE ANSWERS ARE KEYED BY QUESTION ID, and only the bytes can say so: a
+     card that posted them positionally, or under the prompt text, renders
+     identically and produces a body the server then drops on the floor. So
+     this reads what the POST actually carried. */
+  { name: "survey · answering posts the answers keyed by question id",
+    path: "/{org}/facility",
+    pre: async (page) => {
+      await page.evaluateOnNewDocument(() => {
+        try { localStorage.clear(); } catch (e) {}
+        window.__svyBody = null;
+        const f = window.fetch;
+        window.fetch = function (u, o) {
+          if (o && o.method === "POST" && /\/api\/survey($|\?)/.test(String(u).split("?")[0] + "?")) {
+            try { window.__svyBody = JSON.parse(o.body); } catch (e) {}
+          }
+          return f.apply(this, arguments);
+        };
+      });
+    },
+    needs: "body[data-svy-sent='1']",
+    act: async (page) => {
+      await page.waitForSelector(".rec-svy-scale button", { timeout: 20000 });
+      await page.evaluate(() => {
+        // 4 of 5 on the rating, "Month" on the choice, and a sentence.
+        document.querySelectorAll('[data-svy-q="q1"] .rec-svy-scale button')[3].click();
+        const opts = document.querySelectorAll('[data-svy-q="q2"] input');
+        opts[1].click();
+        const ta = document.querySelector('[data-svy-q="q3"] textarea');
+        ta.value = "The week view wraps.";
+        ta.dispatchEvent(new Event("input", { bubbles: true }));
+        document.querySelector(".rec-svy-send").click();
+      });
+      await page.waitForFunction(() => window.__svyBody, { timeout: 10000 });
+      await page.evaluate(() => {
+        const b = window.__svyBody;
+        if (b && b.surveyId === "svy_fixture" && b.answers
+            && b.answers.q1 === 4 && b.answers.q2 === "Month"
+            && b.answers.q3 === "The week view wraps.") {
+          document.body.setAttribute("data-svy-sent", "1");
+        }
+      });
+    } },
+
+  // An admin page with nothing live must look different from a page that
+  // cannot be surveyed at all — a value test could not separate the two.
+  { name: "survey · nothing is offered when no survey is live",
+    path: "/{org}/facility", stubMode: "nosurvey",
+    pre: async (page) => { await page.evaluateOnNewDocument(() => { try { localStorage.clear(); } catch (e) {} }); },
+    needs: ".toolbar", absent: ".rec-svy" },
+
+  // Dismissed stays dismissed. Being re-asked something you already declined
+  // is worse than never being asked, and it is the fastest way to make the
+  // card get ignored.
+  { name: "survey · Not now dismisses it, and it does not come back",
+    path: "/{org}/facility",
+    // ONE-SHOT clear, via sessionStorage. `evaluateOnNewDocument` runs on every
+    // navigation, so an unconditional clear would wipe the dismissal on the
+    // reload below — and the case would then be asserting that the card comes
+    // back, which is the opposite of what it is named for.
+    pre: async (page) => {
+      await page.evaluateOnNewDocument(() => {
+        try {
+          if (!sessionStorage.getItem("__svyCleared")) {
+            localStorage.clear(); sessionStorage.setItem("__svyCleared", "1");
+          }
+        } catch (e) {}
+      });
+    },
+    needs: "body[data-svy-gone='1']",
+    act: async (page) => {
+      await page.waitForSelector(".rec-svy-later", { timeout: 20000 });
+      await page.click(".rec-svy-later");
+      await page.waitForFunction(() => !document.querySelector(".rec-svy"), { timeout: 5000 });
+      // Reload WITHOUT clearing storage — this is the half that matters.
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await page.waitForSelector(".toolbar", { timeout: 30000 });
+      await new Promise(r => setTimeout(r, 5200));   // past the widget's own show delay
+      await page.evaluate(() => {
+        if (!document.querySelector(".rec-svy")) document.body.setAttribute("data-svy-gone", "1");
+      });
+    } },
+
   { name: "facilities · camping",  path: "/{org}/facilities?tab=camping", needs: ".camp-cal .cc-hd" },
+
+  /* ── The Session Schedule (card 17298) ───────────────────────────────────
+     THIS PAGE HAD NO RENDER COVERAGE AT ALL, which is part of why it could sit
+     on "Loading…" for three minutes without anything noticing. */
+
+  // Baseline: the week's own rows reach the grid. Keyed on the COUNT, so a page
+  // served another report's shape by a mis-ordered stub fails here rather than
+  // rendering something plausible.
+  { name: "calendar · the week's rows render",
+    path: "/{org}/calendar",
+    needs: "#report-ready[data-cal-rows='2']" },
+
+  /* THE FILTER-OPTIONS FETCH WAITS FOR THE VISIBLE WEEK'S FETCH.
+     No source assertion can see this — the effect reads correctly either way,
+     and what regressed is a RACE. Fired together these are two concurrent
+     queries against one Metabase card and they contend: measured at Watertown,
+     92.5s and 34.0s alone became 180.3s and 196.9s together, past the data
+     route's 60s+120s budget.
+
+     stubDelayMs holds every response open, so a concurrent page starts both
+     requests inside the same tick and a sequenced one cannot start the second
+     until the first has resolved. The assertion is on the GAP between the two
+     request starts, not merely on their order — two requests issued together
+     still arrive in some order, so an order-only check passes on the bug. */
+  { name: "calendar · filter options wait for the week",
+    path: "/{org}/calendar",
+    stubDelayMs: 2500,
+    pre: async (page) => {
+      await page.evaluateOnNewDocument(() => {
+        window.__calReq = [];
+        const orig = window.fetch;
+        window.fetch = function (input) {
+          const u = typeof input === "string" ? input : (input && input.url) || "";
+          if (u.indexOf("/calendar/api/data") !== -1) {
+            window.__calReq.push({ url: u, t: Date.now() });
+          }
+          return orig.apply(this, arguments);
+        };
+      });
+    },
+    act: async (page) => {
+      // Wait for BOTH requests, then stamp the verdict where `needs` can read it.
+      await page.waitForFunction(() => (window.__calReq || []).length >= 2, { timeout: 40000 });
+      await page.evaluate(() => {
+        const r = window.__calReq;
+        const span = (u) => {
+          const p = new URL(u, location.origin).searchParams;
+          return (new Date(p.get("end_date")) - new Date(p.get("start_date"))) / 86400000;
+        };
+        const week = r.find(x => span(x.url) <= 21);
+        const widE = r.find(x => span(x.url) > 21);
+        const gap = (week && widE) ? widE.t - week.t : -1;
+        // The stub holds each response ~2500ms. Sequenced, the wide request
+        // cannot be issued until the week's has come back, so the gap clears
+        // the delay; fired together it is a few milliseconds.
+        document.body.setAttribute("data-cal-seq", gap > 1500 ? "1" : "0");
+      });
+    },
+    needs: "body[data-cal-seq='1']" },
 
   /* ── The Program Schedule (card 21649) ───────────────────────────────────
      This report shipped with NO render coverage at all, which is the state the
