@@ -525,6 +525,67 @@ if (!SKIP_SOURCE) {
     assert.ok(/dismissed[\s\S]{0,200}No answers|No answers[\s\S]{0,200}dismissed/.test(cellBlock),
       "the no-answers branch does not consult dismissed");
   });
+  /* ── THE CELL OPENS THE ANSWERS ───────────────────────────────────
+     Dan, with the usage table on screen: "I want to see the scores here and
+     be clickable into any results." A score with nowhere to go is the dead
+     end this repo keeps recording — the Failed check-ins tile, the "2 ending
+     soon" count — so the cell is the way in. */
+  test("a scored cell is a control; an empty one stays an inert dot", () => {
+    /* Absent, not disabled: a cell with no answers must not open a panel with
+       nothing in it. Both halves are asserted, because "the class exists"
+       passes on a build that stamps it on every row. */
+    const i = srv.indexOf("data-svy-org=");
+    const cellBlock = srv.slice(Math.max(0, i - 3000), i + 200);
+    const empty = cellBlock.slice(cellBlock.indexOf("if (!n) {"), cellBlock.indexOf("} else {"));
+    assert.ok(empty.length > 40, "the empty branch is not where this expects it");
+    assert.ok(!/svy-open/.test(empty), "a cell with no answers is clickable — it can only open an empty panel");
+    assert.ok(/svy-open[\s\S]{0,400}svyOrgResults\(/.test(cellBlock),
+      "the scored cell does not open the org's answers");
+  });
+  test("...and it says so, or nobody learns the number is a door", () => {
+    const i = srv.indexOf("data-svy-org=");
+    assert.ok(/click to read the answers/.test(srv.slice(Math.max(0, i - 3000), i)),
+      "the tooltip does not say the cell opens anything");
+  });
+  test("ONE question renderer, read by both panels", () => {
+    /* The per-survey readout and the per-org panel draw the same blocks. Two
+       copies drift the first time a question type changes, and then one panel
+       reports a distribution the other does not. */
+    const defs = (srv.match(/function svyQuestionBlocks\(/g) || []).length;
+    assert.strictEqual(defs, 1, "svyQuestionBlocks is declared " + defs + " times");
+    const calls = (srv.match(/svyQuestionBlocks\(/g) || []).length - defs;
+    assert.ok(calls >= 2, "only " + calls + " caller(s) — the per-org panel must reuse the readout's renderer");
+  });
+  test("the org panel is a POST behind the password, like the readout it reuses", () => {
+    /* It returns the verbatim sentences named orgs typed about us, and
+       dashboardAuth guards only "/" — its first line is
+       `if (req.path !== "/") return next()` — so an /api/admin GET is OPEN. */
+    assert.ok(/app\.post\("\/api\/admin\/surveys\/org"/.test(srv),
+      "the org readout must not be a GET");
+    const i = srv.indexOf('app.post("/api/admin/surveys/org"');
+    assert.ok(/dashboardPasswordBlocked\(req, res\)/.test(srv.slice(i, i + 400)),
+      "the org readout is not password-gated");
+    assert.ok(!/app\.get\("\/api\/admin\/surveys\/org"/.test(srv));
+  });
+  test("the org panel reuses surveyReadout rather than aggregating a second time", () => {
+    const i = srv.indexOf('app.post("/api/admin/surveys/org"');
+    const route = srv.slice(i, i + 2200);
+    assert.ok(/surveyReadout\(id, days, slug\)/.test(route),
+      "the per-org panel must read the survey's own readout, scoped to this org");
+    assert.ok(/buildSurveyScores\(/.test(route),
+      "the panel's header figures must come from the same aggregator the cell reads");
+  });
+  test("surveyReadout scopes DISMISSALS to the org too, not just the answers", () => {
+    /* Scoping only the answers reports the PLATFORM's "said not now" count
+       beside one org's replies — a number that belongs to nobody on screen. */
+    const fn = liftFn(srv, "surveyReadout");
+    assert.ok(/only && e\.org !== only/.test(fn), "surveyReadout does not scope by org at all");
+    const gate = fn.indexOf("only && e.org !== only");
+    const dismiss = fn.indexOf('"survey-dismiss"');
+    assert.ok(gate > -1 && dismiss > -1 && gate < dismiss,
+      "the org filter runs after the dismissal count — one org's panel reports the platform's dismissals");
+  });
+
   test("the column states its own window, because it is NOT the 30 days beside it", () => {
     const th = usageThead[1].split(/(?=<th\b)/).find(t => /CSAT/.test(t));
     assert.ok(th, "no CSAT column header");
@@ -665,6 +726,10 @@ const PW = "svy-test-password";
 fs.writeFileSync(path.join(dataDir, "orgs.json"), JSON.stringify({
   "fixture-a": { token: "svyTokenAAAAAAAA", orgId: "11111111-1111-1111-1111-111111111111", logoUrl: "", displayName: "Fixture A" },
   "fixture-b": { token: "svyTokenBBBBBBBB", orgId: "22222222-2222-2222-2222-222222222222", logoUrl: "", displayName: "Fixture B" },
+  // A third org that never answers anything, so the rendered usage table has a
+  // row whose cell must NOT be a control. Without it the clickability check
+  // only ever sees the branch it wants to pass.
+  "fixture-c": { token: "svyTokenCCCCCCCC", orgId: "33333333-3333-3333-3333-333333333333", logoUrl: "", displayName: "Fixture C" },
 }));
 // A completed warm, so the boot does not fan ~28 orgs out against production
 // Metabase — the self-inflicted load CLAUDE.md records more than once.
@@ -885,6 +950,141 @@ const SURVEY = {
     await atest("a tokenless request to an admin page gets nothing at all", async () => {
       const r = await req("GET", "/fixture-b/facility/api/survey");
       assert.strictEqual(r.status, 404, "the org token gate must still apply");
+    });
+
+    /* ── WHERE THE CELL GOES, driven for real ──────────────────────────
+       Dan: "I want to see the scores here and be clickable into any results."
+
+       THE LOAD-BEARING CLAIM IS ORG SCOPING. This panel returns the verbatim
+       sentences named organisations typed about us, so one org's panel
+       carrying another's words is the worst thing this feature can do — and
+       NO source assertion can see it, because the filter reads correctly
+       whether or not it is applied. So two orgs answer the SAME survey with
+       deliberately different sentences, and each panel is required to carry
+       one and not the other. */
+    let survey2;
+    await atest("two orgs answer one survey, in their own words", async () => {
+      const r = await req("POST", "/api/admin/surveys", { password: PW, status: "live",
+        title: "Second survey", questions: [
+          { id: "q1", type: "rating5", prompt: "Rate it", required: true },
+          { id: "q2", type: "text", prompt: "Why?" },
+        ] });
+      assert.strictEqual(r.status, 200, r.body.slice(0, 200));
+      survey2 = r.json.survey;
+      const a = await req("POST", "/fixture-a/facility/api/survey" + TOK,
+        { surveyId: survey2.id, answers: { q1: 5, q2: "ONLY FIXTURE A SAID THIS" } });
+      assert.strictEqual(a.status, 200, a.body.slice(0, 200));
+      const b = await req("POST", "/fixture-b/facility/api/survey?token=svyTokenBBBBBBBB",
+        { surveyId: survey2.id, answers: { q1: 1, q2: "ONLY FIXTURE B SAID THIS" } });
+      assert.strictEqual(b.status, 200, b.body.slice(0, 200));
+      // Dismissed by B ALONE, so the two panels must disagree about dismissals.
+      const d = await req("POST", "/fixture-b/facility/api/survey-dismiss?token=svyTokenBBBBBBBB",
+        { surveyId: survey2.id });
+      assert.strictEqual(d.status, 200);
+    });
+
+    await atest("THE PANEL CARRIES THIS ORG'S WORDS AND NOBODY ELSE'S", async () => {
+      const a = await req("POST", "/api/admin/surveys/org", { password: PW, org: "fixture-a" });
+      assert.strictEqual(a.status, 200, a.body.slice(0, 200));
+      assert.ok(/ONLY FIXTURE A SAID THIS/.test(a.body), "the org's own answer is missing from its panel");
+      assert.ok(!/ONLY FIXTURE B SAID THIS/.test(a.body),
+        "ANOTHER ORG'S VERBATIM TEXT reached this org's panel");
+      const b = await req("POST", "/api/admin/surveys/org", { password: PW, org: "fixture-b" });
+      assert.ok(/ONLY FIXTURE B SAID THIS/.test(b.body));
+      assert.ok(!/ONLY FIXTURE A SAID THIS/.test(b.body));
+    });
+
+    await atest("...and the DISMISSALS are this org's, not the platform's", async () => {
+      const a = await req("POST", "/api/admin/surveys/org", { password: PW, org: "fixture-a" });
+      const b = await req("POST", "/api/admin/surveys/org", { password: PW, org: "fixture-b" });
+      const sa = (a.json.surveys || []).find(s => s.survey.id === survey2.id);
+      const sb = (b.json.surveys || []).find(s => s.survey.id === survey2.id);
+      assert.ok(sa && sb, "the survey is missing from one of the two panels");
+      assert.strictEqual(sa.responses, 1);
+      assert.strictEqual(sb.responses, 1);
+      assert.strictEqual(sa.dismissed, 0, "fixture-a never dismissed this survey");
+      assert.strictEqual(sb.dismissed, 1, "fixture-b's own dismissal is missing");
+    });
+
+    await atest("it lists what this org TOUCHED, not every survey that exists", async () => {
+      const r = await req("POST", "/api/admin/surveys", { password: PW, status: "live",
+        title: "Nobody answered this", questions: [{ id: "q1", type: "rating5", prompt: "?" }] });
+      assert.strictEqual(r.status, 200, r.body.slice(0, 200));
+      const a = await req("POST", "/api/admin/surveys/org", { password: PW, org: "fixture-a" });
+      assert.ok((a.json.surveys || []).some(s => s.survey.id === survey2.id),
+        "the survey it DID answer is missing — without this the next assertion passes on an empty list");
+      assert.ok(!(a.json.surveys || []).some(s => s.survey.title === "Nobody answered this"),
+        "a survey this org never saw is listed — the panel is their answers, not a survey list");
+    });
+
+    await atest("the panel's header reads the SAME aggregator the cell does", async () => {
+      /* Two floors is two answers to one question, and the panel and the cell
+         would eventually disagree about whether a score exists at all. */
+      const a = await req("POST", "/api/admin/surveys/org", { password: PW, org: "fixture-a" });
+      const floor = SCORES(() => [], () => []).SURVEY_MIN_FOR_STATS;
+      assert.ok(a.json.scores, "no scores for an org that has answered twice");
+      assert.strictEqual(a.json.scores.responses, 2);
+      assert.strictEqual(a.json.minForStats, floor);
+      assert.strictEqual(a.json.scores.csatN, 2);
+      assert.strictEqual(a.json.scores.csat, null,
+        "two ratings is under the floor — a confident percentage there is the number that gets quoted");
+    });
+
+    await atest("THE RENDERED PAGE: a scored cell is a control, an unanswered one is not", async () => {
+      /* Asserted against the bytes the dashboard actually serves, not against
+         the source that builds them — the cell is assembled inside a template
+         literal, where "the class is in the file" says nothing about which
+         branch stamped it. fixture-a has answered; fixture-b has answered too,
+         so the discriminating row is one that has done neither. */
+      const auth = "Basic " + Buffer.from("x:" + PW).toString("base64");
+      const html = await new Promise((resolve, reject) => {
+        const r = http.get({ host: "127.0.0.1", port: PORT, path: "/", timeout: 20000,
+          headers: { Authorization: auth } }, res => {
+          let b = ""; res.on("data", d => { b += d; });
+          res.on("end", () => resolve({ status: res.statusCode, body: b }));
+        });
+        r.on("error", reject);
+        r.on("timeout", () => { r.destroy(); reject(new Error("timeout")); });
+      });
+      assert.strictEqual(html.status, 200, "the dashboard did not render");
+      const cellOf = slug => {
+        const i = html.body.indexOf('data-svy-org="' + slug + '"');
+        assert.ok(i > -1, "no CSAT/NPS cell for " + slug);
+        return html.body.slice(html.body.lastIndexOf("<td", i), html.body.indexOf("</td>", i));
+      };
+      const a = cellOf("fixture-a");
+      assert.ok(/svy-open/.test(a) && /svyOrgResults\('fixture-a'\)/.test(a),
+        "an org with answers has a cell that opens nothing: " + a.slice(0, 200));
+      assert.ok(/click to read the answers/.test(a), "the cell does not say it is a door");
+      const b = cellOf("fixture-c");
+      assert.ok(!/svy-open|svyOrgResults/.test(b),
+        "an org with no answers is clickable — it can only open an empty panel: " + b.slice(0, 200));
+    });
+
+    await atest("an org that has never answered gets an empty panel, not an error", async () => {
+      /* It is reachable from a cell that is an inert dot only because the page
+         gates it — the route must still degrade rather than 500. */
+      const r = await req("POST", "/api/admin/surveys/org", { password: PW, org: "fixture-nobody" });
+      assert.strictEqual(r.status, 200, r.body.slice(0, 200));
+      assert.deepStrictEqual(r.json.surveys, []);
+      assert.strictEqual(r.json.scores, null);
+    });
+
+    await atest("...and it refuses without the password, because it returns what orgs typed", async () => {
+      const r = await req("POST", "/api/admin/surveys/org", { org: "fixture-a" });
+      assert.strictEqual(r.status, 401);
+    });
+
+    await atest("a survey DELETED since it was answered is counted, not quietly dropped", async () => {
+      /* The answers are append-only and still in the log; the definition is
+         gone, so nothing can say which question they were for. Showing one
+         fewer survey would make the panel disagree with the count in the cell
+         that opened it. Same asymmetry as `unscored` in buildSurveyScores. */
+      const del = await req("POST", "/api/admin/surveys/delete", { password: PW, id: survey2.id });
+      assert.strictEqual(del.status, 200);
+      const a = await req("POST", "/api/admin/surveys/org", { password: PW, org: "fixture-a" });
+      assert.strictEqual(a.json.orphaned, 1, "the deleted survey's answers vanished without a word");
+      assert.ok(!(a.json.surveys || []).some(s => s.survey.id === survey2.id));
     });
 
   } catch (e) {

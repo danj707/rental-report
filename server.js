@@ -15914,13 +15914,29 @@ function npsScore(promoters, detractors, n) {
   return n ? Math.round(((promoters - detractors) / n) * 100) : null;
 }
 
-function surveyReadout(surveyId, days) {
+/* `org` SCOPES THE WHOLE READOUT TO ONE ORGANISATION, and it is an argument
+   here rather than a second function because the per-org panel and the
+   per-survey panel must never disagree about what an answer means. A second
+   aggregator is a second chance to get the 9/6 boundary, the floor, or the
+   NPS-is-never-a-mean rule wrong — the same argument that put npsBucket and
+   npsScore in one place.
+
+   The FLOOR still applies, and scoped to one org it will usually bite: five
+   answers is a lot for a single organisation, so most orgs render bars with
+   no mean and no NPS. That is the honest reading and not a degradation —
+   the distribution IS the answer, and a confident "4.2 average" off two
+   ratings is exactly the number that gets quoted back at us. */
+function surveyReadout(surveyId, days, org) {
   const survey = getSurveys().find(s => s.id === surveyId);
   if (!survey) return null;
+  const only = org ? String(org) : null;
   const rows = [];
   let dismissed = 0;
   for (const e of readEvents(days || SURVEY_READOUT_DAYS)) {
     if (!e || e.surveyId !== surveyId) continue;
+    // Scope dismissals too, or a per-org panel reports the PLATFORM's
+    // "said not now" count beside one org's answers.
+    if (only && e.org !== only) continue;
     if (e.event === "survey-dismiss") { dismissed++; continue; }
     if (e.event !== "survey-response") continue;
     if (e.answers && typeof e.answers === "object") rows.push(e);
@@ -16187,6 +16203,61 @@ app.post("/api/admin/surveys/responses", express.json(), (req, res) => {
   const out = surveyReadout(String((req.body && req.body.id) || ""), Number(req.body && req.body.days) || 0);
   if (!out) return res.status(404).json({ error: "Unknown survey" });
   res.json(out);
+});
+
+/* ── POST /api/admin/surveys/org — ONE ORG'S ANSWERS, ACROSS EVERY SURVEY ──
+   The CSAT · NPS cell on the usage table is a score, and a score with nowhere
+   to go is the dead end this codebase keeps writing down (the Failed check-ins
+   tile, the "2 ending soon" count). This is where that cell goes.
+
+   IT IS A POST WITH THE PASSWORD, for the same reason the per-survey readout
+   is: it returns the verbatim sentences named organisations typed about us,
+   which is the most sensitive thing this server holds outside the reports, and
+   `dashboardAuth` guards only "/" — its first line is
+   `if (req.path !== "/") return next()`, so an /api/admin GET is OPEN. It
+   fails closed: no DASHBOARD_PASSWORD means nobody.
+
+   It reuses surveyReadout per survey rather than aggregating separately, so
+   the panel cannot disagree with the one the survey's own readout renders. */
+app.post("/api/admin/surveys/org", express.json(), (req, res) => {
+  if (dashboardPasswordBlocked(req, res)) return;
+  const slug = String((req.body && req.body.org) || "");
+  if (!slug) return res.status(400).json({ error: "Missing org" });
+  const days = Number(req.body && req.body.days) || 0;
+
+  /* Every survey this org has TOUCHED, not every survey that exists — a
+     panel listing surveys they never saw is noise, and a survey deleted
+     since they answered has no definition left to read, so its answers
+     cannot be attributed to a question and are reported as a count only.
+     Same asymmetry as `unscored` in buildSurveyScores. */
+  const touched = new Map();
+  let orphaned = 0;
+  for (const e of readEvents(days || SURVEY_READOUT_DAYS)) {
+    if (!e || e.org !== slug || !e.surveyId) continue;
+    if (e.event !== "survey-response" && e.event !== "survey-dismiss") continue;
+    touched.set(e.surveyId, true);
+  }
+
+  const surveys = [];
+  for (const id of touched.keys()) {
+    const out = surveyReadout(id, days, slug);
+    if (out) surveys.push(out);
+    else orphaned++;
+  }
+  // Busiest first: the survey they engaged with most is the one worth reading.
+  surveys.sort((a, b) => (b.responses - a.responses) || (b.dismissed - a.dismissed));
+
+  const scores = buildSurveyScores(days || SURVEY_READOUT_DAYS);
+  res.json({
+    org: slug,
+    orgName: (ORGS[slug] && ORGS[slug].displayName) || slug,
+    scores: scores.byOrg[slug] || null,
+    minForStats: scores.minForStats,
+    csatTop: scores.csatTop,
+    covers: days || SURVEY_READOUT_DAYS,
+    orphaned,
+    surveys,
+  });
 });
 
 // ── POST /api/admin/toggle-public-mode — show/hide admin chrome on org page ──
@@ -17867,7 +17938,16 @@ app.get("/", (req, res) => {
               if (v.nps != null)  bits.push('NPS ' + (v.nps > 0 ? '+' : '') + v.nps + ' (' + v.promoters + ' promoters, ' + v.passives + ' passive, ' + v.detractors + ' detractors)');
               else if (v.npsN)    bits.push('NPS needs ' + (svy.minForStats - v.npsN) + ' more answer' + ((svy.minForStats - v.npsN) === 1 ? '' : 's'));
               if (!v.csatN && !v.npsN) bits.push('no rating or NPS question answered');
+              bits.push('click to read the answers');
               tip = bits.join(' \u00b7 ');
+              /* CLICKABLE ONLY WHERE THERE IS SOMETHING TO OPEN. A cell with
+                 no answers stays an inert dot rather than a control that
+                 opens an empty panel \u2014 absent, not disabled, which is the
+                 rule everywhere else here. */
+              cell = '<span class="svy-open" role="button" tabindex="0"'
+                + ' onclick="svyOrgResults(\'' + r.slug + '\')"'
+                + ' onkeydown="if(event.key===\'Enter\'||event.key===\' \'){event.preventDefault();svyOrgResults(\'' + r.slug + '\')}">'
+                + cell + '</span>';
             }
             return `<td class="num usage-pair" data-sort="${n}" data-svy-org="${r.slug}" title="${tip}">${cell}</td>`;
           })()}
@@ -17982,6 +18062,12 @@ app.get("/", (req, res) => {
     .usage-delta { font-size: 10px; font-weight: 600; margin-left: 6px; }
     .usage-pair { color: #6b7280; }
     .usage-pair b { color: #374151; font-weight: 600; }
+    /* The score is a way in, so it has to LOOK like one — an underline on
+       hover and a real focus ring, because a control reachable only by
+       mouse is a control half the people here cannot use. */
+    .svy-open { cursor: pointer; border-radius: 4px; padding: 1px 3px; }
+    .svy-open:hover { background: #eef2ff; text-decoration: underline; }
+    .svy-open:focus-visible { outline: 2px solid #6366f1; outline-offset: 1px; }
     /* A grid of 0s reads as data. Most orgs are zero in most columns, so an
        absent number should look absent. */
     .usage-dot { color: #d8d5d0; }
@@ -18662,6 +18748,16 @@ app.get("/", (req, res) => {
       return;
     }
 
+    html += svyQuestionBlocks(d);
+    panel.innerHTML = html;
+  }
+
+  /* ONE QUESTION RENDERER, TWO PANELS — the per-survey readout and the
+     per-org one. A second copy is how one panel starts calling somebody a
+     promoter while the other calls them passive on the same answer, which is
+     exactly the duplication npsBucket was extracted to end one layer down. */
+  function svyQuestionBlocks(d){
+    var html = '';
     d.questions.forEach(function(q){
       html += '<div style="margin-bottom:16px;padding-top:12px;border-top:1px solid #f3f4f6">'
         + '<div style="font-size:12.5px;font-weight:600;color:#374151;margin-bottom:7px">'+svyEsc(q.prompt)
@@ -18692,7 +18788,77 @@ app.get("/", (req, res) => {
       }
       html += '</div>';
     });
-    panel.innerHTML = html;
+    return html;
+  }
+
+  /* ── One org's answers, opened from the CSAT · NPS cell ──────────────── */
+  function closeSvyOrg(){ document.getElementById('svyorg-overlay').style.display='none'; }
+
+  async function svyOrgResults(slug){
+    var pwd = getDashPwd('Read survey answers');
+    if (!pwd) return;
+    var ov = document.getElementById('svyorg-overlay');
+    var body = document.getElementById('svyorg-body');
+    ov.style.display = 'block';
+    ov.scrollTop = 0;
+    document.getElementById('svyorg-title').textContent = slug;
+    body.innerHTML = '<div style="font-size:12px;color:#9ca3af">Loading…</div>';
+    var d;
+    try {
+      var r = await fetch('/api/admin/surveys/org', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ password:pwd, org:slug }) });
+      d = await r.json();
+      if (!r.ok) { if (r.status === 401) clearDashPwd(); body.innerHTML = '<div style="font-size:12px;color:#e55">'+svyEsc(d.error||'Failed')+'</div>'; return; }
+    } catch(e){ body.innerHTML = '<div style="font-size:12px;color:#e55">Error: '+svyEsc(e.message)+'</div>'; return; }
+
+    document.getElementById('svyorg-title').textContent = d.orgName || slug;
+
+    var s = d.scores;
+    var head = [];
+    if (s) {
+      head.push('<b>'+s.responses+'</b> answer'+(s.responses===1?'':'s'));
+      if (s.dismissed) head.push(s.dismissed+' said not now');
+      /* The two scales are never blended here either, and each is absent
+         rather than zeroed under the floor — the same rule the cell obeys,
+         because the panel it opens must not contradict it. */
+      if (s.csat != null) head.push('CSAT <b>'+s.csat+'%</b>');
+      else if (s.csatN)   head.push('CSAT needs '+(d.minForStats - s.csatN)+' more rating'+((d.minForStats - s.csatN)===1?'':'s'));
+      if (s.nps != null)  head.push('NPS <b>'+(s.nps>0?'+':'')+s.nps+'</b>');
+      else if (s.npsN)    head.push('NPS needs '+(d.minForStats - s.npsN)+' more answer'+((d.minForStats - s.npsN)===1?'':'s'));
+      if (s.unscored) head.push(s.unscored+' unscorable');
+    }
+
+    var html = '<div data-svyorg-surveys="'+d.surveys.length+'" style="font-size:11.5px;color:#6b7280;margin-bottom:14px">'
+      + (head.length ? head.join(' &middot; ') : 'No answers on record') + '</div>';
+
+    if (!d.surveys.length) {
+      html += '<div style="font-size:12px;color:#6b7280;background:#f9fafb;border:1px solid #eee;border-radius:6px;padding:11px 13px">'
+        + 'This org has not been shown a survey yet, or was shown one and never opened a page it targets.</div>';
+      body.innerHTML = html;
+      return;
+    }
+
+    /* A survey deleted since it was answered has no definition left to read,
+       so its answers can be counted and not attributed. Saying so beats
+       silently showing fewer surveys than the cell counted answers for. */
+    if (d.orphaned) {
+      html += '<div style="font-size:11.5px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;padding:8px 11px;margin-bottom:12px">'
+        + d.orphaned + ' survey' + (d.orphaned===1?' has':'s have') + ' been deleted since being answered, so those answers cannot be shown by question.</div>';
+    }
+
+    d.surveys.forEach(function(sv){
+      var offered = sv.responses + sv.dismissed;
+      html += '<div style="margin-bottom:22px;border:1px solid #eee;border-radius:8px;padding:13px 15px">'
+        + '<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:4px">'
+        +   '<div style="font-size:13px;font-weight:700;color:#111827">'+svyEsc(sv.survey.title)+'</div>'
+        +   '<div style="font-size:11.5px;color:#6b7280"><b>'+sv.responses+'</b> from this org'
+        +     (offered > sv.responses ? ' &middot; '+sv.dismissed+' said not now' : '')+'</div>'
+        + '</div>';
+      html += sv.responses
+        ? svyQuestionBlocks(sv)
+        : '<div style="font-size:12px;color:#6b7280">Shown and dismissed here, never answered.</div>';
+      html += '</div>';
+    });
+    body.innerHTML = html;
   }
 
   // ── Project-update composer ──────────────────────────────────────────
@@ -19054,6 +19220,19 @@ app.get("/", (req, res) => {
 
         <div id="svy-results" style="display:none;margin-top:18px;padding-top:16px;border-top:1px solid #eee"></div>
       </div>
+    </div>
+  </div>
+  <!-- ── One org's survey answers, opened from the CSAT &middot; NPS cell ── -->
+  <div id="svyorg-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1000;overflow-y:auto;padding:40px 16px">
+    <div style="background:#fff;border-radius:10px;max-width:720px;margin:0 auto;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.3)">
+      <div style="padding:20px 24px;background:#2c2c2c;color:#fff;display:flex;align-items:center;justify-content:space-between">
+        <div>
+          <div style="font-weight:700;font-size:15px">&#128221; Survey answers</div>
+          <div id="svyorg-title" style="font-size:12px;color:#bbb;margin-top:2px"></div>
+        </div>
+        <button onclick="closeSvyOrg()" style="background:none;border:none;color:#bbb;font-size:22px;cursor:pointer;line-height:1">&times;</button>
+      </div>
+      <div id="svyorg-body" style="padding:20px 24px"></div>
     </div>
   </div>
   <!-- ── Add Project Update Modal ── -->

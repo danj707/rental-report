@@ -101,6 +101,46 @@ saying, because a cast is easy to read as making a push safe and it does not.
 
 Flip link https://rec.metabaseapp.com/question/17299
 
+### SIGNED OFF AFTER THE FLIP, and the manifest row taught a second lesson
+
+Dan flipped both dates; the card reads back as **three** parameters with both
+dates `date/single` and no `string/=` duplicates. Cache-independently through
+the public endpoint, with the app's own parameter shape, one probe at a time:
+
+| norman | before | after |
+|---|---|---|
+| August 2026 (the month that measured 106.7s) | **106.7s** | **0.7s**, 498 rows |
+| 8.5 months (the window that 504'd) | **past 300s** | **37.8s**, 2,678 rows |
+
+**498 rows and $81,772.22 net is the same answer measured before the flip**, so
+the change restricted work and moved no output — the additive proof, now on the
+live card rather than in a fingerprint.
+
+**THEN THE NEW MANIFEST ROW FAILED TWICE ON A HEALTHY CARD, and the reason is
+worth keeping.** The row's window is `days: 30`, i.e. a ROLLING window that
+moves every day — so **every run is a cold-buffer read of a window nobody has
+ever read**, where every figure above was measured on a window I had just been
+querying repeatedly. Run down rather than signed off or reported as a
+regression, one probe at a time, the same window twice back to back:
+
+| norman, 2026-08-14 → 2026-09-12 | |
+|---|---|
+| run 1 (cold) | **46.7s**, 292 rows |
+| run 2 (warm) | **1.0s**, 292 rows |
+
+**Identical 292 rows either way**, which is what says the spread is buffers and
+replica load rather than the query — and a bare indexed `count(*)` on the same
+table timed out at 60s in the same minutes while `SELECT 1` answered in 282ms,
+this file's own documented tell. The row's timeout is **180s** now, not 120: 120
+made a healthy card fail twice, and a genuine v1-style regression is 106s+ over
+ONE month and still trips it. *A threshold set from a warm measurement is a
+threshold that will flap on the first cold one.*
+
+**AND TWO 120s TIMEOUTS IN A ROW WERE STILL NOT EVIDENCE** — a 30-day window
+cannot cost more than the 8.5 months containing it, and that contradiction is
+what said to go get a cheap control instead of writing either verdict down.
+Second instance in this section.
+
 Mirror written at `sql/report-cards/17299-product-sales.sql` — **there was none
 before, so the live card was the only copy.**
 
@@ -254,9 +294,51 @@ short `colspan` shifts every figure after the gap. Both are now asserted against
 the header's OWN column count rather than against a literal, so the next column
 added fails the spec instead of the table.
 
+### THE SCORE OPENS THE ANSWERS — the column alone was a dead end
+
+Dan, with the usage table on screen: *"yes please, I want to see the scores here
+and be clickable into any results."* **A score with nowhere to go is the pattern
+this file keeps writing down** — the Failed check-ins tile, the *"2 ending soon"*
+count — so the cell is the way in, and the two shipped together rather than the
+column landing on its own.
+
+**IT IS A POST BEHIND THE PASSWORD, and that is the same call the readout
+made.** `POST /api/admin/surveys/org` returns the verbatim sentences named orgs
+typed about us, and `dashboardAuth` guards only `/` — its first line is
+`if (req.path !== "/") return next()` — so an `/api/admin` GET is open. It fails
+closed: no `DASHBOARD_PASSWORD` means nobody.
+
+**ONE READOUT, SCOPED — not a second aggregator.** `surveyReadout` gained an
+`org` argument and the panel calls it per survey, so the per-org panel and the
+survey's own readout cannot disagree about a distribution; the header figures
+come from `buildSurveyScores`, the same aggregator the cell reads, so the panel
+cannot contradict the number that opened it. **`svyQuestionBlocks` was extracted
+for the same reason** — two renderers is two chances to draw a scale differently.
+
+**THE DISMISSALS ARE SCOPED TOO, and that is the half easy to miss.** Filtering
+only the answers prints the PLATFORM's *"said not now"* count beside one org's
+replies — a number belonging to nobody on screen. The org test sits ahead of the
+dismissal branch, and the spec asserts that ORDER rather than the filter's mere
+presence.
+
+**CLICKABLE ONLY WHERE THERE IS SOMETHING TO OPEN.** A cell with no answers
+stays an inert dot rather than a control that opens an empty panel — absent, not
+disabled. And it says so: the tooltip ends *"click to read the answers"*, or
+nobody learns the number is a door, which is how the Fast Track pin shipped
+invisible.
+
+**A SURVEY DELETED SINCE IT WAS ANSWERED IS COUNTED, NOT DROPPED.** The answers
+are in an append-only log and the definition is gone, so they cannot be
+attributed to a question — `orphaned` says how many, and an amber line on the
+panel says it. Showing one fewer survey would make the panel disagree with the
+count in the cell that opened it. Same asymmetry as `unscored`.
+
+**The panel lists what the org TOUCHED, not every survey that exists** — a list
+of surveys they never saw is noise.
+
 ### Guards
 
-`scripts/surveys.spec.js` 75 → **94 assertions**, the new half LIFTING AND RUNNING
+`scripts/surveys.spec.js` 75 → 94 → **111 assertions**, the new half LIFTING AND RUNNING
 `buildSurveyScores` over answers whose values are deliberately ambiguous.
 Mutation-tested twelve ways, all failing by name: an NPS answer folded into CSAT,
 the scale read from the answer instead of the definition, the floor removed,
@@ -270,6 +352,34 @@ header columns, `colspan="10"`, 10 cells on all 29 rows, apex at **67% · +20**
 with the full split in its tooltip, and norman below the floor showing its raw
 count plus *"CSAT needs 3 more ratings"*.
 
+**THE ORG SCOPING IS PROVEN BEHAVIOURALLY, because no source assertion can see
+it** — the filter reads correctly whether or not it is applied. So the live half
+has **two real orgs answer the SAME survey with deliberately different
+sentences**, and each panel is required to carry one and NOT the other; one of
+them dismisses it and the other does not, so the two panels must also disagree
+about dismissals. Mutation-tested ten further ways, all failing by name: the org
+filter removed outright, the org filter moved below the dismissal count, the
+route no longer passing the org through, an empty cell made clickable, the panel
+reverted to an open GET, a deleted survey vanishing instead of being counted, the
+panel listing every survey rather than the touched ones, the per-org panel
+growing its own question renderer, the panel re-deriving its own floor, and the
+tooltip no longer saying the cell opens anything.
+
+**And the RENDERED PAGE is what settles the clickability**, not the source: the
+cell is assembled inside a template literal, where *"the class is in the file"*
+says nothing about which branch stamped it. The live half fetches `/` with the
+admin credential and reads the two cells — a scored org's carries `svy-open` and
+`svyOrgResults('…')`, and **a third fixture org that never answers anything**
+carries neither. Without that third org the check only ever sees the branch it
+wants to pass.
+
+**Two of my own assertions read the wrong shape**, and one of them was therefore
+vacuous: `surveyReadout` returns `{survey: {id, title}}`, not a flat `id`, so a
+`some(s => s.title === …)` matched nothing on every build and the
+touched-only test passed regardless. It asserts the survey the org DID answer is
+present first, so the negative half cannot pass on an empty list. *An assertion
+that can only ever be false is not an assertion.*
+
 ### NOT BUILT
 
 - **No per-report or per-survey breakdown in the column** — an org that answered
@@ -277,6 +387,11 @@ count plus *"CSAT needs 3 more ratings"*.
   verbatim text lives anyway.
 - **No trend.** A CSAT that moved is the more useful number and needs two windows
   with a floor in each, which today's volume cannot support.
+- **The panel does not cross-tab by report.** Which page somebody was on when
+  they answered is in the event log and not on screen — same gap the per-survey
+  readout has.
+- **No export.** The verbatim text is read on screen; handing it to a file is a
+  separate decision about where those sentences travel.
 
 
 ## THE SURVEY BUILDER — admin surfaces only, and that is structural (2026-09-11)
