@@ -55,10 +55,16 @@ const is = (a, b, w) => { n++; assert.deepStrictEqual(a, b, w); };
 {
   const from = SERVER.indexOf("function feedCacheKey(");
   ok(from > 0, "server.js should declare feedCacheKey()");
-  const feedCacheKey = new Function(
-    'const FEED_VERSION = { "court-utilization": 2 };\n'
-    + SERVER.slice(from, SERVER.indexOf("\n}", from) + 2)
-    + "\nreturn feedCacheKey;")();
+  // The version map is LIFTED, not restated. A spec carrying its own copy of
+  // FEED_VERSION agrees with itself and nothing else — it would keep asserting
+  // v1 for a report whose card had gained a column and been bumped.
+  const vFrom = SERVER.indexOf("const FEED_VERSION = {");
+  ok(vFrom > 0, "server.js should declare FEED_VERSION");
+  const FEED_VERSION = new Function(
+    SERVER.slice(vFrom, SERVER.indexOf("\n};", vFrom) + 3) + "\nreturn FEED_VERSION;")();
+  const feedCacheKey = new Function("FEED_VERSION",
+    SERVER.slice(from, SERVER.indexOf("\n}", from) + 2)
+    + "\nreturn feedCacheKey;")(FEED_VERSION);
 
   is(feedCacheKey("apex", "roster", "?p=1"), "apex:roster:v1:?p=1",
      "the key carries the feed version — that segment is what busts the cache when a card gains a column");
@@ -77,6 +83,27 @@ const is = (a, b, w) => { n++; assert.deepStrictEqual(a, b, w); };
   is((SERVER.match(/`\$\{orgSlug\}:\$\{reportType\}:v\$\{FEED_VERSION/g) || []).length, 1,
      "the versioned format may appear exactly ONCE — inside feedCacheKey. A second copy is how "
      + "the route and pre-warm drifted apart in the first place");
+
+  /* THE FACILITIES HUB WAS A THIRD CALLER AND HAD NO VERSION AT ALL.
+     The assertion above knew ONE spelling — `${slug}:${rt}:${paramStr}` — and
+     the hub's route, its catch block and pre-warm each hand-built
+     `${slug}:facilities:${params}` instead, so the most-fetched card on the
+     platform could not be busted by a column change. Card 19570 v2.3 added
+     "Rental ID", the page shipped, and every already-warm org kept the old
+     wording for the full TTL. A guard that names one spelling of a thing is
+     not a guard against the thing, so this one is shaped the other way round:
+     NO literal facilities key may appear anywhere. */
+  is((SERVER.match(/`\$\{slug\}:facilities:/g) || []).length, 0,
+     "no caller may hand-build a facilities cache key — the hub's three copies carried no version "
+     + "segment, so a card column change could not bust them");
+  is((SERVER.match(/feedCacheKey\(slug, "facilities",/g) || []).length, 4,
+     "every facilities caller — pre-warm, the route, and both arms of the route's stale-fallback "
+     + "catch — must build the key the same way, or a stale read cannot find what the write left");
+  ok(FEED_VERSION.facilities >= 2,
+     "facilities must be past v1: card 19570 v2.3 added \"Rental ID\" and the hub reads it, so a "
+     + "pre-v2.3 payload cached under v1 would keep answering for the whole TTL");
+  is(feedCacheKey("watertown", "facilities", "?p=1"), "watertown:facilities:v" + FEED_VERSION.facilities + ":?p=1",
+     "…and the hub's key carries that version");
 }
 
 // ── 2. The registry and its validator, lifted and RUN ────────────────────────

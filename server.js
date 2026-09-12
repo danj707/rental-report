@@ -286,7 +286,16 @@ globalThis.fetch = async function (resource, init) {
 const CACHE_TTL = 4 * 60 * 60 * 1000;  // 4-hour default TTL — warmed at 5am, serves all day
 // Schema version per report feed — see the cacheKey in /:org/:report/api/data.
 // court-utilization v2: card 17297 gained local_start / local_end (2026-08-18).
-const FEED_VERSION = { "court-utilization": 2 };
+const FEED_VERSION = {
+  "court-utilization": 2,
+  // v2 = card 19570 v2.3, which added "Rental ID". The Facilities hub reads it
+  // to say how many RENTALS a date count represents, and a pre-v2.3 payload
+  // cannot answer — so without a bump every already-warm org keeps the old
+  // wording for the full 4h TTL after a deploy. That is what happened: the
+  // card was pushed, flipped and signed off, the page shipped, and Watertown
+  // still read "2,668 bookings" off an entry generated an hour before the push.
+  facilities: 2,
+};
 // ONE builder for a feed's cache key, used by the data route AND by pre-warm.
 //
 // They had drifted, and the drift was total: the route builds
@@ -972,9 +981,10 @@ function hydrateCacheFromDisk() {
 }
 
 // ── One-shot facilities cache invalidation on card-UUID change ──
-// The facilities cache key is UUID-agnostic (slug:facilities:params), so when
-// FACILITIES_SUMMARY_UUID is re-pointed at a different Metabase card the disk-
-// hydrated entries still hold the OLD card's rows — and prewarm skips entries
+// The facilities cache key is UUID-agnostic (slug:facilities:vN:params) — the
+// version segment busts the cache when the card GAINS A COLUMN, and says nothing
+// about which card it is. So when FACILITIES_SUMMARY_UUID is re-pointed at a
+// different Metabase card the disk-hydrated entries still hold the OLD card's rows — and prewarm skips entries
 // that are still fresh (< 4h TTL), so it would never replace them. That would
 // serve stale/undercounted numbers for up to 4h after a cutover. Detect the
 // change against a persisted marker and drop the stale facilities entries
@@ -1460,7 +1470,7 @@ async function prewarmCache(reason = 'interval') {
         ...monthParams,
       ];
       const facStr = `?parameters=${encodeURIComponent(JSON.stringify(facParams))}`;
-      const facKey = `${slug}:facilities:${facStr}`;
+      const facKey = feedCacheKey(slug, "facilities", facStr);
       if (!alreadyWarm(facKey, slug, "facilities")) {
         try {
           if (!await paceOk()) break outer;
@@ -12031,7 +12041,7 @@ app.get("/:org/facilities/api/summary", async (req, res) => {
   try {
     const params  = buildMetabaseParams(req.query, "facilities", org.orgId);
     const paramStr = params.length > 0 ? `?parameters=${encodeURIComponent(JSON.stringify(params))}` : "";
-    const cacheKey = `${slug}:facilities:${paramStr}`;
+    const cacheKey = feedCacheKey(slug, "facilities", paramStr);
 
     if (req.query._nocache !== "1") {
       const cached = getCached(cacheKey, slug, "facilities");
@@ -12094,7 +12104,7 @@ app.get("/:org/facilities/api/summary", async (req, res) => {
   } catch (err) {
     const isTimeout = err.name === "TimeoutError" || err.name === "AbortError";
     console.error(`[proxy] ${slug}/facilities error${isTimeout ? " (timeout)" : ""}: ${err.message}`);
-    const cacheKey = (() => { try { const p = buildMetabaseParams(req.query, "facilities", org.orgId); return `${slug}:facilities:${p.length ? `?parameters=${encodeURIComponent(JSON.stringify(p))}` : ""}`; } catch { return `${slug}:facilities:`; } })();
+    const cacheKey = (() => { try { const p = buildMetabaseParams(req.query, "facilities", org.orgId); return feedCacheKey(slug, "facilities", p.length ? `?parameters=${encodeURIComponent(JSON.stringify(p))}` : ""); } catch { return feedCacheKey(slug, "facilities", ""); } })();
     const stale = await getStaleCached(slug, "facilities", cacheKey);
     if (stale) return res.json(Object.assign({}, stale.data, { meta: Object.assign({}, stale.data.meta, { stale_cache: true }) }));
     res.status(isTimeout ? 504 : 502).json({ error: isTimeout ? "Facility summary query timed out — try a shorter date range" : err.message });

@@ -1,5 +1,76 @@
 # Project notes for Claude
 
+## THE HUB'S FEED KEY CARRIED NO VERSION, SO v2.3 COULD NOT REACH THE PAGE (2026-09-12)
+
+Dan, minutes after the rental-count work shipped and deployed, with Watertown's
+Summary still reading **"BOOKINGS 2,668 / facility reservations in view"**:
+*"hmmmmm"*.
+
+**EVERY PIECE OF IT WAS CORRECT AND THE PAGE WAS RIGHT TO SAY THAT.** Measured
+rather than guessed, in this order:
+
+| | |
+|---|---|
+| the deploy | `f98dcd6` **SUCCESS** at 22:25Z — the new page bytes are live |
+| card 19570 through the public endpoint | **7,407 rows, 15 columns, `Rental ID` on every one** |
+| the APP's own feed for that window | **7,402 rows, 14 columns, no `Rental ID`**, `generated_at 21:01Z` |
+
+So `hasRentalId` was false and the fallback wording rendered — the presence gate
+doing exactly its job on a payload cached an hour before the card was pushed.
+
+**THE DEFECT IS THAT NOTHING COULD BUST IT.** `feedCacheKey()` puts a
+`FEED_VERSION` segment in the key precisely so a card gaining a column
+invalidates the rows cached under the old shape — its own comment names the
+identical prior incident, court-utilization gaining `local_start`/`local_end`
+and "the grid going quiet for six hours on already-warm orgs". **The Facilities
+hub is not one of its callers.** Three hand-built copies —
+
+```js
+const facKey   = `${slug}:facilities:${facStr}`;    // pre-warm
+const cacheKey = `${slug}:facilities:${paramStr}`;  // the route
+const cacheKey = `${slug}:facilities:…`;            // and its stale-fallback catch
+```
+
+— agreeing with each other perfectly and carrying **no version at all**, on the
+most-fetched card on the platform (~174 pulls/30d across 13 orgs). All four call
+sites go through `feedCacheKey` now and `FEED_VERSION.facilities = 2`.
+
+**`invalidateFacilitiesCacheOnUuidChange` IS WHY THIS SURVIVED, and it stays.**
+That helper exists because this key is UUID-agnostic, and its comment says so —
+so the gap was documented and read as a property rather than as a hole. It
+handles a card **SWAP**; a card **EDIT** leaves the uuid alone and it never
+fires. Two different invalidations, both needed.
+
+*Generalise it: a cache-busting mechanism that is not wired to every writer of
+that cache is not a mechanism, and the writers that opted out are the ones with
+their own hand-rolled key.*
+
+**The cost of the bump, said plainly:** every warm facilities entry is orphaned
+on deploy, so the next open per org pays one cold query (Watertown's 2026 window
+measured **35.4s**). Prewarm repopulates under v2 on its next cycle, serially.
+That is the same accepted cost the uuid-change invalidation already takes.
+
+### The guard knew ONE spelling
+
+`report-settings.spec.js`'s existing assertion was
+`!/setCache\(`\$\{slug\}:\$\{rt\}:\$\{paramStr\}`/` — the generic shape — and the
+hub's `${slug}:facilities:${…}` sailed past it. **A guard that names one
+spelling of a thing is not a guard against the thing**, third instance in this
+file. It is shaped the other way round now: **no literal facilities key may
+appear anywhere**, plus a caller count, plus `FEED_VERSION.facilities >= 2`.
+
+**And the spec had been restating `FEED_VERSION` instead of lifting it** — a
+hardcoded `{ "court-utilization": 2 }` inside the `new Function` wrapper, which
+would have kept asserting v1 for a report whose card had been bumped. It reads
+the shipping map now.
+
+180 assertions. Mutation-tested five ways, all failing by name: the route
+hand-building the key again (the bug as it shipped), pre-warm doing so, either
+catch arm doing so, `facilities` left at v1, and the route keying on report type
+`facility` instead of `facilities` — the plausible typo that keeps the literal
+absent while making the write and the stale read disagree.
+
+
 ## "THERE WERE NOT 2,668 BOOKINGS" — there were 1,683 rentals (2026-09-12)
 
 Dan, on Watertown's Facilities Summary over 2026 with the site type narrowed to
