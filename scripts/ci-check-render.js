@@ -1289,6 +1289,63 @@ let STUB_MODE = "";
 let CURRENT_STUB_DELAY_MS = 0;
 
 const STUBS = [
+  /* OPPORTUNITIES. Registered FIRST, above every generic matcher — `STUBS` is
+     searched with .find and /\/api\/data/ would answer this path with another
+     report's shape, which is the fall-through already recorded here twice.
+
+     THE FIXTURE IS SHAPED SO A WRONG PAGE CANNOT LOOK RIGHT:
+      · the four totals are four DIFFERENT numbers, none of which is the sum of
+        any other pair, so a card reading the wrong field is visible and a page
+        that blends them into one "total opportunity" cannot hit any of them;
+      · `courts` is suppressed and `money` is UNAVAILABLE, which are different
+        facts that must not render the same way — the whole suppression design
+        rests on telling "you have no courts" apart from "the card did not
+        answer", and a fixture with only one of them could not test it;
+      · `programs` carries two findings with distinct values, so the family
+        count and the per-finding values both discriminate. */
+  { match: /\/opportunities\/api\/data/, body: () => ({
+      ok: true,
+      generatedAt: "2026-09-13T09:20:00.000Z",
+      windowDays: 365,
+      window: { start: "2025-09-14", end: "2026-09-13" },
+      totals: { findings: 3, upside: 12000, atRisk: 3400, uncollected: 770, audience: 5500 },
+      families: [
+        { key: "programs", label: "Programs", emoji: "\u{1F3AF}", blurb: "Fill and demand", state: "ok", reason: "", findings: [
+          { id: "underfilled-programs", family: "programs", kind: "upside", value: 12000, count: 9,
+            title: "Programs that keep running half empty",
+            headline: "9 sections across 3 programs ran under 50% full",
+            detail: "Not one-off quiet weeks.", action: "Cut the capacity to what actually enrols.",
+            basis: "Empty seats times the price the enrolled participants paid.",
+            items: [{ label: "Toddler Skating", sub: "4 sections", value: 7000, link: { report: "programs", query: "" } }],
+            more: 2, link: { report: "programs", query: "" } },
+          { id: "canceled-sections", family: "programs", kind: "at-risk", value: 3400, count: 4,
+            title: "Programs that keep getting cancelled",
+            headline: "4 cancelled sections across 1 program",
+            detail: "", action: "Decide before publishing next season.", basis: "Sections whose status is Cancelled.",
+            items: [{ label: "Youth Basketball", sub: "4 of 4 cancelled", value: 3400, link: { report: "programs", query: "" } }],
+            more: 0, link: { report: "programs", query: "" } },
+        ] },
+        { key: "people", label: "Your community", emoji: "\u{1F465}", blurb: "Who is reachable", state: "ok", reason: "", findings: [
+          { id: "zip-gap", family: "people", kind: "audience", value: null, count: 5500,
+            title: "Neighbourhoods registered with you that never enrol",
+            headline: "5500 households in 12 postcodes have an account and have never taken a program",
+            detail: "", action: "Check whether non-resident pricing is what stops them.",
+            basis: "Households in your records that appear in no enrolment.",
+            items: [{ label: "01604", sub: "22 of 86 households enrolled", value: null, link: { report: "users", query: "tab=demo" } }],
+            more: 4, link: { report: "users", query: "" } },
+        ] },
+        { key: "facilities", label: "Facilities", emoji: "\u{1F3DE}\uFE0F", blurb: "How your sites are used", state: "clear", reason: "", findings: [] },
+        { key: "courts", label: "Courts", emoji: "\u{1F3BE}", blurb: "Court-by-court demand", state: "insufficient",
+          reason: "this organisation does not rent courts", findings: [] },
+        { key: "money", label: "Money owed", emoji: "\u{1F4B5}", blurb: "Billed and not collected", state: "unavailable",
+          reason: "The Facilities summary could not be loaded", findings: [] },
+      ],
+      coverage: [
+        { feed: "programs", state: "ok", rows: 564 },
+        { feed: "facilitiesSummary", state: "unavailable", rows: null },
+      ],
+    }) },
+
   /* Card 21682 (Aquatic Lane Hours), the first of the per-org custom data
      reports. THE FIXTURE IS SHAPED SO A WRONG ROLL-UP CANNOT LOOK RIGHT: two
      months, two locations inside each, and month totals (13 and 21) and a grand
@@ -1927,6 +1984,56 @@ const EUCLID_COLUMNS = async page => {
 };
 
 const CASES = [
+
+  /* ── Opportunities ───────────────────────────────────────────────────────
+     This page is a set of CLAIMS about numbers, so every case below keys on a
+     rendered VALUE or on an absence. "A findings card appeared" passes on a
+     page reading the wrong field out of every finding it draws. */
+  { name: "opportunities · the findings render with their own values",
+    path: "/{org}/opportunities",
+    needs: "[data-opp-finding='underfilled-programs'][data-opp-kind='upside'][data-opp-value='12000']" },
+
+  /* THE FOUR TOTALS ARE FOUR NUMBERS. The fixture's values are chosen so no
+     pair sums to another, so a page that blended them into one headline figure
+     — the single most tempting simplification on this report and the one its
+     own copy argues against — cannot land on any of these. */
+  { name: "opportunities · the four totals stay separate",
+    path: "/{org}/opportunities",
+    needs: "[data-opp-total='upside'][data-opp-total-val='12000']",
+    also: ["[data-opp-total='uncollected'][data-opp-total-val='770']",
+           "[data-opp-total='audience'][data-opp-total-val='5500']"] },
+
+  /* DAN'S RULE, RENDERED: an org that does not rent courts is told so, in
+     words, rather than shown a gap. A gap is indistinguishable from a bug. */
+  { name: "opportunities · a suppressed family says why on screen",
+    path: "/{org}/opportunities",
+    /* KEYED ON THE VISIBLE LINE, NOT THE WRAPPER. The first version of this
+       case read the reason off the family div — which renders whether or not
+       anything is drawn inside it, so deleting the suppression notice entirely
+       SURVIVED the case. An assertion satisfied by a wrapper is not guarding
+       what the reader can see. */
+    needs: "[data-opp-family='courts'][data-opp-state='insufficient'] .fam-off[data-opp-off='this organisation does not rent courts']",
+    absent: "[data-opp-family='courts'] .find" },
+
+  /* A FEED THAT DID NOT LOAD MUST NOT READ AS A CLEAN BILL OF HEALTH. These
+     are two different states with two different classes, and the fixture
+     carries one of each precisely so this case can require them to differ —
+     with only one in the fixture, a page that rendered both identically would
+     pass. */
+  { name: "opportunities · an unavailable feed does not read as clean",
+    path: "/{org}/opportunities",
+    needs: "[data-opp-family='money'][data-opp-state='unavailable'] .fam-off[data-opp-down]",
+    also: ["[data-opp-family='facilities'][data-opp-state='clear'] .fam-clear"],
+    absent: "[data-opp-family='money'] .fam-clear" },
+
+  /* The print render is what the PDF is made of, and it is a different render:
+     no toolbar, and no drill links (a link is not clickable on paper). The
+     findings themselves must survive. */
+  { name: "opportunities · print mode keeps the findings and drops the chrome",
+    path: "/{org}/opportunities?_print=1",
+    needs: "[data-opp-finding='canceled-sections'][data-opp-value='3400']",
+    absent: ".toolbar, .drill" },
+
 
   /* ── Surveys ─────────────────────────────────────────────────────────────
      Dan's one hard rule — "just NEVER on a customer facing report ... ONLY on
@@ -6458,6 +6565,20 @@ function waitForServer(started) {
       if (found && c.absent) {
         const stillThere = await page.$(c.absent);
         if (stillThere) { found = false; errs.push('"' + c.absent + '" should NOT be present, but it is'); }
+      }
+      /* `also` asserts FURTHER selectors that must ALL be present alongside
+         `needs`. A CSS selector list ("a, b") matches EITHER, so a case that
+         needs two facts on screen at once cannot say so in one selector — and
+         every such claim used to have to become its own case, re-loading the
+         page to check a second attribute of the same render.
+         It is honoured HERE rather than merged into `needs` because the two
+         mean different things in a failure: `needs` is "the page rendered at
+         all", `also` is "it rendered the right numbers". */
+      if (found && Array.isArray(c.also)) {
+        for (const sel of c.also) {
+          const hit = await page.$(sel);
+          if (!hit) { found = false; errs.push('"' + sel + '" (also) is missing'); }
+        }
       }
       bodyLen = await page.evaluate(() => document.body.innerText.trim().length);
       // WHAT THE CASE MEASURED, not just which selector was missing. Every

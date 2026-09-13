@@ -1,5 +1,281 @@
 # Project notes for Claude
 
+## THE OPPORTUNITIES REPORT — the analysis layer, computed once a day (2026-09-13)
+
+Dan, after a survey of what our reports can surface that a table cannot:
+*"Build me out an opportunities card, using data an org has. This would compute
+once a day, similar to the directors report. If the org doesn't do court
+rentals, obviously don't suggest court stuff."* Sample org: **Shrewsbury**.
+
+**EVERY OTHER REPORT ANSWERS "WHAT HAPPENED". THIS ONE ANSWERS "SO DO THIS"** —
+21 detectors over nine feeds we already serve, each finding ranked, dollar-sized
+where a dollar can honestly be attached, and linked back to the report that
+proves it. `lib/opportunities.js` is PURE (no Express, no Metabase, no fs), so
+`scripts/opportunities.spec.js` lifts and RUNS the detectors rather than
+regexing them — every defect in here is arithmetic about a threshold, and a
+regex passes on an inverted comparison.
+
+Live on Shrewsbury: **18 findings**, and the court family suppressed by name.
+
+### THE THREE RULES THE WHOLE THING RESTS ON
+
+**1. A FEED THAT DID NOT ANSWER IS NOT AN ORG WITH NOTHING TO FIX.** `null` (the
+fetch failed) and `[]` (the org genuinely has none of this) render differently —
+*"could not be analysed today"* against *"not enough of this to analyse"*. The
+server's `safe()` deliberately does NOT default to a list, and the spec asserts
+the two states can never be equal. Collapse them and a director is told their
+facilities are fine on the morning Metabase was down. Same presence-not-value
+rule as `hasAbsent` / `ciHasStatus`.
+
+**2. SUPPRESSION IS VISIBLE.** Dan's court rule is a floor per family, and the
+floor that fired is PRINTED: *"Courts — not analysed: this organisation does not
+rent courts"*. An org that reads that knows the report looked; an org shown a
+gap cannot tell that from a bug. The gate reads the **court feed when there is
+one and the facility feed's own site type when there is not**, so an org whose
+court card is unavailable but whose rentals plainly show no courts is still
+suppressed rather than shown an error.
+
+**3. DOLLARS OF DIFFERENT KINDS ARE NEVER ADDED TOGETHER.** An empty seat is a
+CEILING on what could have been sold; an unpaid invoice is owed today; a mailing
+list is neither. The page shows **four separate totals** and says on screen why
+they are not summed — one blended "total opportunity" figure would be the
+largest number on the page and the least true. The render case's fixture is
+built so no pair sums to another, so a page that blended them cannot hit any of
+them.
+
+### WHAT SHREWSBURY ACTUALLY GETS, and why the sample org mattered
+
+Building against one org's real data is what shaped the thresholds. Measured
+over the last 365 days:
+
+| | |
+|---|---|
+| **102 sections across 24 programs ran under 50% full** | $104,860 of empty seats — ice-skating toddler and youth sections at 15% median fill |
+| 41 sections refunded above 20% of what they charged | $17,592, against a 9.6% org-wide rate |
+| **125 waitlist places across 19 programs** | $11,733 of demand turned away |
+| 19 cancelled sections across 7 programs | $5,929 refunded — Youth Summer Basketball cancelled **4 of 4** |
+| **Coolidge Pickleball Court 02 cancelled 21 of 25 bookings** | 84% against a 6% org average — the single best operational finding on the page |
+| all 504 rentals staff-booked | zero self-service |
+| 212 of 245 field bookings at $0 | on a site type that bills elsewhere |
+| teens 13-17 | index **0.58** against their share of the org's own community |
+| 22 of 23 active member households | have never enrolled in a program |
+| **14 court bookings** | family suppressed, by name |
+
+**THE COURT SUPPRESSION IS NOT THEORETICAL** — Shrewsbury has 15 court-type
+reservations of 504, and is exactly the org Dan's rule describes.
+
+### FOUR REAL DEFECTS FOUND BY BUILDING AGAINST LIVE DATA
+
+Every one of these renders plausibly and would have shipped as a wrong number.
+
+- **THE COMMUNITY FEED'S MONEY IS THE HOUSEHOLD'S, REPEATED ON EVERY MEMBER
+  ROW.** Measured: **1012 of 1012 multi-person households carry identical
+  `Net Revenue` across all their members.** So a per-person sum multiplies money
+  by household size — the first build reported **$886,348 of program spend at an
+  org whose whole program net is $278,819**, a 3x inflation that looked like a
+  big number rather than a bug. `makeContext` now exposes TWO views: `userRows`
+  (person grain, for ages, which belong to a person) and `userHouseholds` (one
+  row per household, preferring the head, for anything counting money or
+  customers). The spec's fixture is 50 households of 4 people at $1,000 each —
+  $50,000 against a per-person $200,000, two numbers nothing could confuse.
+- **THE MEMBERSHIP→ENROLMENT JOIN DOES NOT EXIST ON THE OBVIOUS KEY.** The
+  natural join is memberships' `User ID` against demographics' `Participant ID`,
+  and at Shrewsbury **those meet on 2 of 677 ids while the same feeds' household
+  ids meet on 1298 of 1298.** Joined that way the finding reports *"100% of your
+  members never enrolled"* at every org forever — a statement about the join,
+  not the org. It joins **email → household → enrolment** now, which resolved
+  **676 of 676**, and it **refuses to report at all below a 60% resolve rate**:
+  a join that mostly misses is broken plumbing, not a finding. (The answer at
+  Shrewsbury is real: only 3 of 676 member households have ever enrolled.)
+- **THE DORMANT WINDOW CANNOT BE A CONSTANT.** Shrewsbury's first transaction is
+  2025-09-15, so a fixed 365-day window returns **zero dormant households** — a
+  clean bill of health produced by the org being young. The window is **half the
+  org's own transaction history, capped at a year**, and an org with under eight
+  months of history gets no dormancy claim at all.
+- **MY OWN PROTOTYPE READ A NULL AGE AS ZERO** (`n(r.Age)` → 0 → band "0-4"),
+  which filed 60 un-aged rows under the under-fives and inverted that band's
+  entire verdict. `ageBand()` rejects null, empty and out-of-range explicitly,
+  and the spec drives a fixture with 60 null ages that must not become infants.
+
+### THREE DETECTORS WHOSE FIRST VERSION PRODUCED AN INCOHERENT SENTENCE
+
+Found by reading the rendered output rather than the code:
+
+- **Idle sites measured against the MEDIAN site** printed *"28 of 50 sites took
+  2 bookings or fewer; your median site took 1"* — incoherent on its face,
+  because bookings per site are wildly skewed (a handful of sites carry most of
+  504). The yardstick is the **busiest** site now, and the finding is withheld
+  when more than 80% of sites qualify, which describes the shape of the org
+  rather than finding anything.
+- **Quiet hours reported 7pm and 8pm with zero bookings** at an org that closes
+  at six. **Nothing in the booking data can tell a closed hour from an open
+  empty one**, so only hours BETWEEN two hours the org demonstrably books are
+  reported — an hour it is provably open for.
+- **Cross-promotion at PROGRAM level is dominated by camp Week C ↔ camp Week D**
+  (46x lift, and useless — it is the same product). Computed at **ACTIVITY**
+  level, excluding same-activity pairs, and only where lift ≥ 1.15: two
+  activities sharing fewer households than chance are the worst bet on the page.
+
+### FOUR OF MY OWN SPEC ASSERTIONS WERE VACUOUS, and mutation is what showed it
+
+All four passed against a correct build AND against the mutation they named,
+and all four were fixed in the SPEC rather than by weakening the mutation:
+
+- the repetition floor was never reached — with ONE thin section the detector's
+  earlier items floor fires first, so a one-row fixture cannot tell the two
+  thresholds apart. Three thin sections across three different programs does.
+- the uncharged-bookings fixture had **no paid bookings at all**, so the median
+  rate was null and the finding fell out on arithmetic; the "does this org
+  charge for this elsewhere" floor was never reached. It carries two paid
+  bookings now — a rate that exists and evidence that does not.
+- the cross-promotion anti-fixture shared **nobody**, so the shared-count floor
+  excluded it long before the lift test. It now overlaps 100 + 100 of 200
+  households by exactly 50 — lift 1.00, no affinity, nothing to promote.
+- **the suppression render case keyed on the family WRAPPER's attribute**, which
+  renders whether or not anything is drawn inside it — so deleting the entire
+  suppression notice SURVIVED. The hook is on the visible line now.
+
+**AND TWO OF MY MUTATIONS DID NOT APPLY AT ALL**, reporting SURVIVED on guards
+that were fine: `\&\&` inside a `python3 -c` double-quoted shell string never
+matched the source. The runner asserts the file actually changed now. *A
+mutation that does not reproduce the bug has not tested the guard* — and one
+that silently fails to apply is worse, because it reads as a hole.
+
+**One mutation is genuinely BENIGN and is recorded as such:** an uncapped
+section is excluded three independent ways (the capacity floor, the
+fill-percentage test, and the arithmetic — empty seats are capacity minus
+enrolled, so an uncapped section contributes a NEGATIVE figure that can never
+clear the dollar floor). Relaxing all three still produces no finding, so no
+mutation can show either guard is load-bearing, and claiming otherwise would be
+reporting a guard that is not doing the work.
+
+### THE ROUTE ORDERING TRAP, CAUGHT TWICE IN ONE BLOCK
+
+`opportunities` is deliberately **not** in `REPORT_TYPES` — it has no card of
+its own — so every generic `/:org/:report/api/*` route 404s it with
+`Unknown report`. The beacon route was registered above the generic log route
+from the start… **and the DATA route, three lines away in the same block, was
+not.** The report answered `Unknown report` on every load until it was driven
+against a real server.
+
+**My spec had guarded the log route's position and missed the identical trap
+beside it** — the *"a guard that names one spelling of a thing is not a guard
+against the thing"* lesson, fifth instance in this file. All four routes are now
+asserted as a SET against their generic counterparts.
+
+Only the REGISTRATIONS moved above `/:org/:report/api/data`; the builders, the
+snapshot store and the cron stay where they are, because
+`const OPPORTUNITIES_FILE = path.join(DATA_DIR, …)` that far up the file is the
+temporal dead zone this repo has already shipped twice. A route handler is a
+closure that reads those bindings at REQUEST time.
+
+**A third instance of the same class, in `lib/opportunities.js` itself:** the
+`enrolledByBand` block read `userRows` two lines above its own declaration, and
+`makeContext` threw `Cannot access 'userRows' before initialization` on the
+first real run.
+
+### COST, AND WHY IT IS DAILY
+
+Nine feeds per org, several of them the heaviest cards on the platform (the
+Programs card alone measured **54s** at Shrewsbury). Across ~29 orgs that is
+~260 Metabase queries — built per page load it is the fan-out that killed the
+Report Wizard.
+
+- **Daily at 05:20**, behind `leaderCron` so two replicas do not both run it,
+  and after the 4:50/5:00/5:10 prewarm jobs so the feeds it wants are warm.
+- **SEQUENTIAL, one org at a time, paced 4s.** The spec asserts the loop rather
+  than a `Promise.all` — fanned out this is the post-deploy prewarm storm that
+  502'd the facility Summary and got a card rolled back.
+- **One org's failure does not overwrite that org's last good snapshot**, and
+  does not stop the other twenty-eight.
+- Measured end to end: **26.5s** to build Shrewsbury cold, **11ms** from the
+  snapshot.
+- **One snapshot per org, not an archive.** Yesterday's opportunities are not a
+  historical record anyone wants; they are the same list with a stale date.
+
+### DECISIONS ON SCREEN
+
+- **A finding carrying a dollar figure must say what to do about it** — the spec
+  fails otherwise. A number with nowhere to go is the dead end this file keeps
+  recording.
+- **Every finding states how its number was worked out**, in words, because a
+  director who cannot argue with a figure stops trusting the page. The
+  ceiling-shaped ones say they are ceilings.
+- **Uncharged bookings are reported as a QUESTION, not as lost revenue.** 212 of
+  245 field bookings at $0 is most likely deliberate policy; the finding says so
+  and offers the figure as *"the value of what you donate to the community,
+  which is worth knowing at budget time"*.
+- **A detector that throws reports itself** rather than vanishing — a silently
+  missing finding is indistinguishable from an org with nothing to fix.
+- **Item lists are capped at 8** with an "and N more", so one finding cannot
+  fill the page.
+- Slack: `opp-drill` carries WHICH finding and what it was worth, **debounced
+  per finding** (working down three in a morning is three decisions), with its
+  own message branch — the shared line would print the report type twice and the
+  finding never, the defect already fixed once in the feedback branch.
+
+### Guards
+
+`scripts/opportunities.spec.js` (**118 assertions, in CI**), which LIFTS AND
+RUNS all 21 detectors over fixtures built so a wrong implementation produces a
+wrong NUMBER. `SKIP_SOURCE=1` drops the server-wiring half (85 remain).
+Mutation-tested **20 ways, 19 caught by name** (the twentieth recorded benign
+above): a failed feed defaulting to `[]` on either side, the court floor
+removed, the household dedupe dropped, the dormant window hardcoded, cancelled
+sections double-counted as refund outliers, the repetition floor removed, a null
+age read as zero, day passes counted as lapsed memberships, the member join
+reverted to user ids, quiet hours outside the opening envelope, idle sites back
+on the median, uncharged bookings without proof, cancelled reservations counted
+as owed, empty seats priced at the whole charge, a throwing detector swallowed,
+cross-promotion between under-represented activities, the beacon route moved
+below the generic one, and the daily job fanned out.
+
+**Five `ci-check-render.js` cases**, each keyed on a rendered VALUE or an
+absence — "a findings card appeared" passes on a page reading the wrong field
+out of every finding it draws. All five mutation-tested in a browser: the totals
+blended, one total wrong, the suppression notice deleted, an unavailable feed
+rendered as "came back clean", and drill links left in print mode.
+
+**`ci-check-render.js` gained `also`**, a list of selectors that must ALL be
+present alongside `needs`. A CSS selector list matches EITHER, so a case needing
+two facts on screen at once could not say so — and it is honoured separately
+from `needs` because the two mean different things in a failure: `needs` is "the
+page rendered", `also` is "it rendered the right numbers". Verified non-vacuous
+by a mutation that breaks only an `also` selector.
+
+**AND A CLEAN RUN REPORTED 48 FAILURES, ALL SELF-INFLICTED.** A `nohup` render
+sweep was orphaned when its shell exited and left its own server behind; the
+next sweep then reported `net::ERR_CONNECTION_REFUSED` on 48 of 379 cases —
+which reads exactly like a mass regression. Re-run alone: **379 of 379 green.**
+Third instance of the overlapping-runs trap in this file, and the tell is in the
+error itself — a connection refused is the harness's server dying, never a page
+failing to render. Check for strays by reading `/proc/*/cmdline` from a script
+in its own call, never in the same command line as the thing being run.
+
+Verified live rather than asserted: the page returns 200, the beacon returns 200
+**and lands a row in `events.jsonl`** carrying the finding, target and value
+(the `?event=` query-string convention — a JSON body 400s and, being
+fire-and-forget, never complains, which has now bitten this repo five times), an
+unknown event is refused, and a tokenless request 404s.
+
+### NOT BUILT
+
+- **No per-finding dismissal or snooze.** A director who has decided to live
+  with a finding sees it again tomorrow. It needs somewhere to store the
+  decision per org and a rule for when a dismissal expires — a real feature, not
+  a flag.
+- **No trend.** "Your under-fill got worse" is the more useful sentence and
+  needs two snapshots plus a floor in each; today there is one snapshot per org
+  by design.
+- **No instructor-level findings.** `instructor` is on the Programs card and
+  fill-rate-by-instructor is computable, but it is a performance claim about a
+  named person off small N, and that is a decision rather than a detector.
+- **Cost is instructor pay and nothing else.** There is no facility or staff
+  cost anywhere in the data, so "costs more to run than it earns" is not
+  computable — the report says "ran half empty" and prices the empty seats,
+  which is what the data can actually support.
+
+
 ## THE HUB'S FEED KEY CARRIED NO VERSION, SO v2.3 COULD NOT REACH THE PAGE (2026-09-12)
 
 Dan, minutes after the rental-count work shipped and deployed, with Watertown's
