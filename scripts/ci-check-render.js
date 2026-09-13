@@ -3840,9 +3840,15 @@ const CASES = [
         const rentals = Number(el.getAttribute("data-fac-rentals"));
         const sites   = Number(el.getAttribute("data-fac-sites"));
         // The KPI card must agree with the toolbar — two surfaces disagreeing
-        // about one window is worse than either of them being vague.
-        const card = document.querySelector('[data-sc="dates"]');
+        // about one window is worse than either of them being vague. The
+        // HEADLINE is the rental count (Dan, 2026-09-12) and the sub-line is
+        // the date count, so BOTH halves are read: a card that printed the date
+        // count big and the rentals underneath is the shape this replaced, and
+        // it would satisfy a check on the sub alone.
+        const card = document.querySelector('[data-sc="rentals"]');
         const sub  = card ? card.getAttribute("data-sc-sub") : "";
+        const valEl = card ? card.querySelector(".sc-val") : null;
+        const kpiVal  = Number(String(valEl ? valEl.textContent : "").replace(/[^0-9]/g, ""));
         const kpiSays = Number(String(sub).replace(/[^0-9]/g, ""));
         // WHAT ONLY A BROWSER CAN SAY: that the page WIRES the count through to
         // both surfaces, and that they agree. A page counting feed rows again
@@ -3856,11 +3862,23 @@ const CASES = [
         // Distinguishing a rental count from a site count is owned by
         // facility-summary.spec.js, where the fixture is fully controlled
         // (41 sites against 58 rentals over 206 dates).
-        const good = rentals > 0 && rentals < dates && kpiSays === rentals;
+        // AND THE RENTAL COUNT LEADS on both read-outs. That is the whole of
+        // Dan's ask, and nothing else on the page would fail if it were put
+        // back — the attributes carry the same numbers whichever order they are
+        // printed in, so the ORDER has to be read as text.
+        const bar   = String(el.textContent || "");
+        const barOk = bar.indexOf("rentals") > -1 && bar.indexOf("dates") > -1
+                      && bar.indexOf("rentals") < bar.indexOf("dates");
+        const pill  = document.querySelector(".fcb-pill");
+        const pillOk = !!pill && /rentals/.test(pill.textContent || "");
+        const good = rentals > 0 && rentals < dates
+                     && kpiVal === rentals && kpiSays === dates && barOk && pillOk;
         document.body.setAttribute("data-rc-facrent", good ? "1" : "0");
         document.body.setAttribute("data-rc-facrent-seen",
-          dates + " dates · " + rentals + " rentals · " + sites + " sites · KPI sub "
-          + JSON.stringify(sub) + " reads " + kpiSays);
+          dates + " dates · " + rentals + " rentals · " + sites + " sites · KPI reads "
+          + kpiVal + " over sub " + JSON.stringify(sub) + " (" + kpiSays + ") · toolbar "
+          + JSON.stringify(bar) + " · first pill "
+          + JSON.stringify(pill ? pill.textContent : null));
       });
     } },
   /* A WARM PRE-v2.3 CACHE ENTRY CANNOT SAY. Feeds cache four hours, so the old
@@ -3879,12 +3897,12 @@ const CASES = [
         const text = el.textContent || "";
         const good = rentals === "" && /bookings/.test(text) && !/rentals/.test(text)
                      && !!document.querySelector('[data-sc="bookings"]')
-                     && !document.querySelector('[data-sc="dates"]');
+                     && !document.querySelector('[data-sc="rentals"]');
         document.body.setAttribute("data-rc-facprev", good ? "1" : "0");
         document.body.setAttribute("data-rc-facprev-seen",
           JSON.stringify(text) + " · data-fac-rentals=" + JSON.stringify(rentals)
           + " · bookings card=" + !!document.querySelector('[data-sc="bookings"]')
-          + " · dates card=" + !!document.querySelector('[data-sc="dates"]'));
+          + " · rentals card=" + !!document.querySelector('[data-sc="rentals"]'));
       });
     } },
   // ── Court Utilization is retired as a tab (Dan, 2026-09-04) ─────────────

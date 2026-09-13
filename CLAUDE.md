@@ -136,9 +136,24 @@ plus 0 reservation rows and 0 of the 35 invoice rows missing the new id.
 ### THE PAGE SHOWS BOTH, and the fallback is the careful half
 
 `aggregate()` gains `rentals`, counted distinctly from `resRows` like `bookings`
-and `sites`. The KPI card reads **Reservation Dates / 2,668 / "across 1,683
-rentals"**, the banner carries both pills, and the toolbar reads
-`2,668 dates · 1,683 rentals · 21 sites`.
+and `sites`. Both counts appear on all three surfaces.
+
+**THE RENTAL COUNT LEADS — flipped 2026-09-12, after Dan saw it shipped the
+other way round:** *"for next time, I'd prefer these be flipped. Org admins care
+about the rental numbers more than the individual line items."* So the KPI card
+reads **Rentals / 1,683 / "across 2,668 reservation dates"**, the first banner
+pill is rentals, and the toolbar reads
+`1,683 rentals · 2,668 dates · 21 sites`.
+
+**THE DATE COUNT STAYS ON THE CARD, and that is not decoration:** every KPI
+beside it — instant-book share, managed share, cancellation rate — is computed
+PER DATE, so a card that dropped the date count would leave three percentages
+with no visible denominator. The card's tooltip says so.
+
+**AND THE ORDER IS GUARDED AS TEXT, because nothing else can see it.** The
+`data-fac-dates` / `data-fac-rentals` attributes carry the same numbers whichever
+way round they are printed, so the render case reads the toolbar's own string
+and the first banner pill's label. Mutation-tested both ways.
 
 **`hasRentalId` IS PRESENCE, ASKED OF THE RESPONSE.** Feeds cache four hours, so
 a pre-v2.3 entry and a v2.3 one are both live at once, and a value test renders

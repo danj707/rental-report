@@ -2423,8 +2423,13 @@
     function FacilitiesBanner({ a, tab }) {
       const theme = FBX_THEME[tab] || FBX_THEME.summary;
       const pills = a ? [
-        [a.hasRentalId ? 'reservation dates' : 'bookings', a.bookings.toLocaleString()],
+        // RENTALS LEAD (Dan, 2026-09-12): "Org admins care about the rental
+        // numbers more than the individual line items." The date count stays
+        // beside it — it is what every other figure in this row is per — but it
+        // is no longer the headline. A pre-v2.3 feed cannot say either, so it
+        // keeps the one word it can stand behind.
         ...(a.hasRentalId ? [['rentals', a.rentals.toLocaleString()]] : []),
+        [a.hasRentalId ? 'reservation dates' : 'bookings', a.bookings.toLocaleString()],
         ['charged', money(a.revenue)],
         ['active sites', a.sites.toLocaleString()],
         ['cancellation', a.bookings ? pct(a.canceled, a.bookings) : '—'],
@@ -2458,8 +2463,9 @@
                     'data-fac-sites': String(props.sites) },
           props.loading ? 'loading…' :
           (props.count == null ? '' :
-            props.count.toLocaleString() + (props.rentals == null ? ' bookings' : ' dates')
-            + (props.rentals == null ? '' : ' · ' + props.rentals.toLocaleString() + ' rentals')
+            (props.rentals == null
+              ? props.count.toLocaleString() + ' bookings'
+              : props.rentals.toLocaleString() + ' rentals · ' + props.count.toLocaleString() + ' dates')
             + ' · ' + props.sites.toLocaleString() + ' sites')),
         e('button', { onClick: () => window.print(), title: 'Print this view' }, '🖨️ Print'),
         e('button', { className: 'btn-pdf', disabled: !props.count || props.pdfLoading, onClick: props.onPdf, title: 'Download this view as a PDF' }, props.pdfLoading ? 'Generating…' : '📄 PDF'),
@@ -2499,12 +2505,19 @@
         { label: 'Charged', val: money(a.revenue), cls: 'sc-green', sub: 'excludes canceled' },
       ];
       const cards = [
+        // THE RENTAL IS THE HEADLINE, the date count the sub-line (Dan,
+        // 2026-09-12): "Org admins care about the rental numbers more than the
+        // individual line items." Both are still on the card, because every
+        // other KPI beside it — instant/managed share, cancellation rate — is
+        // computed per DATE, so a card that dropped the date count would leave
+        // those percentages with no denominator on screen.
         a.hasRentalId
-          ? { label: 'Reservation Dates', val: a.bookings.toLocaleString(), cls: 'sc-blue',
-              sub: 'across ' + a.rentals.toLocaleString() + ' rental' + (a.rentals === 1 ? '' : 's'),
-              hook: 'dates',
-              title: 'One row per booked date. A recurring rental books many dates, so this is '
-                   + 'larger than the number of rentals it represents.' }
+          ? { label: 'Rentals', val: a.rentals.toLocaleString(), cls: 'sc-blue',
+              sub: 'across ' + a.bookings.toLocaleString() + ' reservation date'
+                   + (a.bookings === 1 ? '' : 's'),
+              hook: 'rentals',
+              title: 'A rental is one booking; a recurring rental books many dates. '
+                   + 'The percentages below are per date.' }
           : { label: 'Bookings', val: a.bookings.toLocaleString(), cls: 'sc-blue',
               sub: 'facility reservations in view', hook: 'bookings' },
         ...revCards,
