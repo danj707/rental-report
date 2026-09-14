@@ -51,11 +51,45 @@
   .tot .sub { font-size: 10.5px; color: #78716c; margin-top: 3px; line-height: 1.45; }
   .tot-note { font-size: 11px; color: #78716c; margin: 8px 0 18px; font-style: italic; }
 
-  .fam { margin: 22px 0 0; }
-  .fam-h { display: flex; align-items: baseline; gap: 9px; border-bottom: 1px solid #e8e6e0; padding-bottom: 6px; margin-bottom: 12px; }
-  .fam-h .fh-t { font-size: 14.5px; font-weight: 800; }
-  .fam-h .fh-b { font-size: 11.5px; color: #a8a29e; }
-  .fam-h .fh-n { margin-left: auto; font-size: 11px; color: #a8a29e; font-weight: 700; }
+  /* ── SECTION SEPARATION. Dan: "can we get a bit more separation between
+     sections, like this 'Your Community' section needs a bit more header,
+     something. Maybe use similar colors from the community intel report to
+     separate specific sections."
+
+     The vocabulary is lifted from public/users.html rather than invented: a
+     tinted band with a coloured left accent and a matching ink, which is what
+     .obs (green), .insights-wrap (indigo) and .future-box (violet) already do
+     there, and what .kpi's border-top accent does beside them.
+
+     EACH FAMILY OWNS A HUE, and it is the SAME hue its findings already wear —
+     money is the red of .chip.k-uncollected, your community the violet of
+     .chip.k-audience. Two palettes on one page would make the section colour
+     read as a second, contradicting classification. ── */
+  .fam { margin: 30px 0 0; --fam: #a8a29e; --fam-bg: #faf9f7; --fam-ink: #44403c; }
+  .fam:first-of-type { margin-top: 20px; }
+  .fam[data-opp-family="adaptive"]   { --fam: #6d28d9; --fam-bg: #f5f3ff; --fam-ink: #5b21b6; }
+  .fam[data-opp-family="programs"]   { --fam: #4338ca; --fam-bg: #eef2ff; --fam-ink: #3730a3; }
+  .fam[data-opp-family="people"]     { --fam: #047857; --fam-bg: #f0fdf4; --fam-ink: #065f46; }
+  .fam[data-opp-family="facilities"] { --fam: #1d4ed8; --fam-bg: #eff6ff; --fam-ink: #1e40af; }
+  .fam[data-opp-family="courts"]     { --fam: #b45309; --fam-bg: #fffbeb; --fam-ink: #92400e; }
+  .fam[data-opp-family="money"]      { --fam: #b91c1c; --fam-bg: #fef2f2; --fam-ink: #991b1b; }
+
+  .fam-h { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+    border-left: 5px solid var(--fam); border-radius: 3px 9px 9px 3px;
+    background: linear-gradient(100deg, var(--fam-bg) 0%, #fff 82%);
+    padding: 11px 15px; margin-bottom: 14px;
+    /* The band IS the separation, so it has to survive the printer — the same
+       reason the Musco row highlight carries both spellings. */
+    -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .fam-h .fh-t { font-size: 15.5px; font-weight: 800; color: var(--fam-ink); letter-spacing: -.01em; }
+  .fam-h .fh-b { font-size: 11.5px; color: #78716c; }
+  .fam-h .fh-n { margin-left: auto; font-size: 10px; font-weight: 800; color: var(--fam-ink);
+    background: #fff; border: 1px solid var(--fam); border-radius: 999px; padding: 2px 9px;
+    letter-spacing: .04em; text-transform: uppercase;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  /* A suppressed family keeps its band and loses its colour — it was looked at
+     and came back short, which is a different thing from being absent. */
+  .fam[data-opp-state="ok"] + .fam { border-top: 1px solid #f0efec; padding-top: 26px; margin-top: 26px; }
 
   /* A suppressed family is SHOWN, with the reason. See rule 2 in lib/opportunities.js. */
   .fam-off { background: #faf9f7; border: 1px dashed #d6d3d1; border-radius: 8px; padding: 10px 14px; font-size: 12px; color: #78716c; }
@@ -96,6 +130,11 @@
   .basis b { color: #78716c; }
   .drill { font-size: 11.5px; font-weight: 700; text-decoration: none; color: #1d4ed8; border: 1px solid #bfdbfe; background: #eff6ff; padding: 5px 11px; border-radius: 5px; white-space: nowrap; }
   .drill:hover { background: #dbeafe; }
+  /* Rec is the primary when a finding is worked there; our own report sits
+     beside it as the quieter secondary, because it is what proves the number. */
+  .drill-pair { display: inline-flex; gap: 7px; align-items: center; flex-wrap: wrap; }
+  .drill-2 { color: #78716c; border-color: #e8e6e0; background: #faf9f7; font-weight: 600; }
+  .drill-2:hover { background: #f0efec; }
 
   /* ── The contents strip. Dan: "Add a quick overview at the top with links
         to jump to each section." A count per family, so the strip says what
@@ -211,13 +250,22 @@ const REC_PATH = {
   user: "users", rental: "facility-rentals",
 };
 function recHref(orgId, rec) {
-  if (!orgId || !rec || !REC_PATH[rec.kind]) return null;
+  if (!orgId || !rec) return null;
+  /* A Rec REPORT rather than a record: no id segment. The library whitelists
+     the path (REC_PAGES there), so this never builds one from a free string. */
+  if (rec.kind === "page") return rec.path ? "https://www.rec.us/admin/o/" + orgId + "/" + rec.path : null;
+  if (!REC_PATH[rec.kind]) return null;
   return "https://www.rec.us/admin/o/" + orgId + "/" + REC_PATH[rec.kind] + "/" + rec.id;
 }
+
+/* What the foot button says about a Rec page. Named here rather than on the
+   finding so the wording of a destination lives with the destination. */
+const REC_PAGE_LABEL = { "balance-due": "Balances Due" };
 
 function Finding({ f, slug, token, orgId, isPrint, cols }) {
   const withToken = (url) => token ? url + (url.includes("?") ? "&" : "?") + "token=" + encodeURIComponent(token) : url;
   const drillHref = (link) => link ? withToken("/" + slug + "/" + link.report + (link.query ? "?" + link.query : "")) : null;
+  const footRec = recHref(orgId, f.rec);
 
   /* The beacon says WHICH finding a director actually acted on — the one thing
      a view count cannot tell us, and what decides whether a detector earns its
@@ -327,9 +375,28 @@ function Finding({ f, slug, token, orgId, isPrint, cols }) {
 
       <div className="find-foot">
         {f.basis ? <div className="basis"><b>How this is worked out:</b> {f.basis}</div> : <div className="basis" />}
-        {/* Absent, not disabled, where there is nothing to open. */}
-        {f.link && !isPrint ? (
-          <a className="drill" href={drillHref(f.link)} onClick={() => drill(f.link)}>
+        {/* Absent, not disabled, where there is nothing to open.
+
+            A finding carrying `rec` is WORKED in Rec, so that is the button —
+            Dan, on money owed: "refer them back into Rec instead, there's a
+            whole 'balances due' report". Our own report still opens beside it
+            as the secondary: it is what proves the number, and dropping it
+            would leave no way back to the evidence. */}
+        {!isPrint && footRec ? (
+          <span className="drill-pair">
+            {f.link ? (
+              <a className="drill drill-2" href={drillHref(f.link)} onClick={() => drill(f.link)}>
+                {REPORT_LABEL[f.link.report] || f.link.report}
+              </a>
+            ) : null}
+            <a className="drill" href={footRec} target="_blank" rel="noopener noreferrer"
+               data-opp-foot-link="rec"
+               onClick={() => beacon("opp-drill", { to: "rec:" + (f.rec.name || f.rec.kind), value: f.value == null ? "" : String(f.value) })}>
+              Open {REC_PAGE_LABEL[f.rec.name] || "this"} in Rec ↗
+            </a>
+          </span>
+        ) : f.link && !isPrint ? (
+          <a className="drill" href={drillHref(f.link)} data-opp-foot-link="report" onClick={() => drill(f.link)}>
             Open {REPORT_LABEL[f.link.report] || f.link.report} →
           </a>
         ) : null}
@@ -508,7 +575,7 @@ function App() {
               <div className="fam-h">
                 <span className="fh-t">{fam.emoji} {fam.label}</span>
                 <span className="fh-b">{fam.blurb}</span>
-                {fam.state === "ok" ? <span className="fh-n" data-opp-count={fam.findings.length}>{fam.findings.length}</span> : null}
+                {fam.state === "ok" ? <span className="fh-n" data-opp-count={fam.findings.length}>{fam.findings.length} {fam.findings.length === 1 ? "finding" : "findings"}</span> : null}
               </div>
 
               {fam.state === "ok" && fam.findings.map(f => (

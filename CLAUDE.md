@@ -1,5 +1,204 @@
 # Project notes for Claude
 
+## THE OPPORTUNITIES REPORT, ANSWERED IN FIVE MORE (2026-09-14)
+
+Dan, on the built report, with four screenshots:
+
+> *"can we get a bit more separation between sections, like this 'Your Community'
+> section needs a bit more header, something. Maybe use similar colors from the
+> community intel report to separate specific sections.*
+> *typo, enrol?*
+> *For the managed rentals section, call out how much time could be saved by
+> using instant bookings*
+> *for the 'money owed' section, refer them back into Rec instead, there's a
+> whole 'balances due' report, use this format for Shrewsbury
+> https://www.rec.us/admin/o/0a9c47af-…/facilities/balance-due*
+> *Customers section should open to their profile page in Rec, not the community
+> intel report"*
+
+**FOUR OF THE FIVE COST NOTHING BUT CODE. THE FIFTH COST A CARD PUSH**, and it
+is the one worth reading: *"open to their profile page in Rec"* is unbuildable
+until the feed carries an id that resolves.
+
+### THE REC-ID TRAP IS THE WHOLE OF ASK 5 — card 17689 had no user uuid at all
+
+`recLink()` has refused household rows since the day it was written, because the
+community feed's `Rec ID` is a **six-character staff code** (`HG1HK8`) and a
+`/admin/o/<org>/users/HG1HK8` URL **404s while looking perfectly correct**. So
+Dan's ask was not a wiring job: card 17689 emitted **no `users.id` anywhere**,
+and the only uuid on it (`Household ID`) addresses a household, not a person.
+
+**One column, `u.id::text AS "User ID"`**, placed directly under `Rec ID` with a
+comment naming the trap, so the next reader finds the fix beside the thing it
+fixes. Same column card 18151 v2 added for check-ins, for the same reason.
+
+**IT NEEDED NO TAG FLIP, AND THE CARD'S OWN DESCRIPTION SAID SO BEFOREHAND** —
+*"`{{org_id}}` Text ONLY — no date tags, so an API update to this card needs NO
+re-flip in the UI."* Read back after the push: **one tag, `org_id`, type
+`text`**, no `string/=` duplicate set, trailing `ORDER BY` intact. **So the
+report was never down**, which is the first push in this file with no outage to
+declare. *Read a card's description before budgeting for the flip window.*
+
+**ADDITIVE, PROVEN ON THE LIVE CARD RATHER THAN IN A FINGERPRINT.** Through the
+public endpoint with the app's own parameter shape, Shrewsbury:
+
+| | before | after |
+|---|---|---|
+| rows | **4,558** | **4,558** |
+| `User ID` present | — | **4,558** |
+| distinct | — | **4,558** |
+| values that are not a uuid | — | **0** |
+| `Rec ID` values that are a uuid | **0** | **0** — that is the trap |
+
+4,558 rows against 4,558 distinct ids is 1:1 on the card's own grain, so the
+column can neither fan out nor collapse. A sample head-of-household row carries
+`Rec ID "HG1HK8"` beside `User ID 9ba5655f-…` — the trap and its fix on one real
+row.
+
+**THE md5 FINGERPRINT TIMED OUT AT 60s AND IS NOT CLAIMED.** The 1:1 count took
+10.8s; `md5(string_agg(to_jsonb(t)…))` over the full row set did not fit the MCP
+ceiling. Said plainly rather than dressed up: the additive proof here is the live
+before/after row count plus the 1:1 identity, and the structural argument that a
+column added to a plain SELECT list with no DISTINCT, no GROUP BY and **no
+UNION** cannot move another column — the positional-UNION trap that bit card
+19570 does not apply because there is no UNION.
+
+**ONLY THE DORMANT FINDING GETS IT.** Every other people-family finding's items
+are bands, zips or activity pairs — aggregates, which correctly still open
+Community Intel. `dormant-households` is the one whose rows are *named people*,
+and it is exactly the screenshot Dan sent.
+
+**THE CACHE INVARIANT IS FREE, BY CONSTRUCTION.** A feed cached before the push
+has no `User ID`, `recLink` refuses the absent value, and the row falls back to
+Community Intel. No presence gate had to be written; the refusal IS the gate.
+
+### THE DESK-TIME FIGURE IS PER RENTAL, AND THE DETECTOR'S OWN BASIS SAID WHY
+
+Dan's screenshot read *"All 505 rentals in this window were booked by staff"* —
+and those are reservation **dates**. `dStaffBooked` has warned about that in its
+own basis since it shipped (*"a recurring rental is one conversation and many
+rows"*), and this is the half that acts on it.
+
+**MEASURED AT SHREWSBURY OVER A YEAR: 541 reservation dates behind 178
+RENTALS**, 540 of the dates and 177 of the rentals staff-booked. A per-row
+estimate would have been **three times the truth**.
+
+- **`managedRentalCount` reads `summaryRows` (card 19570 v2.3), the only feed
+  carrying a rental identifier** — card 17294, which the detector otherwise
+  runs on, emits `Reservation ID` and nothing else.
+- **PRESENCE, NOT VALUE.** A feed cached before v2.3 cannot say, so the function
+  returns `null` and the time claim is simply **not made** — never "0 hours".
+  **AND `return rentals.size || null` MADE THAT GATE DECORATIVE**: the mutation
+  that deleted the gate SURVIVED, because the `|| null` answered for it. It is
+  `return rentals.size` now, so an org whose rentals are all self-service reads
+  **0** (*the feed says none*) and a pre-v2.3 feed reads **null** (*the feed
+  cannot say*) — the `hasAbsent` distinction, restored by mutation.
+- **A cancelled reservation and an instant one are both excluded** — neither is
+  a conversation somebody is having at a desk.
+- **20 MINUTES IS AN INPUT AND THE REPORT SAYS SO ON SCREEN**, in the finding's
+  own detail *and* in its basis, which prints the rate so a director can argue
+  with it. Nothing in Rec records staff time. Same treatment as
+  `DIR_FT_MINUTES_PER_REG`: **set `OPP_MINUTES_PER_MANAGED_RENTAL` to 0 and the
+  whole claim disappears** rather than printing a zero.
+
+### MONEY OWED IS WORKED IN REC, AND `recHref` COULD NOT EXPRESS THE URL
+
+`/admin/o/<org>/facilities/balance-due` is a **report, not a record** — no id
+segment — so `recHref`, which required `REC_PATH[kind] + "/" + rec.id`, would
+have returned null and the button would never have rendered.
+
+- **`recPage(name)` is WHITELISTED BY NAME, not a free path.** The org uuid is
+  ours and the path is ours; handing an arbitrary string to the URL builder is
+  how a typo becomes a confident 404 — the same failure `recLink` refuses one
+  function up, arriving by a different door. The mutation that accepts any name
+  fails by name.
+- **Our own report stays beside it as the secondary.** Dan said *"instead"*, and
+  Rec is the button — but the Facilities summary is what **proves** the number,
+  and dropping it would leave no way back to the evidence.
+- **Each owed RENTAL now opens that rental in Rec too**, off card 19570 v2.3's
+  `Rental ID`. The grouping key falls back to `Reservation ID`, which is also a
+  uuid but the **wrong record**, so the id travels on the group and `recLink`
+  refuses anything that is not a uuid.
+
+### THE SPELLING GUARD HAD TO BE ABLE TO FAIL, AND TO MISS
+
+*"typo, enrol?"* — `enrol` / `enrols` / `enrolment(s)` are British;
+**`enrolled` and `enrolling` are the SAME in both dialects** and must not move.
+
+**A NAIVE `\benrol\b` FIRES ON CORRECT CODE**: `const enrol = new Map()` in the
+age-band detector — the `/programme/i`-matching-`programMedianPrice` defect, one
+field over. Renamed `enrolIdx`, so the guard can stay dumb and literal.
+(`enrolRows` is safe: there is no word boundary after `enrol` in it.)
+
+The guard is pinned **both ways** — it must miss `enrolled enrolling enrollment
+enrollments enrolls enrolRows`, and still catch a real *"never enrol"* — or the
+fix would be a guard that can never fail. Also fixed: `Counting enrolments…` on
+the Programs Schedule loader, because half a rename reads worse than none.
+
+### THE SECTION COLOURS ARE LIFTED, NOT INVENTED
+
+Each family owns a hue, and it is **the same hue its own findings already
+wear** — money the red of `.chip.k-uncollected`, your community the violet-green
+of `.obs`. Two palettes on one page would make the section colour read as a
+second, contradicting classification.
+
+The vocabulary comes from `public/users.html`: a tinted gradient band with a
+coloured left accent and matching ink, which is what `.obs`, `.insights-wrap`
+and `.future-box` already do there, and what `.kpi`'s `border-top` accent does
+beside them. **`print-color-adjust` in both spellings** — the band IS the
+separation, and a printer that drops it leaves the sections running together.
+
+### Guards
+
+`scripts/opportunities.spec.js` 258 → **312 assertions**, in CI.
+**Mutation-tested 23 ways, all 23 caught by an assertion naming the defect**:
+the zip title reverted to British, an enrolment count reverted, desk time
+counted per reservation date, the presence gate dropped, a real zero folded back
+into "cannot say", a cancelled reservation counted as a conversation, a
+self-service rental counted as desk time, the rate no longer stated as an
+assumption, the basis no longer printing it, the action no longer naming the
+saving, the balances-due page dropped, `recPage` accepting an arbitrary path,
+each rental's Rec link dropped, the rental link built from the reservation-id
+fallback, the customer profile link dropped, the customer linked by the
+six-character Rec ID, the item no longer carrying it, the money family losing
+its colour, the band losing its accent bar, the band dropped by the printer,
+`recHref` unable to build a pathless URL, the foot button ignoring Rec, and our
+own report dropped from beside it.
+
+**Four `ci-check-render.js` cases**, because none of this is visible in source:
+a stylesheet reads plausibly either way, and an anchor to the wrong place
+renders identically to one to the right place.
+
+- **the colours case stamps the COMPUTED band colours** and requires the six
+  families to be telling apart — one shared accent would make the band
+  decoration rather than separation — plus a gradient on every one.
+- **the two Rec cases key on the real href**, including that it opens in its own
+  tab and that our own report is still beside it carrying the org token.
+- **the customer case needs the fixture's SECOND customer to carry no uuid**,
+  which is what a pre-push feed looks like: one row must open Rec and the other
+  must fall back, or the case cannot tell a page that honours `rec` from one
+  that ignores it. Same shape as the adaptive callout's own fixture.
+
+**The money family had to become `ok` for any of this to be reachable**, and it
+was the fixture's `unavailable` case — so that state moved to a new
+`stubMode: "oppdown"`. Worth knowing: the fixture has six families and needs
+four `ok` plus three distinct suppression states, which is one more slot than
+exists. A stub mode is the way out, not dropping a state.
+
+**THE FIXTURE'S OWN COPY CARRIED THE BRITISH SPELLING TOO** — *"never enrol"*,
+copied from the detector. Fixed with it; a fixture that repeats the defect is
+the `per-section` trap this file already records.
+
+### A sandbox note, because it cost twenty minutes
+
+The first render pass was **13 of 17 green, including all four new cases**. The
+remaining four failed with `Navigation timeout of 45000 ms exceeded` — and then,
+minutes later, cases that had just PASSED failed the same way when run alone,
+**on a completely clean tree with `git stash`**. So it is the environment
+degrading across repeated Chromium launches, not the page: *a navigation timeout
+that spreads to cases which already passed is the harness, never a regression.*
+Prove it with `git stash` before spending time on a diff that is not the cause.
+
 ## THE OPPORTUNITIES REPORT, ANSWERED IN SIX (2026-09-14)
 
 Dan, on the built report: *"wow that opportunities report is....a lot. great

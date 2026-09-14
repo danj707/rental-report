@@ -1341,7 +1341,7 @@ const STUBS = [
           { id: "adaptive-only-households", family: "adaptive", kind: "audience", value: null, count: 3,
             title: "Families who only ever come to you for adaptive programming",
             headline: "3 of the 10 households in your adaptive programs (30%) have enrolled in nothing else",
-            detail: "", action: "Ask them.", basis: "Households with an adaptive enrolment and no other.",
+            detail: "", action: "Ask them.", basis: "Households with an adaptive enrollment and no other.",
             items: [{ label: "3 households, adaptive only", sub: "of 10", value: null, link: { report: "users", query: "tab=strategy" } }],
             more: 0, link: { report: "users", query: "tab=strategy" },
             people: [
@@ -1360,7 +1360,7 @@ const STUBS = [
           { id: "underfilled-programs", family: "programs", kind: "upside", value: 12000, count: 9,
             title: "Programs that keep running half empty",
             headline: "9 sections across 3 programs ran under 50% full",
-            detail: "Not one-off quiet weeks.", action: "Cut the capacity to what actually enrols.",
+            detail: "Not one-off quiet weeks.", action: "Cut the capacity to what actually enrolls.",
             basis: "Empty seats times the price the enrolled participants paid.",
             items: [{ label: "Toddler Skating", sub: "4 sections", value: 7000, link: { report: "programs", query: "" } }],
             more: 2, link: { report: "programs", query: "" } },
@@ -1377,22 +1377,70 @@ const STUBS = [
              supported one present, a page that rendered both states
              identically would pass. */
           { id: "zip-gap", family: "people", kind: "audience", value: null, count: 5500,
-            title: "Neighborhoods registered with you that never enrol",
+            title: "Neighborhoods registered with you that never enroll",
             headline: "5500 households in 12 zip codes have an account and have never taken a program",
             detail: "", action: "Check whether non-resident pricing is what stops them.",
-            basis: "Households in your records that appear in no enrolment.",
+            basis: "Households in your records that appear in no enrollment.",
             items: [{ label: "01604", sub: "22 of 86 households enrolled", value: null, link: { report: "users", query: "tab=demo" } }],
             more: 4, link: { report: "users", query: "" },
             people: [{ name: "Alan T", email: "alan@x.test", phone: "5559999", city: "Elsewhere", zip: "01604", lastActive: "2026-05-05", lifetimeNet: 12, group: "01604" }],
             peopleTotal: 1400,
             segment: { state: "unsupported", steps: [],
               why: "Rec segments filter on age, gender, group, program, membership, reservation and pass \u2014 there is no address or zip field." } },
+          /* THE NAMED CUSTOMERS. Dan: "Customers section should open to their
+             profile page in Rec, not the community intel report." The first
+             row carries a real uuid and the second carries NOTHING — a feed
+             cached before card 17689 gained "User ID" holds only the
+             six-character staff code, and the two must render differently or
+             a page ignoring `rec` looks identical to one honouring it. */
+          { id: "dormant-households", family: "people", kind: "audience", value: null, count: 2,
+            title: "Customers who have gone quiet",
+            headline: "2 households who have spent with you have not transacted in 12 months",
+            detail: "", action: "Send them what they bought last time.",
+            basis: "No transaction for 365 days, among households with recorded spend.",
+            items: [
+              { label: "Chelsea Chwiecko", sub: "last active 2025-06-11 \u00B7 4 items lifetime", value: 640,
+                rec: { kind: "user", id: "7c9e6679-7425-40de-944b-e07fc1f90ae7" },
+                link: { report: "users", query: "tab=strategy" } },
+              { label: "John Duffy", sub: "last active 2025-05-02 \u00B7 2 items lifetime", value: 210,
+                link: { report: "users", query: "tab=strategy" } },
+            ],
+            more: 0, link: { report: "users", query: "tab=strategy" },
+            people: [{ name: "Chelsea Chwiecko", email: "cc@x.test", phone: "5550777", city: "Town", zip: "01545", lastActive: "2025-06-11", lifetimeNet: 640, group: "Dormant" }],
+            peopleTotal: 2,
+            segment: { state: "unsupported", steps: [],
+              why: "There is no last-transaction field in the Rec segment builder." } },
         ] },
         { key: "facilities", label: "Facilities", emoji: "\u{1F3DE}\uFE0F", blurb: "How your sites are used", state: "clear", reason: "", findings: [] },
         { key: "courts", label: "Courts", emoji: "\u{1F3BE}", blurb: "Court-by-court demand", state: "insufficient",
           reason: "this organization does not rent courts", findings: [] },
-        { key: "money", label: "Money owed", emoji: "\u{1F4B5}", blurb: "Billed and not collected", state: "unavailable",
-          reason: "The Facilities summary could not be loaded", findings: [] },
+        /* MONEY OWED IS WORKED IN REC. Dan: "for the 'money owed' section,
+           refer them back into Rec instead, there's a whole 'balances due'
+           report." `rec` here is a PAGE — no id segment — which recHref could
+           not express before, so a page on the old shape renders no Rec button
+           at all. stubMode "oppdown" reverts this family to `unavailable`, for
+           the case that requires a failed feed not to read as a clean one. */
+        STUB_MODE === "oppdown"
+          ? { key: "money", label: "Money owed", emoji: "\u{1F4B5}", blurb: "Billed and not collected", state: "unavailable",
+              reason: "The Facilities summary could not be loaded", findings: [] }
+          : { key: "money", label: "Money owed", emoji: "\u{1F4B5}", blurb: "Billed and not collected", state: "ok", reason: "", findings: [
+          { id: "facility-ar", family: "money", kind: "uncollected", value: 770, count: 2,
+            title: "Facility rentals billed and not paid",
+            headline: "$770 of $4,200 billed is still outstanding (18%)",
+            detail: "1 of these rentals finished more than 30 days ago.",
+            action: "Work the aged end of this list first.",
+            basis: "Billed minus Collected per rental from the Facilities summary.",
+            items: [
+              { label: "Pavilion 1 \u00B7 2026-02-20", sub: "5 dates billed on this rental", value: 520,
+                rec: { kind: "rental", id: "11111111-2222-3333-4444-555555555555" },
+                link: { report: "facilities", query: "tab=summary" } },
+              { label: "Pavilion 2 \u00B7 2026-08-01", sub: "1 date billed on this rental", value: 250,
+                link: { report: "facilities", query: "tab=summary" } },
+            ],
+            more: 0,
+            rec: { kind: "page", path: "facilities/balance-due", name: "balance-due" },
+            link: { report: "facilities", query: "tab=summary" } },
+        ] },
       ],
       coverage: [
         { feed: "programs", state: "ok", rows: 564 },
@@ -2076,6 +2124,7 @@ const CASES = [
      pass. */
   { name: "opportunities · an unavailable feed does not read as clean",
     path: "/{org}/opportunities",
+    stubMode: "oppdown",
     needs: "[data-opp-family='money'][data-opp-state='unavailable'] .fam-off[data-opp-down]",
     also: ["[data-opp-family='facilities'][data-opp-state='clear'] .fam-clear"],
     absent: "[data-opp-family='money'] .fam-clear" },
@@ -2161,6 +2210,110 @@ const CASES = [
         set("data-oppl-report", rep && rep.getAttribute("href").indexOf("/programs") > 0 && rep.getAttribute("href").indexOf("token=") > 0);
         // And a Rec link opens in its own tab rather than over the report.
         set("data-oppl-blank", rec && rec.target === "_blank");
+      });
+    } },
+
+  /* ── DAN'S 2026-09-14 PASS ───────────────────────────────────────────
+     "can we get a bit more separation between sections… Maybe use similar
+     colors from the community intel report to separate specific sections."
+
+     ONLY A BROWSER CAN SEE THIS. The stylesheet reads plausibly either way,
+     and `.fam-h` renders whether or not a colour reaches it — so the case
+     stamps the COMPUTED band colours and requires the six families to be
+     TELLING APART, not merely present. Community Intel's own hues: money the
+     red of .obs's opposite, your community the green of .obs itself. */
+  { name: "opportunities · each section is visibly its own",
+    path: "/{org}/opportunities",
+    needs: "body[data-fam-distinct='1'][data-fam-tinted='1']",
+    also: ["body[data-fam-money='rgb(185, 28, 28)']", "body[data-fam-people='rgb(4, 120, 87)']"],
+    act: async page => {
+      await page.waitForSelector(".fam[data-opp-family] .fam-h", { timeout: 45000 });
+      await page.evaluate(() => {
+        const fams = [...document.querySelectorAll(".fam[data-opp-family]")];
+        const accents = new Map();
+        let tinted = 0;
+        fams.forEach(f => {
+          const cs = getComputedStyle(f.querySelector(".fam-h"));
+          accents.set(f.getAttribute("data-opp-family"), cs.borderLeftColor);
+          // The tint is a gradient, so the band's own background-image is what
+          // carries it — a flat white band would have none.
+          if (/gradient/.test(cs.backgroundImage)) tinted++;
+        });
+        const set = (k, v) => document.body.setAttribute(k, v);
+        // Six families, six DIFFERENT accents: one shared colour would make
+        // the band decoration rather than separation.
+        set("data-fam-distinct", new Set(accents.values()).size === fams.length && fams.length >= 5 ? "1" : "");
+        set("data-fam-tinted", tinted === fams.length ? "1" : "");
+        set("data-fam-money", accents.get("money") || "");
+        set("data-fam-people", accents.get("people") || "");
+      });
+    } },
+
+  /* "for the 'money owed' section, refer them back into Rec instead, there's
+     a whole 'balances due' report, use this format …/facilities/balance-due"
+
+     A PAGE-KIND REC LINK HAS NO ID SEGMENT, which recHref could not build
+     before — so it would have returned null and the button simply would not
+     have rendered. Keyed on the real href, because "a button rendered" passes
+     on one pointing at our own report. */
+  { name: "opportunities · money owed opens Rec's balances due",
+    path: "/{org}/opportunities",
+    needs: "body[data-oppm-rec='1'][data-oppm-evidence='1'][data-oppm-blank='1']",
+    act: async page => {
+      await page.waitForSelector("[data-opp-finding='facility-ar'] .find-foot", { timeout: 45000 });
+      await page.evaluate(() => {
+        const foot = document.querySelector("[data-opp-finding='facility-ar'] .find-foot");
+        const rec = foot.querySelector("a[data-opp-foot-link='rec']");
+        const set = (k, v) => { if (v) document.body.setAttribute(k, "1"); };
+        set("data-oppm-rec", rec && /^https:\/\/www\.rec\.us\/admin\/o\/[0-9a-f-]{36}\/facilities\/balance-due$/.test(rec.href));
+        // Our own report stays beside it: it is what proves the number, and
+        // dropping it would leave no way back to the evidence.
+        const ours = foot.querySelector("a.drill-2");
+        set("data-oppm-evidence", ours && ours.getAttribute("href").indexOf("/facilities") > 0 && ours.getAttribute("href").indexOf("token=") > 0);
+        set("data-oppm-blank", rec && rec.target === "_blank");
+      });
+    } },
+
+  /* Each owed RENTAL opens that rental in Rec — and the second row carries no
+     id, so it must fall back to our own report rather than to a guess. */
+  { name: "opportunities · an owed rental opens in Rec",
+    path: "/{org}/opportunities",
+    needs: "body[data-oppr-rec='1'][data-oppr-report='1']",
+    act: async page => {
+      await page.waitForSelector("[data-opp-finding='facility-ar'] a.il", { timeout: 45000 });
+      await page.evaluate(() => {
+        const as = [...document.querySelectorAll("[data-opp-finding='facility-ar'] a.il")];
+        const rec = as.find(a => a.getAttribute("data-opp-item-link") === "rec");
+        const rep = as.find(a => a.getAttribute("data-opp-item-link") === "report");
+        const set = (k, v) => { if (v) document.body.setAttribute(k, "1"); };
+        set("data-oppr-rec", rec && /\/facility-rentals\/11111111-2222-3333-4444-555555555555$/.test(rec.href));
+        set("data-oppr-report", rep && rep.getAttribute("href").indexOf("/facilities") > 0);
+      });
+    } },
+
+  /* "Customers section should open to their profile page in Rec, not the
+     community intel report."
+
+     THE FIXTURE'S SECOND CUSTOMER CARRIES NO UUID, which is what a feed
+     cached before card 17689 gained "User ID" looks like — it holds only the
+     six-character staff code, and a /users/ URL built from that 404s while
+     looking perfectly correct. So one row must open Rec and the other must
+     fall back, or the case cannot tell a page that honours `rec` from one
+     that ignores it. */
+  { name: "opportunities · a named customer opens their Rec profile",
+    path: "/{org}/opportunities",
+    needs: "body[data-oppu-rec='1'][data-oppu-report='1'][data-oppu-blank='1']",
+    act: async page => {
+      await page.waitForSelector("[data-opp-finding='dormant-households'] a.il", { timeout: 45000 });
+      await page.evaluate(() => {
+        const as = [...document.querySelectorAll("[data-opp-finding='dormant-households'] a.il")];
+        const rec = as.find(a => a.getAttribute("data-opp-item-link") === "rec");
+        const rep = as.find(a => a.getAttribute("data-opp-item-link") === "report");
+        const set = (k, v) => { if (v) document.body.setAttribute(k, "1"); };
+        set("data-oppu-rec", rec && /^https:\/\/www\.rec\.us\/admin\/o\/[0-9a-f-]{36}\/users\/7c9e6679-7425-40de-944b-e07fc1f90ae7$/.test(rec.href)
+          && rec.textContent.indexOf("Chelsea") === 0);
+        set("data-oppu-report", rep && rep.getAttribute("href").indexOf("/users") > 0 && rep.getAttribute("href").indexOf("token=") > 0);
+        set("data-oppu-blank", rec && rec.target === "_blank");
       });
     } },
 

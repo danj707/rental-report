@@ -823,6 +823,157 @@ if (!SKIP_SOURCE) {
   }
 }
 
+/* ══ DAN'S FIVE, 2026-09-14 ══════════════════════════════════════════════
+   "can we get a bit more separation between sections… Maybe use similar colors
+    from the community intel report"  /  "typo, enrol?"  /  "For the managed
+    rentals section, call out how much time could be saved by using instant
+    bookings"  /  "for the 'money owed' section, refer them back into Rec
+    instead, there's a whole 'balances due' report"  /  "Customers section
+    should open to their profile page in Rec, not the community intel report".
+   ═══════════════════════════════════════════════════════════════════════ */
+
+// ── 2. THE SPELLING, AND A GUARD THAT CANNOT FIRE ON CORRECT CODE ────────
+// `enrolled` and `enrolling` are the SAME word in both dialects and must not
+// be caught; only enrol / enrols / enrolment(s) differ. The last guard of this
+// shape (/programme/i) failed on `programMedianPrice`, so the pattern is pinned
+// BOTH ways: it must miss the American spellings and still catch a real British
+// one, or the fix would be a guard that can never fail.
+{
+  const BRITISH = /\benrol\b|\benrols\b|\benrolments?\b/i;
+  ok(!BRITISH.test("enrolled enrolling enrollment enrollments enrolls enrolRows"),
+    "the spelling guard does not fire on American spellings or on an identifier");
+  ok(BRITISH.test("never enrol") && BRITISH.test("30 enrolments") && BRITISH.test("who enrols"),
+    "…and it really does catch a British one");
+  const libSrc = fs.readFileSync(path.join(__dirname, "..", "lib", "opportunities.js"), "utf8");
+  const pageSrc = fs.readFileSync(path.join(__dirname, "..", "public", "opportunities.html"), "utf8");
+  ok(!BRITISH.test(libSrc), "no British 'enrol' spelling survives in the detector library");
+  ok(!BRITISH.test(pageSrc), "…nor on the page");
+  // The one Dan actually saw.
+  ok(/never enroll"/.test(libSrc), "the zip finding reads 'never enroll'");
+}
+
+// ── 3. DESK TIME IS PER RENTAL, AND IT IS AN ASSUMPTION ──────────────────
+// A recurring rental is ONE conversation and many rows. Measured at Shrewsbury
+// over a year: 541 reservation dates behind 178 rentals, so a per-row estimate
+// is three times the truth. The fixture makes the two numbers differ by 5x, so
+// an implementation counting rows cannot land on the right answer by accident.
+{
+  const facRows = [], summaryRows = [];
+  for (let i = 0; i < 100; i++) {
+    facRows.push({ "Booking Type": "Managed", "Site Type": "pavilion", Location: "L", Facility: "F" + (i % 4), Total: 50, Date: ymd(10), Begin: "09:00am", End: "10:00am" });
+    // 100 dates, 20 rentals — five dates each.
+    summaryRows.push({ "Rental ID": "rent-" + (i % 20), "Reservation ID": "res-" + i, Status: "Confirmed",
+      "Booking Type": "Managed", "Site Type": "pavilion", Location: "L", Facility: "F" + (i % 4),
+      Date: ymd(10), Billed: 50, Collected: 50, Refunded: 0, Total: 50 });
+  }
+  const ctx = ctxOf({ facility: facRows, facilitiesSummary: summaryRows });
+  eq(O.managedRentalCount(ctx), 20, "rentals are counted, not reservation dates");
+
+  const f = O.detectors.dStaffBooked(ctx) || {};
+  ok(f.id === "staff-booked", "the staff-booked finding fires");
+  const hours = Math.round((20 * O.OPP_MINUTES_PER_MANAGED_RENTAL) / 60);
+  ok(new RegExp("\\b" + hours + " hours of desk time").test(f.detail || ""),
+    "the desk-time figure is built from RENTALS — expected " + hours + "h, got: " + (f.detail || "").slice(0, 200));
+  const wrong = Math.round((100 * O.OPP_MINUTES_PER_MANAGED_RENTAL) / 60);
+  ok(!new RegExp("\\b" + wrong + " hours").test(f.detail || ""),
+    "…and not from the " + 100 + " reservation dates, which would read " + wrong + "h");
+  ok(/not a measurement/i.test(f.detail || ""),
+    "the estimate says on screen that the rate is ours, not something Rec records");
+  ok(new RegExp(O.OPP_MINUTES_PER_MANAGED_RENTAL + " minutes each").test(f.basis || ""),
+    "…and the basis prints the rate itself, so the reader can argue with it");
+  ok(/hours a year back/.test(f.action || ""), "the action names what moving them is worth");
+
+  /* PRESENCE, NOT VALUE. A feed cached before card 19570 v2.3 has no rental
+     identifier at all, and "0 rentals" would read as a claim that there are
+     none rather than as "this feed cannot tell us" — the hasAbsent rule. */
+  const pre = summaryRows.map(r => { const c = Object.assign({}, r); delete c["Rental ID"]; return c; });
+  const ctxPre = ctxOf({ facility: facRows, facilitiesSummary: pre });
+  eq(O.managedRentalCount(ctxPre), null, "a pre-v2.3 feed cannot say how many rentals there are");
+  // …and that is a DIFFERENT fact from an org that has none, which reads 0.
+  eq(O.managedRentalCount(ctxOf({ facility: facRows, facilitiesSummary: summaryRows.map(r => ({ ...r, "Booking Type": "Instant" })) })), 0,
+    "an org whose rentals are all self-service reads zero, not 'cannot say'");
+  const fPre = O.detectors.dStaffBooked(ctxPre) || {};
+  ok(fPre.id === "staff-booked", "…the finding still fires on the old shape");
+  ok(!/desk time/.test(fPre.detail || ""), "…and simply makes no time claim rather than guessing");
+  ok(!/0 hours/.test(fPre.detail || ""), "…and never prints a confident zero");
+
+  // A cancelled reservation is not a conversation anybody is having.
+  const withCancel = summaryRows.concat([{ "Rental ID": "rent-ghost", "Reservation ID": "res-x", Status: "Canceled", "Booking Type": "Managed", "Site Type": "pavilion", Location: "L", Facility: "F1", Date: ymd(10), Billed: 0, Collected: 0, Refunded: 0, Total: 0 }]);
+  eq(O.managedRentalCount(ctxOf({ facility: facRows, facilitiesSummary: withCancel })), 20,
+    "a cancelled reservation adds no rental to the desk-time count");
+  // An instant rental is the thing we are asking them to move TO.
+  const withInstant = summaryRows.concat([{ "Rental ID": "rent-self", "Reservation ID": "res-y", Status: "Confirmed", "Booking Type": "Instant", "Site Type": "pavilion", Location: "L", Facility: "F1", Date: ymd(10), Billed: 10, Collected: 10, Refunded: 0, Total: 10 }]);
+  eq(O.managedRentalCount(ctxOf({ facility: facRows, facilitiesSummary: withInstant })), 20,
+    "a self-service rental is not staff desk time");
+}
+
+// ── 4. MONEY OWED IS WORKED IN REC, NOT IN OUR OWN SCHEDULE ──────────────
+{
+  eq(O.recPage("balance-due").path, "facilities/balance-due", "the balances-due page is addressable");
+  eq(O.recPage("balance-due").kind, "page", "…as a PAGE, which carries no id segment");
+  eq(O.recPage("made-up"), null, "an unknown page name is refused, not turned into a URL");
+
+  const RID = "11111111-2222-3333-4444-555555555555";
+  const rows = [];
+  for (let i = 0; i < 25; i++) rows.push({
+    "Rental ID": i < 10 ? RID : "aaaaaaaa-bbbb-cccc-dddd-" + String(i).padStart(12, "0"),
+    "Reservation ID": "res-" + i, Status: "Confirmed", "Booking Type": "Managed",
+    "Site Type": "pavilion", Location: "Park", Facility: "Pavilion 1", Date: ymd(200),
+    Billed: 400, Collected: 0, Refunded: 0, Total: 400,
+  });
+  const f = O.detectors.dFacilityAR(ctxOf({ facilitiesSummary: rows })) || {};
+  ok(f.id === "facility-ar", "the money-owed finding fires");
+  eq((f.rec || {}).name, "balance-due", "…and it points back into Rec's Balances Due report");
+  ok(f.link, "…while still keeping our own report as the evidence");
+  const top = (f.items || [])[0] || {};
+  eq((top.rec || {}).kind, "rental", "each owed rental opens that rental in Rec");
+  eq((top.rec || {}).id, RID, "…by its own uuid");
+
+  /* A pre-v2.3 feed falls back to the RESERVATION id — and card 19570 emits
+     that as a REAL UUID, so recLink's shape test cannot save us: the link
+     would be perfectly formed and point at the wrong record. The fixture
+     therefore uses real uuids, which is what production has; an earlier
+     version used "res-0" strings and passed for the wrong reason. */
+  const pre = rows.map((r, i) => ({ ...r, "Rental ID": undefined,
+    "Reservation ID": "99999999-8888-7777-6666-" + String(i).padStart(12, "0") }));
+  const fPre = O.detectors.dFacilityAR(ctxOf({ facilitiesSummary: pre })) || {};
+  ok(fPre.id === "facility-ar", "…the finding still fires on the old shape");
+  ok(((fPre.items || [])[0] || {}).rec == null,
+    "…and a RESERVATION uuid standing in for a rental one yields NO Rec link — a confident link to the wrong record is worse than none");
+}
+
+// ── 5. A NAMED CUSTOMER OPENS THEIR OWN PROFILE ──────────────────────────
+// Card 17689 v-2026-09-14 emits "User ID" (users.id) beside "Rec ID". The Rec
+// ID is a SIX-CHARACTER staff code and a /users/ URL built from it 404s while
+// looking perfectly correct, so the fixture carries BOTH and the guard requires
+// the uuid — a row with only the staff code must link nowhere.
+{
+  const mk = (withUuid) => {
+    const users = [];
+    for (let h = 0; h < 60; h++) users.push({
+      "Household ID": "hh" + h, Role: "Head of Household",
+      "Rec ID": "5OLLPM", "User ID": withUuid ? "aaaaaaaa-bbbb-cccc-dddd-" + String(h).padStart(12, "0") : undefined,
+      "First Name": "A", "Last Name": String(h), Email: h + "@x.com", "Zip Code": "01545", Age: 40,
+      "Net Revenue": 500 + h, "Items Purchased": 2,
+      "First Transaction": ago(2000), "Last Transaction": ago(400),
+    });
+    return users;
+  };
+  const f = O.detectors.dDormant(ctxOf({ users: mk(true) })) || {};
+  ok(f.id === "dormant-households", "the dormant finding fires");
+  const it = (f.items || [])[0] || {};
+  eq((it.rec || {}).kind, "user", "a named customer opens their profile in Rec");
+  ok(/^[0-9a-f-]{36}$/.test((it.rec || {}).id || ""), "…by a uuid, not the six-character Rec ID");
+  ok(it.link, "…and still carries Community Intel underneath it");
+
+  const fPre = O.detectors.dDormant(ctxOf({ users: mk(false) })) || {};
+  ok(fPre.id === "dormant-households", "…the finding still fires on a pre-column feed");
+  ok(((fPre.items || [])[0] || {}).rec == null,
+    "…and a feed carrying only the six-character Rec ID links NOWHERE rather than to a 404");
+  // The trap itself, stated once so nobody re-derives it.
+  eq(O.recLink("user", "5OLLPM"), null, "recLink refuses the six-character staff code");
+}
+
 // ══ THE PAGE: CONTENTS, LINKS AND THE DOWNLOAD ═══════════════════════════
 if (!SKIP_SOURCE) {
   const page = fs.readFileSync(path.join(__dirname, "..", "public", "opportunities.html"), "utf8");
@@ -905,6 +1056,42 @@ if (!SKIP_SOURCE) {
   const pageRoute2 = server.slice(server.indexOf('app.get("/:org/opportunities"'),
                                   server.indexOf('app.get("/:org/opportunities/api/data"'));
   ok(/orgId: org\.orgId/.test(pageRoute2), "the page is given the Rec org uuid");
+
+  /* ── 1. SECTION SEPARATION, and it is per family ─────────────────────
+     Dan: "Maybe use similar colors from the community intel report to separate
+     specific sections." The hues are LIFTED from public/users.html rather than
+     invented, and each family's band wears the same hue its own findings
+     already do — two palettes on one page would make the section colour read
+     as a second, contradicting classification. */
+  O.FAMILIES.forEach(fam => {
+    ok(new RegExp('\\.fam\\[data-opp-family="' + fam.key + '"\\]').test(page),
+      "the " + fam.key + " family has its own section colour");
+  });
+  ok(/--fam:\s*#b91c1c/.test(page) && /\.chip\.k-uncollected\s*\{[^}]*#fef2f2/.test(page),
+    "money wears the red its own findings already wear");
+  ok(/--fam:\s*#6d28d9/.test(page) && /\.chip\.k-audience\s*\{[^}]*#f5f3ff/.test(page),
+    "…and your community the violet of an audience finding");
+  const famH = page.slice(page.indexOf(".fam-h {"), page.indexOf(".fam-h .fh-t"));
+  ok(/border-left:\s*5px solid var\(--fam\)/.test(famH), "the band carries the family's accent");
+  ok(/var\(--fam-bg\)/.test(famH), "…and its tint");
+  /* BOTH SPELLINGS. The band IS the separation, and a printer that drops it
+     leaves the sections running together — the same reason the Musco row
+     highlight carries both. */
+  ok(/-webkit-print-color-adjust:\s*exact/.test(famH), "the band survives print (-webkit-)");
+  ok(/[^-]print-color-adjust:\s*exact/.test(famH), "…and the standard property too");
+
+  /* ── 4 & 5. THE PAGE HAS TO BE ABLE TO BUILD A PATHLESS REC URL ──────
+     recHref used to require REC_PATH[kind] + an id, so a page-kind link would
+     have silently returned null and the Rec button would never render. */
+  const rh = page.slice(page.indexOf("function recHref"), page.indexOf("const REC_PAGE_LABEL"));
+  ok(/rec\.kind === "page"/.test(rh), "recHref can address a Rec page that has no id");
+  ok(/rec\.path \?/.test(rh), "…and refuses one carrying no path");
+  ok(/REC_PAGE_LABEL = \{ "balance-due": "Balances Due" \}/.test(page),
+    "the foot button names the Rec report it opens");
+  const foot = page.slice(page.indexOf('{/* Absent, not disabled'), page.indexOf("</div>\n    </div>\n  );"));
+  ok(/footRec \?/.test(foot), "a finding worked in Rec leads with the Rec button");
+  ok(/drill-2/.test(foot), "…and our own report stays beside it as the evidence");
+  ok(/data-opp-foot-link="rec"/.test(foot), "…with a hook a render case can key on");
 
   /* THE AI HAS TO BE TOLD TOO. Every rule the adaptive family encodes lives in
      copy the model is handed, so without an explicit instruction the most
