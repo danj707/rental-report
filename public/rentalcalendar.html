@@ -198,16 +198,8 @@ button.primary:hover{filter:brightness(.95)}
 .msd-count{background:#1e40af;color:#fff;font-size:9px;font-weight:700;padding:1px 5px;border-radius:8px;min-width:14px;text-align:center}
 
 /* ── Location map panel ── */
-.map-panel{border:1px solid var(--line);border-radius:10px;margin:0 0 14px;overflow:hidden;background:#fff}
-.map-head{display:flex;align-items:center;gap:10px;padding:8px 12px;background:#fafafa;border-bottom:1px solid var(--line);flex-wrap:wrap}
-.map-head .mh-title{font-size:13px;font-weight:600;display:flex;align-items:center;gap:6px}
-.map-head .mh-sub{font-size:11px;color:var(--muted)}
-.map-head .grow{flex:1}
-.map-head button{font:inherit;font-size:11px;padding:3px 9px;border:1px solid #d1d5db;border-radius:6px;background:#fff;color:#374151;cursor:pointer}
-.map-head button:hover{background:#f3f4f6}
-.map-head button.on{background:#1e40af;border-color:#1e40af;color:#fff}
-.map-canvas{height:340px;width:100%}
-.map-canvas.collapsed{display:none}
+/* The canvas has no panel around it any more — `.rc-map .map-canvas`
+   sizes it to its pane. */
 .leaflet-container{font:inherit;background:#eef2f4}
 /* availability-colored pin: count badge sits in the marker itself */
 .locpin{display:flex;align-items:center;justify-content:center;width:32px;height:32px;border-radius:50% 50% 50% 4px;
@@ -236,9 +228,112 @@ button.primary:hover{filter:brightness(.95)}
 .map-legend{display:flex;flex-wrap:wrap;gap:12px;align-items:center;padding:6px 12px;border-top:1px solid var(--line);font-size:10.5px;color:var(--muted)}
 .map-legend .lg{display:inline-flex;align-items:center;gap:4px}
 .map-legend .dot{width:9px;height:9px;border-radius:50%;display:inline-block}
-.map-unmapped{padding:6px 12px;border-top:1px solid var(--line);font-size:10.5px;color:var(--muted)}
-@media (max-width:640px){.map-canvas{height:250px}}
-@media print{.map-panel{display:none}}
+
+/* ── FULL-SCREEN SPLIT: locations rail + map canvas ───────────────────────
+   The map IS the page now, not a panel inside it. `.rc-shell` owns the
+   viewport height so the rail and the canvas each scroll on their own — a
+   single page scroll would drag the map out of view, which is the whole
+   thing this layout exists to prevent. */
+.rc-shell{display:flex;flex-direction:column;height:100vh;height:100dvh;background:var(--bg);overflow:hidden}
+.embed .rc-shell{height:100%;min-height:560px}
+.rc-top{flex:0 0 auto;background:#fff;border-bottom:1px solid var(--line);z-index:600;box-shadow:0 1px 3px rgba(16,24,40,.06)}
+.rc-top .hdr{padding:8px 16px;margin:0}
+.rc-top .hdr .grow{flex:1}
+.rc-cred{font-size:10.5px;color:var(--muted);text-align:right;line-height:1.5}
+.rc-cred a{color:var(--muted);font-weight:600;text-decoration:none}
+.rc-cred a:hover{text-decoration:underline}
+@media(max-width:700px){.rc-cred{display:none}}
+.rc-top .toolbar-row{padding:6px 16px;border-bottom:1px solid #f1f2f4}
+.rc-top .filters{border-bottom:none;padding:6px 16px 8px;gap:6px}
+.rc-split{flex:1 1 auto;display:flex;min-height:0}
+.rc-rail{width:410px;min-width:410px;display:flex;flex-direction:column;background:#fff;border-right:1px solid var(--line);min-height:0}
+.rc-rail-head{flex:0 0 auto;display:flex;align-items:center;gap:8px;padding:8px 14px;background:#fafbfc;border-bottom:1px solid var(--line)}
+.rc-rail-head .rh-title{font-size:12px;font-weight:700;color:var(--ink)}
+.rc-rail-head .rh-sub{font-size:11px;color:var(--muted)}
+.rc-rail-head .grow{flex:1}
+.rc-rail-head button{font:inherit;font-size:11px;padding:3px 9px;border:1px solid #d1d5db;border-radius:6px;background:#fff;color:#374151;cursor:pointer}
+.rc-rail-head button:hover{background:#f3f4f6}
+.rc-rail-body{flex:1 1 auto;overflow-y:auto;min-height:0;overscroll-behavior:contain}
+.rc-map{flex:1 1 auto;position:relative;min-width:0;background:#eef2f4}
+.rc-map .map-canvas{height:100%;width:100%}
+.rc-map-empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;
+  padding:30px;color:var(--muted);font-size:13px;line-height:1.6}
+/* Map chrome floats over the canvas instead of taking a row of its own. */
+.rc-map .map-legend{position:absolute;left:10px;bottom:10px;z-index:500;margin:0;border:1px solid var(--line);border-radius:8px;
+  background:rgba(255,255,255,.95);box-shadow:0 2px 8px rgba(0,0,0,.14);padding:6px 10px;max-width:calc(100% - 20px)}
+.rc-map-tools{position:absolute;right:10px;top:10px;z-index:500;display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.rc-map-tools button{font:inherit;font-size:11px;padding:5px 10px;border:1px solid #d1d5db;border-radius:7px;
+  background:rgba(255,255,255,.96);color:#374151;cursor:pointer;box-shadow:0 1px 4px rgba(0,0,0,.14)}
+.rc-map-tools button:hover{background:#fff;border-color:#9ca3af}
+.rc-map-tools button.on{background:#1e40af;border-color:#1e40af;color:#fff}
+.rc-map-note{position:absolute;right:10px;bottom:44px;z-index:500;background:rgba(255,255,255,.95);border:1px solid var(--line);
+  border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,.14);padding:5px 9px;font-size:10.5px;color:var(--muted);max-width:44%}
+
+/* ── One location in the rail ── */
+.loc-card{border-bottom:1px solid var(--line)}
+.loc-card.sel{background:#faf5ff}
+.loc-head{display:flex;align-items:flex-start;gap:9px;padding:10px 14px;cursor:pointer;user-select:none;transition:background .08s}
+.loc-head:hover{background:#f7f8fa}
+.loc-card.sel .loc-head{box-shadow:inset 3px 0 0 #7c3aed}
+.loc-dot{width:10px;height:10px;border-radius:50%;margin-top:5px;flex-shrink:0}
+.loc-dot.open{background:#16a34a}
+.loc-dot.booked{background:#c2410c}
+.loc-dot.closed{background:#6b7280}
+.loc-info{flex:1;min-width:0}
+.loc-name{font-size:13px;font-weight:600;color:var(--ink);line-height:1.3}
+.loc-avail{font-size:11px;font-weight:700;margin-top:2px}
+.loc-avail.open{color:#15803d}
+.loc-avail.booked{color:#c2410c}
+.loc-avail.closed{color:#6b7280}
+.loc-chips{display:flex;flex-wrap:wrap;gap:3px;margin-top:4px}
+.loc-chip{font-size:10px;background:#f3f4f6;border:1px solid var(--line);border-radius:5px;padding:1px 5px;color:#4b5563}
+.loc-nopin{font-size:10px;color:#9ca3af;margin-top:3px}
+.loc-arrow{font-size:11px;color:var(--muted);transition:transform .15s;margin-top:4px;flex-shrink:0}
+.loc-arrow.open{transform:rotate(90deg)}
+.loc-body{border-top:1px solid #f0f1f3;background:#fcfcfd}
+.rc-rail-empty{padding:40px 20px;text-align:center;color:var(--muted);font-size:13px;line-height:1.6}
+
+/* The rail is 410px wide; the timeline rows were built for 1080. Compacted by
+   CSS rather than by a `compact` prop so FacRow/SiteGroup stay one component —
+   a second copy is a second chance for the rail and the wide list to disagree. */
+.rc-rail .fac-row{min-height:40px}
+.rc-rail .fac-label{width:148px;min-width:148px;padding:6px 8px;gap:7px}
+.rc-rail .fac-thumb,.rc-rail .fac-thumb-placeholder{width:42px;height:42px;font-size:16px}
+.rc-rail .fac-label .fname{font-size:11.5px;-webkit-line-clamp:2}
+.rc-rail .fac-label .fmeta{font-size:9px}
+.rc-rail .fac-bar{padding:5px 8px 5px 0}
+.rc-rail .bar-track{height:46px}
+.rc-rail .time-ruler{height:24px}
+.rc-rail .time-ruler .tr-label{width:148px;min-width:148px;padding:0 8px;font-size:9px}
+.rc-rail .time-ruler .tr-tick{font-size:9px}
+.rc-rail .group-hdr{padding:7px 10px}
+.rc-rail .group-hdr .gicon{font-size:14px}
+.rc-rail .group-hdr .gname{font-size:11.5px}
+.rc-rail .group-hdr .gcount{font-size:9.5px;padding:1px 7px}
+.rc-rail .bar-timelabel{display:none}
+.rc-rail .bar-gridline.half{display:none}
+.rc-rail .nightly-bar{min-height:40px;padding:6px 10px}
+.rc-rail .wiz-wrap{margin:10px 10px 0;padding:14px}
+
+/* Narrow: one pane at a time, chosen by the toggle. The shell keeps its
+   viewport height so whichever pane is showing fills the screen. */
+.rc-pane-row{display:none}
+.rc-pane-toggle{display:inline-flex}
+@media(max-width:900px){
+  .rc-rail{width:100%;min-width:0;border-right:none}
+  .rc-pane-row{display:flex;justify-content:center;padding:0 16px 8px}
+  .rc-pane-row .seg{flex:1;max-width:320px}
+  .rc-pane-row .seg button{flex:1}
+  .rc-split[data-pane="map"] .rc-rail{display:none}
+  .rc-split[data-pane="list"] .rc-map{display:none}
+  .rc-map-note{max-width:60%}
+}
+@media print{
+  .rc-shell{height:auto;overflow:visible}
+  .rc-map,.rc-pane-row,.rc-map-tools{display:none}
+  .rc-rail{width:100%;min-width:0;border-right:none}
+  .rc-rail-body{overflow:visible}
+}
 </style>
 </head>
 <body>
@@ -353,8 +448,6 @@ function useWeather(coords, dateISO) {
 function pad(n){return n<10?'0'+n:''+n;}
 function fmtISO(d){return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate());}
 function addDays(d,n){var x=new Date(d);x.setDate(x.getDate()+n);return x;}
-function startOfWeek(d){var x=new Date(d);x.setDate(x.getDate()-x.getDay());x.setHours(0,0,0,0);return x;}
-var DOW=['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 var MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 var DOWL=['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 function fmtCheckTime(t) {
@@ -514,11 +607,12 @@ function deriveSiteOpHours(siteAvailData) {
 }
 
 /* ── Components ── */
-function TimeRuler({opStart, opEnd}) {
+function TimeRuler({opStart, opEnd, every}) {
+  var step = every || 1;
   var hrs = [];
   var startH = Math.floor(opStart/60);
   var endH = Math.ceil(opEnd/60);
-  for (var h = startH; h <= endH; h++) hrs.push(h);
+  for (var h = startH; h <= endH; h++) if ((h - startH) % step === 0) hrs.push(h);
   var total = opEnd - opStart;
   return (
     <div className="time-ruler">
@@ -772,6 +866,10 @@ function BookingWizard({allTypes, allLocations, sites, onApply, resultCount}) {
   var chosenType = typeState[0], setChosenType = typeState[1];
   var dateState = useState(null);
   var chosenDate = dateState[0], setChosenDate = dateState[1];
+  // NOT collapsed by default, deliberately: the wizard's own close is
+  // `if (!isOpen) return null` — a DISMISS, not a collapse — so starting it
+  // closed renders nothing at all and the feature is unreachable. It sits at
+  // the top of the rail and the reader can dismiss it.
   var openSt = useState(true);
   var isOpen = openSt[0], setIsOpen = openSt[1];
   var fbState = useState(null);
@@ -931,77 +1029,52 @@ function SiteModal({site, onClose}) {
   );
 }
 
-function DayView({sites, availMap, dateStr, opStart, opEnd, allAvail, onSiteClick, forceOpen, toolbar, reservationMap}) {
+// Group a set of sites by type, preserving first-seen order. Declared at module
+// scope because BOTH the wide day list and the location rail render a site list
+// — two copies of this is how one surface groups a park's courts and the other
+// does not, on the same filters.
+function groupSitesByType(sites) {
   var typeCounts = {};
   sites.forEach(function(s){typeCounts[s.type]=(typeCounts[s.type]||0)+1;});
-  var grouped = [];
-  var done = {};
+  var out = [], done = {};
   sites.forEach(function(s) {
     if (done[s.type]) return;
     if (typeCounts[s.type] >= GROUP_THRESHOLD) {
       done[s.type] = true;
-      grouped.push({k:'group', type:s.type, sites: sites.filter(function(x){return x.type===s.type;})});
+      out.push({k:'group', type:s.type, sites: sites.filter(function(x){return x.type===s.type;})});
     } else {
-      grouped.push({k:'single', site: s});
+      out.push({k:'single', site: s});
     }
   });
-  return (
-    <div>
-      <div className="sticky-hdr">
-        {toolbar}
-        <TimeRuler opStart={opStart} opEnd={opEnd}/>
-      </div>
-      <div className="fac-list">
-        {grouped.map(function(g, i) {
-          if (g.k === 'group') {
-            return <SiteGroup key={g.type} type={g.type} sites={g.sites} availMap={availMap} dateStr={dateStr} opStart={opStart} opEnd={opEnd} allAvail={allAvail} onSiteClick={onSiteClick} forceOpen={forceOpen} reservationMap={reservationMap}/>;
-          }
-          return <FacRow key={g.site.id} site={g.site} avail={availMap[g.site.id]} dateStr={dateStr} opStart={opStart} opEnd={opEnd} siteAvailAll={allAvail[g.site.id] || {}} onSiteClick={onSiteClick} siteReservations={reservationMap[g.site.id]}/>;
-        })}
-      </div>
-    </div>
-  );
+  return out;
 }
 
-function WeekOverview({sites, allAvail, weekStart, onDayClick}) {
-  var days = Array.from({length:7}, function(_,i){return fmtISO(addDays(weekStart,i));});
-  var todayISO = fmtISO(new Date());
-  var typeGroups = useMemo(function() {
-    var m = {};
-    sites.forEach(function(s){if(!m[s.type])m[s.type]={type:s.type,sites:[]};m[s.type].sites.push(s);});
-    return Object.values(m);
-  }, [sites]);
-  return (
-    <div className="week-grid">
-      {days.map(function(d, i) {
-        var dt = addDays(weekStart, i);
-        var isToday = d === todayISO;
-        return (
-          <div key={d} className={'week-card' + (isToday ? ' today' : '')} onClick={function(){onDayClick(d);}}>
-            <div className="wday">{DOW[i]}<small>{MON[dt.getMonth()]+' '+dt.getDate()}</small></div>
-            {typeGroups.map(function(g) {
-              var avail = g.sites.filter(function(s) {
-                var dayData = (allAvail[s.id] || {})[d];
-                return dayData && Object.keys(dayData).length > 0;
-              }).length;
-              var pct = Math.round(((g.sites.length - avail) / g.sites.length) * 100);
-              var status = pct === 0 ? 'open' : pct >= 80 ? 'full' : 'partial';
-              var tn = g.type.replace(/-/g,' ').replace(/\b\w/g, function(c){return c.toUpperCase();});
-              var label = g.sites.length > 1 ? avail+'/'+g.sites.length+' open' : (pct === 0 ? 'Open' : 'Booked');
-              return (
-                <div className="wfac" key={g.type}>
-                  <span className="wicon">{emojiFor(g.type)}</span>
-                  <span className="wname">{tn}{g.sites.length > 1 ? 's' : ''}</span>
-                  <span className={'wstatus ' + status}>{label}</span>
-                </div>
-              );
-            })}
-          </div>
-        );
-      })}
-    </div>
-  );
+// One location, one entry: every site the org has there (`all`) and the subset
+// the current filters admit (`shown`). Read by the rail AND by the map, which
+// deliberately pass DIFFERENT `shown` sets — the rail honours the location
+// filter, the map does not, so picking one park never zeroes the other pins.
+// The GROUPING itself is single-sourced so the rail's "12 of 23" and the pin's
+// badge can never disagree about one park.
+function groupByLocation(allSites, shownSites) {
+  var byId = {}, order = [];
+  (allSites || []).forEach(function(s) {
+    if (!s.locationId) return;
+    if (!byId[s.locationId]) {
+      byId[s.locationId] = {id: s.locationId, name: s.locationName || '', all: [], shown: []};
+      order.push(s.locationId);
+    }
+    byId[s.locationId].all.push(s);
+  });
+  (shownSites || []).forEach(function(s) {
+    if (s.locationId && byId[s.locationId]) byId[s.locationId].shown.push(s);
+  });
+  return order.map(function(k){ return byId[k]; });
 }
+
+/* DayView and WeekOverview are gone with the stacked layout: the rail renders a
+   location's own site rows (via groupSitesByType/SiteGroup/FacRow), and nothing
+   ever reached the week grid. A component nothing renders is the dead end this
+   repo keeps writing down. */
 
 /* ── Main App ── */
 /* ── Location map panel ────────────────────────────────────────────────
@@ -1038,32 +1111,108 @@ function locAvailability(sitesAtLoc, allAvail, dateStr, opStart, opEnd, reservat
   return { open: open, total: total, state: state, dayOver: dayOver };
 }
 
-function LocationMap({sites, filteredSites, allAvail, dateStr, opStart, opEnd, reservationMap,
-                      selectedLocs, setSelectedLocs, allLocations}) {
-  var PINS = CFG.mapPins || {};
-  var elRef = useRef(null), mapRef = useRef(null), layerRef = useRef(null);
-  var collapsedState = useState(false);
-  var collapsed = collapsedState[0], setCollapsed = collapsedState[1];
+/* ── The locations rail ────────────────────────────────────────────────────
+   The list half of the split. One card per location, colour-coded by the same
+   locAvailability() the pins use, expanding in place to that park's own sites
+   and timeline bars. Alphabetical and STABLE: the dot carries availability, so
+   sorting by it would re-order the whole list every time the date moves, which
+   is the opposite of what a list you scan is for. */
+function LocCard({loc, isOpen, isSel, onToggle, hasPin, availMap, dateStr,
+                  opStart, opEnd, allAvail, reservationMap, onSiteClick}) {
+  var av = locAvailability(loc.shown, allAvail, dateStr, opStart, opEnd, reservationMap);
+  var counts = {};
+  loc.shown.forEach(function(s){ counts[s.type] = (counts[s.type] || 0) + 1; });
+  // Same four states the pin popup words, in the same order — a park that is
+  // simply shut must never read as "fully booked".
+  var availLine = av.state === 'open'   ? av.open + ' of ' + av.total + ' available'
+                : av.state === 'booked' ? 'Fully booked (' + av.total + ' site' + (av.total === 1 ? '' : 's') + ')'
+                : av.dayOver            ? 'Today’s hours have ended'
+                :                         'No availability on this date';
+  var grouped = isOpen ? groupSitesByType(loc.shown) : [];
+  return (
+    <div className={'loc-card' + (isSel ? ' sel' : '')} data-rc-loc={loc.name} data-rc-loc-state={av.state}>
+      <div className="loc-head" onClick={onToggle} role="button" tabIndex={0}
+        onKeyDown={function(e){ if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggle(); } }}>
+        <span className={'loc-dot ' + av.state}></span>
+        <div className="loc-info">
+          <div className="loc-name">{loc.name}</div>
+          <div className={'loc-avail ' + av.state} data-rc-loc-avail={av.open} data-rc-loc-total={av.total}>{availLine}</div>
+          <div className="loc-chips">
+            {Object.keys(counts).map(function(t) {
+              return <span key={t} className="loc-chip">{emojiFor(t)} {counts[t]}</span>;
+            })}
+          </div>
+          {!hasPin && <div className="loc-nopin">Not on the map yet</div>}
+        </div>
+        <span className={'loc-arrow' + (isOpen ? ' open' : '')}>{'▶'}</span>
+      </div>
+      {isOpen && (
+        <div className="loc-body">
+          <TimeRuler opStart={opStart} opEnd={opEnd} every={3}/>
+          {grouped.map(function(g) {
+            if (g.k === 'group') {
+              return <SiteGroup key={g.type} type={g.type} sites={g.sites} availMap={availMap}
+                dateStr={dateStr} opStart={opStart} opEnd={opEnd} allAvail={allAvail}
+                onSiteClick={onSiteClick} forceOpen={g.sites.length <= 6} reservationMap={reservationMap}/>;
+            }
+            return <FacRow key={g.site.id} site={g.site} avail={availMap[g.site.id]} dateStr={dateStr}
+              opStart={opStart} opEnd={opEnd} siteAvailAll={allAvail[g.site.id] || {}}
+              onSiteClick={onSiteClick} siteReservations={reservationMap[g.site.id]}/>;
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LocationRail({locs, pins, openLocId, onToggleLoc, selectedLocId, availMap, dateStr,
+                       opStart, opEnd, allAvail, reservationMap, onSiteClick, wizard}) {
+  var bodyRef = useRef(null);
+  // A pin click selects a location in the rail; scroll it into view or the
+  // selection happens somewhere nobody is looking.
+  useEffect(function() {
+    if (!selectedLocId || !bodyRef.current) return;
+    var el = bodyRef.current.querySelector('[data-rc-locid="' + selectedLocId + '"]');
+    if (el && el.scrollIntoView) el.scrollIntoView({block: 'nearest', behavior: 'smooth'});
+  }, [selectedLocId]);
+  var withAvail = locs.filter(function(l) {
+    return locAvailability(l.shown, allAvail, dateStr, opStart, opEnd, reservationMap).open > 0;
+  }).length;
+  return (
+    <aside className="rc-rail">
+      <div className="rc-rail-head">
+        <span className="rh-title" data-rc-loccount={locs.length}>
+          {locs.length} location{locs.length === 1 ? '' : 's'}
+        </span>
+        <span className="rh-sub">{withAvail} with availability</span>
+      </div>
+      <div className="rc-rail-body" ref={bodyRef}>
+        {wizard}
+        {locs.length === 0 && (
+          <div className="rc-rail-empty">No facilities match the current filters.</div>
+        )}
+        {locs.map(function(loc) {
+          return (
+            <div key={loc.id} data-rc-locid={loc.id}>
+              <LocCard loc={loc} isOpen={openLocId === loc.id} isSel={selectedLocId === loc.id}
+                hasPin={!!(pins && pins[loc.id])}
+                onToggle={function(){ onToggleLoc(loc.id); }}
+                availMap={availMap} dateStr={dateStr} opStart={opStart} opEnd={opEnd}
+                allAvail={allAvail} reservationMap={reservationMap} onSiteClick={onSiteClick}/>
+            </div>
+          );
+        })}
+      </div>
+    </aside>
+  );
+}
+
+function LocationMap({locs, pins, setPins, allAvail, dateStr, opStart, opEnd, reservationMap,
+                      selectedLocs, setSelectedLocs, allLocations,
+                      selectedLocId, onSelectLoc, focusReq, resizeKey}) {
+  var elRef = useRef(null), mapRef = useRef(null), layerRef = useRef(null), markerRef = useRef({});
   var editState = useState(false);
   var editMode = editState[0], setEditMode = editState[1];
-  var pinsState = useState(PINS);
-  var pins = pinsState[0], setPins = pinsState[1];
-
-  // Group every known location once; availability is computed from the FILTERED
-  // sites so the pin reflects what the list is actually showing.
-  var locs = useMemo(function() {
-    if (!sites) return [];
-    var byId = {};
-    sites.forEach(function(s) {
-      if (!s.locationId) return;
-      if (!byId[s.locationId]) byId[s.locationId] = {id: s.locationId, name: s.locationName || '', all: [], shown: []};
-      byId[s.locationId].all.push(s);
-    });
-    (filteredSites || []).forEach(function(s) {
-      if (s.locationId && byId[s.locationId]) byId[s.locationId].shown.push(s);
-    });
-    return Object.keys(byId).map(function(k){ return byId[k]; });
-  }, [sites, filteredSites]);
 
   // Memoised: the redraw effect below depends on `mapped`, so recomputing it on
   // every render would tear down and rebuild every marker constantly — which
@@ -1072,7 +1221,7 @@ function LocationMap({sites, filteredSites, allAvail, dateStr, opStart, opEnd, r
   var unmapped = useMemo(function(){ return locs.filter(function(l){ return !pins[l.id]; }); }, [locs, pins]);
 
   function focusLocation(name) {
-    // Clicking a pin filters the list to that location; clicking it again clears.
+    // "Show only this location" narrows the rail; clicking again clears it.
     var onlyThis = selectedLocs && selectedLocs.size === 1 && selectedLocs.has(name);
     setSelectedLocs(onlyThis ? new Set(allLocations) : new Set([name]));
   }
@@ -1090,7 +1239,7 @@ function LocationMap({sites, filteredSites, allAvail, dateStr, opStart, opEnd, r
   // Create the map once
   useEffect(function() {
     if (!elRef.current || mapRef.current || typeof L === 'undefined') return;
-    var m = L.map(elRef.current, {scrollWheelZoom: false, zoomControl: true});
+    var m = L.map(elRef.current, {scrollWheelZoom: true, zoomControl: true});
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
     }).addTo(m);
@@ -1101,16 +1250,27 @@ function LocationMap({sites, filteredSites, allAvail, dateStr, opStart, opEnd, r
     return function(){ m.remove(); mapRef.current = null; };
   }, []);
 
-  // Leaflet mis-measures a container that was hidden when created
+  // Leaflet mis-measures a container whose size changed while it was hidden —
+  // which is every pane toggle and every window resize in this layout, not just
+  // the old collapse button. Without this the canvas renders a grey band.
   useEffect(function() {
-    if (mapRef.current && !collapsed) setTimeout(function(){ mapRef.current.invalidateSize(); }, 60);
-  }, [collapsed]);
+    var m = mapRef.current;
+    if (!m) return;
+    var t = setTimeout(function(){ m.invalidateSize(); }, 60);
+    return function(){ clearTimeout(t); };
+  }, [resizeKey]);
+  useEffect(function() {
+    function onResize(){ if (mapRef.current) mapRef.current.invalidateSize(); }
+    window.addEventListener('resize', onResize);
+    return function(){ window.removeEventListener('resize', onResize); };
+  }, []);
 
   // (Re)draw markers whenever pins, availability, filters or the date change
   useEffect(function() {
     var m = mapRef.current, layer = layerRef.current;
     if (!m || !layer) return;
     layer.clearLayers();
+    markerRef.current = {};
     var bounds = [];
     mapped.forEach(function(loc) {
       var p = pins[loc.id];
@@ -1119,7 +1279,8 @@ function LocationMap({sites, filteredSites, allAvail, dateStr, opStart, opEnd, r
       var hasMatches = loc.shown.length > 0;
       var av = locAvailability(loc.shown, allAvail, dateStr, opStart, opEnd, reservationMap);
       var isOnly = selectedLocs && selectedLocs.size === 1 && selectedLocs.has(loc.name);
-      var cls = 'locpin ' + (hasMatches ? av.state : 'closed') + (isOnly ? ' sel' : '') + (editMode ? ' editing' : '');
+      var isSel = selectedLocId === loc.id || isOnly;
+      var cls = 'locpin ' + (hasMatches ? av.state : 'closed') + (isSel ? ' sel' : '') + (editMode ? ' editing' : '');
       var marker = L.marker([p.lat, p.lng], {
         draggable: editMode,
         title: loc.name,
@@ -1148,8 +1309,13 @@ function LocationMap({sites, filteredSites, allAvail, dateStr, opStart, opEnd, r
         c.textContent = emojiFor(t) + ' ' + counts[t]; chips.appendChild(c);
       });
       pop.appendChild(chips);
+      var open = document.createElement('button');
+      open.className = 'mp-btn primary';
+      open.textContent = 'Open in the list';
+      open.addEventListener('click', function(){ if (onSelectLoc) onSelectLoc(loc.id, true); });
+      pop.appendChild(open);
       var btn = document.createElement('button');
-      btn.className = 'mp-btn primary';
+      btn.className = 'mp-btn';
       btn.textContent = isOnly ? 'Show all locations' : 'Show only this location';
       btn.addEventListener('click', function(){ focusLocation(loc.name); m.closePopup(); });
       pop.appendChild(btn);
@@ -1163,6 +1329,9 @@ function LocationMap({sites, filteredSites, allAvail, dateStr, opStart, opEnd, r
       }
       marker.bindPopup(pop);
       marker.on('popupopen', function() {
+        // Selecting on popup-open rather than on click: Leaflet opens the popup
+        // on click anyway, and this also fires for a programmatic openPopup.
+        if (onSelectLoc) onSelectLoc(loc.id, false);
         // Slack activity ping (fire-and-forget) — see CLAUDE.md standing rule.
         try {
           var tok = RC_TOKEN ? '&token=' + encodeURIComponent(RC_TOKEN) : '';
@@ -1176,24 +1345,39 @@ function LocationMap({sites, filteredSites, allAvail, dateStr, opStart, opEnd, r
         savePin(loc.id, ll.lat, ll.lng);
       });
       marker.addTo(layer);
+      markerRef.current[loc.id] = marker;
       bounds.push([p.lat, p.lng]);
     });
     if (bounds.length && !mapRef.current._rcFitted) {
       m.fitBounds(bounds, {padding: [40, 40], maxZoom: 15});
       mapRef.current._rcFitted = true;   // fit once; don't yank the view on every filter change
     }
-  }, [pins, mapped, allAvail, dateStr, opStart, opEnd, reservationMap, selectedLocs, editMode]);
+  }, [pins, mapped, allAvail, dateStr, opStart, opEnd, reservationMap, selectedLocs, selectedLocId, editMode]);
 
-  if (mapped.length === 0) return null;   // nothing geocoded yet → no panel
+  // Rail card → map. `focusReq` carries a nonce so clicking the same card twice
+  // flies to it twice; a bare id would only ever fire once.
+  useEffect(function() {
+    var m = mapRef.current;
+    if (!m || !focusReq || !focusReq.id) return;
+    var p = pins[focusReq.id];
+    if (!p) return;
+    m.flyTo([p.lat, p.lng], Math.max(m.getZoom(), 15), {duration: .6});
+    var mk = markerRef.current[focusReq.id];
+    if (mk) mk.openPopup();
+  }, [focusReq]);
 
   return (
-    <div className="map-panel">
-      <div className="map-head">
-        <span className="mh-title">🗺️ Facility map</span>
-        <span className="mh-sub">{mapped.length} location{mapped.length === 1 ? '' : 's'} · availability for {dateStr}</span>
-        <div className="grow"></div>
+    <div className="rc-map" data-rc-map={mapped.length}>
+      <div ref={elRef} className="map-canvas"></div>
+      {mapped.length === 0 && (
+        <div className="rc-map-empty">
+          No location on this report has a map position yet.<br/>
+          The list on the left still works — availability is unaffected.
+        </div>
+      )}
+      <div className="rc-map-tools">
         {selectedLocs && allLocations.length > 1 && selectedLocs.size < allLocations.length && (
-          <button onClick={function(){setSelectedLocs(new Set(allLocations));}}>Show all</button>
+          <button onClick={function(){setSelectedLocs(new Set(allLocations));}}>Show all locations</button>
         )}
         {CFG.canEditPins && (
           <button className={editMode ? 'on' : ''} onClick={function(){setEditMode(!editMode);}}
@@ -1201,24 +1385,18 @@ function LocationMap({sites, filteredSites, allAvail, dateStr, opStart, opEnd, r
             {editMode ? '✓ Done moving pins' : '✎ Move pins'}
           </button>
         )}
-        <button onClick={function(){setCollapsed(!collapsed);}}>{collapsed ? 'Show map' : 'Hide map'}</button>
       </div>
-      <div ref={elRef} className={'map-canvas' + (collapsed ? ' collapsed' : '')}></div>
-      {!collapsed && (
-        <div className="map-legend">
-          <span className="lg"><span className="dot" style={{background:'#16a34a'}}></span>Available</span>
-          <span className="lg"><span className="dot" style={{background:'#c2410c'}}></span>Fully booked</span>
-          <span className="lg"><span className="dot" style={{background:'#6b7280'}}></span>Closed / none left</span>
-          <span className="lg"><span className="dot" style={{background:'#7c3aed'}}></span>Selected</span>
-          <span className="lg">Number = sites open · click a pin to filter</span>
-          {editMode && <span className="lg" style={{color:'#b45309',fontWeight:600}}>Move mode: drag a pin to reposition it</span>}
-        </div>
+      {unmapped.length > 0 && (
+        <div className="rc-map-note">Not on the map: {unmapped.map(function(l){return l.name;}).join(' · ')}</div>
       )}
-      {!collapsed && unmapped.length > 0 && (
-        <div className="map-unmapped">
-          Not on the map: {unmapped.map(function(l){return l.name;}).join(' · ')}
-        </div>
-      )}
+      <div className="map-legend">
+        <span className="lg"><span className="dot" style={{background:'#16a34a'}}></span>Available</span>
+        <span className="lg"><span className="dot" style={{background:'#c2410c'}}></span>Fully booked</span>
+        <span className="lg"><span className="dot" style={{background:'#6b7280'}}></span>Closed / none left</span>
+        <span className="lg"><span className="dot" style={{background:'#7c3aed'}}></span>Selected</span>
+        <span className="lg">Number = sites open</span>
+        {editMode && <span className="lg" style={{color:'#b45309',fontWeight:600}}>Move mode: drag a pin to reposition it</span>}
+      </div>
     </div>
   );
 }
@@ -1226,8 +1404,6 @@ function LocationMap({sites, filteredSites, allAvail, dateStr, opStart, opEnd, r
 function App() {
   var dateState = useState(new Date());
   var date = dateState[0], setDate = dateState[1];
-  var viewState = useState('day');
-  var view = viewState[0], setView = viewState[1];
   var sitesState = useState(null);
   var sites = sitesState[0], setSites = sitesState[1];
   var availState = useState({});
@@ -1246,7 +1422,6 @@ function App() {
   var isToday = dateISO === todayISO;
   var maxDateISO = fmtISO(addDays(new Date(), MAX_DAYS_AHEAD));
   var beyondRealtime = dateISO > maxDateISO;
-  var ws = startOfWeek(date);
   var dt = new Date(dateISO + 'T00:00:00');
 
   // Fetch sites on mount
@@ -1338,6 +1513,22 @@ function App() {
   var wizResultState = useState(null);
   var wizResult = wizResultState[0], setWizResult = wizResultState[1];
 
+  // ── Split-view state ──
+  // `pins` lives HERE, not in the map, because the rail needs it too (to say
+  // "Not on the map yet") and the map writes it back after a drag-save. Two
+  // copies would leave the rail claiming a park is unmapped after an admin
+  // has just placed it.
+  var pinsState = useState(CFG.mapPins || {});
+  var pins = pinsState[0], setPins = pinsState[1];
+  var openLocState = useState(null);       // which rail card is expanded
+  var openLocId = openLocState[0], setOpenLocId = openLocState[1];
+  var selLocState = useState(null);        // which location the map/rail agree is current
+  var selectedLocId = selLocState[0], setSelectedLocId = selLocState[1];
+  var focusState = useState(null);         // {id, n} — rail card asking the map to fly
+  var focusReq = focusState[0], setFocusReq = focusState[1];
+  var paneState = useState('map');         // narrow screens only: 'map' | 'list'
+  var pane = paneState[0], setPane = paneState[1];
+
   var allTypes = useMemo(function() {
     if (!sites) return [];
     var present = new Set();
@@ -1407,6 +1598,27 @@ function App() {
       return true;
     });
   }, [sites, selectedTypes, selectedAmenities, allTypes, allAmenities, bookFilter]);
+
+  // The rail honours the location filter (it IS the list); the map deliberately
+  // does not, so one park being picked never zeroes every other pin's count.
+  // Both go through groupByLocation, so the two can only ever disagree about
+  // WHICH sites are in scope, never about how a park's sites are grouped.
+  //
+  // MEMOISED, and declared HERE rather than beside the render: LocationMap's
+  // marker-redraw effect depends on this array's identity, so recomputing it on
+  // every render rebuilds every marker constantly and closes any open popup —
+  // and a useMemo below the early returns would change the hook count per render.
+  var railLocs = useMemo(function() {
+    return groupByLocation(sites, filteredSites)
+      .filter(function(l){ return l.shown.length > 0; })
+      // Alphabetical and STABLE. The dot already carries availability, so
+      // sorting by it would reshuffle the whole list every time the date moves,
+      // which is the opposite of what a list you scan is for.
+      .sort(function(a, b){ return a.name.localeCompare(b.name); });
+  }, [sites, filteredSites]);
+  var mapLocs = useMemo(function() {
+    return groupByLocation(sites, mapSites);
+  }, [sites, mapSites]);
 
   // Precache site thumbnails so they load instantly when groups expand
   useEffect(function() {
@@ -1499,132 +1711,158 @@ function App() {
   var nav = useCallback(function(delta) {
     setDate(function(d) {
       var n = new Date(d);
-      n.setDate(n.getDate() + (view === 'week' ? delta * 7 : delta));
+      n.setDate(n.getDate() + delta);
       return n;
     });
-  }, [view]);
+  }, []);
 
   var goToday = useCallback(function(){setDate(new Date());}, []);
-  var handleDayClick = useCallback(function(iso){setDate(new Date(iso+'T00:00:00'));setView('day');}, []);
 
-  var dateLabel = view === 'day'
-    ? DOWL[dt.getDay()]+', '+MON[dt.getMonth()]+' '+dt.getDate()+', '+dt.getFullYear()
-    : MON[ws.getMonth()]+' '+ws.getDate()+' \u2013 '+MON[addDays(ws,6).getMonth()]+' '+addDays(ws,6).getDate()+', '+addDays(ws,6).getFullYear();
+  var dateLabel = DOWL[dt.getDay()]+', '+MON[dt.getMonth()]+' '+dt.getDate()+', '+dt.getFullYear();
 
   var locationName = CFG.locationName || (LOCATION_ID && sites && sites.length > 0 ? sites[0].locationName : 'Facility Rentals');
 
   if (loading) return <div className="wrap"><div className="loading"><span className="spin"></span>Loading facilities...</div></div>;
   if (error) return <div className="wrap"><div className="error-box">Failed to load: {error}</div></div>;
   if (!sites || sites.length === 0) return <div className="wrap"><div className="error-box">No facilities found for this location.</div></div>;
-  var noFilterResults = filteredSites.length === 0 && sites.length > 0;
+
+  function selectLoc(locId, alsoExpand) {
+    setSelectedLocId(locId);
+    if (alsoExpand) setOpenLocId(locId);
+    if (pane !== 'list' && window.matchMedia && window.matchMedia('(max-width:900px)').matches && alsoExpand) {
+      setPane('list');
+    }
+  }
+  function toggleLoc(locId) {
+    var opening = openLocId !== locId;
+    setOpenLocId(opening ? locId : null);
+    setSelectedLocId(opening ? locId : null);
+    // Opening a card flies the map to its pin — that is the whole point of the
+    // two panes being side by side. Closing it deliberately does not move the map.
+    if (opening && pins[locId]) setFocusReq({id: locId, n: Date.now()});
+  }
 
   var toolbarEl = (
     <div className="toolbar-row">
       <button onClick={function(){nav(-1);}}>&lsaquo; Prev</button>
-      <button onClick={goToday} className={isToday && view === 'day' ? 'primary' : ''}>Today</button>
+      <button onClick={goToday} className={isToday ? 'primary' : ''}>Today</button>
       <button onClick={function(){nav(1);}}>Next &rsaquo;</button>
       <span className="range" style={{marginLeft:8}}>{dateLabel}</span>
       {weather && <span className="tb-weather" title={weather.desc}>{weather.emoji} {weather.hi}°{weather.unit}{weather.lo != null ? ' / '+weather.lo+'°' : ''}</span>}
-      <input type="date" className="tb-date" value={dateISO} min={fmtISO(new Date())} onChange={function(e){if(e.target.value){setDate(new Date(e.target.value+'T12:00:00'));setView('day');}}}/>
+      <input type="date" className="tb-date" value={dateISO} min={fmtISO(new Date())} onChange={function(e){if(e.target.value){setDate(new Date(e.target.value+'T12:00:00'));}}}/>
       <div className="grow"></div>
       <div className="tb-legend" role="group" aria-label="Timeline legend">
         <span><span className="sw" style={{background:'#bbf7d0',border:'2px solid #16a34a'}}></span>✓ Available</span>
         <span><span className="sw" style={{background:'repeating-linear-gradient(-45deg,#fed7aa,#fed7aa 3px,#fde0b0 3px,#fde0b0 6px)',border:'2px solid #c2410c'}}></span>✗ Unavailable</span>
         <span><span className="sw" style={{background:'repeating-linear-gradient(45deg,#e5e7eb,#e5e7eb 3px,#d4d6da 3px,#d4d6da 6px)',border:'2px solid #6b7280'}}></span>— Closed</span>
-        {view === 'day' && <span><span className="sw" style={{background:'#ef4444',width:3,borderRadius:2}}></span>Now</span>}
+        <span><span className="sw" style={{background:'#ef4444',width:3,borderRadius:2}}></span>Now</span>
       </div>
     </div>
   );
 
-  return (
-    <div className="wrap">
-      {/* toolbar rendered inside DayView sticky header */}
-      <div className="hdr">
-        {CFG.logoUrl && <img src={CFG.logoUrl} alt={(CFG.displayName || 'Organization') + ' logo'}/>}
-        <div>
-          <h1>{locationName}</h1>
-          {CFG.displayName && <div className="sub">{CFG.displayName}</div>}
-        </div>
-      </div>
-      <BookingWizard allTypes={allTypes} allLocations={allLocations} sites={sites} resultCount={filteredSites.length}
-        onApply={function(r) {
-          if (r.type) setSelectedTypes(new Set([r.type]));
-          if (r.location) setSelectedLocs(new Set([r.location]));
-          else if (allLocations.length > 0) setSelectedLocs(new Set(allLocations));
-          if (r.date) { setDate(r.date); setView('day'); }
-          setWizResult(r);
-        }}/>
-
-
-      {allTypes.length > 0 && (
-        <div className="filters">
-          {allTypes.length > 1 && (
-            <div className="filter-row">
-              <span className="filter-label">Type</span>
-              <div className="filter-pills">
-                <button className={!selectedTypes || selectedTypes.size === allTypes.length ? 'pill active' : 'pill'}
-                  onClick={function(){setSelectedTypes(new Set(allTypes.map(function(t){return t.key;})));}}>All</button>
-                {allTypes.map(function(t) {
-                  var isOn = selectedTypes && selectedTypes.has(t.key);
-                  return <button key={t.key} className={'pill' + (isOn && selectedTypes.size < allTypes.length ? ' active' : '')}
-                    onClick={function(){
-                      var allKeys = new Set(allTypes.map(function(x){return x.key;}));
-                      var next = new Set(selectedTypes || allKeys);
-                      if (next.size === allTypes.length) { next = new Set([t.key]); }
-                      else if (next.has(t.key) && next.size > 1) { next.delete(t.key); }
-                      else { next.add(t.key); }
-                      setSelectedTypes(next);
-                    }}>{emojiFor(t.key)} {t.label}</button>;
-                })}
-              </div>
-            </div>
-          )}
-          {allLocations.length > 1 && (
-            <div className="filter-row">
-              <span className="filter-label">Location</span>
-              <MultiSelectDropdown label="Locations" items={allLocations} selected={selectedLocs} onSelectionChange={setSelectedLocs}/>
-            </div>
-          )}
-          <div className="filter-row">
-            <span className="filter-label">Booking</span>
-            <div className="filter-pills">
-              {[{k:'all',l:'All'},{k:'instant',l:'⚡ Instant Book'},{k:'request',l:'📋 Request'}].map(function(o){
-                return <button key={o.k} className={'pill' + (bookFilter===o.k?' active':'')}
-                  onClick={function(){setBookFilter(o.k);}}>{o.l}</button>;
-              })}
-            </div>
+  // ── Filters row, shared by both panes ──
+  var filtersEl = allTypes.length > 0 ? (
+    <div className="filters">
+      {allTypes.length > 1 && (
+        <div className="filter-row">
+          <span className="filter-label">Type</span>
+          <div className="filter-pills">
+            <button className={!selectedTypes || selectedTypes.size === allTypes.length ? 'pill active' : 'pill'}
+              onClick={function(){setSelectedTypes(new Set(allTypes.map(function(t){return t.key;})));}}>All</button>
+            {allTypes.map(function(t) {
+              var isOn = selectedTypes && selectedTypes.has(t.key);
+              return <button key={t.key} className={'pill' + (isOn && selectedTypes.size < allTypes.length ? ' active' : '')}
+                onClick={function(){
+                  var allKeys = new Set(allTypes.map(function(x){return x.key;}));
+                  var next = new Set(selectedTypes || allKeys);
+                  if (next.size === allTypes.length) { next = new Set([t.key]); }
+                  else if (next.has(t.key) && next.size > 1) { next.delete(t.key); }
+                  else { next.add(t.key); }
+                  setSelectedTypes(next);
+                }}>{emojiFor(t.key)} {t.label}</button>;
+            })}
           </div>
-          {allAmenities.length > 0 && (
-            <div className="filter-row">
-              <span className="filter-label">Amenities</span>
-              <MultiSelectDropdown label="Amenities" items={allAmenities} selected={selectedAmenities} onSelectionChange={setSelectedAmenities}/>
-            </div>
-          )}
         </div>
       )}
-      {sites && sites.length > 0 && (
-        <LocationMap sites={sites} filteredSites={mapSites} allAvail={allAvail} dateStr={dateISO}
-          opStart={opHours.start} opEnd={opHours.end} reservationMap={reservationMap}
-          selectedLocs={selectedLocs} setSelectedLocs={setSelectedLocs} allLocations={allLocations}/>
-      )}
-      {filteredSites.length === 0 && sites && sites.length > 0 && (
-        <div style={{padding:'40px 20px',textAlign:'center',color:'#6b7280',fontSize:14}}>No facilities match the current filters.</div>
-      )}
+      <div className="filter-row">
+        {allLocations.length > 1 && <span className="filter-label">Location</span>}
+        {allLocations.length > 1 &&
+          <MultiSelectDropdown label="Locations" items={allLocations} selected={selectedLocs} onSelectionChange={setSelectedLocs}/>}
+        <span className="filter-label" style={{minWidth:0,marginLeft:allLocations.length>1?10:0}}>Booking</span>
+        <div className="filter-pills">
+          {[{k:'all',l:'All'},{k:'instant',l:'⚡ Instant Book'},{k:'request',l:'\u{1F4CB} Request'}].map(function(o){
+            return <button key={o.k} className={'pill' + (bookFilter===o.k?' active':'')}
+              onClick={function(){setBookFilter(o.k);}}>{o.l}</button>;
+          })}
+        </div>
+        {allAmenities.length > 0 && <span className="filter-label" style={{minWidth:0,marginLeft:10}}>Amenities</span>}
+        {allAmenities.length > 0 &&
+          <MultiSelectDropdown label="Amenities" items={allAmenities} selected={selectedAmenities} onSelectionChange={setSelectedAmenities}/>}
+      </div>
+    </div>
+  ) : null;
+
+  var wizardEl = (
+    <BookingWizard allTypes={allTypes} allLocations={allLocations} sites={sites} resultCount={filteredSites.length}
+      onApply={function(r) {
+        if (r.type) setSelectedTypes(new Set([r.type]));
+        if (r.location) setSelectedLocs(new Set([r.location]));
+        else if (allLocations.length > 0) setSelectedLocs(new Set(allLocations));
+        if (r.date) { setDate(r.date); }
+        setWizResult(r);
+      }}/>
+  );
+
+  // The pane toggle is the narrow-screen escape hatch: a 400px phone cannot show
+  // a map and a list at once, so it shows one and says which.
+  var paneToggleEl = (
+    <div className="seg rc-pane-toggle" role="group" aria-label="Map or list">
+      <button className={pane === 'map' ? 'on' : ''} data-rc-pane-map onClick={function(){setPane('map');}}>Map</button>
+      <button className={pane === 'list' ? 'on' : ''} data-rc-pane-list onClick={function(){setPane('list');}}>List</button>
+    </div>
+  );
+
+  return (
+    <div className="rc-shell">
+      <div className="rc-top">
+        <div className="hdr">
+          {CFG.logoUrl && <img src={CFG.logoUrl} alt={(CFG.displayName || 'Organization') + ' logo'}/>}
+          <div>
+            <h1>{locationName}</h1>
+            {CFG.displayName && <div className="sub">{CFG.displayName}</div>}
+          </div>
+          <div className="grow"></div>
+          <div className="rc-cred">
+            Availability updates in real time<br/>
+            Powered by <a href="https://www.rec.us" target="_blank" rel="noopener">rec.us</a>
+          </div>
+        </div>
+        {toolbarEl}
+        {filtersEl}
+        {/* The pane toggle lives in the TOP BAR, never inside a pane. On a phone
+            the map pane hides the rail, so a toggle in the rail head would take
+            the only way back to the list with it. */}
+        <div className="rc-pane-row">{paneToggleEl}</div>
+      </div>
       {beyondRealtime && (
-        <div className="date-cap">
+        <div className="date-cap" style={{margin:0,borderRadius:0,borderLeft:'none',borderRight:'none'}}>
           Availability beyond 30 days is based on confirmed facility bookings and may not reflect all holds. Call or email to confirm before submitting a request.
         </div>
       )}
-      {view === 'day'
-        ? <DayView sites={filteredSites} availMap={dayAvailMap} dateStr={dateISO} opStart={opHours.start} opEnd={opHours.end} allAvail={allAvail} onSiteClick={function(s){setModalSite(s);trackCalendarEvent('facility_view',s.name,{siteId:s.id,type:s.type});}} forceOpen={(selectedTypes && selectedTypes.size === 1) || (selectedLocs && allLocations.length > 1 && selectedLocs.size === 1)} toolbar={toolbarEl} reservationMap={reservationMap}/>
-        : null
-      }
+      <div className="rc-split" data-pane={pane}>
+        <LocationRail locs={railLocs} pins={pins} openLocId={openLocId} onToggleLoc={toggleLoc}
+          selectedLocId={selectedLocId} availMap={dayAvailMap} dateStr={dateISO}
+          opStart={opHours.start} opEnd={opHours.end} allAvail={allAvail} reservationMap={reservationMap}
+          onSiteClick={function(s){setModalSite(s);trackCalendarEvent('facility_view',s.name,{siteId:s.id,type:s.type});}}
+          wizard={wizardEl}/>
+        <LocationMap locs={mapLocs} pins={pins} setPins={setPins} allAvail={allAvail} dateStr={dateISO}
+          opStart={opHours.start} opEnd={opHours.end} reservationMap={reservationMap}
+          selectedLocs={selectedLocs} setSelectedLocs={setSelectedLocs} allLocations={allLocations}
+          selectedLocId={selectedLocId} onSelectLoc={selectLoc} focusReq={focusReq} resizeKey={pane}/>
+      </div>
       {modalSite && <SiteModal site={modalSite} onClose={function(){setModalSite(null);}}/>}
       <div aria-live="polite" role="status" className="sr-only">
-        {loading ? 'Loading facilities' : filteredSites.length === 0 ? 'No facilities match the current filters' : 'Showing ' + filteredSites.length + ' of ' + sites.length + ' facilities'}
-      </div>
-      <div className="footer">
-        Availability updates in real time &middot; Powered by <a href="https://www.rec.us" target="_blank" rel="noopener">rec.us</a>
+        {loading ? 'Loading facilities' : filteredSites.length === 0 ? 'No facilities match the current filters' : 'Showing ' + filteredSites.length + ' of ' + sites.length + ' facilities across ' + railLocs.length + ' locations'}
       </div>
     </div>
   );

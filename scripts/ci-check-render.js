@@ -392,6 +392,78 @@ function campmapSites(org) {
   }));
 }
 
+// ── Rental Calendar fixture ─────────────────────────────────────────────────
+// Watertown, because it is the one org with committed rental-map pins — the
+// split layout's whole left-to-right relationship needs a pinned location to
+// prove. Three locations on purpose, and each is a different STATE:
+//
+//   Arsenal Park     pinned, 3 sites, free slots today  → "open"
+//   Filippello Park  pinned, 2 sites, booked all day    → "booked"
+//   Bemis Annex      NOT in the seed file               → "Not on the map yet"
+//
+// A fixture where every location looked the same could not tell a rail that
+// computes each park's availability from one that prints the same line thrice.
+const RC_ORG = "watertown";
+const RC_ARSENAL = "6b644507-f784-4f78-8008-5aebf1177a5b";
+const RC_FILIPPELLO = "1169c2c3-63bd-4a0a-81aa-bb9151e62bfc";
+const RC_UNPINNED = "rc-unpinned-location";   // deliberately absent from rental-map-seeds.json
+
+function rcSite(id, name, type, locId, locName) {
+  return { id: id, name: name, courtNumber: name, type: type,
+    locationId: locId, locationName: locName, capacity: 20,
+    bookingUrl: "https://www.rec.us/sites/" + id, bookingFlow: "book",
+    isInstantBookable: type === "court", description: "", imageUrl: null, gallery: [],
+    priceCents: 2500, residentPriceCents: 2000, durationMinutes: [60, 120],
+    pricingType: "perHour", nightlyBookingPolicy: null, bookingUnit: null, subType: null,
+    amenities: [], amenityTagIds: [], amenityTags: [] };
+}
+
+// 3 + 2 + 1 = 6 sites. The counts differ per location so "expand Arsenal" and
+// "expand Filippello" cannot render the same number of rows by accident.
+function rcSites() {
+  return [
+    rcSite("rc-ars-1", "Arsenal Court 1",   "court", RC_ARSENAL, "Arsenal Park"),
+    rcSite("rc-ars-2", "Arsenal Court 2",   "court", RC_ARSENAL, "Arsenal Park"),
+    rcSite("rc-ars-3", "Arsenal Field",     "field", RC_ARSENAL, "Arsenal Park"),
+    rcSite("rc-fil-1", "Filippello Court",  "court", RC_FILIPPELLO, "Filippello Park"),
+    rcSite("rc-fil-2", "Filippello Field",  "field", RC_FILIPPELLO, "Filippello Park"),
+    rcSite("rc-bem-1", "Bemis Annex Court", "court", RC_UNPINNED, "Bemis Annex"),
+  ];
+}
+
+const rcISO = d => { const x = new Date(); x.setDate(x.getDate() + d);
+  return x.getFullYear() + "-" + String(x.getMonth() + 1).padStart(2, "0") + "-" + String(x.getDate()).padStart(2, "0"); };
+
+// availability-batch shape: { data: { siteId: { "YYYY-MM-DD": { "HH:MM:SS": {...} } } } }
+// Filippello's sites carry dates but NO slots today, so `hasAnyData` is true and
+// today is inside the window — which, with the reservations below, is what makes
+// them read "fully booked" rather than "closed". Those are different claims and
+// the rail must not confuse them.
+function rcAvail() {
+  const slots = {};
+  // 06:00 → 23:30 in half-hours. A narrow window would make this fixture depend
+  // on the WALL CLOCK: past 20:00 every slot is behind `now`, Arsenal correctly
+  // reads "today's hours have ended", and a case asserting it is open fails on
+  // perfectly good code for a quarter of the day. A flaky assertion is not a
+  // guard, so the window is wide AND the case below asserts only what is true
+  // at any hour.
+  for (let h = 6; h < 24; h++) {
+    slots[String(h).padStart(2, "0") + ":00:00"] = { availableDurationsMinutes: [30, 60] };
+    slots[String(h).padStart(2, "0") + ":30:00"] = { availableDurationsMinutes: [30] };
+  }
+  const open = {}, shut = {};
+  for (let d = 0; d < 30; d++) { open[rcISO(d)] = slots; shut[rcISO(d)] = d === 0 ? {} : slots; }
+  return { data: { "rc-ars-1": open, "rc-ars-2": open, "rc-ars-3": open,
+                   "rc-fil-1": shut, "rc-fil-2": shut, "rc-bem-1": open } };
+}
+
+// Metabase-side bookings, matched to a site by its courtNumber. Wider than the
+// 08:00–20:00 operating window so today reads as booked end to end.
+function rcReservations() {
+  return { reservations: ["Filippello Court", "Filippello Field"].map(n => (
+    { site: n, location: "Filippello Park", date: rcISO(0), start: "05:00am", end: "11:59pm" })) };
+}
+
 // Anything under /api/ that a page fetches. `match` is tested against the path.
 // ── Fast Track fixture ──────────────────────────────────────────────────────
 // Smyrna's Concert Series, which is what exposed the bug: four birthday-concert
@@ -1729,8 +1801,24 @@ const STUBS = [
   { match: /\/facility\/api\/permits/,     body: () => STUB_MODE === "feedfail"
       ? ({ permits: {}, error: true })
       : ({ permits: { "res-addons": { code: "ABCD1234", url: "https://www.rec.us/permits/x", id: "x", multi: false } } }) },
-  { match: /\/api\/availability-batch/,     body: url => availabilityFor(url) },
-  { match: /\/rentalcalendar\/api\/sites/, body: (url, org) => ({ sites: campmapSites(org) }) },
+  /* ONE matcher for both shapes, branching on the org in the URL. A second
+     matcher below this one is unreachable: STUBS is searched with .find, so the
+     rental calendar was silently answered with the campmap's nightly
+     `checkInDates` payload and every park read "No availability on this date".
+     The same fall-through is already recorded for the /api/data stub. */
+  { match: /\/api\/availability-batch/,
+    body: url => url.indexOf("/" + RC_ORG + "/") > -1 ? rcAvail() : availabilityFor(url) },
+  /* The campmap and the rental calendar share this feed, so the org decides which
+     fixture answers: campmap drives the seeded campground, the rental calendar
+     drives Watertown's pinned parks. One stub, two shapes — a second matcher
+     would sit below this one and never be reached. */
+  { match: /\/rentalcalendar\/api\/reservations/,      body: () => rcReservations() },
+  /* Branch on the URL, not on `org`: stubs are called as body(url, org) where
+     `org` is the harness's ONE resolved test org, never the org in the path. A
+     stub keyed on `org` here silently answered the rental calendar with the
+     campground's sites — which renders a perfectly plausible one-location rail. */
+  { match: /\/rentalcalendar\/api\/sites/,
+    body: (url, org) => ({ sites: url.indexOf("/" + RC_ORG + "/") > -1 ? rcSites() : campmapSites(org) }) },
   { match: /\/api\/sites/,                  body: () => ({ sites: [] }) },
   { match: /\/fasttrack\/api\/data/,       body: () => ({ rows: fasttrackRows(), meta: {} }) },
   { match: /\/court-utilization\/api\/data/, body: () => ({ rows: racketRows(), meta: {} }) },
@@ -2016,6 +2104,60 @@ const clickCheckinsTab = async page => {
 const RENDER_ADMIN_PW = "render-check-password";
 const RENDER_ADMIN_KEY = require("crypto").createHash("sha256")
   .update(RENDER_ADMIN_PW + "|report-settings|v1").digest("hex").slice(0, 32);
+
+// ── Rental Calendar act helpers ─────────────────────────────────────────────
+// Declared at module scope, above CASES: `act: rcPane("list")` is evaluated when
+// the array literal is built, so a helper declared below it would be a TDZ error.
+// Expanding a location stamps WHAT rendered inside that card. "A body appeared"
+// passes on a rail that renders every site under every location — the count and
+// the foreign-name flag are what tell the two apart.
+const rcExpandLoc = (name) => async (page) => {
+  const head = `[data-rc-loc="${name}"] .loc-head`;
+  await page.waitForSelector(head, { timeout: 30000 });
+  await page.click(head);
+  await page.waitForSelector(`[data-rc-loc="${name}"] .loc-body`, { timeout: 10000 });
+  await page.evaluate((n) => {
+    const card = document.querySelector(`[data-rc-loc="${n}"]`);
+    const rows = [...card.querySelectorAll(".loc-body .fac-row")];
+    const names = rows.map(r => ((r.querySelector(".fname") || {}).textContent || ""));
+    document.body.setAttribute("data-rc-openrows", String(rows.length));
+    document.body.setAttribute("data-rc-hasfil", names.some(x => /Filippello/.test(x)) ? "1" : "0");
+    document.body.setAttribute("data-rc-expand-seen",
+      `expanded ${n}: ${rows.length} site rows — ${names.join(", ") || "(none)"}`);
+  }, name);
+};
+
+// Narrow screens show ONE pane. Read the COMPUTED display rather than the
+// attribute: `data-pane` is on the element whichever way the CSS behaves, so an
+// attribute-only assertion passes on a toggle that toggles nothing.
+const rcPanesSeen = async (page) => {
+  await page.waitForSelector(".rc-split", { timeout: 30000 });
+  await page.evaluate(() => {
+    const shown = el => el && getComputedStyle(el).display !== "none" ? "1" : "0";
+    document.body.setAttribute("data-rc-mapshown", shown(document.querySelector(".rc-map")));
+    document.body.setAttribute("data-rc-railshown", shown(document.querySelector(".rc-rail")));
+    document.body.setAttribute("data-rc-toggleshown", shown(document.querySelector(".rc-pane-row")));
+    document.body.setAttribute("data-rc-desktop-seen",
+      "desktop: map=" + shown(document.querySelector(".rc-map")) +
+      " rail=" + shown(document.querySelector(".rc-rail")) +
+      " toggle=" + shown(document.querySelector(".rc-pane-row")));
+  });
+};
+
+const rcPane = (which) => async (page) => {
+  const sel = which === "list" ? "[data-rc-pane-list]" : "[data-rc-pane-map]";
+  await page.waitForSelector(sel, { timeout: 30000 });
+  await page.click(sel);
+  await new Promise(r => setTimeout(r, 300));
+  await page.evaluate(() => {
+    const shown = el => el && getComputedStyle(el).display !== "none" ? "1" : "0";
+    const m = document.querySelector(".rc-map"), r = document.querySelector(".rc-rail");
+    document.body.setAttribute("data-rc-mapshown", shown(m));
+    document.body.setAttribute("data-rc-railshown", shown(r));
+    document.body.setAttribute("data-rc-pane-seen",
+      `map shown=${shown(m)} rail shown=${shown(r)}`);
+  });
+};
 
 // ── Pages to prove ──────────────────────────────────────────────────────────
 // `needs` is a selector that only exists once the page has really rendered, so
@@ -5278,6 +5420,89 @@ const CASES = [
   // in red, and the map claims nothing until it has been asked. "A Depart field
   // rendered" passes either way — this pins the prompt itself.
   { name: "campmap · depart prompts first", path: "/{org}/campmap",       needs: "#departLbl.prompt" },
+  // ── Rental Calendar: the full-screen split ─────────────────────────────────
+  // This page had NO render coverage at all before the split shipped, which is
+  // the state CLAUDE.md records for the waitlist report and the rental schedule.
+  // Every case below keys on a COMPUTED figure or an absence — "a map rendered"
+  // and "a list rendered" pass on almost every regression worth catching here.
+  //
+  // The rail and the map must be SIDE BY SIDE, and the old stacked page must be
+  // gone: `.wrap` is the 1080px column the layout replaced, so its absence is
+  // what fails if anyone reverts.
+  { name: "rentalcalendar · map is the page, rail beside it",
+    path: "/" + RC_ORG + "/rentalcalendar",
+    needs: ".rc-split .rc-rail .rc-rail-body",
+    also: [".rc-split .rc-map .map-canvas"],
+    absent: ".wrap" },
+  // Three locations in the fixture, each exactly once. A rail keyed on sites
+  // rather than locations would read 6.
+  { name: "rentalcalendar · rail lists each location once",
+    path: "/" + RC_ORG + "/rentalcalendar",
+    needs: '[data-rc-loccount="3"]',
+    also: ['[data-rc-loc="Arsenal Park"]', '[data-rc-loc="Filippello Park"]', '[data-rc-loc="Bemis Annex"]'] },
+  // Availability is computed PER LOCATION from that park's own sites: Filippello
+  // is booked end to end with nothing free, the other two are not. A rail that
+  // computed one state for the whole org would give all three the same answer,
+  // and one reading the UNFILTERED site set would give Filippello a non-zero
+  // open count. Deliberately does NOT pin Arsenal to "open": with no bookings
+  // it can only be open or (late in the day) closed, and both are honest — so
+  // the stable claim is that it is not BOOKED.
+  // DRIVEN UNDER `?type=court`, and that is the whole point: with no filter on,
+  // a location's "every site" and "the sites in view" are the SAME LIST, so a
+  // rail reading the wrong one renders identically and two mutations of exactly
+  // that survived the first version of this case. Narrowed to courts, Filippello
+  // has 1 of its 2 sites in view — so `total` is 1 if the card reads the scoped
+  // set and 2 if it reads the park's whole inventory.
+  { name: "rentalcalendar · each location carries its own availability",
+    path: "/" + RC_ORG + "/rentalcalendar?type=court",
+    needs: '[data-rc-loc="Filippello Park"][data-rc-loc-state="booked"] [data-rc-loc-avail="0"][data-rc-loc-total="1"]',
+    also: ['[data-rc-loc="Arsenal Park"]:not([data-rc-loc-state="booked"])',
+           '[data-rc-loc="Arsenal Park"] [data-rc-loc-total="2"]',
+           '[data-rc-loc="Bemis Annex"]:not([data-rc-loc-state="booked"])'] },
+  // Expanding a park shows THAT park's sites, scoped by the filters. Also driven
+  // under `?type=court`: Arsenal has 3 sites but only 2 courts, so a rail
+  // rendering `loc.all` reads 3 and one rendering `loc.shown` reads 2. Unfiltered
+  // the two are the same list and the case could not discriminate — the
+  // foreign-name flag alone only catches a rail rendering the WHOLE FEED.
+  { name: "rentalcalendar · expanding a location shows only its own sites",
+    path: "/" + RC_ORG + "/rentalcalendar?type=court",
+    act: rcExpandLoc("Arsenal Park"),
+    needs: 'body[data-rc-openrows="2"]',
+    also: ['body[data-rc-hasfil="0"]'] },
+  // A location with no pin is NAMED as unmapped rather than silently dropped
+  // from the rail — the list must cover every park the filters admit, mapped or
+  // not, or a resident cannot see that it exists at all.
+  { name: "rentalcalendar · an unpinned location says so",
+    path: "/" + RC_ORG + "/rentalcalendar",
+    needs: '[data-rc-loc="Bemis Annex"] .loc-nopin',
+    absent: '[data-rc-loc="Arsenal Park"] .loc-nopin' },
+  // Two of the three locations are in rental-map-seeds.json, so the map draws
+  // two pins — not three, and not one per site.
+  { name: "rentalcalendar · one pin per seeded location",
+    path: "/" + RC_ORG + "/rentalcalendar",
+    needs: '[data-rc-map="2"]' },
+  // A phone cannot show both panes. It opens on the map and offers the toggle.
+  { name: "rentalcalendar · a phone opens on the map",
+    path: "/" + RC_ORG + "/rentalcalendar",
+    viewport: { width: 420, height: 880 },
+    needs: '.rc-split[data-pane="map"]',
+    also: ["[data-rc-pane-list]", "[data-rc-pane-map]"] },
+  // ...and the toggle actually swaps them. Keyed on the COMPUTED display of
+  // each pane, because `data-pane` flips whether or not the CSS honours it.
+  { name: "rentalcalendar · the List pane replaces the map on a phone",
+    path: "/" + RC_ORG + "/rentalcalendar",
+    viewport: { width: 420, height: 880 },
+    act: rcPane("list"),
+    needs: 'body[data-rc-mapshown="0"]',
+    also: ['body[data-rc-railshown="1"]', '.rc-split[data-pane="list"]'] },
+  // On a desktop BOTH panes are up at once and the toggle is not offered — a
+  // control that could only ever be a no-op at that width. Stamped rather than
+  // clicked: the toggle is display:none here, and Puppeteer cannot click it.
+  { name: "rentalcalendar · both panes are up on a desktop",
+    path: "/" + RC_ORG + "/rentalcalendar",
+    act: rcPanesSeen,
+    needs: 'body[data-rc-mapshown="1"]',
+    also: ['body[data-rc-railshown="1"]', 'body[data-rc-toggleshown="0"]'] },
   // ── Report Wizard ──────────────────────────────────────────────────────────
   // The build screen. The quick-prompt chips are what makes it usable, so the
   // selector is one of them rather than the panel: a panel with no chips renders
@@ -7086,7 +7311,12 @@ function waitForServer(started) {
         // error — which reads as the page being broken rather than as the
         // harness waiting for something that is deliberately absent. No print
         // case had ever used `act`, so the gap was latent until one did.
-        await page.waitForSelector(".prompt-panel, .toolbar, .card, .report-header", { timeout: PAGE_TIMEOUT_MS });
+        /* `.rc-shell` is the rental calendar's mount marker. That page carries
+           NONE of the four above — its toolbar class is `.toolbar-row` — so
+           before this its first act-driven case hung for the whole timeout and
+           reported as an uncaught error, which reads as the page being broken.
+           Same latent gap `.report-header` was added for. */
+        await page.waitForSelector(".prompt-panel, .toolbar, .card, .report-header, .rc-shell", { timeout: PAGE_TIMEOUT_MS });
         await c.act(page);
       }
       try { await page.waitForSelector(c.needs, { timeout: PAGE_TIMEOUT_MS }); found = true; } catch (_) {}
