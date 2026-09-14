@@ -4720,6 +4720,15 @@ const CASES = [
   { name: "org landing · no wizard card", path: "/{org}",
     needs: ".card", absent: 'a.card[href*="/report-wizard"]' },
 
+  /* HIDDEN FROM THE ORG, and only a browser can see it: org.html builds its
+     cards client-side, so the card BUILDER is in the served JS on every load
+     and grepping the HTML proves nothing. Dan's rule, 2026-09-14: every new
+     report ships hidden and he turns it on per org. The page itself stays
+     OPEN — "i should still be able to click on it and view it" — which is why
+     this keys on the CARD's absence and not on the route. */
+  { name: "org landing · no opportunities card until it is turned on", path: "/{org}",
+    needs: ".card", absent: 'a.card[href*="/opportunities"], .card-wrap a[href*="/opportunities"]' },
+
   { name: "org landing · the data reports are ONE card with a chip each",
     path: "/" + AQ_ORG, token: AQ_TOKEN,
     act: async page => {
@@ -6705,29 +6714,16 @@ try {
                    JSON.stringify({ reportSettings: true }));
 } catch (_) {}
 
-/* DEFAULT-HIDDEN REPORTS HAVE TO BE OPTED IN, OR THEIR OWN CASES TEST A 404.
-   This harness boots on a FRESH DATA_DIR, so no org has ever been switched on
-   — and for a report in DEFAULT_HIDDEN_REPORTS that means the page 404s and
-   every case for it reports "the page came up blank", which reads as a broken
-   page rather than as a report nobody enabled. Caught in CI the first time a
-   report shipped hidden (Opportunities, 2026-09-14).
+/* DEFAULT-HIDDEN REPORTS ARE LEFT HIDDEN HERE, ON PURPOSE.
 
-   THE SEMANTICS INVERT: for a default-hidden report, being LISTED in an org's
-   visibility array means SHOWN. Written for every org because `org` is not
-   resolved until after the spawn — the same reason WIZARD_ENABLED_ORGS below
-   reads its slug list out of server.js. */
-try {
-  const srcV = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
-  const i = srcV.indexOf("const DEFAULT_HIDDEN_REPORTS = new Set(");
-  const defaultHidden = require("vm").runInNewContext(
-    srcV.slice(srcV.indexOf("[", i), srcV.indexOf("]", i) + 1));
-  const o = srcV.indexOf("const ORGS = {");
-  const slugs = Object.keys(require("vm").runInNewContext(
-    "(" + srcV.slice(srcV.indexOf("{", o), srcV.indexOf("\nconst REPORT_TYPES", o)).trim().replace(/;$/, "") + ")"));
-  const vis = {};
-  slugs.forEach(sl => { vis[sl] = defaultHidden.slice(); });
-  fs.writeFileSync(path.join(dataDir, "report-visibility.json"), JSON.stringify(vis));
-} catch (_) {}
+   An earlier version of this file opted every org into DEFAULT_HIDDEN_REPORTS,
+   because the page was gated on the toggle and its cases were testing a 404.
+   Dan then corrected the rule — "i should still be able to click on it and
+   view it, just the eye 'hides' it from them" — so the page is open to every
+   org and only the CARD is hidden. Opting in here would now defeat the one
+   case that can see that: a harness that silently switches on every hidden
+   report cannot test hidden-by-default at all. */
+
 
 
 const child = spawn(process.execPath, [path.join(__dirname, "..", "server.js")], {
