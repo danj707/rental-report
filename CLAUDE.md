@@ -1,5 +1,98 @@
 # Project notes for Claude
 
+## EVERY NEW REPORT SHIPS HIDDEN (STANDING RULE, Dan 2026-09-14)
+
+Dan, asking for Opportunities to be merged: *"make sure you add it to each
+org's dashboard, not viewable. I'll enable viewing for the orgs I want."* Then
+the general form: **"by default all new reports should be hidden unless I say
+otherwise."**
+
+**IT WOULD HAVE GONE LIVE ON ALL 29 DASHBOARDS ON MERGE.**
+`OPPORTUNITIES_ALL_ORGS = true` made `opportunitiesEnabled` true for every org,
+and `DEFAULT_HIDDEN_REPORTS` was empty — so the deploy WAS the rollout, which is
+exactly what this file already records about `SHARED_UUIDS` (*"wiring the uuid
+IS the rollout. Nothing stages it per org"*). Caught because he asked, not
+because anything would have stopped it.
+
+### ONE SWITCH, AND IT GOVERNS THE PAGE AS WELL AS THE CARD
+
+`opportunitiesEnabled(slug)` is now `!reportHiddenForOrg(slug, "opportunities")`
+— the org's own visibility toggle — and the two module-level flags it replaced
+are **deleted rather than left unread**. Two lists is the bug.
+
+**SEE AND CLICK ARE TWO DIFFERENT GATES and Dan said "not viewable", so this
+report needs both.** The Report Wizard section of this file records campmap
+serving ~24 visitors a month through direct links the whole time it was
+"retired", because that Set only controls whether a report is SURFACED. So the
+page, the data route, the PDF and the insights route all read the SAME per-org
+state the card does: **an org that is off 404s the URL**, proven live with a
+VALID org token rather than assumed.
+
+It also decides which orgs the 05:20 job builds for
+(`Object.keys(ORGS).filter(opportunitiesEnabled)`), so the ~260-query daily
+fan-out is spent only on orgs somebody actually looks at — and an org Dan
+switches on gets a **cold on-demand build on first open** (`ensureOpportunities`
+falls through to `buildOpportunitiesFor`), not an empty page waiting for 05:20.
+
+### SIX SURFACES HAVE TO AGREE, AND EACH READS CORRECTLY ALONE
+
+That is why this needed a spec rather than a one-line diff:
+
+| surface | what it needed |
+|---|---|
+| `DEFAULT_HIDDEN_REPORTS` | the entry — the store's meaning INVERTS, so listed = SHOWN |
+| the org dashboard's `available` | the card was **never pushed there at all**, so it had to be added |
+| `opportunitiesEnabled` | gate on the same per-org state |
+| `POST /api/admin/toggle-report` | **its allowlist refused `opportunities` — the POST 400'd, so Dan could not have enabled it for anybody** |
+| `GET /api/org-visibility/:slug` | it read `!hidden.has(rt)`, which reports the OPPOSITE of the truth for a default-hidden report — rec-dashboard would have linked orgs to a report they cannot open, the `town-of-shrewsbury` 404 in a new costume |
+| the admin grid | a card + `toggleVis` button, reading the inverted default |
+
+### THE FROZEN LIST IS THE ENFORCEMENT
+
+A visibility default is the one change that ships to 29 dashboards on merge and
+is **invisible in review** — the diff says `new Set([])`. So
+`report-visibility.spec.js` freezes `MAY_BE_VISIBLE`, a **whitelist of what may
+be seen without Dan asking**. It is deliberately not a blacklist of what must be
+hidden: a blacklist is satisfied by forgetting to add to it, which is precisely
+how this goes wrong. Shipping a visible report now fails a guard, and turning
+one on is a diff somebody has to justify.
+
+### Guards
+
+`scripts/report-visibility.spec.js` (**23 assertions, in CI**), which LIFTS AND
+RUNS `reportHiddenForOrg` against both semantics — a regex over `new Set([...])`
+passes on an inverted comparison, and the inversion is where the whole meaning
+lives. Mutation-tested **eight ways, all eight caught by name**: the report
+shipped visible to all 29 orgs (the bug Dan pre-empted), the inversion dropped,
+the page no longer following the toggle, the card added ungated, the toggle
+route refusing it, the visibility API reporting the wrong state, the admin grid
+losing its toggle, and the daily job building every org regardless.
+
+**The live half boots a real server and drives the real routes** — hidden,
+refused, toggled, opened — because no source assertion can see six code paths
+agreeing. `SKIP_LIVE=1` and `SKIP_SOURCE=1` each drop a half, and **each half
+alone was seen to catch the shipping-visible bug**.
+
+**MY OWN "THE PAGE IS REFUSED" ASSERTION WAS VACUOUS FIRST.** It requested the
+page with **no org token**, so the org-token middleware 404'd it whatever the
+visibility gate said — it passed while proving nothing. It reads the token out
+of `ORGS` now (never printed) and asserts the token was found, or the whole
+page half is decorative again.
+
+**And two of the spec's own assertions failed on correct code**, both already-
+recorded traps: `facilities` is NOT default-hidden (it graduated to
+visible-by-default in a one-time migration, so asserting it was hidden was
+simply wrong), and a slice anchored on `if (!REPORT_TYPES.includes(report)`
+landed on a **subscription** route, because that line appears twice — *an
+assertion refuted by different code is not guarding the thing it names.* Scoped
+to `app.post("/api/admin/toggle-report"` now.
+
+**A comment of mine tripped its own guard, fifth instance in this file.** The
+"these two flags are gone" assertion is a literal string test, and the comment
+explaining the deletion quoted both names. Reworded rather than teaching the
+assertion to ignore comments — a regex comment-stripper is unsound on
+server.js, and keeping the guard dumb is the more robust half.
+
 ## THE OPPORTUNITIES REPORT, ANSWERED IN FIVE MORE (2026-09-14)
 
 Dan, on the built report, with four screenshots:
@@ -4463,6 +4556,14 @@ fail.
   configured** — cards 21682-21685 carry El Segundo's hardcoded `org_id`
   default, which an API save silently wipes along with the tag types, and that
   is a loss a flip cannot undo. Those still go through the UI.
+- **EVERY NEW REPORT SHIPS HIDDEN.** Dan, 2026-09-14: *"by default all new
+  reports should be hidden unless I say otherwise."* Add it to
+  `DEFAULT_HIDDEN_REPORTS` (listed = SHOWN, the semantics invert) and leave it
+  off the `MAY_BE_VISIBLE` whitelist in `report-visibility.spec.js`. He turns it
+  on one org at a time from the admin grid's own toggle — never by editing
+  either list. **Check the report is actually TOGGLEABLE before calling it
+  done**: `POST /api/admin/toggle-report` has its own allowlist, and a report
+  missing from it 400s, which leaves a switch he cannot flip.
 - **Wire a Slack activity notification into every new user-facing surface** —
   new features, buttons, export/download options, and other notable interactions
   should ping the Slack activity feed, without being asked. Dan wants visibility

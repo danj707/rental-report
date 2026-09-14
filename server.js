@@ -2989,7 +2989,17 @@ async function resolveBannerUrl(org) {
 // the inverse of the normal opt-out hidden-list semantics. Use reportHiddenForOrg().
 // (Facilities graduated out of here — it's now visible by default, replacing the
 //  retired standalone Court Utilization card.)
-const DEFAULT_HIDDEN_REPORTS = new Set([]);
+/* REPORTS LISTED HERE ARE OPT-IN PER ORG: the store's meaning INVERTS, so
+   "listed in the org's hidden array" means SHOWN. See reportHiddenForOrg.
+
+   DAN'S STANDING RULE, 2026-09-14: "by default all new reports should be
+   hidden unless I say otherwise." So a new report goes in here when it ships,
+   and comes out only when he says so — one org at a time through the admin
+   grid's own toggle, never by editing this Set. `report-visibility.spec.js`
+   pins the list of reports that are visible by default, so adding a report
+   that anyone can see without him asking fails a guard rather than appearing
+   on 29 dashboards on deploy. */
+const DEFAULT_HIDDEN_REPORTS = new Set(["opportunities"]);
 // Reports RETIRED as standalone cards: kept as valid report types + endpoints
 // (so the Facilities hub's native Court Utilization tab, chat, and /api/data all
 // keep working) but no longer rendered as a clickable card on org/admin grids.
@@ -7829,7 +7839,10 @@ app.get("/api/org-visibility/:slug", (req, res) => {
   // Also check non-REPORT_TYPES that can be toggled (chat, report-wizard, rentalcalendar, directors-report)
   for (const rt of ["chat", "report-wizard", "rentalcalendar", "directors-report", "lessons", "opportunities"]) {
     if (RETIRED_REPORTS.has(rt)) continue; // globally not surfaced
-    available.push({ type: rt, visible: !hidden.has(rt) });
+    // A default-hidden report INVERTS the store's meaning, so reading
+    // `!hidden.has(rt)` here would tell rec-dashboard the opposite of the
+    // truth for every org that has not opted in — which is all of them.
+    available.push({ type: rt, visible: !reportHiddenForOrg(slug, rt) });
   }
   // Default-hidden WIP reports use inverted visibility semantics
   available.push({ type: "facilities", visible: !reportHiddenForOrg(slug, "facilities") });
@@ -13364,10 +13377,27 @@ const OPP_WINDOW_DAYS = 365;
 function loadOpportunitySnapshots() { return readJSON(OPPORTUNITIES_FILE, {}); }
 function saveOpportunitySnapshots(s) { writeJSON(OPPORTUNITIES_FILE, s); }
 
-const OPPORTUNITIES_ALL_ORGS = true;
-const OPPORTUNITIES_EXCLUDED = new Set();
+/* ONE SWITCH, and it is the org's own visibility toggle.
+
+   Dan: "make sure you add it to each org's dashboard, not viewable. I'll
+   enable viewing for the orgs I want."
+
+   SEE AND CLICK ARE TWO DIFFERENT GATES and this report needs both — the
+   Report Wizard section of CLAUDE.md records campmap serving ~24 visitors a
+   month through direct links the whole time it was "retired", because that
+   Set only controls whether a report is SURFACED. So the page, the data
+   route, the PDF and the insights route all read the SAME per-org state the
+   card does: an org Dan has not turned on cannot reach it by URL either.
+
+   It also decides which orgs the 05:20 job builds a snapshot for, so the
+   ~260-query daily fan-out is spent only on orgs somebody actually looks at.
+   The two module-level flags this replaced are gone rather than left unread:
+   two lists is the bug, one list is the fix. (Their names are deliberately not
+   written here — the spec forbids them by literal, and a comment quoting a
+   banned string fails the guard on correct code, which this file has now done
+   to itself three times.) */
 const opportunitiesEnabled = (slug) =>
-  !!ORGS[slug] && !OPPORTUNITIES_EXCLUDED.has(slug) && (OPPORTUNITIES_ALL_ORGS || false);
+  !!ORGS[slug] && !reportHiddenForOrg(slug, "opportunities");
 
 function oppWindow(now) {
   const end = now || new Date();
@@ -16195,6 +16225,9 @@ app.get("/:org", async (req, res, next) => {
   if ((org.gl?.mbUuid || SHARED_UUIDS.gl) && !orgHidden.has('qoq')) available.push('qoq');
   // Facilities hub — hidden by default for all orgs; shows only when opted in
   if (!reportHiddenForOrg(slug, 'facilities')) available.push('facilities');
+  // Opportunities — on every org's dashboard, hidden until Dan turns it on.
+  // reportHiddenForOrg carries the inverted default-hidden semantics.
+  if (!reportHiddenForOrg(slug, 'opportunities')) available.push('opportunities');
   // Instructor Lessons — programs-pipeline report, per-org pilot (SF)
   if (lessonsReportEnabled(slug) && !orgHidden.has('lessons')) available.push('lessons');
   // Custom data reports — per-org (El Segundo aquatics); see CUSTOM_REPORTS.
@@ -16283,7 +16316,7 @@ app.post("/api/admin/toggle-report", express.json(), (req, res) => {
      in and could not be moved out of through its own API, which is how a card
      with a missing chip would have become unfixable. Found by mutation testing:
      the set-toggle spec's own setup step was silently 400ing. */
-  if (!REPORT_TYPES.includes(report) && report !== "chat" && report !== "report-wizard" && report !== "rentalcalendar" && report !== "facilities" && report !== "directors-report" && report !== "lessons" && report !== DATA_REPORTS_KEY && !customReportsForOrg(slug).includes(report)) return res.status(400).json({ error: "Unknown report type" });
+  if (!REPORT_TYPES.includes(report) && report !== "chat" && report !== "report-wizard" && report !== "rentalcalendar" && report !== "facilities" && report !== "directors-report" && report !== "lessons" && report !== "opportunities" && report !== DATA_REPORTS_KEY && !customReportsForOrg(slug).includes(report)) return res.status(400).json({ error: "Unknown report type" });
   const hidden = getHiddenReports(slug);
 
   /* THE DATA REPORTS CARD IS N KEYS BEHIND ONE SWITCH, so it flips as a SET.
@@ -18103,6 +18136,24 @@ app.get("/", (req, res) => {
         </a>`);
 
       }
+      /* Opportunities — HIDDEN by default for every org (inverted semantics).
+         This toggle is the ONLY way it goes live for an org, and it governs the
+         PAGE as well as the card: opportunitiesEnabled() reads the same state,
+         so an org that is off 404s the URL rather than merely lacking a tile. */
+      const oppHidden = reportHiddenForOrg(slug, 'opportunities');
+      const oppDim = oppHidden ? ' report-card-hidden' : '';
+      cards.push(`
+        <a href="/${slug}/opportunities${tokenQS}" class="report-card${oppDim}" style="border-left:3px solid #ca8a04;background:linear-gradient(135deg,#fefce8 0%,#fef9c3 100%)" data-org="${slug}" data-report="opportunities">
+          <span class="report-icon">\u{1F4A1}</span>
+          <div class="report-body">
+            <div class="report-label" style="color:#713f12">Opportunities <span class="ai-pill-inline" style="background:#fde68a;color:#713f12">NEW</span></div>
+            <div class="report-desc">A daily ranked list of what is worth acting on, read across every other report</div>
+          </div>
+          <button type="button" class="vis-toggle" onclick="event.preventDefault();event.stopPropagation();toggleVis('${slug}','opportunities',this)" title="${oppHidden ? 'Hidden from org page' : 'Visible on org page'}">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="display:${oppHidden ? 'none' : 'block'}"><path d="M8 3C3 3 1 8 1 8s2 5 7 5 7-5 7-5-2-5-7-5z" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="display:${oppHidden ? 'block' : 'none'}"><path d="M8 3C3 3 1 8 1 8s2 5 7 5 7-5 7-5-2-5-7-5z" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.5" fill="none"/><line x1="2" y1="14" x2="14" y2="2" stroke="currentColor" stroke-width="1.5"/></svg>
+          </button>
+        </a>`);
       // Facilities hub — new WIP report, HIDDEN by default (inverted semantics)
       const facHidden = reportHiddenForOrg(slug, 'facilities');
       const facDim = facHidden ? ' report-card-hidden' : '';
