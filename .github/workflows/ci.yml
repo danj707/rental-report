@@ -307,6 +307,9 @@ jobs:
       - name: Rental schedule columns (they grow into spare width; the page and the server agree on the name)
         run: node scripts/facility-columns.spec.js
 
+      - name: Lessons acquisition + retention (the org resolves through the instructor; LTV does not move with the toolbar)
+        run: node scripts/lessons-funnel.spec.js
+
       - name: Opportunities (detector thresholds; a failed feed is not an empty one; court suppression; the daily build is sequential)
         run: node scripts/opportunities.spec.js
 

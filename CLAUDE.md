@@ -1,5 +1,327 @@
 # Project notes for Claude
 
+## LESSON ACQUISITION AND RETENTION — the two channels nobody could see (2026-09-14)
+
+Dan, on the SF instructor report: *"see if you can come up with metrics for
+these: The customer acquisition conversion funnel — how are people first
+booking, instant book slots vs messaging instructors vs instructor booked or
+admin booked; Customer retention — how many new vs returning customers each
+month; Average lifetime value of a customer so we can get LTV/CAC."* Then
+*"build it"*, and *"this should be filterable to each instructor, would love to
+see an instructor filter at the top, then it gives all these metrics per
+instructor."*
+
+Two tabs on `/:org/lessons` (SF only, `LESSONS_REPORT_ORGS`), off two new cards.
+Mockup: https://claude.ai/code/artifact/f810ca99-7806-4904-9953-b78955c98b52
+
+### THE MESSAGING CHANNEL IS A TABLE THIS REPO HAS NEVER READ
+
+`instructor_reservation_request` — a customer messaging an instructor to ask for
+a lesson — is **~1,800 a year at SF and ~85% of the platform's instructor
+traffic**, and nothing in this project has ever selected from it. So *"how are
+people first booking"* had an answer and no surface could state it.
+
+**THE FINDING IS THE `PENDING` COUNT.** An inquiry that is never answered stays
+`PENDING` forever — there is no expiry — so the funnel's most useful row is the
+one nobody replied to, and it is the reason the tab exists rather than being a
+second revenue chart.
+
+**AND ITS `organization_id` IS NULL ON EVERY ROW SINCE 2026-05.** A card scoped
+on `r.organization_id` reports the whole funnel as **zero for the most recent
+five months** — the worst shape a filter can have, because a report that
+confidently says "nobody has messaged an instructor since May" reads as a
+finding. The org is resolved through **`instructor.organization_id`**, which is
+populated and indexed; the spec fails if `r.organization_id` appears in the
+card's executable SQL at all.
+
+### TWO CARDS, NOT ONE, AND THAT WAS MEASURED
+
+The first build UNION'd inquiries and bookings into one card and **timed out
+past 60s, three times**. Localised one probe at a time: the inquiry half is
+**1.4s** and the money half **21.6s**. Apart, each is inside the budget, they
+cache separately, and *the half carrying the FINDING never waits on the half
+carrying the MONEY*.
+
+| | card | rows / time |
+|---|---|---|
+| Acquisition funnel | [21847](https://rec.metabaseapp.com/question/21847) | 3,527 rows / 9.8s |
+| Retention and LTV | [21848](https://rec.metabaseapp.com/question/21848) | 5,832 rows / 2.4s warm |
+
+Three query-shape lessons came out of getting there, all of them measured rather
+than reasoned:
+
+- **FOUR CORRELATED `EXISTS` OVER A MATERIALISED CTE IS A RESCAN PER ROW.**
+  `lesson_bk` is referenced enough times that Postgres materialises it, so every
+  inquiry rescanned all 5,832 rows. One `LEFT JOIN` + `BOOL_OR` + `COALESCE`
+  answers all four questions in a single hash join.
+- **DRIVE THE MONEY LATERAL INTO `order_item_bookingid_index`.** Joining
+  `order_item` on `organization_id` reads SF's 158,855 facility order items to
+  find the lessons; `oi.booking_id = lb.id` reads only the lessons.
+- **A `cfg` CTE FOR ONE UUID COSTS MORE THAN IT SAVES.** A CTE column is opaque
+  to the planner where `{{org_id}}::uuid` is a literal it can use.
+
+### NO DATE TAGS, SO NO PUSH→FLIP OUTAGE
+
+Each card registers exactly **one Text `org_id` tag**, and both reports are in
+`NO_DATE_REPORTS`. That is the whole reason this shipped without the outage
+every other card push in this file pays for: there is no Date tag to be reset to
+Text, so there is nothing for a human to flip and the report is never down.
+Both windows are applied in the page's own arithmetic instead — which is also
+what makes the instructor filter free (see below).
+
+**~~`SHARED_UUIDS` OMITS BOTH KEYS WHEN UNSET~~ — BOTH ARE HARDCODED NOW
+(2026-09-14, same day).** The omit-when-unset gate was the `programs-monthly`
+shape and it was right while the cards were verified but had no public link: an
+absent key 404s the feed, the page draws the tab it CAN draw and says the other
+is not wired, where a hardcoded EMPTY uuid would make Metabase answer an error
+that renders as a broken report.
+
+Dan created both links hours later, so the gate had served its purpose and was
+replaced by the literal every other entry in that map already carries — *"so the
+report works on deploy with no Railway variable to remember"*. **Leaving it
+env-gated would have made an unset variable able to take both tabs down**, which
+is the failure the gate was protecting against in the first place, inverted. The
+`process.env.X ||` override stays so a preview can point at a scratch card.
+
+| | |
+|---|---|
+| acquisition (21847) | `54cd6c89-a0a2-4531-b1c5-c81ce3c28b41` |
+| retention (21848) | `d0958fd5-453a-4c9a-a5e9-828acb185bde` |
+
+**The spec's assertion had to change with it, and its INTENT did not.** It
+pinned the env-gate literal; what it is really about is that **a key must never
+resolve to something falsy**, because the route would then build a URL with no
+card id. A literal fallback is strictly stronger than the gate, since there is
+no unset case left at all. Plus a new one: **the two keys must not hold the SAME
+uuid** — the copy-paste renders the retention tab's numbers under the funnel's
+labels and looks entirely plausible. Mutation-tested three ways, all failing by
+name: the acquisition fallback emptied, both slots pointing at 21847, and either
+key reverted to omit-when-unset.
+
+### SIGNED OFF ON THE LIVE LINKS — and the timings are the replica, not the cards
+
+Both public links were read back and identified rather than assumed: they resolve
+to cards **21847** and **21848**, each registering **exactly one `org_id` tag**,
+`string/=`, no date tags — so the no-flip claim above is now measured on the live
+cards rather than predicted.
+
+**The row counts tie to the build**, which is the correctness sign-off: 3,530
+against 3,527 and 5,835 against 5,832, both **+3**, and September is an OPEN
+window (the Clarksville rule).
+
+**THE WALL CLOCKS ARE NOT EVIDENCE ABOUT THESE CARDS, and a cheap control is
+what says so.** Through the public endpoint: acquisition TIMED OUT past 180s,
+then 86.8s; retention 174.5s cold, 90.6s warm, 133.5s on a third read — a **2.2x
+spread on input that cannot have changed**, which is already the tell. Then
+**`SELECT 1` took 31.2 seconds**, and 16.2s a quarter of an hour later, against
+the ~280ms this file records for a healthy replica.
+
+So the honest split, measured rather than argued, by running the acquisition
+card's **whole final SELECT** with literals inside a counting wrapper — the
+card-21682 technique, so the column list and the trailing `ORDER BY` execute
+without shipping rows:
+
+| acquisition, SF | |
+|---|---|
+| the card's own SELECT, counting wrapper | **23.0s** for the same 3,530 rows |
+| ...of which queueing (`SELECT 1` in the same minutes) | **~16s** |
+| so database work | **~7s**, consistent with the 9.8s measured in the build |
+| through the public endpoint | **86.8s** |
+
+**The gap is Metabase serialising and shipping the rows**, the same finding
+already recorded for card 17301 v7.1 at norman (3.6s of database work inside a
+196s wall clock). The retention card is the heavier of the two and its counting
+wrapper **exceeded the 60s MCP ceiling** under that load, so its database figure
+is owed on a quiet replica.
+
+**AND I BROKE THE RUN-THE-SWEEP-ALONE RULE WHILE MEASURING** — three ~3-minute
+probes back to back against production Metabase, which is part of what I was
+then measuring. `SELECT 1` at 31s is larger than my own contribution, so the
+verdict stands, but the first two numbers in that list should never have been
+taken the way they were.
+
+### THEY ARE IN NEITHER `REPORT_TYPES` NOR THE HEALTH CHECK, so they get manifest rows
+
+`prewarmCache` walks `REPORT_TYPES` and neither report is in it, so **every first
+open of the day at SF is a cold query on both cards** and nothing probes them —
+the identical gap already recorded for `aquatic-lane-hours`. Two rows added,
+**39 → 41**, and both are **DELIBERATELY DATELESS**, which is the one case where
+that is not the mistake this file records four times: neither card registers a
+date tag at all, so `org_id` alone IS the shape production sends. `timeout: 180`,
+matching the products row, because a cold read on a loaded replica is the honest
+worst case and 120 would flap.
+
+### A LESSON IS A SECTION WITH A FACILITATOR, NEVER A NAME MATCH
+
+The page's own `LESSON_RE` (`/lesson|clinic|coaching|private/`) is a display
+heuristic and stays one. Both cards define a lesson **structurally** —
+`EXISTS (SELECT 1 FROM section_facilitator sf ...)` — because a name match files
+"Private Pool Rental" as a lesson and misses "Tennis with Vern". The spec fails
+if that regex appears in either card.
+
+**And the booking predicate is card 17755's, character for character:**
+`((b.status = 'confirmed' AND b.canceled_at IS NULL) OR b.canceled_at IS NOT NULL)`.
+My first LTV measurement used a bare `canceled_at IS NULL` and folded in **98
+live `planned` bookings** — 5,231 against the correct 5,134. Two cards
+disagreeing about which bookings exist is how the payout report and this one
+would start reporting different money for one instructor.
+
+### LTV IS A POSITION, AND THE LABELS SAY SO
+
+A lifetime value is what a customer has been worth **to date**, so it does not
+move when the toolbar does — and the tab states that on screen rather than
+leaving it to be inferred. That is the *"NET REVENUE"* lesson from the Programs
+summary applied from the start: the arithmetic there was fine and the labels
+were the defect. The two figures that DO move with the window are named
+`windowBookings` / `windowNet` and sit apart from the all-time cards.
+
+The spec's load-bearing assertion is exactly this: narrow the range to one month
+and `meanLtv` and `customers` must not move, while `windowBookings` must.
+
+### A CANCELLED BOOKING IS COUNTED AND REPORTED, AND MINTS NO CUSTOMER
+
+Cancellations are excluded from every retention figure — a lifetime value is
+money that stayed — but they are counted beside the exclusion so it is visible
+rather than silent. **A customer known ONLY from a cancellation is not a
+customer**: counting them inflates the denominator of every rate on the tab and
+deflates mean LTV with a $0 customer.
+
+**`null`, never `0`, wherever a side is empty.** *"No repeat customers yet"* and
+*"repeat customers are worth nothing"* are different facts — the rule this file
+already enforces for `SURVEY_MIN_FOR_STATS`, `RATE_MIN_VIEWS` and
+`WL_CONV_MIN_OFFERS`.
+
+### CAC IS NOT IN THE PLATFORM, SO IT IS A TYPED INPUT
+
+There is no spend or attribution table anywhere, and `message_delivery.cost_cents`
+is **NULL on all 45,347 SF deliveries**. So LTV/CAC takes CAC as a number the
+reader types, and the panel says it is an input rather than a measurement —
+the `DIR_FT_MINUTES_PER_REG` rule, where an assumed figure must never look like
+a measured one. Feed it 0 and the ratio reads `—`, not infinity.
+
+### A SURPRISING ZERO, CHECKED BEFORE BEING REPORTED
+
+The channel split returned **0 instructor-created lesson bookings**, which reads
+as a broken query. Checked against a second measurement rather than written
+down: instructors create **7,912 `facilityRental` bookings and only 141
+`section` ones** platform-wide, so the zero is real — instructors book COURTS,
+not enrolments. The channel is therefore **emitted at zero rather than omitted**,
+because a missing key and a zero are different claims and the omission would
+read as "this channel does not exist here". Third instance of *check a
+surprising zero against a second measurement*.
+
+### ONE PICKER, THREE TABS — and it costs no Metabase time
+
+`?instructor=` scopes the Overview feed, the funnel and the retention tab, so
+the one control in the toolbar means the same thing everywhere. A filter that
+moved two tabs and not the third is the facility-Summary bug, where chips scoped
+some panels and the page disagreed with itself for a week.
+
+- **The aggregation is server-side and the instructor is NOT a card parameter**,
+  so changing the filter re-runs the arithmetic over a feed that is already
+  cached for four hours. Zero extra queries.
+- **The options are built from the ROWS**, so the control can only ever offer a
+  name the report can actually draw.
+- **An instructor who has left the feed resolves to ALL, not to an empty
+  report** — a stale link must not look like an instructor who did nothing.
+  Same rule as `progEffectiveSeasons`.
+- **Absent below two instructors.** A select that can only pick what is already
+  on screen is the dead end this file keeps recording.
+- **WHAT "NEW CUSTOMER" MEANS CHANGES WITH THE FILTER, and the page says so.**
+  Unscoped it is somebody's first lesson with the department; scoped it is their
+  first with that instructor, and the same person is new on both. Leaving that
+  unstated is how the two numbers get added together.
+
+**A customer cannot be both new and returning in one month.** Somebody booking
+twice in their first month is counted once, as new — *returning* means their
+first lesson was in an EARLIER month. My own spec asserted the opposite first;
+`newCust + returningCust` must equal the month's customers, and it does.
+
+### Guards
+
+`scripts/lessons-funnel.spec.js` (**90 assertions, in CI**), which LIFTS AND RUNS
+both aggregators — every defect this change can have is arithmetic about counts
+and rates, and a regex passes on an inverted comparison. Mutation-tested
+**fourteen ways, all failing by name**: the card scoped on `r.organization_id`
+(the NULL trap), the name regex back in a card, a lost trailing `ORDER BY`, a
+date tag added (the push→flip tax), a cancelled booking minting a customer,
+cancellations folded into every figure, LTV windowed with the toolbar, no-repeat
+reporting `$0` instead of null, the instructor channel omitted rather than
+emitted at zero, an unknown tab rendering nothing, both reports dropped from
+`NO_DATE_REPORTS`, `SHARED_UUIDS` defaulting an unset uuid, an unknown
+instructor emptying the report, and the picker rendered with one instructor.
+
+**Two of my own assertions were wrong and one mutation was bad.** The `net`
+expectation was a typo (800 for 750) and the new-vs-returning one encoded the
+wrong definition — both fixed in the spec rather than the code. And the first
+"LTV windowed" mutation windowed `byCust`, which leaves the monthly loop reading
+an absent entry and makes the function **THROW** — *a mutation that dies has not
+tested the guard*; scoping `custs` is the form somebody would actually write.
+
+**And BOTH "must not appear" assertions failed on correct SQL first**, because
+each card's header names the forbidden forms as the traps they are. They read
+the file with comment lines stripped now. Nth instance in this file of a comment
+quoting the thing an assertion forbids.
+
+**Eight `ci-check-render.js` cases**, every one keyed on a computed figure or an
+absence, over a stub that **reads `?instructor=` and answers differently** —
+because a picker that renders and does not scope looks identical, and the only
+way to tell a page that FORWARDS the filter from one that merely draws a select
+is to make the scoped payload carry different numbers (7 inquiries against 30).
+Plus: an unwired card shows the note **and no figures**, a single instructor
+shows **no picker**, and an unknown `?tab=` lands on Overview.
+
+**The cases carry SF's own slug and token**, read out of the `ORGS` literal: the
+org the harness resolves is whichever campmap-seeded org comes first, and its
+token would 404 this report before anything rendered. Same reason the aquatics
+cases carry their own.
+
+### AND THE FIRST RUN BLANKED ALL EIGHT — on a pre-existing unguarded read
+
+`const sportTotal = d ? Object.values(d.sport).reduce(...)` — **the one of its
+three neighbours read without a fallback**, `heat` and `priceBands` both having
+`|| {}`. So a response missing `sport` throws there and React unmounts the whole
+page: a 200 with nothing in it, the blank-page class this repo has shipped
+twice. It has never bitten because the real route always sends the key.
+
+**The harness is the first thing that could produce that shape**, and it did it
+by the recorded fall-through: `/\/api\/data/` matches `/:org/lessons/api/data`
+too, so the generic catch-all answered the overview feed with another report's
+payload. Fixed both ways — the guard, because a page must not blank on an
+unexpected feed shape, and a FAITHFUL lessons stub registered above the generic
+one, so the cases test the page rather than the guard.
+
+*Generalise it: a page with no render coverage has had no reason to be honest
+about a feed it did not expect, and the first case written for it is what finds
+out.*
+
+**And the browser mutation was verified to discriminate**: dropping the
+instructor from the funnel FETCH fails **exactly the two scoping cases** while
+the other six keep passing. **My first attempt at it survived**, because the
+page has two `qs.set("instructor", …)` call sites and I mutated the PDF's rather
+than the feed's — *a mutation that does not reproduce the bug has not tested the
+guard*, and "the second occurrence" is not a way to pick a call site.
+
+### I DISCARDED MY OWN UNCOMMITTED WORK WITH `git checkout` — a rule
+
+Mid-session I restored a mutated `server.js` with `git checkout server.js` and
+**deleted all four of that file's uncommitted edits** — the whole server half of
+this change. Recovered from the session transcript, which is the only reason it
+cost twenty minutes rather than a rebuild.
+
+*A mutation runner must restore from the bytes it saved, never from git.* Mine
+already did; the ad-hoc "let me just reproduce that one mutation by hand" step
+did not, and that is the step to be careful with. **Commit before mutating**, or
+restore from a copy.
+
+### NOT BUILT
+
+- **No attribution for the instant-book channel's ORIGIN.** The funnel says how
+  a booking was created, not what brought the customer to the page.
+- **No cohort revenue retention**, only counts. The cohort grid answers "do they
+  come back", not "what do they spend when they do".
+- **No per-instructor CAC.** The input is one number for the whole view, because
+  there is no per-instructor spend anywhere to split it by.
 ## EVERY NEW REPORT SHIPS HIDDEN (STANDING RULE, Dan 2026-09-14)
 
 Dan, asking for Opportunities to be merged: *"make sure you add it to each

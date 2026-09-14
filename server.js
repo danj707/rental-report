@@ -2349,6 +2349,32 @@ const SHARED_UUIDS = {
   // because a row of confident $0 bars would say the org collected nothing when
   // the truth is that nothing answered.
   "programs-monthly": process.env.MB_PROGRAMS_MONTHLY_UUID || "a9f6a60e-43bf-4368-ada9-c6a7245f639c",
+
+  // ── The Instructor Lessons report's Acquisition and Retention tabs ──
+  //
+  // Metabase 21847 ("Lesson Acquisition Funnel") and 21848 ("Lesson
+  // Retention and LTV"), both in collection 3532. Mirrored at
+  // sql/report-cards/21847-lessons-acquisition.sql and
+  // sql/report-cards/21848-lessons-retention.sql.
+  //
+  // TWO CARDS, NOT ONE, AND THAT WAS MEASURED. The first build UNION'd
+  // inquiry and booking rows into one card and timed out past 60s three
+  // times; localised one probe at a time, the inquiry half is 1.4s and
+  // the money half 21.6s. Apart, each is comfortably inside the budget,
+  // they cache separately, and the half carrying the FINDING never waits
+  // on the half carrying the MONEY.
+  //
+  // HARDCODED, like every other entry here, so the report works on deploy
+  // with no Railway variable to remember. These were env-gated with
+  // omit-when-unset ONLY while the public links did not exist — the
+  // programs-monthly shape: an absent key 404s the feed and the page says
+  // the tab is not wired rather than drawing a confident empty funnel.
+  // Dan created both links on 2026-09-14, so the gate has served its
+  // purpose and an unset variable must no longer be able to take the tabs
+  // down. The env override stays for a preview that wants to point at a
+  // scratch card.
+  "lessons-acquisition": process.env.MB_LESSONS_ACQ_UUID || "54cd6c89-a0a2-4531-b1c5-c81ce3c28b41",
+  "lessons-retention":   process.env.MB_LESSONS_RET_UUID || "d0958fd5-453a-4c9a-a5e9-828acb185bde",
 };
 
 // Which card does the app ACTUALLY query for a given org + report?
@@ -7946,7 +7972,13 @@ function parseToISO(dateStr) {
 
 // ── Build Metabase parameters array ─────────────────────────────────
 const FORWARD_REPORTS = new Set(["facility", "calendar", "roster", "historic", "programs-schedule"]);
-const NO_DATE_REPORTS = new Set(["program-demographics", "memberships", "users", "retention", "section-detail", "ice-calendar", "checkins", "fasttrack", "waitlist"]);
+// `lessons-acquisition` and `lessons-retention` are here because their cards
+// register NO date tags at all. A lifetime value is a POSITION — current
+// whatever the toolbar says — and the funnel needs a trailing series wider
+// than the window on screen. Without this entry buildMetabaseParams would
+// invent a 7-day window and send two parameters the cards do not register,
+// which enrichMetabaseCardUrl would then drop one at a time.
+const NO_DATE_REPORTS = new Set(["program-demographics", "memberships", "users", "retention", "section-detail", "ice-calendar", "checkins", "fasttrack", "waitlist", "lessons-acquisition", "lessons-retention"]);
 const DEFAULT_WINDOW_DAYS = 7;
 
 function buildMetabaseParams(query, reportType, orgId) {
@@ -10446,8 +10478,15 @@ app.get("/:org/lessons/api/data", async (req, res) => {
     const rows = (await fetchMBDirect(slug, "instructor-payout", start, end)) || [];
     // Card v2.1 adds per-instructor 'Roster' rows (no section, $0) for the
     // payout report's dropdown — they are not lesson registrations.
+    //
+    // ?instructor= SCOPES THIS TAB TOO, so the one picker in the toolbar
+    // means the same thing on all three tabs. A filter that moved two tabs
+    // and not the third is the facility-Summary bug, where chips scoped
+    // some panels and the page disagreed with itself for a week.
+    const wantInstr = String(req.query.instructor || "").trim();
     const lessons = rows.filter(r => String(r.booking_status || "") !== "Roster"
-      && LESSON_RE.test(String(r.program_name || "") + " " + String(r.section_name || "")));
+      && LESSON_RE.test(String(r.program_name || "") + " " + String(r.section_name || ""))
+      && (!wantInstr || String(r.instructor || "").trim() === wantInstr));
     const active = lessons.filter(r => String(r.booking_status || "").toLowerCase() !== "canceled");
 
     let paid = 0, refunded = 0;
@@ -10510,6 +10549,302 @@ app.get("/:org/lessons/api/data", async (req, res) => {
   }
 });
 
+
+// ═══════════════════════════════════════════════════════════════════
+// ACQUISITION + RETENTION — the Instructor Lessons report's two new tabs
+//
+// Cards 21847 and 21848, fetched IN PARALLEL and reported INDEPENDENTLY.
+// Two cards because one timed out (see the SHARED_UUIDS note), and two
+// `ok` flags because the money half is ~20x the cost of the funnel half:
+// a slow or missing retention card must never blank the acquisition tab,
+// which is the one carrying the finding.
+//
+// EVERY FIGURE IS SCOPED BY ?instructor= WHEN ONE IS GIVEN, and the
+// aggregation lives here rather than in the browser so there is exactly
+// one implementation of each definition. The Metabase fetch underneath is
+// cached for four hours and the instructor is NOT part of the card's
+// parameters, so changing the filter re-runs this arithmetic and does not
+// re-query Metabase.
+//
+// WHAT "NEW CUSTOMER" MEANS CHANGES WITH THE FILTER, and the page says
+// so. Unscoped it is somebody's first lesson with the department; scoped
+// to one instructor it is their first lesson WITH THAT INSTRUCTOR — a
+// different and equally real question. Computing it over the scoped set
+// is what makes the per-instructor view answer the instructor's question
+// instead of the org's.
+const lessonsFunnelEnabled = () =>
+  !!(SHARED_UUIDS["lessons-acquisition"] || SHARED_UUIDS["lessons-retention"]);
+
+// A row's month, from the card's own YYYY-MM-DD text. Never `new Date()`:
+// a bare ISO date is UTC midnight and lands on the previous day west of
+// UTC, which is how the fasttrack dates shipped a day out.
+const lfMonth = (d) => (typeof d === "string" && d.length >= 7) ? d.slice(0, 7) : null;
+const lfIn = (d, start, end) => typeof d === "string" && d >= start && d <= end;
+const lfPct = (n, d) => (d > 0 ? Math.round((n / d) * 1000) / 10 : null);
+
+function lfQuantile(sorted, q) {
+  if (!sorted.length) return null;
+  const i = (sorted.length - 1) * q;
+  const lo = Math.floor(i), hi = Math.ceil(i);
+  return lo === hi ? sorted[lo] : sorted[lo] + (sorted[hi] - sorted[lo]) * (i - lo);
+}
+
+function lessonsAcquisition(rows, start, end) {
+  const STATUSES = ["ACCEPTED", "PENDING", "REJECTED", "CANCELED", "DISMISSED"];
+  const blank = () => ({ n: 0, booked30: 0, booked90: 0, bookedSame30: 0, prior: 0 });
+  const byStatus = {}; STATUSES.forEach(s => { byStatus[s] = blank(); });
+  const other = blank();
+  const byMonth = {};
+  let total = 0;
+
+  for (const r of rows) {
+    const d = String(r.Date || r.date || "");
+    if (!lfIn(d, start, end)) continue;
+    total++;
+    const st = String(r.Status || r.status || "").toUpperCase();
+    const bucket = byStatus[st] || other;
+    bucket.n++;
+    if (r["Booked 30d"]) bucket.booked30++;
+    if (r["Booked 90d"]) bucket.booked90++;
+    if (r["Booked Same 30d"]) bucket.bookedSame30++;
+    if (r["Prior Customer"]) bucket.prior++;
+  }
+
+  // The monthly series is deliberately ALL-TIME, not the window: a reply
+  // rate is only readable as a trend, and a one-month window would draw a
+  // single bar. The page labels it as the card's whole history.
+  for (const r of rows) {
+    const mk = lfMonth(String(r.Date || r.date || ""));
+    if (!mk) continue;
+    if (!byMonth[mk]) byMonth[mk] = { month: mk, n: 0, accepted: 0, pending: 0, answered: 0, booked30: 0 };
+    const m = byMonth[mk];
+    const st = String(r.Status || r.status || "").toUpperCase();
+    m.n++;
+    if (st === "ACCEPTED") { m.accepted++; m.answered++; }
+    else if (st === "REJECTED") m.answered++;   // declined IS an answer
+    else if (st === "PENDING") m.pending++;
+    if (r["Booked 30d"]) m.booked30++;
+  }
+
+  const acc = byStatus.ACCEPTED, pend = byStatus.PENDING;
+  // THE GAP IS THE POINT, and it is stated as a COUNT rather than as
+  // money. Instructors choose which requests to accept, so this compares
+  // two self-selected groups and is an upper bound, not a controlled
+  // test. The page says that in words beside the number.
+  const accRate = lfPct(acc.booked30, acc.n);
+  const pendRate = lfPct(pend.booked30, pend.n);
+  const gap = (accRate != null && pendRate != null && accRate > pendRate)
+    ? Math.round(pend.n * (accRate - pendRate) / 100) : null;
+
+  return {
+    ok: true,
+    totals: {
+      inquiries: total,
+      answered: acc.n + byStatus.REJECTED.n,
+      accepted: acc.n,
+      pending: pend.n,
+      rejected: byStatus.REJECTED.n,
+      canceled: byStatus.CANCELED.n,
+      dismissed: byStatus.DISMISSED.n,
+      other: other.n,
+      neverAnsweredPct: lfPct(pend.n, total),
+      acceptedPct: lfPct(acc.n, total),
+      acceptedBooked30Pct: accRate,
+      pendingBooked30Pct: pendRate,
+      liftGap: gap,
+    },
+    byStatus: Object.assign({}, byStatus, other.n ? { OTHER: other } : {}),
+    monthly: Object.values(byMonth).sort((a, b) => a.month.localeCompare(b.month)),
+  };
+}
+
+function lessonsRetention(rows, start, end) {
+  // Cancelled bookings are excluded from every retention figure: a
+  // lifetime value is money that stayed, and a cancellation is a customer
+  // who did not take the lesson. They are still counted and reported, so
+  // the exclusion is visible rather than silent.
+  const live = rows.filter(r => String(r.Status || r.status || "") !== "Canceled");
+  const canceled = rows.length - live.length;
+
+  const byCust = new Map();
+  const channel = { self: 0, instructor: 0, staff: 0, other: 0, unknown: 0, fastTrack: 0 };
+  let net = 0;
+
+  for (const r of rows) {
+    const ch = String(r.Channel || r.channel || "unknown");
+    if (channel[ch] === undefined) channel.other++; else channel[ch]++;
+    if (r["Fast Track"]) channel.fastTrack++;
+  }
+  for (const r of live) {
+    const c = String(r.Customer || r.customer || "");
+    const d = String(r.Date || r.date || "");
+    const amt = Number(r.Net != null ? r.Net : r.net) || 0;
+    net += amt;
+    if (!c) continue;
+    let e = byCust.get(c);
+    if (!e) { e = { n: 0, ltv: 0, first: d, last: d, dates: [] }; byCust.set(c, e); }
+    e.n++; e.ltv += amt; e.dates.push(d);
+    if (d && d < e.first) e.first = d;
+    if (d && d > e.last) e.last = d;
+  }
+
+  const custs = [...byCust.values()];
+  const ltvs = custs.map(c => c.ltv).sort((a, b) => a - b);
+  const lessons = custs.map(c => c.n).sort((a, b) => a - b);
+  const repeat = custs.filter(c => c.n >= 2);
+  const once = custs.filter(c => c.n === 1);
+  const mean = (xs) => xs.length ? xs.reduce((s, x) => s + x, 0) / xs.length : null;
+
+  // TIME TO THE SECOND LESSON, in whole days from the card's date text.
+  // Parsed from PARTS via Date.UTC, never `new Date(s)` on a bare ISO
+  // date — same rule as lfMonth above.
+  const dayNum = (d) => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(d);
+    return m ? Date.UTC(+m[1], +m[2] - 1, +m[3]) / 86400000 : null;
+  };
+  const gaps = [];
+  for (const c of repeat) {
+    const ds = c.dates.slice().sort();
+    const a = dayNum(ds[0]), b = dayNum(ds[1]);
+    if (a != null && b != null) gaps.push(b - a);
+  }
+  gaps.sort((a, b) => a - b);
+
+  // New vs returning per month, and the cohort grid, both keyed on each
+  // customer's FIRST lesson inside the scoped set.
+  const byMonth = {}, cohorts = {};
+  for (const c of custs) {
+    const c0 = lfMonth(c.first);
+    if (!c0) continue;
+    if (!cohorts[c0]) cohorts[c0] = { cohort: c0, size: 0, months: {} };
+    cohorts[c0].size++;
+    const seen = new Set();
+    for (const d of c.dates) {
+      const mk = lfMonth(d);
+      if (!mk || seen.has(mk)) continue;
+      seen.add(mk);
+      const off = (+mk.slice(0, 4) - +c0.slice(0, 4)) * 12 + (+mk.slice(5, 7) - +c0.slice(5, 7));
+      cohorts[c0].months[off] = (cohorts[c0].months[off] || 0) + 1;
+    }
+  }
+  for (const r of live) {
+    const c = String(r.Customer || r.customer || "");
+    const d = String(r.Date || r.date || "");
+    const mk = lfMonth(d);
+    if (!mk || !c) continue;
+    if (!byMonth[mk]) byMonth[mk] = { month: mk, bookings: 0, net: 0, netNew: 0, netRet: 0, _new: new Set(), _ret: new Set() };
+    const m = byMonth[mk];
+    const isNew = lfMonth(byCust.get(c).first) === mk;
+    const amt = Number(r.Net != null ? r.Net : r.net) || 0;
+    m.bookings++; m.net += amt;
+    if (isNew) { m._new.add(c); m.netNew += amt; } else { m._ret.add(c); m.netRet += amt; }
+  }
+  const monthly = Object.values(byMonth).sort((a, b) => a.month.localeCompare(b.month)).map(m => ({
+    month: m.month, bookings: m.bookings,
+    net: Math.round(m.net), netNew: Math.round(m.netNew), netRet: Math.round(m.netRet),
+    newCust: m._new.size, returningCust: m._ret.size, customers: m._new.size + m._ret.size,
+  }));
+
+  // Windowed figures, for the cards that should move with the toolbar.
+  const winLive = live.filter(r => lfIn(String(r.Date || r.date || ""), start, end));
+  const winNet = winLive.reduce((s, r) => s + (Number(r.Net != null ? r.Net : r.net) || 0), 0);
+  const winRet = winLive.filter(r => lfMonth(byCust.get(String(r.Customer || r.customer || ""))?.first || "") !== lfMonth(String(r.Date || r.date || "")));
+
+  return {
+    ok: true,
+    totals: {
+      bookings: rows.length, live: live.length, canceled,
+      customers: custs.length,
+      net: Math.round(net),
+      meanLtv: ltvs.length ? Math.round(mean(ltvs)) : null,
+      medianLtv: ltvs.length ? Math.round(lfQuantile(ltvs, 0.5)) : null,
+      p90Ltv: ltvs.length ? Math.round(lfQuantile(ltvs, 0.9)) : null,
+      meanLessons: lessons.length ? Math.round(mean(lessons) * 100) / 100 : null,
+      medianLessons: lessons.length ? lfQuantile(lessons, 0.5) : null,
+      repeat: repeat.length, oneAndDone: once.length,
+      fivePlus: custs.filter(c => c.n >= 5).length,
+      repeatPct: lfPct(repeat.length, custs.length),
+      // The one-line argument for the whole tab: what a second lesson is
+      // worth. NULL rather than 0 where either side is empty — "no repeat
+      // customers yet" and "repeat customers are worth nothing" are
+      // different facts.
+      meanLtvRepeat: repeat.length ? Math.round(mean(repeat.map(c => c.ltv))) : null,
+      meanLtvOnce: once.length ? Math.round(mean(once.map(c => c.ltv))) : null,
+      medianDaysToSecond: gaps.length ? Math.round(lfQuantile(gaps, 0.5) * 10) / 10 : null,
+      secondWithin30: gaps.filter(g => g <= 30).length,
+      secondWithin60: gaps.filter(g => g <= 60).length,
+      secondWithin90: gaps.filter(g => g <= 90).length,
+      secondTotal: gaps.length,
+      windowBookings: winLive.length,
+      windowNet: Math.round(winNet),
+      windowReturningNetPct: lfPct(
+        Math.round(winRet.reduce((s, r) => s + (Number(r.Net != null ? r.Net : r.net) || 0), 0)),
+        Math.round(winNet)),
+    },
+    channel,
+    monthly,
+    cohorts: Object.values(cohorts).sort((a, b) => a.cohort.localeCompare(b.cohort)),
+  };
+}
+
+app.get("/:org/lessons/api/funnel", async (req, res) => {
+  const slug = req.params.org;
+  const org = ORGS[slug];
+  if (!org) return res.status(404).json({ ok: false, error: "Unknown org" });
+  if (!lessonsReportEnabled(slug)) return refuse404(res, { ok: false, error: "Lessons report not enabled for this organization." });
+
+  const start = req.query.start_date || "2025-01-01";
+  const end = req.query.end_date || new Date().toISOString().slice(0, 10);
+  const want = String(req.query.instructor || "").trim();
+
+  try {
+    logEvent(slug, "lessons", "funnel", req);
+    // Independently, so one card's failure cannot blank the other's tab.
+    const [accRows, retRows] = await Promise.all([
+      SHARED_UUIDS["lessons-acquisition"]
+        ? fetchMBDirect(slug, "lessons-acquisition").then(d => d && d.rows ? d.rows : d).catch(e => { console.error("[lessons-funnel] acq: " + e.message); return null; })
+        : Promise.resolve(null),
+      SHARED_UUIDS["lessons-retention"]
+        ? fetchMBDirect(slug, "lessons-retention").then(d => d && d.rows ? d.rows : d).catch(e => { console.error("[lessons-funnel] ret: " + e.message); return null; })
+        : Promise.resolve(null),
+    ]);
+
+    // THE INSTRUCTOR LIST IS BUILT FROM THE ROWS, never from a roster, so
+    // the control can only ever offer a name the report can actually draw
+    // — the rule this repo keeps writing down for every other picker.
+    const names = new Set();
+    for (const rs of [accRows, retRows]) for (const r of (rs || [])) {
+      const n = String(r.Instructor || r.instructor || "").trim();
+      if (n) names.add(n);
+    }
+    const instructors = [...names].sort((a, b) => a.localeCompare(b));
+    // A name that is no longer in the feed resolves to ALL rather than to
+    // an empty report — a stale link must not look like an instructor who
+    // did nothing. Same rule as progEffectiveSeasons.
+    const instructor = want && names.has(want) ? want : "";
+    const scope = (rs) => instructor
+      ? (rs || []).filter(r => String(r.Instructor || r.instructor || "").trim() === instructor)
+      : (rs || []);
+
+    res.json({
+      ok: true,
+      range: { start, end },
+      instructors,
+      instructor,
+      instructorUnknown: !!want && !names.has(want),
+      // PRESENCE, NOT EMPTINESS. A card with no public link yet and a card
+      // that answered with no rows are different facts, and the page draws
+      // a "not wired yet" note for the first and a real empty state for
+      // the second — a confident 0% funnel would say this org's
+      // instructors answer nobody.
+      acquisition: accRows ? lessonsAcquisition(scope(accRows), start, end) : { ok: false, reason: SHARED_UUIDS["lessons-acquisition"] ? "error" : "unwired" },
+      retention: retRows ? lessonsRetention(scope(retRows), start, end) : { ok: false, reason: SHARED_UUIDS["lessons-retention"] ? "error" : "unwired" },
+    });
+  } catch (e) {
+    console.error("[lessons-funnel] " + slug + ": " + e.message);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
 
 app.get("/:org/lessons/api/pdf", async (req, res) => {
   const slug = req.params.org;

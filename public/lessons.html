@@ -128,6 +128,57 @@
     body { background:#fff; } .page { margin:0; box-shadow:none; padding:0 10px; max-width:none; }
     .panel, .card, .insight-card { break-inside: avoid; }
   }
+
+  /* ── Tabs, instructor filter, and the two new tabs ───────────────── */
+  .ls-tabs { display:flex; gap:4px; flex-wrap:wrap; margin:14px 0 0; border-bottom:1px solid #e8e6e0; }
+  .ls-tab { padding:7px 13px; font-size:12.5px; color:#a8a29e; border:1px solid transparent; border-bottom:none;
+    border-radius:7px 7px 0 0; margin-bottom:-1px; cursor:pointer; background:none; font-family:inherit; white-space:nowrap; }
+  .ls-tab:hover { color:#57534e; }
+  .ls-tab.on { color:#1c1917; font-weight:700; background:#fff; border-color:#e8e6e0; border-bottom:1px solid #fff; cursor:default; }
+  .toolbar select { padding:4px 6px; border:1px solid rgba(255,255,255,.25); border-radius:4px; background:#3a3a3a;
+    color:#fff; font-size:11.5px; font-family:inherit; max-width:190px; }
+  .ls-scope { font-size:11px; color:#57534e; background:#f5f4f1; border:1px solid #e8e6e0; border-radius:7px;
+    padding:8px 11px; margin:12px 0 0; line-height:1.5; }
+  .ls-scope b { color:#1c1917; }
+  .ls-unwired { border:1px dashed #d6d3d1; border-radius:11px; padding:22px 20px; text-align:center; color:#57534e; font-size:12.5px; line-height:1.6; }
+  .ls-unwired b { display:block; font-size:14px; color:#1c1917; margin-bottom:5px; }
+  .card.flag { border-color:#c2700a; background:#fdf6ec; }
+  .card.flag .val, .card.flag .lbl, .card.flag .sub { color:#c2700a; }
+  .fbar { display:flex; height:32px; border-radius:6px; overflow:hidden; gap:2px; }
+  .fbar > div { display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; color:#fff;
+    min-width:2px; font-variant-numeric:tabular-nums; }
+  .conv { display:flex; align-items:center; gap:8px; justify-content:flex-end; }
+  .conv .tr { width:70px; height:8px; border-radius:3px; background:#f5f4f1; overflow:hidden; flex:none; }
+  .conv .tr i { display:block; height:100%; border-radius:3px; }
+  .stackcols { display:flex; align-items:flex-end; gap:4px; height:140px; }
+  .stackcols .sc { flex:1; display:flex; flex-direction:column; justify-content:flex-end; height:100%; }
+  .stackcols .sc .a { background:#2a78d6; border-radius:3px 3px 0 0; min-height:2px; }
+  .stackcols .sc .b { background:#0f766e; min-height:2px; }
+  .twocols { display:flex; align-items:flex-end; gap:4px; height:130px; }
+  .twocols .tc { flex:1; display:flex; flex-direction:column; justify-content:flex-end; gap:2px; height:100%; }
+  .twocols .tc .t { font-size:9px; font-weight:700; text-align:center; color:#c2700a; font-variant-numeric:tabular-nums; }
+  .twocols .tc .p { background:#c2700a; border-radius:3px 3px 0 0; min-height:2px; }
+  .twocols .tc .q { background:#0f766e; border-radius:0 0 3px 3px; min-height:2px; }
+  .coh { border-collapse:separate; border-spacing:3px; font-size:11px; }
+  .coh th { font-size:9px; font-weight:700; color:#a8a29e; text-transform:uppercase; letter-spacing:.05em; padding:0 2px 2px; text-align:center; }
+  .coh td.rowh { font-size:10.5px; color:#57534e; white-space:nowrap; padding-right:5px; }
+  .coh td.n { font-size:10.5px; color:#a8a29e; text-align:right; padding-right:6px; font-variant-numeric:tabular-nums; }
+  .coh td.c { width:42px; height:22px; border-radius:4px; text-align:center; font-size:10px; font-weight:700; font-variant-numeric:tabular-nums; }
+  .coh td.c.void { background:repeating-linear-gradient(45deg,transparent,transparent 4px,#f5f4f1 4px,#f5f4f1 8px); }
+  .half2 { display:grid; grid-template-columns:1fr 1fr; gap:11px; }
+  @media (max-width:520px) { .half2 { grid-template-columns:1fr; } }
+  .halfbox { border:1px solid #e8e6e0; border-radius:9px; padding:12px 13px; }
+  .halfbox .hl { font-size:9.5px; text-transform:uppercase; letter-spacing:.07em; color:#a8a29e; font-weight:700; }
+  .halfbox .hv { font-size:23px; font-weight:800; margin-top:4px; }
+  .halfbox .hs { font-size:11.5px; color:#57534e; margin-top:3px; }
+  .halfbox.one { border-left:3px solid #94a3b8; }
+  .halfbox.rep { border-left:3px solid #0f766e; }
+  .cacrow { display:flex; align-items:flex-end; gap:14px; flex-wrap:wrap; }
+  .cacrow label { display:flex; flex-direction:column; gap:4px; font-size:9.5px; text-transform:uppercase;
+    letter-spacing:.07em; color:#a8a29e; font-weight:700; }
+  .cacrow input { font:inherit; font-size:15px; width:110px; padding:7px 9px; border:1px solid #e8e6e0;
+    border-radius:6px; background:#fff; color:#1c1917; font-variant-numeric:tabular-nums; }
+  .cacout { font-size:28px; font-weight:800; color:#0f766e; font-variant-numeric:tabular-nums; }
 </style>
 <script src="/report-refresh.js" defer></script>
 <script src="/open-pdf.js" defer></script>
@@ -142,6 +193,321 @@ const fmtNum = (n) => (n == null ? "—" : Math.round(n).toLocaleString());
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 const DAYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
 const RAMP = ["#f5f4f1","#cde2fb","#9ec5f4","#5598e7","#2a78d6","#1c5cab"];
+
+// ── Acquisition and Retention tabs ────────────────────────────────────
+//
+// The three tabs and the resolver live at MODULE SCOPE, not inside App,
+// so a spec can LIFT AND RUN lsEffectiveTab rather than regex over it —
+// a regex passes on an inverted comparison, which is the whole reason
+// nightStateFrom was pulled out of its callback.
+const LS_TABS = ["overview", "acquisition", "retention"];
+const LS_TAB_LABEL = { overview: "📊 Overview", acquisition: "🚪 Acquisition", retention: "🔁 Retention & LTV" };
+
+// An unrecognised ?tab= resolves to the tab the page opens on rather than
+// rendering nothing. A link somebody was handed must not land on a blank
+// body with no lit tab — the facEffectiveTab rule.
+function lsEffectiveTab(want) {
+  return LS_TABS.indexOf(String(want || "")) >= 0 ? String(want) : "overview";
+}
+
+const lsPct = (n) => (n == null ? "—" : (Math.round(n * 10) / 10) + "%");
+// Month label from the card's own YYYY-MM text. new Date("2026-08") is
+// UTC midnight and renders as July west of UTC; five instances of that
+// are already recorded in this repo.
+function lsMonthLabel(mk, withYear) {
+  const m = /^(\d{4})-(\d{2})$/.exec(String(mk || ""));
+  if (!m) return String(mk || "");
+  return MONTHS[+m[2] - 1] + (withYear ? " " + m[1].slice(2) : "");
+}
+
+// A card that has no public link yet and a card that answered with no
+// rows are DIFFERENT FACTS. The first says so and names the remedy; the
+// second is a real empty state. Rendering a confident 0% funnel for the
+// first would tell an org its instructors answer nobody.
+function LsUnwired({ what, reason }) {
+  return (
+    <div className="ls-unwired">
+      <b>{reason === "error" ? what + " could not be loaded" : what + " is not wired up yet"}</b>
+      {reason === "error"
+        ? "The card answered with an error. The other tab is unaffected — they are separate cards on purpose."
+        : "The Metabase card exists and is verified; it needs a public link, and the environment variable that holds it, before this tab can draw. Nothing else has to change."}
+    </div>
+  );
+}
+
+function AcqTab({ a, instructor }) {
+  if (!a || !a.ok) return <LsUnwired what="The acquisition funnel" reason={a && a.reason} />;
+  const t = a.totals;
+  const S = a.byStatus || {};
+  const row = (k) => S[k] || { n: 0, booked30: 0, bookedSame30: 0 };
+  const acc = row("ACCEPTED"), pend = row("PENDING"), rej = row("REJECTED"), can = row("CANCELED");
+  const max = Math.max(1, t.inquiries);
+  const mon = (a.monthly || []).slice(-14);
+  const monMax = Math.max(1, ...mon.map(m => m.n));
+  const rows = [
+    ["Answered — instructor accepted", acc, "#0f766e"],
+    ["Declined by instructor", rej, "#94a3b8"],
+    ["Withdrawn by the customer", can, "#b9b2aa"],
+    ["Never answered", pend, "#c2700a"],
+  ];
+  return (
+    <div>
+      <div className="cards" data-ls-inq={t.inquiries}>
+        <div className="card"><div className="lbl">Inquiries sent</div><div className="val">{fmtNum(t.inquiries)}</div><div className="sub">customers messaging an instructor</div></div>
+        <div className="card"><div className="lbl">Answered</div><div className="val">{fmtNum(t.accepted)}</div><div className="sub">{lsPct(t.acceptedPct)} of inquiries</div></div>
+        <div className="card flag" data-ls-never={t.pending}><div className="lbl">Never answered</div><div className="val">{fmtNum(t.pending)}</div><div className="sub">{lsPct(t.neverAnsweredPct)} — no reply, ever</div></div>
+        <div className="card"><div className="lbl">Answered → booked</div><div className="val">{lsPct(t.acceptedBooked30Pct)}</div><div className="sub">within 30 days</div></div>
+        <div className="card"><div className="lbl">Ignored → booked</div><div className="val">{lsPct(t.pendingBooked30Pct)}</div><div className="sub">within 30 days</div></div>
+      </div>
+
+      <div className="two-col w">
+        <div className="panel">
+          <div className="panel-h">Inquiry funnel — what happens after someone messages an instructor</div>
+          <div className="fbar">
+            {rows.map(([label, r, col]) => r.n > 0 && (
+              <div key={label} style={{ flex: r.n, background: col }}>{r.n >= max * 0.08 ? fmtNum(r.n) : ""}</div>
+            ))}
+          </div>
+          <table className="mini" style={{ marginTop: 12 }}>
+            <thead><tr><th>Outcome</th><th className="r">Inquiries</th><th className="r">Share</th><th className="r">Booked a lesson ≤30 days</th></tr></thead>
+            <tbody>
+              {rows.map(([label, r, col]) => {
+                const pct = t.inquiries ? Math.round(r.n / t.inquiries * 1000) / 10 : 0;
+                const cv = r.n ? Math.round(r.booked30 / r.n * 1000) / 10 : null;
+                return (
+                  <tr key={label}>
+                    <td className="b"><span className="dot" style={{ background: col }}></span>{label}</td>
+                    <td className="r">{fmtNum(r.n)}</td>
+                    <td className="r">{pct}%</td>
+                    <td className="r"><span className="conv">
+                      <span className="tr"><i style={{ width: Math.min(100, cv || 0) + "%", background: col }}></i></span>
+                      <b>{lsPct(cv)}</b></span></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          <div className="panel-note">
+            {t.liftGap != null ? (
+              <span><b>An answered inquiry converts better than an ignored one</b> — {lsPct(t.acceptedBooked30Pct)} against {lsPct(t.pendingBooked30Pct)}.
+              Close that gap on the {fmtNum(t.pending)} never answered and roughly <b>{fmtNum(t.liftGap)} more inquiries</b> in this window turn into lessons.</span>
+            ) : <span>Not enough answered inquiries in this window to compare the two rates.</span>}
+            {" "}Treat it as an upper bound, not a controlled test: instructors choose which requests to accept, so this compares two self-selected groups.
+          </div>
+        </div>
+
+        <div className="panel">
+          <div className="panel-h">Who creates the booking</div>
+          <div className="panel-note" style={{ marginTop: 0 }}>
+            The other front door. A reader who never messages anybody just books a published slot — see the Retention tab for the channel split, which comes off the same bookings.
+          </div>
+          <table className="mini" style={{ marginTop: 10 }}>
+            <tbody>
+              <tr><td className="b">Asked with the instructor they messaged</td><td className="r">{fmtNum(acc.bookedSame30 + pend.bookedSame30 + rej.bookedSame30 + can.bookedSame30)}</td></tr>
+              <tr><td className="b">Already a lesson customer when they asked</td><td className="r">{fmtNum((S.ACCEPTED || {}).prior + (S.PENDING || {}).prior + (S.REJECTED || {}).prior + (S.CANCELED || {}).prior || 0)}</td></tr>
+            </tbody>
+          </table>
+          <div className="panel-note">
+            {instructor
+              ? <span>Scoped to <b>{instructor}</b>: “with the instructor they messaged” means with them specifically.</span>
+              : <span>“With the instructor they messaged” is the stricter test — a booking with anyone else still counts in the funnel above.</span>}
+          </div>
+        </div>
+      </div>
+
+      {mon.length > 1 && (
+        <div className="panel" style={{ marginTop: 14 }}>
+          <div className="panel-h">Reply rate over time — share of inquiries answered vs never answered</div>
+          <div className="twocols" data-ls-months={mon.length}>
+            {mon.map(m => {
+              const never = m.n ? m.pending / m.n : 0;
+              const ans = m.n ? m.answered / m.n : 0;
+              return (
+                <div className="tc" key={m.month}>
+                  <div className="t">{Math.round(never * 100)}%</div>
+                  <div className="p" style={{ height: (never * 100) + "%" }}></div>
+                  <div className="q" style={{ height: (ans * 100) + "%" }}></div>
+                </div>
+              );
+            })}
+          </div>
+          <div className="col-lbls">{mon.map(m => <span key={m.month}>{lsMonthLabel(m.month)}</span>)}</div>
+          <div className="legend">
+            <span><span className="dot" style={{ background: "#c2700a" }}></span>Never answered</span>
+            <span><span className="dot" style={{ background: "#0f766e" }}></span>Answered (accepted or declined)</span>
+          </div>
+          <div className="panel-note">All-time from the card, not the toolbar window — a reply rate is only readable as a trend, and one month would draw one bar. The current month is still filling in.</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RetTab({ r, instructor, start, end }) {
+  const [cac, setCac] = useState(50);
+  if (!r || !r.ok) return <LsUnwired what="Retention and LTV" reason={r && r.reason} />;
+  const t = r.totals;
+  const mon = (r.monthly || []).slice(-14);
+  const monMax = Math.max(1, ...mon.map(m => m.customers));
+  const cohorts = (r.cohorts || []).slice(-12);
+  const ch = r.channel || {};
+  const chTotal = (ch.self || 0) + (ch.instructor || 0) + (ch.staff || 0) + (ch.other || 0) + (ch.unknown || 0);
+  const ratio = (cac > 0 && t.meanLtv != null) ? (t.meanLtv / cac) : null;
+  const shade = (p) => p == null ? "#f5f4f1"
+    : p >= 30 ? "#2a78d6" : p >= 22 ? "#5598e7" : p >= 15 ? "#9ec5f4" : p >= 8 ? "#cde2fb" : "#eaf2fb";
+
+  return (
+    <div>
+      <div className="ls-scope">
+        <b>All-time, and deliberately so.</b> A lifetime value is a position, not a flow — it is what a customer has been worth to date, whatever the toolbar says.
+        The date range above still moves the Overview tab and the two windowed figures below.
+        {instructor && <span> Scoped to <b>{instructor}</b>, so “customer”, “LTV” and “new” all mean <b>with this instructor</b> — somebody on their second lesson with the department but their first with {instructor} counts as new here.</span>}
+      </div>
+
+      <div className="cards" style={{ marginTop: 12 }} data-ls-customers={t.customers}>
+        <div className="card"><div className="lbl">Lesson customers</div><div className="val">{fmtNum(t.customers)}</div><div className="sub">{fmtNum(t.live)} lessons all-time</div></div>
+        <div className="card"><div className="lbl">Average LTV</div><div className="val">{t.meanLtv == null ? "—" : fmtMoney(t.meanLtv)}</div><div className="sub">median {t.medianLtv == null ? "—" : fmtMoney(t.medianLtv)} · p90 {t.p90Ltv == null ? "—" : fmtMoney(t.p90Ltv)}</div></div>
+        <div className="card"><div className="lbl">Come back at least once</div><div className="val">{lsPct(t.repeatPct)}</div><div className="sub">{fmtNum(t.repeat)} of {fmtNum(t.customers)} customers</div></div>
+        <div className="card"><div className="lbl">Lessons per customer</div><div className="val">{t.meanLessons == null ? "—" : t.meanLessons}</div><div className="sub">median {fmtNum(t.medianLessons)} · {fmtNum(t.fivePlus)} take 5+</div></div>
+        <div className="card"><div className="lbl">Net lesson revenue</div><div className="val">{fmtMoney(t.net)}</div><div className="sub">all-time, after refunds</div></div>
+      </div>
+
+      <div className="two-col w">
+        <div className="panel">
+          <div className="panel-h">New vs returning customers each month</div>
+          <div className="stackcols" data-ls-retmonths={mon.length}>
+            {mon.map(m => (
+              <div className="sc" key={m.month} title={m.month + ": " + m.newCust + " new, " + m.returningCust + " returning"}>
+                <div className="a" style={{ height: (m.newCust / monMax * 100) + "%" }}></div>
+                <div className="b" style={{ height: (m.returningCust / monMax * 100) + "%" }}></div>
+              </div>
+            ))}
+          </div>
+          <div className="col-lbls">{mon.map(m => <span key={m.month}>{lsMonthLabel(m.month)}</span>)}</div>
+          <div className="legend">
+            <span><span className="dot" style={{ background: "#2a78d6" }}></span>New</span>
+            <span><span className="dot" style={{ background: "#0f766e" }}></span>Returning</span>
+          </div>
+          <div className="panel-note">
+            {t.windowReturningNetPct != null
+              ? <span><b>Returning customers are {lsPct(t.windowReturningNetPct)} of the money taken in the toolbar window</b> — {fmtMoney(t.windowNet)} across {fmtNum(t.windowBookings)} lessons. Retention, not acquisition, is what carries a quiet month.</span>
+              : <span>No lessons in the toolbar window, so the returning share of revenue cannot be stated for it.</span>}
+          </div>
+        </div>
+
+        <div className="panel">
+          <div className="panel-h">The second lesson is the whole business</div>
+          <div className="half2">
+            <div className="halfbox one"><div className="hl">One and done</div><div className="hv">{fmtNum(t.oneAndDone)}</div>
+              <div className="hs">{lsPct(t.customers ? 100 - t.repeatPct : null)} of customers<br />{t.meanLtvOnce == null ? "—" : fmtMoney(t.meanLtvOnce)} average LTV</div></div>
+            <div className="halfbox rep"><div className="hl">Came back</div><div className="hv">{fmtNum(t.repeat)}</div>
+              <div className="hs">{lsPct(t.repeatPct)} of customers<br />{t.meanLtvRepeat == null ? "—" : fmtMoney(t.meanLtvRepeat)} average LTV</div></div>
+          </div>
+          <div className="panel-note">
+            {(t.meanLtvRepeat != null && t.meanLtvOnce > 0)
+              ? <span>A customer who books a second lesson is worth <b>{Math.round(t.meanLtvRepeat / t.meanLtvOnce * 10) / 10}x one who does not</b> — {fmtMoney(t.meanLtvRepeat - t.meanLtvOnce)} more, on average, over the rest of their life with the department.</span>
+              : <span>Not enough of both kinds of customer here to compare the two lifetimes.</span>}
+          </div>
+        </div>
+      </div>
+
+      <div className="two-col">
+        <div className="panel">
+          <div className="panel-h">When the second lesson happens</div>
+          {t.secondTotal > 0 ? (
+            <div>
+              {[["Within 30 days", t.secondWithin30], ["Within 60 days", t.secondWithin60], ["Within 90 days", t.secondWithin90],
+                ["Later than 90 days", t.secondTotal - t.secondWithin90]].map(([lab, n], i) => (
+                <div className="meter" key={lab}>
+                  <div className="mh"><span>{lab}</span><b>{fmtNum(n)} · {Math.round(n / t.secondTotal * 100)}%</b></div>
+                  <div className="track"><div style={{ width: (n / t.secondTotal * 100) + "%", height: "100%", background: i === 3 ? "#94a3b8" : "#0f766e", borderRadius: 4 }}></div></div>
+                </div>
+              ))}
+              <div className="panel-note">
+                Median gap is <b>{t.medianDaysToSecond} days</b>. A first-time customer who has not rebooked by <b>day 30</b> is unlikely to — that is where a win-back nudge belongs, not at day 90.
+              </div>
+            </div>
+          ) : <div className="panel-note" style={{ marginTop: 0 }}>Nobody has booked a second lesson in this scope yet, so there is no gap to measure.</div>}
+        </div>
+
+        <div className="panel">
+          <div className="panel-h">Who creates the booking</div>
+          <table className="mini">
+            <thead><tr><th>Created by</th><th className="r">Bookings</th><th className="r">Share</th></tr></thead>
+            <tbody>
+              {[["The customer — instant book", ch.self, "#2a78d6"],
+                ["Park staff, on their behalf", ch.staff, "#94a3b8"],
+                ["The instructor, on their behalf", ch.instructor, "#e8e6e0"]].map(([lab, n, col]) => (
+                <tr key={lab}><td className="b"><span className="dot" style={{ background: col }}></span>{lab}</td>
+                  <td className="r">{fmtNum(n || 0)}</td>
+                  <td className="r">{chTotal ? Math.round((n || 0) / chTotal * 1000) / 10 : 0}%</td></tr>
+              ))}
+              <tr><td className="b" style={{ color: "#a8a29e" }}>of which fast-tracked</td><td className="r">{fmtNum(ch.fastTrack || 0)}</td>
+                <td className="r">{chTotal ? Math.round((ch.fastTrack || 0) / chTotal * 1000) / 10 : 0}%</td></tr>
+            </tbody>
+          </table>
+          <div className="panel-note">
+            “Instructor booked” is shown even at zero: instructors book the COURT as a facility reservation, not the customer's lesson, so it is a real channel nobody uses. A row that appears is a row somebody can watch.
+          </div>
+        </div>
+      </div>
+
+      {cohorts.length > 0 && (
+        <div className="panel" style={{ marginTop: 14 }}>
+          <div className="panel-h">Cohort retention — share of each month's new customers still booking</div>
+          <div style={{ overflowX: "auto" }}>
+            <table className="coh">
+              <thead><tr><th style={{ textAlign: "left" }}>First lesson</th><th>New</th>
+                {[1, 2, 3, 4, 5, 6].map(i => <th key={i}>+{i}</th>)}</tr></thead>
+              <tbody>
+                {cohorts.map(c => (
+                  <tr key={c.cohort}>
+                    <td className="rowh">{lsMonthLabel(c.cohort, true)}</td>
+                    <td className="n">{fmtNum(c.size)}</td>
+                    {[1, 2, 3, 4, 5, 6].map(i => {
+                      // A month that has not happened yet is HATCHED, never
+                      // drawn as zero — a zero reads as a collapse rather
+                      // than as a month nobody has lived through.
+                      const lived = (() => {
+                        const [y, m] = c.cohort.split("-").map(Number);
+                        const tot = y * 12 + (m - 1) + i;
+                        const now = new Date();
+                        return tot <= now.getFullYear() * 12 + now.getMonth();
+                      })();
+                      if (!lived) return <td className="c void" key={i}></td>;
+                      const n = c.months[i] || 0;
+                      const p = c.size ? Math.round(n / c.size * 100) : 0;
+                      return <td className="c" key={i} style={{ background: shade(p), color: p >= 30 ? "#fff" : "#1c1917" }}>{p}%</td>;
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="panel-note">Hatched cells are months that have not happened yet. Month 0 is every customer by definition and is shown as the cohort size instead.</div>
+        </div>
+      )}
+
+      <div className="panel" style={{ marginTop: 14 }}>
+        <div className="panel-h">LTV / CAC</div>
+        <div className="cacrow">
+          <label htmlFor="lsCac">Cost to acquire a customer
+            <input id="lsCac" type="number" min="1" step="5" value={cac} onChange={e => setCac(Number(e.target.value))} />
+          </label>
+          <div>
+            <div className="cacout" data-ls-ratio={ratio == null ? "" : Math.round(ratio * 10) / 10}>
+              {ratio == null ? "—" : (Math.round(ratio * 10) / 10) + "x"}
+            </div>
+            <div className="tiny">LTV / CAC against an average LTV of {t.meanLtv == null ? "—" : fmtMoney(t.meanLtv)}</div>
+          </div>
+        </div>
+        <div className="panel-note">
+          <b>CAC is not in the platform, so this is the one number the report asks you for.</b> There is no ad spend, campaign cost or attribution table in Rec, and this org's outbound messages carry no recorded cost — so rather than invent a figure the tab takes it as an input and computes the ratio against a measured LTV. Worth knowing before you pick one: the marginal cost of answering an inquiry is close to zero, which is why the Acquisition tab leads with the ones nobody answered.
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function App() {
   const cfg = window.ORG_CONFIG || {};
@@ -164,18 +530,56 @@ function App() {
   const [aiLoading, setAiLoading] = useState(false);
   const wantInsights = QS.get("insights") === "1";
 
+  // Tab + instructor both ride the URL so a link, the share link and the
+  // print/PDF render all land where the sender was looking. An unknown
+  // tab resolves to Overview rather than rendering nothing.
+  const [tab, setTab] = useState(() => lsEffectiveTab(QS.get("tab")));
+  const [instructor, setInstructor] = useState(QS.get("instructor") || "");
+  const [funnel, setFunnel] = useState(null);
+  const [funnelState, setFunnelState] = useState("idle");
+
   const withToken = (url) => token ? url + (url.includes("?") ? "&" : "?") + "token=" + encodeURIComponent(token) : url;
 
   const load = useCallback((s, e2) => {
     const sd = s || start, ed = e2 || end;
     setState("loading"); setInsights(null);
-    fetch(withToken("/" + slug + "/lessons/api/data?start_date=" + sd + "&end_date=" + ed))
+    const instrQS = instructor ? "&instructor=" + encodeURIComponent(instructor) : "";
+    fetch(withToken("/" + slug + "/lessons/api/data?start_date=" + sd + "&end_date=" + ed + instrQS))
       .then(r => r.json())
       .then(j => { if (!j.ok) throw new Error(j.error || "Failed to load"); setData(j); setState("done"); })
       .catch(err => { setErrMsg(err.message); setState("error"); });
-  }, [slug, token, start, end]);
+  }, [slug, token, start, end, instructor]);
 
   useEffect(() => { load(); }, []);
+
+  // The two new cards are fetched TOGETHER and reported SEPARATELY by the
+  // route, so a slow or unwired retention card cannot blank the funnel.
+  // Refetched when the instructor or the window changes; the Metabase
+  // fetch underneath is cached four hours and the instructor is not one of
+  // the card's parameters, so a filter change re-runs arithmetic, not a
+  // query.
+  const loadFunnel = useCallback(() => {
+    setFunnelState("loading");
+    const qs = new URLSearchParams({ start_date: start, end_date: end });
+    if (instructor) qs.set("instructor", instructor);
+    fetch(withToken("/" + slug + "/lessons/api/funnel?" + qs.toString()))
+      .then(r => r.json())
+      .then(j => { if (!j.ok) throw new Error(j.error || "Failed to load"); setFunnel(j); setFunnelState("done"); })
+      .catch(err => { console.error("[lessons] funnel: " + err.message); setFunnelState("error"); });
+  }, [slug, token, start, end, instructor]);
+
+  useEffect(() => { loadFunnel(); }, [loadFunnel]);
+
+  // Tab and instructor are mirrored back into the URL, mutating only those
+  // two keys — ?token= and ?_print= ride on this URL too and rebuilding the
+  // whole query string is how the ?ci_rows= deep link shipped broken.
+  useEffect(() => {
+    if (isPrint) return;
+    const u = new URL(window.location.href);
+    if (tab === "overview") u.searchParams.delete("tab"); else u.searchParams.set("tab", tab);
+    if (instructor) u.searchParams.set("instructor", instructor); else u.searchParams.delete("instructor");
+    window.history.replaceState(null, "", u.toString());
+  }, [tab, instructor, isPrint]);
 
   const genInsights = useCallback(() => {
     if (!data) return;
@@ -202,6 +606,12 @@ function App() {
   function downloadPdf() {
     const qs = new URLSearchParams({ start_date: start, end_date: end });
     if (insights) qs.set("insights", "1");
+    // The print page is this page under ?_print=1 in a browser that has
+    // never seen this reader, so the URL is the only channel. A PDF that
+    // silently reverted to Overview for the whole org is the four-gates
+    // bug this repo keeps recording.
+    if (tab !== "overview") qs.set("tab", tab);
+    if (instructor) qs.set("instructor", instructor);
     if (token) qs.set("token", token);
     // Opened in its own window rather than downloaded — a download started by a
     // sandboxed iframe is silently dropped. See open-pdf.js.
@@ -217,7 +627,13 @@ function App() {
     return { year: y, n: ms.reduce((s, m) => s + m.n, 0), rev: ms.reduce((s, m) => s + m.rev, 0) };
   }), [years, monthly]);
   const heatMax = d ? Math.max(1, ...Object.values(d.heat || {})) : 1;
-  const sportTotal = d ? Object.values(d.sport).reduce((s, v) => s + v, 0) : 0;
+  // GUARDED LIKE ITS TWO NEIGHBOURS. `sport` was the one of the three read
+  // without a fallback, so any response missing it threw here and React
+  // unmounted the whole page — a 200 with nothing in it, the blank-page class
+  // this repo has shipped twice. The real route always sends it, which is why
+  // it never bit; the render harness's generic /api/ stub is the first thing
+  // to produce that shape, and it blanked every lessons case.
+  const sportTotal = d ? Object.values(d.sport || {}).reduce((s, v) => s + v, 0) : 0;
   const maxBand = d ? Math.max(1, ...Object.values(d.priceBands || {})) : 1;
   const maxInstrRev = d && d.instructors.length ? Math.max(1, ...d.instructors.map(i => i.paid)) : 1;
 
@@ -229,6 +645,14 @@ function App() {
         <div className="toolbar-spacer"></div>
         <label>Start<input type="date" value={start} onChange={e => setStart(e.target.value)} /></label>
         <label>End<input type="date" value={end} onChange={e => setEnd(e.target.value)} /></label>
+        {(funnel && funnel.instructors && funnel.instructors.length > 1) && (
+          <label>Instructor
+            <select value={instructor} onChange={e => setInstructor(e.target.value)} data-ls-instr={instructor || "all"}>
+              <option value="">All instructors ({funnel.instructors.length})</option>
+              {funnel.instructors.map(n => <option key={n} value={n}>{n}</option>)}
+            </select>
+          </label>
+        )}
         <button className="btn-run" onClick={() => load()}>▶ Run</button>
         <span className="divider"></span>
         <button onClick={() => window.print()}>🖨️ Print</button>
@@ -261,10 +685,27 @@ function App() {
             </div>
           </div>
 
+          <div className="ls-tabs no-print">
+            {LS_TABS.map(t => (
+              <button key={t} type="button" className={"ls-tab" + (tab === t ? " on" : "")}
+                data-ls-tab={t} aria-current={tab === t ? "page" : undefined}
+                onClick={() => setTab(t)}>{LS_TAB_LABEL[t]}</button>
+            ))}
+          </div>
+
+          {instructor && (
+            <div className="ls-scope" data-ls-scoped={instructor}>
+              Every figure on every tab is scoped to <b>{instructor}</b>.
+              {" "}<button type="button" className="ls-tab" style={{ padding: "1px 7px", border: "1px solid #e8e6e0", borderRadius: 5, marginLeft: 4 }}
+                onClick={() => setInstructor("")}>Show all instructors</button>
+            </div>
+          )}
+
+          {tab === "overview" && (<div>
           {d.totals.lessons === 0 ? (
             <div className="panel" style={{ textAlign: "center", padding: "40px 20px" }}>
               <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 6 }}>No instructor lessons in this range</div>
-              <div className="tiny">Try a wider date range. Lessons are detected from instructor-led sections named “lesson”, “clinic”, “coaching”, or “private”.</div>
+              <div className="tiny">{instructor ? "Nothing for " + instructor + " in this range — try a wider one, or show all instructors." : "Try a wider date range. Lessons are detected from instructor-led sections named \u201Clesson\u201D, \u201Cclinic\u201D, \u201Ccoaching\u201D, or \u201Cprivate\u201D."}</div>
             </div>
           ) : (
           <div>
@@ -460,6 +901,19 @@ function App() {
               </div>
             </div>
           </div>
+          )}
+          </div>)}
+
+          {tab === "acquisition" && (
+            funnelState === "loading" ? <div style={{ padding: "40px 0" }}><ReportLoader /></div>
+            : funnelState === "error" ? <div className="ls-unwired"><b>The acquisition funnel could not be loaded</b>The feed did not answer. The Overview tab is unaffected.</div>
+            : <AcqTab a={funnel && funnel.acquisition} instructor={instructor} />
+          )}
+
+          {tab === "retention" && (
+            funnelState === "loading" ? <div style={{ padding: "40px 0" }}><ReportLoader /></div>
+            : funnelState === "error" ? <div className="ls-unwired"><b>Retention and LTV could not be loaded</b>The feed did not answer. The Overview tab is unaffected.</div>
+            : <RetTab r={funnel && funnel.retention} instructor={instructor} start={start} end={end} />
           )}
 
           <div className="report-footer">
