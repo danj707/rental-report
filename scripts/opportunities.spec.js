@@ -447,9 +447,36 @@ if (!SKIP_SOURCE) {
   // DAILY, LIKE THE DIRECTOR'S REPORT. Nine feeds per org across ~29 orgs is
   // 260 Metabase queries — built per page load that is the fan-out that killed
   // the Report Wizard.
-  ok(/cron\.schedule\("20 5 \* \* \*", leaderCron\("opportunities"/.test(server), "the daily build is scheduled");
+  /* Read through a safe default: a mutation that drops the leaderCron wrapper
+     makes this regex match nothing, and `oppCron[2]` would then THROW a bare
+     TypeError naming nothing instead of failing on the assertion below. */
+  const oppCronM = server.match(/cron\.schedule\("(\d+) (\d+) \* \* \*", leaderCron\("opportunities"/);
+  const oppCron = oppCronM || [null, null, null];
+  ok(oppCronM, "the daily build is scheduled behind leaderCron");
   ok(/leaderCron\("opportunities"/.test(server), "…behind the leader lock, so two replicas do not both run it");
-  const job = server.slice(server.indexOf("async function opportunitiesDailyJob"), server.indexOf("cron.schedule(\"20 5"));
+
+  /* IT MUST RUN BEFORE PREWARM, and that is the whole point of pinning a time
+     here at all. buildOpportunitiesFor goes through fetchMBDirect, which never
+     touches the feed cache — so the build cannot be warmed by prewarm and only
+     ever competed with it. Asserting the INTENT rather than the literal "20 3"
+     means moving the job to another quiet hour does not fail this, while
+     putting it back on prewarm's tail does. */
+  const prewarmCrons = [...server.matchAll(/cron\.schedule\("(\d+) (\d+) \* \* \*", leaderCron\("prewarm[^"]*"/g)]
+    .map(m => Number(m[2]) * 60 + Number(m[1]));
+  ok(prewarmCrons.length >= 1, "the prewarm crons are readable, or the comparison below is vacuous");
+  // Infinity when the schedule could not be read, so the ordering assertion
+  // below FAILS BY NAME rather than passing vacuously on a 0.
+  const oppMinutes = oppCronM ? Number(oppCron[2]) * 60 + Number(oppCron[1]) : Infinity;
+  ok(oppMinutes < Math.min(...prewarmCrons),
+    "…and it runs BEFORE the prewarm jobs, not at their tail (opp " + oppMinutes
+      + "m vs earliest prewarm " + Math.min(...prewarmCrons) + "m)");
+  ok(!/It runs after the 4:50\/5:00\/5:10 prewarm jobs so the feeds it wants are/.test(server),
+    "…and the false 'so the feeds it wants are already warm' rationale is gone");
+
+  const job = oppCronM
+    ? server.slice(server.indexOf("async function opportunitiesDailyJob"),
+                   server.indexOf("cron.schedule(\"" + oppCron[1] + " " + oppCron[2]))
+    : "";
   ok(/for \(const slug of slugs\)/.test(job) && /await buildOpportunitiesFor\(slug\)/.test(job),
     "the job walks orgs SEQUENTIALLY rather than fanning out");
   ok(/setTimeout\(r, OPP_ORG_PACE_MS\)/.test(job), "…and paces between them");

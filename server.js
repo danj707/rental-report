@@ -13919,8 +13919,16 @@ async function ensureOpportunities(slug, opts) {
    Nine feeds per org across ~29 orgs is 260 queries against the same Metabase
    the reports themselves use. Fired in parallel that is the post-deploy
    prewarm storm that 502'd the facility Summary and got a card rolled back.
-   It runs after the 4:50/5:00/5:10 prewarm jobs so the feeds it wants are
-   already warm, and it takes them one org at a time. */
+   AND IT RUNS BEFORE PREWARM, NOT AFTER — this comment used to say the
+   opposite, and the reason it gave was never true. buildOpportunitiesFor goes
+   through fetchMBDirect, which builds a card URL and fetches it: it never
+   reads or writes the feed cache, so the 4:50/5:00/5:10 prewarm jobs cannot
+   warm anything this build asks for. At 05:20 it therefore gained NOTHING from
+   prewarm while paying the contention of sitting at its tail — the same
+   starvation that made nine feeds abort together at Watertown. It also asks
+   for a 365-day window, which prewarm never writes at all (base key, default
+   window, this month). So the job moves to a quiet slot of its own: after the
+   02:00 backup, well clear of 04:50. It still takes the orgs one at a time. */
 const OPP_ORG_PACE_MS = 4000;
 async function opportunitiesDailyJob() {
   /* BUILT FOR THE ORGS THAT CAN SEE IT, not for every org the routes serve.
@@ -13955,7 +13963,7 @@ async function opportunitiesDailyJob() {
   }
   console.log("[opportunities] daily build done: " + ok + "/" + slugs.length);
 }
-cron.schedule("20 5 * * *", leaderCron("opportunities", () => opportunitiesDailyJob().catch(() => {})));
+cron.schedule("20 3 * * *", leaderCron("opportunities", () => opportunitiesDailyJob().catch(() => {})));
 
 const OPPORTUNITIES_SYS_PROMPT = `You are an operations advisor to a US municipal parks & recreation director. You receive a pre-computed list of OPPORTUNITIES found across their reporting data — each with a title, a headline, a dollar value where one exists, and the rows behind it.
 
