@@ -548,15 +548,96 @@ unfixed code, with Metabase quiet. So the cards were never the problem; the
 contention was.
 
 **The Programs card still timed out even then**, and it takes the adaptive
-family with it (same feed). Watertown's Programs card is the heaviest thing this
-report asks for and 120s is marginal for it cold. **Not raised here**: a longer
-timeout lengthens every on-demand build, and the honest fix for that card is the
-card, not the caller. Expect `programs` and `adaptive` to read *"could not be
-loaded"* at Watertown until the 05:20 build catches it warm.
+family with it (same feed).
+
+### THE PACED BUILD GOT 8 OF 9, AND THE CARD'S WALL CLOCK IS WHY
+
+Re-run against production the moment the fix deployed: **2m41s, 8 of 9 feeds,
+11 findings, audience 15,943** — against 7 findings and 12,938 on the unfixed
+code, and **one** feed failing where nine had. So the pacing did its job.
+`programs` is the holdout and `adaptive` rides on the same feed.
+
+**AND MY OWN "CORRECTION" TO THIS SECTION WAS THE MISTAKE.** I had written that
+120s was marginal for that card, then measured it through the public endpoint at
+**54.1s for 608 rows** and corrected the file to say it comfortably fits. Twenty
+minutes later, same card, same window, **the identical 608 rows took 262.6s**.
+
+| card 17295, watertown, the build's own 365-day window | |
+|---|---|
+| 19:20 | **54.1s**, 608 rows |
+| 19:48 | **262.6s**, 608 rows |
+
+A **4.9x spread on input that cannot have changed** is this file's own documented
+tell that the replica is loaded — and the 120s budget sits inside the swing, so
+the feed's success is a coin toss rather than a property of the card. *One quiet
+measurement is not evidence about cost*, already recorded here for the roster
+lookback, and I re-learned it by writing a verdict into this file from a single
+reading and having to take it back an hour later. **Do not flip this line again
+without a distribution.**
+
+### THE 05:20 SLOT WAS JUSTIFIED BY A WARMTH THAT NEVER EXISTED
+
+Dan, on the fix for that: *"Can we prewarm but on an earlier schedule, doesn't
+need to be at 5am."*
+
+**A FEED-CACHE PREWARM CANNOT HELP THIS BUILD, and I proposed one before
+checking.** `buildOpportunitiesFor` goes through `fetchMBDirect`, which builds a
+card URL and fetches it — **it never reads or writes the feed cache**. So
+prewarm has nothing to hand it. It also asks for a **365-day** window, which
+prewarm never writes at all: prewarm warms the base key, the default window and
+this month.
+
+**So the job's own comment was false, and it is the thing that made the slot look
+considered:** *"It runs after the 4:50/5:00/5:10 prewarm jobs so the feeds it
+wants are already warm."* It gained nothing from those three jobs and paid the
+contention of sitting at their tail — **which is the same starvation that made
+nine feeds abort together in the first place**, arriving by the other door.
+
+Moved to **03:20**: after the 02:00 backup, well clear of 04:50. That is not
+"3am feels quiet" — it is removing a dependency that was never real and taking
+the build off the back of a prewarm storm.
+
+**What this does NOT do is guarantee 9 of 9.** It removes our own contention
+from the hour; it cannot make a card whose wall clock swings 54s→263s fit inside
+120s every night. The refusal guard is what keeps a bad night survivable, and a
+partial build is still stored.
+
+### THE BUDGET IS THE CALLER'S — and this is the half that actually fixes Programs
+
+Dan, on the two sections still empty: *"programs is the main one not working."*
+
+He is right, and moving the hour was never going to be enough on its own: it
+takes OUR load out of the way and cannot make a card whose wall clock swings
+54s→263s fit inside 120s. So `fetchMBDirect` takes an optional timeout and the
+two callers spend different amounts:
+
+| caller | per-feed budget | why |
+|---|---|---|
+| the 03:20 cron | **300s** (`OPP_CRON_FEED_TIMEOUT_MS`) | nobody is waiting |
+| the page (`ensureOpportunities`) | **120s**, unchanged | Railway's edge kills a long request |
+
+**300s IS SIZED FROM THE READINGS, not judged** — unlike `OPP_FEED_CONCURRENCY`,
+which is labelled a judgement two sections up. Of four measurements of that card
+over this window, the two that completed were 54.1s and 262.6s and the two that
+aborted were censored at the 120s wall; 300s covers every completed one.
+
+**IT IS AFFORDABLE ONLY ON THE CRON, and the concurrency limit is what makes it
+so.** Nine feeds at 300s each would be 45 minutes stacked; at three-at-a-time it
+is three waves, and the orgs are already walked one at a time.
+
+**THE PAGE KEEPS 120s DELIBERATELY.** A five-minute request dies at the edge as a
+502 with no body — a failure this repo has already shipped once — and the refusal
+guard means a partial on-demand build is still stored and still retried, so the
+reader gets what answered instead of a hang.
+
+**The load-bearing guard is not the constant, it is that EVERY feed carries it.**
+One feed that forgets `feedOpts` silently stays on 120s, which is invisible in
+review and would be exactly the feed this was built for; the spec counts the
+budgeted feeds against the total and the mutation fails reading `(8/9)`.
 
 ### Guards
 
-`scripts/opportunities.spec.js` 322 → **341 assertions**, and the new half LIFTS
+`scripts/opportunities.spec.js` 322 → 341 → 344 → **351 assertions**, and the new half LIFTS
 AND RUNS both helpers — a regex over `mapPaced` passes on an implementation that
 starts all nine anyway, so the assertion **observes the peak in flight** rather
 than reading the source. Mutation-tested eight ways, all eight caught by an
@@ -569,6 +650,36 @@ hardcoded.
 **The spec's tail is now an async IIFE**, because these assertions are async and
 the summary print has to remain the LAST thing that runs — the third instance in
 this file of *a spec that reports before its assertions have been made*.
+
+**THE SCHEDULE ASSERTION PINS THE INTENT, NOT THE TIME.** It parses both cron
+lines and requires the opportunities job to fire strictly BEFORE the earliest
+prewarm job, so moving it to another quiet hour does not fail the spec while
+putting it back on prewarm's tail does — and a separate assertion requires the
+false *"so the feeds it wants are already warm"* sentence to stay gone.
+Mutation-tested four ways, all four failing by name: the job back at 05:20 (the
+slot as it stood), the job moved onto the prewarm hour itself, the false
+rationale restored, and the leader lock dropped.
+
+**The fourth of those DIED instead of failing on the first run** — dropping
+`leaderCron` makes the schedule regex match nothing and `oppCron[2]` threw a bare
+TypeError naming nothing. Nth instance in this file. The match is read through a
+safe default now, and the minutes fall back to `Infinity` rather than `0`, or the
+ordering assertion would pass VACUOUSLY on a schedule it could not read.
+
+**The budget half is mutation-tested five more ways, all failing by name**: the
+cron budget dropped so the cron is back on 120s, the constant set to 120s so the
+change is decorative, ONE feed forgetting `feedOpts` (the silent half-wiring —
+fails reading `8/9`), the PAGE given the cron's budget, and `fetchMBDirect` no
+longer honouring a caller's timeout.
+
+**And two of my own assertions failed on correct code first**, both the recorded
+slice trap: the pre-existing *"walks orgs SEQUENTIALLY"* test pinned
+`buildOpportunitiesFor(slug)` with no argument, so adding one broke a test with
+nothing about sequencing having changed; and the on-demand slice was bounded by
+`opportunitiesLearnedNothing`, which is declared ABOVE `ensureOpportunities`, so
+it sliced backwards to an empty string — an assertion over nothing. It is bounded
+by `OPP_ORG_PACE_MS` now, with a preceding assertion that the slice is non-empty,
+or the whole claim is vacuous.
 
 ## THE OPPORTUNITIES REPORT, ANSWERED IN FIVE MORE (2026-09-14)
 

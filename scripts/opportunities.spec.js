@@ -447,10 +447,37 @@ if (!SKIP_SOURCE) {
   // DAILY, LIKE THE DIRECTOR'S REPORT. Nine feeds per org across ~29 orgs is
   // 260 Metabase queries — built per page load that is the fan-out that killed
   // the Report Wizard.
-  ok(/cron\.schedule\("20 5 \* \* \*", leaderCron\("opportunities"/.test(server), "the daily build is scheduled");
+  /* Read through a safe default: a mutation that drops the leaderCron wrapper
+     makes this regex match nothing, and `oppCron[2]` would then THROW a bare
+     TypeError naming nothing instead of failing on the assertion below. */
+  const oppCronM = server.match(/cron\.schedule\("(\d+) (\d+) \* \* \*", leaderCron\("opportunities"/);
+  const oppCron = oppCronM || [null, null, null];
+  ok(oppCronM, "the daily build is scheduled behind leaderCron");
   ok(/leaderCron\("opportunities"/.test(server), "…behind the leader lock, so two replicas do not both run it");
-  const job = server.slice(server.indexOf("async function opportunitiesDailyJob"), server.indexOf("cron.schedule(\"20 5"));
-  ok(/for \(const slug of slugs\)/.test(job) && /await buildOpportunitiesFor\(slug\)/.test(job),
+
+  /* IT MUST RUN BEFORE PREWARM, and that is the whole point of pinning a time
+     here at all. buildOpportunitiesFor goes through fetchMBDirect, which never
+     touches the feed cache — so the build cannot be warmed by prewarm and only
+     ever competed with it. Asserting the INTENT rather than the literal "20 3"
+     means moving the job to another quiet hour does not fail this, while
+     putting it back on prewarm's tail does. */
+  const prewarmCrons = [...server.matchAll(/cron\.schedule\("(\d+) (\d+) \* \* \*", leaderCron\("prewarm[^"]*"/g)]
+    .map(m => Number(m[2]) * 60 + Number(m[1]));
+  ok(prewarmCrons.length >= 1, "the prewarm crons are readable, or the comparison below is vacuous");
+  // Infinity when the schedule could not be read, so the ordering assertion
+  // below FAILS BY NAME rather than passing vacuously on a 0.
+  const oppMinutes = oppCronM ? Number(oppCron[2]) * 60 + Number(oppCron[1]) : Infinity;
+  ok(oppMinutes < Math.min(...prewarmCrons),
+    "…and it runs BEFORE the prewarm jobs, not at their tail (opp " + oppMinutes
+      + "m vs earliest prewarm " + Math.min(...prewarmCrons) + "m)");
+  ok(!/It runs after the 4:50\/5:00\/5:10 prewarm jobs so the feeds it wants are/.test(server),
+    "…and the false 'so the feeds it wants are already warm' rationale is gone");
+
+  const job = oppCronM
+    ? server.slice(server.indexOf("async function opportunitiesDailyJob"),
+                   server.indexOf("cron.schedule(\"" + oppCron[1] + " " + oppCron[2]))
+    : "";
+  ok(/for \(const slug of slugs\)/.test(job) && /await buildOpportunitiesFor\(slug[,)]/.test(job),
     "the job walks orgs SEQUENTIALLY rather than fanning out");
   ok(/setTimeout\(r, OPP_ORG_PACE_MS\)/.test(job), "…and paces between them");
   ok(/catch \(e\)/.test(job), "one org's failure does not stop the rest");
@@ -458,6 +485,32 @@ if (!SKIP_SOURCE) {
   // A FAILED FETCH MUST STAY null. This is the single line the whole
   // suppression design rests on.
   const build = server.slice(server.indexOf("async function buildOpportunitiesFor"), server.indexOf("async function ensureOpportunities"));
+
+  /* THE BUDGET IS THE CALLER'S — the cron waits longer than the page.
+     Watertown's Programs card returned the identical 608 rows in 54.1s and then
+     262.6s twenty minutes later, so 120s does not separate "too slow" from
+     "unlucky". The load-bearing assertion is the LAST one: a single feed that
+     forgets to pass feedOpts silently keeps the 120s budget on the cron, which
+     is invisible in review and is exactly the feed this was built for. */
+  ok(/const OPP_CRON_FEED_TIMEOUT_MS = (\d+);/.test(server), "the cron has its own per-feed budget");
+  const cronBudget = Number((server.match(/const OPP_CRON_FEED_TIMEOUT_MS = (\d+);/) || [0, 0])[1]);
+  ok(cronBudget > 120000, "…and it is LONGER than the page's 120s, or the change is decorative"
+    + " (" + cronBudget + "ms)");
+  ok(/const timeoutMs = \(opts && opts\.timeoutMs\) \|\| 120000;/.test(server),
+    "fetchMBDirect honours a caller's timeout and still DEFAULTS to 120s");
+  ok(/buildOpportunitiesFor\(slug, \{ feedTimeoutMs: OPP_CRON_FEED_TIMEOUT_MS \}\)/.test(job),
+    "the daily job spends the longer budget");
+  const ensure = server.slice(server.indexOf("async function ensureOpportunities"),
+                              server.indexOf("const OPP_ORG_PACE_MS"));
+  ok(ensure.length > 0 && /buildOpportunitiesFor/.test(ensure),
+    "…the on-demand slice reaches its own call, or the assertion below is vacuous");
+  ok(/await buildOpportunitiesFor\(slug\)/.test(ensure) && !/feedTimeoutMs/.test(ensure),
+    "…and the ON-DEMAND path does not, so a page request cannot hang past the edge timeout");
+  const feedJobs = (build.match(/safe\(\(\) =>/g) || []).length;
+  const feedJobsBudgeted = (build.match(/safe\(\(\) => fetch[A-Za-z]*\([^)]*feedOpts\)/g) || []).length;
+  ok(feedJobs > 0 && feedJobs === feedJobsBudgeted,
+    "EVERY feed carries the caller's budget — one that forgets it stays on 120s silently ("
+      + feedJobsBudgeted + "/" + feedJobs + ")");
   ok(/Array\.isArray\(v\) \? v : null/.test(build), "a feed that fails becomes null, never an empty list");
   ok(!/catch[^)]*\)\s*=>\s*\[\]/.test(build), "…and nothing defaults a failed feed to []");
 
