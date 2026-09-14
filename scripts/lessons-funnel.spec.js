@@ -247,13 +247,30 @@ ok(/oi\.booking_id = lb\.id/.test(RET_SQL),
 // ═══ 5. THE WIRING ═════════════════════════════════════════════════
 ok(/NO_DATE_REPORTS = new Set\(\[[^\]]*"lessons-acquisition"[^\]]*"lessons-retention"[^\]]*\]\)/.test(SERVER),
    "both cards are in NO_DATE_REPORTS, or buildMetabaseParams invents a window they cannot take");
-// OMIT-WHEN-UNSET. An absent key makes the feed unwired and the page says
-// so; a key set to an empty string would make the route build a URL with
-// no card id and surface Metabase's own error, which reads as broken.
-ok(/\.\.\.\(process\.env\.MB_LESSONS_ACQ_UUID \? \{ "lessons-acquisition": process\.env\.MB_LESSONS_ACQ_UUID \} : \{\}\)/.test(SERVER),
-   "the acquisition uuid is omitted when unset, never defaulted");
-ok(/\.\.\.\(process\.env\.MB_LESSONS_RET_UUID \? \{ "lessons-retention": process\.env\.MB_LESSONS_RET_UUID \} : \{\}\)/.test(SERVER),
-   "the retention uuid is omitted when unset, never defaulted");
+// HARDCODED, LIKE EVERY OTHER ENTRY. These were env-gated with
+// omit-when-unset only while the public links did not exist (the
+// programs-monthly shape); Dan created both on 2026-09-14, so the report
+// must now work on deploy with no Railway variable to remember. What the
+// assertion is really about is unchanged and is the reason the gate
+// existed: a key must NEVER resolve to something falsy, because the route
+// would then build a URL with no card id and surface Metabase's own error
+// — which reads as a broken report rather than an unfinished one. A
+// literal fallback is strictly stronger than the old shape, since there
+// is no longer an unset case at all. The env override stays so a preview
+// can point at a scratch card.
+const UUID_RE = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
+ok(new RegExp('"lessons-acquisition":\\s*process\\.env\\.MB_LESSONS_ACQ_UUID \\|\\| "' + UUID_RE + '"').test(SERVER),
+   "the acquisition uuid falls back to a real public uuid, never to nothing");
+ok(new RegExp('"lessons-retention":\\s*process\\.env\\.MB_LESSONS_RET_UUID \\|\\| "' + UUID_RE + '"').test(SERVER),
+   "the retention uuid falls back to a real public uuid, never to nothing");
+// ...and the two are not the same card, which a copy-paste would make
+// them — one uuid in both slots renders the retention tab's numbers under
+// the funnel's labels and looks entirely plausible.
+{
+  const acq = (SERVER.match(new RegExp('"lessons-acquisition":\\s*process\\.env\\.MB_LESSONS_ACQ_UUID \\|\\| "(' + UUID_RE + ')"')) || [])[1];
+  const ret = (SERVER.match(new RegExp('"lessons-retention":\\s*process\\.env\\.MB_LESSONS_RET_UUID \\|\\| "(' + UUID_RE + ')"')) || [])[1];
+  ok(acq && ret && acq !== ret, "the two reports point at two different cards");
+}
 // PRESENCE, NOT EMPTINESS: an unwired card and a card with no rows are
 // different facts and the page draws them differently.
 ok(/reason: SHARED_UUIDS\["lessons-acquisition"\] \? "error" : "unwired"/.test(SERVER),

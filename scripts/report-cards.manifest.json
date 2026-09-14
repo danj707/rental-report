@@ -239,6 +239,18 @@
       "org": "574923bd-9e7b-43e0-9e5f-7ce256189cbf",
       "days": 30,
       "timeout": 180
+    },
+    {
+      "label": "lessons-acquisition / san-francisco-rec-park (card 21847, SF-only). NEITHER of these two cards is in REPORT_TYPES, so prewarm never warms them and the health check never probes them — the same gap already recorded for aquatic-lane-hours, which is why they need a row here or a lost column would surface as a blank Acquisition tab. DATELESS on purpose and NOT the usual mistake: neither card registers a date tag at all (both reports are in NO_DATE_REPORTS), so org_id alone IS what the app sends and a dateless probe is the exact shape production uses. Measured 2026-09-14 through the public endpoint right after the link was created: 3,530 rows in 86.8s — but SELECT 1 was taking 16-31s on the same replica in those minutes, and the card's own final SELECT inside a counting wrapper (ORDER BY executing, no rows shipped) came back in 23.0s for the same 3,530 rows, roughly 7s of which is database work. So that wall clock is queueing plus Metabase serialising 3,530 rows x 7 columns, not the query. 180s, matching the products row, because a cold read on a loaded replica is the honest worst case.",
+      "card": "54cd6c89-a0a2-4531-b1c5-c81ce3c28b41",
+      "org": "17380e28-7e02-4b52-82c5-fab18557fd7a",
+      "timeout": 180
+    },
+    {
+      "label": "lessons-retention / san-francisco-rec-park (card 21848, SF-only). Same dateless reasoning as the row above. Measured 2026-09-14: 5,835 rows in 174.5s cold, then 90.6s warm, then 133.5s on a third read — a 2x spread on input that cannot have changed, which is the tell that it is the replica and not the card (SELECT 1 was 16-31s in the same minutes). The row count ties to the 5,832 measured during the build, the +3 being the open window. This is the heavier of the two: its money LATERAL measured 21.6s in development and the counting wrapper exceeded the 60s MCP ceiling under that load, so if this row starts failing on a QUIET replica that is a real regression rather than noise.",
+      "card": "d0958fd5-453a-4c9a-a5e9-828acb185bde",
+      "org": "17380e28-7e02-4b52-82c5-fab18557fd7a",
+      "timeout": 180
     }
   ]
 }

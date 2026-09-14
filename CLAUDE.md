@@ -69,10 +69,87 @@ Text, so there is nothing for a human to flip and the report is never down.
 Both windows are applied in the page's own arithmetic instead — which is also
 what makes the instructor filter free (see below).
 
-**`SHARED_UUIDS` OMITS BOTH KEYS WHEN UNSET**, the `programs-monthly` shape: the
-cards are verified but have no public link yet, so the feed 404s, the page draws
-the tab it CAN draw and says the other is not wired. A hardcoded empty uuid
-would make Metabase answer an error that renders as a broken report.
+**~~`SHARED_UUIDS` OMITS BOTH KEYS WHEN UNSET~~ — BOTH ARE HARDCODED NOW
+(2026-09-14, same day).** The omit-when-unset gate was the `programs-monthly`
+shape and it was right while the cards were verified but had no public link: an
+absent key 404s the feed, the page draws the tab it CAN draw and says the other
+is not wired, where a hardcoded EMPTY uuid would make Metabase answer an error
+that renders as a broken report.
+
+Dan created both links hours later, so the gate had served its purpose and was
+replaced by the literal every other entry in that map already carries — *"so the
+report works on deploy with no Railway variable to remember"*. **Leaving it
+env-gated would have made an unset variable able to take both tabs down**, which
+is the failure the gate was protecting against in the first place, inverted. The
+`process.env.X ||` override stays so a preview can point at a scratch card.
+
+| | |
+|---|---|
+| acquisition (21847) | `54cd6c89-a0a2-4531-b1c5-c81ce3c28b41` |
+| retention (21848) | `d0958fd5-453a-4c9a-a5e9-828acb185bde` |
+
+**The spec's assertion had to change with it, and its INTENT did not.** It
+pinned the env-gate literal; what it is really about is that **a key must never
+resolve to something falsy**, because the route would then build a URL with no
+card id. A literal fallback is strictly stronger than the gate, since there is
+no unset case left at all. Plus a new one: **the two keys must not hold the SAME
+uuid** — the copy-paste renders the retention tab's numbers under the funnel's
+labels and looks entirely plausible. Mutation-tested three ways, all failing by
+name: the acquisition fallback emptied, both slots pointing at 21847, and either
+key reverted to omit-when-unset.
+
+### SIGNED OFF ON THE LIVE LINKS — and the timings are the replica, not the cards
+
+Both public links were read back and identified rather than assumed: they resolve
+to cards **21847** and **21848**, each registering **exactly one `org_id` tag**,
+`string/=`, no date tags — so the no-flip claim above is now measured on the live
+cards rather than predicted.
+
+**The row counts tie to the build**, which is the correctness sign-off: 3,530
+against 3,527 and 5,835 against 5,832, both **+3**, and September is an OPEN
+window (the Clarksville rule).
+
+**THE WALL CLOCKS ARE NOT EVIDENCE ABOUT THESE CARDS, and a cheap control is
+what says so.** Through the public endpoint: acquisition TIMED OUT past 180s,
+then 86.8s; retention 174.5s cold, 90.6s warm, 133.5s on a third read — a **2.2x
+spread on input that cannot have changed**, which is already the tell. Then
+**`SELECT 1` took 31.2 seconds**, and 16.2s a quarter of an hour later, against
+the ~280ms this file records for a healthy replica.
+
+So the honest split, measured rather than argued, by running the acquisition
+card's **whole final SELECT** with literals inside a counting wrapper — the
+card-21682 technique, so the column list and the trailing `ORDER BY` execute
+without shipping rows:
+
+| acquisition, SF | |
+|---|---|
+| the card's own SELECT, counting wrapper | **23.0s** for the same 3,530 rows |
+| ...of which queueing (`SELECT 1` in the same minutes) | **~16s** |
+| so database work | **~7s**, consistent with the 9.8s measured in the build |
+| through the public endpoint | **86.8s** |
+
+**The gap is Metabase serialising and shipping the rows**, the same finding
+already recorded for card 17301 v7.1 at norman (3.6s of database work inside a
+196s wall clock). The retention card is the heavier of the two and its counting
+wrapper **exceeded the 60s MCP ceiling** under that load, so its database figure
+is owed on a quiet replica.
+
+**AND I BROKE THE RUN-THE-SWEEP-ALONE RULE WHILE MEASURING** — three ~3-minute
+probes back to back against production Metabase, which is part of what I was
+then measuring. `SELECT 1` at 31s is larger than my own contribution, so the
+verdict stands, but the first two numbers in that list should never have been
+taken the way they were.
+
+### THEY ARE IN NEITHER `REPORT_TYPES` NOR THE HEALTH CHECK, so they get manifest rows
+
+`prewarmCache` walks `REPORT_TYPES` and neither report is in it, so **every first
+open of the day at SF is a cold query on both cards** and nothing probes them —
+the identical gap already recorded for `aquatic-lane-hours`. Two rows added,
+**39 → 41**, and both are **DELIBERATELY DATELESS**, which is the one case where
+that is not the mistake this file records four times: neither card registers a
+date tag at all, so `org_id` alone IS the shape production sends. `timeout: 180`,
+matching the products row, because a cold read on a loaded replica is the honest
+worst case and 120 would flap.
 
 ### A LESSON IS A SECTION WITH A FACILITATOR, NEVER A NAME MATCH
 

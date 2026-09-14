@@ -2363,14 +2363,17 @@ const SHARED_UUIDS = {
   // they cache separately, and the half carrying the FINDING never waits
   // on the half carrying the MONEY.
   //
-  // ENV-GATED WITH OMIT-WHEN-UNSET, like programs-monthly was before its
-  // public link existed. A key that is absent makes the feed 404, and the
-  // page then renders the tab it CAN draw and says the other is not wired
-  // yet — where a wired-but-erroring card would draw a confident empty
-  // funnel. Set MB_LESSONS_ACQ_UUID / MB_LESSONS_RET_UUID in Railway once
-  // the public links exist and both tabs light up with no redeploy.
-  ...(process.env.MB_LESSONS_ACQ_UUID ? { "lessons-acquisition": process.env.MB_LESSONS_ACQ_UUID } : {}),
-  ...(process.env.MB_LESSONS_RET_UUID ? { "lessons-retention": process.env.MB_LESSONS_RET_UUID } : {}),
+  // HARDCODED, like every other entry here, so the report works on deploy
+  // with no Railway variable to remember. These were env-gated with
+  // omit-when-unset ONLY while the public links did not exist — the
+  // programs-monthly shape: an absent key 404s the feed and the page says
+  // the tab is not wired rather than drawing a confident empty funnel.
+  // Dan created both links on 2026-09-14, so the gate has served its
+  // purpose and an unset variable must no longer be able to take the tabs
+  // down. The env override stays for a preview that wants to point at a
+  // scratch card.
+  "lessons-acquisition": process.env.MB_LESSONS_ACQ_UUID || "54cd6c89-a0a2-4531-b1c5-c81ce3c28b41",
+  "lessons-retention":   process.env.MB_LESSONS_RET_UUID || "d0958fd5-453a-4c9a-a5e9-828acb185bde",
 };
 
 // Which card does the app ACTUALLY query for a given org + report?
