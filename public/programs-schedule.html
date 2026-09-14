@@ -910,7 +910,7 @@
         // "longer than usual" is only true when there IS a usual; with no
         // history the honest line claims nothing about how much longer.
         meta.className = 'rl-note' + (over ? ' rl-over' : '');
-        meta.innerHTML = 'Counting enrolments… <span>' + esc(
+        meta.innerHTML = 'Counting enrollments… <span>' + esc(
           over ? fmt(elapsed) + (note ? ' · longer than usual — still working'
                                      : ' · still working')
                : (note ? fmt(elapsed) + ' · ' + note : fmt(elapsed))

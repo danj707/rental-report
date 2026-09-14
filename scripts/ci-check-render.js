@@ -1379,6 +1379,165 @@ const STUBS = [
       };
     } },
 
+  /* OPPORTUNITIES. Registered FIRST, above every generic matcher — `STUBS` is
+     searched with .find and /\/api\/data/ would answer this path with another
+     report's shape, which is the fall-through already recorded here twice.
+
+     THE FIXTURE IS SHAPED SO A WRONG PAGE CANNOT LOOK RIGHT:
+      · the four totals are four DIFFERENT numbers, none of which is the sum of
+        any other pair, so a card reading the wrong field is visible and a page
+        that blends them into one "total opportunity" cannot hit any of them;
+      · `courts` is suppressed and `money` is UNAVAILABLE, which are different
+        facts that must not render the same way — the whole suppression design
+        rests on telling "you have no courts" apart from "the card did not
+        answer", and a fixture with only one of them could not test it;
+      · `programs` carries two findings with distinct values, so the family
+        count and the per-finding values both discriminate. */
+  { match: /\/opportunities\/api\/data/, body: () => ({
+      ok: true,
+      generatedAt: "2026-09-13T09:20:00.000Z",
+      windowDays: 365,
+      window: { start: "2025-09-14", end: "2026-09-13" },
+      totals: { findings: 5, upside: 12000, atRisk: 3400, uncollected: 770, audience: 5500 },
+      // ONE definition of the CSV's shape, carried from the library. A page
+      // that grew its own copy would write a header that stops describing the
+      // rows underneath it.
+      contactColumns: [["name", "Name"], ["email", "Email"], ["phone", "Phone"],
+                       ["city", "City"], ["zip", "Zip"], ["lastActive", "Last Active"],
+                       ["lifetimeNet", "Lifetime Net $"], ["group", "Group"]],
+      families: [
+        /* THE ADAPTIVE CALLOUT. Its first row carries a Rec `rec` id and its
+           second deliberately does NOT — so one case can require a real
+           rec.us link on one row and a fall-back to our own report on the
+           other, which a fixture with only one kind of row could not do. */
+        { key: "adaptive", label: "Adaptive & inclusive", emoji: "\u267F", blurb: "Your adaptive, therapeutic and inclusive programming", state: "ok", reason: "", findings: [
+          { id: "adaptive-profile", family: "adaptive", kind: "attention", value: null, count: 6, pin: 0,
+            title: "The adaptive and inclusive programming you run",
+            headline: "2 programs across 6 sections \u00B7 31 participants enrolled",
+            detail: "Your organization files this under Therapeutic Recreation.",
+            action: "Read the rest of this section before the Programs one.",
+            basis: "Programs whose activity names adaptive provision.",
+            items: [
+              { label: "Therapeutic Swim", sub: "4 sections \u00B7 18/24 enrolled", value: null,
+                rec: { kind: "program", id: "3fa85f64-5717-4562-b3fc-2c963f66afa6" },
+                link: { report: "programs", query: "" } },
+              { label: "Sensory Gym", sub: "2 sections \u00B7 13/16 enrolled", value: null,
+                link: { report: "programs", query: "" } },
+            ],
+            more: 0, link: { report: "programs", query: "" } },
+          /* The audience half: contact rows, and a segment Rec CAN build.
+             Three contacts with three different emails, so a CSV built from
+             the wrong list cannot land on this by accident. */
+          { id: "adaptive-only-households", family: "adaptive", kind: "audience", value: null, count: 3,
+            title: "Families who only ever come to you for adaptive programming",
+            headline: "3 of the 10 households in your adaptive programs (30%) have enrolled in nothing else",
+            detail: "", action: "Ask them.", basis: "Households with an adaptive enrollment and no other.",
+            items: [{ label: "3 households, adaptive only", sub: "of 10", value: null, link: { report: "users", query: "tab=strategy" } }],
+            more: 0, link: { report: "users", query: "tab=strategy" },
+            people: [
+              { name: "Ada Lovelace", email: "ada@x.test", phone: "5550001", city: "Town", zip: "01545", lastActive: "2026-08-01", lifetimeNet: 420, group: "Adaptive only" },
+              { name: "Grace Hopper", email: "grace@x.test", phone: "5550002", city: "Town", zip: "01545", lastActive: "2026-07-14", lifetimeNet: 310, group: "Adaptive only" },
+              { name: "Katherine J", email: "kj@x.test", phone: "5550003", city: "Town", zip: "01546", lastActive: "2026-06-02", lifetimeNet: 90, group: "Adaptive only" },
+            ],
+            peopleTotal: 3,
+            segment: { state: "supported", why: "", steps: [
+              "New segment \u2192 filter category Program \u2192 field Activity",
+              "Pick \u201CTherapeutic Recreation\u201D",
+              "That segment is everybody in adaptive programming. It does NOT exclude the families who also take something else.",
+            ] } },
+        ] },
+        { key: "programs", label: "Programs", emoji: "\u{1F3AF}", blurb: "Fill and demand", state: "ok", reason: "", findings: [
+          { id: "underfilled-programs", family: "programs", kind: "upside", value: 12000, count: 9,
+            title: "Programs that keep running half empty",
+            headline: "9 sections across 3 programs ran under 50% full",
+            detail: "Not one-off quiet weeks.", action: "Cut the capacity to what actually enrolls.",
+            basis: "Empty seats times the price the enrolled participants paid.",
+            items: [{ label: "Toddler Skating", sub: "4 sections", value: 7000, link: { report: "programs", query: "" } }],
+            more: 2, link: { report: "programs", query: "" } },
+          { id: "canceled-sections", family: "programs", kind: "at-risk", value: 3400, count: 4,
+            title: "Programs that keep getting cancelled",
+            headline: "4 cancelled sections across 1 program",
+            detail: "", action: "Decide before publishing next season.", basis: "Sections whose status is Cancelled.",
+            items: [{ label: "Youth Basketball", sub: "4 of 4 cancelled", value: 3400, link: { report: "programs", query: "" } }],
+            more: 0, link: { report: "programs", query: "" } },
+        ] },
+        { key: "people", label: "Your community", emoji: "\u{1F465}", blurb: "Who is reachable", state: "ok", reason: "", findings: [
+          /* The OTHER segment state, in the same fixture on purpose: one
+             finding Rec can reproduce and one it cannot. With only the
+             supported one present, a page that rendered both states
+             identically would pass. */
+          { id: "zip-gap", family: "people", kind: "audience", value: null, count: 5500,
+            title: "Neighborhoods registered with you that never enroll",
+            headline: "5500 households in 12 zip codes have an account and have never taken a program",
+            detail: "", action: "Check whether non-resident pricing is what stops them.",
+            basis: "Households in your records that appear in no enrollment.",
+            items: [{ label: "01604", sub: "22 of 86 households enrolled", value: null, link: { report: "users", query: "tab=demo" } }],
+            more: 4, link: { report: "users", query: "" },
+            people: [{ name: "Alan T", email: "alan@x.test", phone: "5559999", city: "Elsewhere", zip: "01604", lastActive: "2026-05-05", lifetimeNet: 12, group: "01604" }],
+            peopleTotal: 1400,
+            segment: { state: "unsupported", steps: [],
+              why: "Rec segments filter on age, gender, group, program, membership, reservation and pass \u2014 there is no address or zip field." } },
+          /* THE NAMED CUSTOMERS. Dan: "Customers section should open to their
+             profile page in Rec, not the community intel report." The first
+             row carries a real uuid and the second carries NOTHING — a feed
+             cached before card 17689 gained "User ID" holds only the
+             six-character staff code, and the two must render differently or
+             a page ignoring `rec` looks identical to one honouring it. */
+          { id: "dormant-households", family: "people", kind: "audience", value: null, count: 2,
+            title: "Customers who have gone quiet",
+            headline: "2 households who have spent with you have not transacted in 12 months",
+            detail: "", action: "Send them what they bought last time.",
+            basis: "No transaction for 365 days, among households with recorded spend.",
+            items: [
+              { label: "Chelsea Chwiecko", sub: "last active 2025-06-11 \u00B7 4 items lifetime", value: 640,
+                rec: { kind: "user", id: "7c9e6679-7425-40de-944b-e07fc1f90ae7" },
+                link: { report: "users", query: "tab=strategy" } },
+              { label: "John Duffy", sub: "last active 2025-05-02 \u00B7 2 items lifetime", value: 210,
+                link: { report: "users", query: "tab=strategy" } },
+            ],
+            more: 0, link: { report: "users", query: "tab=strategy" },
+            people: [{ name: "Chelsea Chwiecko", email: "cc@x.test", phone: "5550777", city: "Town", zip: "01545", lastActive: "2025-06-11", lifetimeNet: 640, group: "Dormant" }],
+            peopleTotal: 2,
+            segment: { state: "unsupported", steps: [],
+              why: "There is no last-transaction field in the Rec segment builder." } },
+        ] },
+        { key: "facilities", label: "Facilities", emoji: "\u{1F3DE}\uFE0F", blurb: "How your sites are used", state: "clear", reason: "", findings: [] },
+        { key: "courts", label: "Courts", emoji: "\u{1F3BE}", blurb: "Court-by-court demand", state: "insufficient",
+          reason: "this organization does not rent courts", findings: [] },
+        /* MONEY OWED IS WORKED IN REC. Dan: "for the 'money owed' section,
+           refer them back into Rec instead, there's a whole 'balances due'
+           report." `rec` here is a PAGE — no id segment — which recHref could
+           not express before, so a page on the old shape renders no Rec button
+           at all. stubMode "oppdown" reverts this family to `unavailable`, for
+           the case that requires a failed feed not to read as a clean one. */
+        STUB_MODE === "oppdown"
+          ? { key: "money", label: "Money owed", emoji: "\u{1F4B5}", blurb: "Billed and not collected", state: "unavailable",
+              reason: "The Facilities summary could not be loaded", findings: [] }
+          : { key: "money", label: "Money owed", emoji: "\u{1F4B5}", blurb: "Billed and not collected", state: "ok", reason: "", findings: [
+          { id: "facility-ar", family: "money", kind: "uncollected", value: 770, count: 2,
+            title: "Facility rentals billed and not paid",
+            headline: "$770 of $4,200 billed is still outstanding (18%)",
+            detail: "1 of these rentals finished more than 30 days ago.",
+            action: "Work the aged end of this list first.",
+            basis: "Billed minus Collected per rental from the Facilities summary.",
+            items: [
+              { label: "Pavilion 1 \u00B7 2026-02-20", sub: "5 dates billed on this rental", value: 520,
+                rec: { kind: "rental", id: "11111111-2222-3333-4444-555555555555" },
+                link: { report: "facilities", query: "tab=summary" } },
+              { label: "Pavilion 2 \u00B7 2026-08-01", sub: "1 date billed on this rental", value: 250,
+                link: { report: "facilities", query: "tab=summary" } },
+            ],
+            more: 0,
+            rec: { kind: "page", path: "facilities/balance-due", name: "balance-due" },
+            link: { report: "facilities", query: "tab=summary" } },
+        ] },
+      ],
+      coverage: [
+        { feed: "programs", state: "ok", rows: 564 },
+        { feed: "facilitiesSummary", state: "unavailable", rows: null },
+      ],
+    }) },
+
   /* Card 21682 (Aquatic Lane Hours), the first of the per-org custom data
      reports. THE FIXTURE IS SHAPED SO A WRONG ROLL-UP CANNOT LOOK RIGHT: two
      months, two locations inside each, and month totals (13 and 21) and a grand
@@ -2092,6 +2251,300 @@ const CASES = [
     path: "/" + LS_ORG + "/lessons?tab=acquisition", token: LS_TOKEN, stubMode: "lsunwired",
     absent: "[data-ls-inq]",
     needs: ".ls-unwired" },
+  /* ── Opportunities ───────────────────────────────────────────────────────
+     This page is a set of CLAIMS about numbers, so every case below keys on a
+     rendered VALUE or on an absence. "A findings card appeared" passes on a
+     page reading the wrong field out of every finding it draws. */
+  { name: "opportunities · the findings render with their own values",
+    path: "/{org}/opportunities",
+    needs: "[data-opp-finding='underfilled-programs'][data-opp-kind='upside'][data-opp-value='12000']" },
+
+  /* THE FOUR TOTALS ARE FOUR NUMBERS. The fixture's values are chosen so no
+     pair sums to another, so a page that blended them into one headline figure
+     — the single most tempting simplification on this report and the one its
+     own copy argues against — cannot land on any of these. */
+  { name: "opportunities · the four totals stay separate",
+    path: "/{org}/opportunities",
+    needs: "[data-opp-total='upside'][data-opp-total-val='12000']",
+    also: ["[data-opp-total='uncollected'][data-opp-total-val='770']",
+           "[data-opp-total='audience'][data-opp-total-val='5500']"] },
+
+  /* DAN'S RULE, RENDERED: an org that does not rent courts is told so, in
+     words, rather than shown a gap. A gap is indistinguishable from a bug. */
+  { name: "opportunities · a suppressed family says why on screen",
+    path: "/{org}/opportunities",
+    /* KEYED ON THE VISIBLE LINE, NOT THE WRAPPER. The first version of this
+       case read the reason off the family div — which renders whether or not
+       anything is drawn inside it, so deleting the suppression notice entirely
+       SURVIVED the case. An assertion satisfied by a wrapper is not guarding
+       what the reader can see. */
+    needs: "[data-opp-family='courts'][data-opp-state='insufficient'] .fam-off[data-opp-off='this organization does not rent courts']",
+    absent: "[data-opp-family='courts'] .find" },
+
+  /* A FEED THAT DID NOT LOAD MUST NOT READ AS A CLEAN BILL OF HEALTH. These
+     are two different states with two different classes, and the fixture
+     carries one of each precisely so this case can require them to differ —
+     with only one in the fixture, a page that rendered both identically would
+     pass. */
+  { name: "opportunities · an unavailable feed does not read as clean",
+    path: "/{org}/opportunities",
+    stubMode: "oppdown",
+    needs: "[data-opp-family='money'][data-opp-state='unavailable'] .fam-off[data-opp-down]",
+    also: ["[data-opp-family='facilities'][data-opp-state='clear'] .fam-clear"],
+    absent: "[data-opp-family='money'] .fam-clear" },
+
+  /* The print render is what the PDF is made of, and it is a different render:
+     no toolbar, and no drill links (a link is not clickable on paper). The
+     findings themselves must survive. */
+  { name: "opportunities · print mode keeps the findings and drops the chrome",
+    path: "/{org}/opportunities?_print=1",
+    needs: "[data-opp-finding='canceled-sections'][data-opp-value='3400']",
+    absent: ".toolbar, .drill" },
+
+  /* ── Dan's four asks on this report, each keyed on what the reader can
+        actually do rather than on markup existing. ──────────────────────── */
+
+  // "any org that has adaptive programs should get a special callout section
+  // on it" — and a callout that sorts below five families is not one. Keyed on
+  // the FIRST .fam in the document, not merely on the section being present.
+  { name: "opportunities · the adaptive callout leads the page",
+    path: "/{org}/opportunities",
+    /* Keyed on WHICH family comes first in document order, stamped from the
+       page. `:first-of-type` cannot say it — the .fam divs are siblings of the
+       banner and the totals grid, so div:first-of-type is the banner and the
+       selector matched nothing on a perfectly correct page. */
+    needs: "body[data-opp-first='adaptive']",
+    also: ["[data-opp-finding='adaptive-profile']", "[data-opp-family='adaptive'][data-opp-state='ok']"],
+    act: async page => {
+      await page.waitForSelector(".fam[data-opp-family]", { timeout: 45000 });
+      await page.evaluate(() => {
+        const first = document.querySelector(".fam[data-opp-family]");
+        document.body.setAttribute("data-opp-first", first ? first.getAttribute("data-opp-family") : "");
+      });
+    } },
+
+  /* "Add a quick overview at the top with links to jump to each section."
+     A SUPPRESSED FAMILY IS LISTED TOO: the whole suppression design says an
+     org must be able to see that a section was looked at, and a contents list
+     that silently omitted those would undo it one line above the sections
+     themselves. So the strip must carry the courts chip as well as the live
+     ones, and its anchor must actually land on something. */
+  { name: "opportunities · the contents strip reaches every section",
+    path: "/{org}/opportunities",
+    needs: ".jump [data-opp-jump-to='adaptive']",
+    also: [".jump [data-opp-jump-to='courts']", ".jump [data-opp-jump-to='money']",
+           "#fam-adaptive", "#fam-courts"] },
+  { name: "opportunities · every contents chip lands on a real section",
+    path: "/{org}/opportunities",
+    needs: "body[data-jump-ok='1']",
+    act: async page => {
+      const ok = await page.evaluate(() => {
+        const as = [...document.querySelectorAll(".jump a[data-opp-jump-to]")];
+        return as.length >= 5 && as.every(a => {
+          const h = a.getAttribute("href") || "";
+          return h.charAt(0) === "#" && !!document.querySelector(h);
+        });
+      });
+      await page.evaluate(v => document.body.setAttribute("data-jump-ok", v ? "1" : ""), ok);
+    } },
+
+  /* "Build out clickable links to each program or section, user, etc. Great
+     info but if I can't click on it it's not useful."
+
+     THE FIXTURE CARRIES ONE ROW WITH A REC ID AND ONE WITHOUT, on purpose:
+     the two must render differently — one opens the record in Rec, the other
+     falls back to the report that proves it — and a fixture with only one
+     kind could not tell a page that ignored `rec` from one that honoured it.
+     Keyed on the real href, because "an anchor rendered" passes on a link to
+     the wrong place. */
+  { name: "opportunities · a named program opens in Rec",
+    path: "/{org}/opportunities",
+    needs: "body[data-oppl-rec='1'][data-oppl-report='1'][data-oppl-blank='1']",
+    act: async page => {
+      await page.waitForSelector("[data-opp-finding='adaptive-profile'] a.il", { timeout: 45000 });
+      await page.evaluate(() => {
+        const as = [...document.querySelectorAll("[data-opp-finding='adaptive-profile'] a.il")];
+        const rec = as.find(a => a.getAttribute("data-opp-item-link") === "rec");
+        const rep = as.find(a => a.getAttribute("data-opp-item-link") === "report");
+        const set = (k, v) => { if (v) document.body.setAttribute(k, "1"); };
+        // The row WITH an id goes to the Rec record itself.
+        set("data-oppl-rec", rec && /^https:\/\/www\.rec\.us\/admin\/o\/[0-9a-f-]{36}\/programming\/programs\/3fa85f64-5717-4562-b3fc-2c963f66afa6$/.test(rec.href));
+        // The row WITHOUT one still goes somewhere — our own report, carrying
+        // the org token, because an un-tokened link 404s.
+        set("data-oppl-report", rep && rep.getAttribute("href").indexOf("/programs") > 0 && rep.getAttribute("href").indexOf("token=") > 0);
+        // And a Rec link opens in its own tab rather than over the report.
+        set("data-oppl-blank", rec && rec.target === "_blank");
+      });
+    } },
+
+  /* ── DAN'S 2026-09-14 PASS ───────────────────────────────────────────
+     "can we get a bit more separation between sections… Maybe use similar
+     colors from the community intel report to separate specific sections."
+
+     ONLY A BROWSER CAN SEE THIS. The stylesheet reads plausibly either way,
+     and `.fam-h` renders whether or not a colour reaches it — so the case
+     stamps the COMPUTED band colours and requires the six families to be
+     TELLING APART, not merely present. Community Intel's own hues: money the
+     red of .obs's opposite, your community the green of .obs itself. */
+  { name: "opportunities · each section is visibly its own",
+    path: "/{org}/opportunities",
+    needs: "body[data-fam-distinct='1'][data-fam-tinted='1']",
+    also: ["body[data-fam-money='rgb(185, 28, 28)']", "body[data-fam-people='rgb(4, 120, 87)']"],
+    act: async page => {
+      await page.waitForSelector(".fam[data-opp-family] .fam-h", { timeout: 45000 });
+      await page.evaluate(() => {
+        const fams = [...document.querySelectorAll(".fam[data-opp-family]")];
+        const accents = new Map();
+        let tinted = 0;
+        fams.forEach(f => {
+          const cs = getComputedStyle(f.querySelector(".fam-h"));
+          accents.set(f.getAttribute("data-opp-family"), cs.borderLeftColor);
+          // The tint is a gradient, so the band's own background-image is what
+          // carries it — a flat white band would have none.
+          if (/gradient/.test(cs.backgroundImage)) tinted++;
+        });
+        const set = (k, v) => document.body.setAttribute(k, v);
+        // Six families, six DIFFERENT accents: one shared colour would make
+        // the band decoration rather than separation.
+        set("data-fam-distinct", new Set(accents.values()).size === fams.length && fams.length >= 5 ? "1" : "");
+        set("data-fam-tinted", tinted === fams.length ? "1" : "");
+        set("data-fam-money", accents.get("money") || "");
+        set("data-fam-people", accents.get("people") || "");
+      });
+    } },
+
+  /* "for the 'money owed' section, refer them back into Rec instead, there's
+     a whole 'balances due' report, use this format …/facilities/balance-due"
+
+     A PAGE-KIND REC LINK HAS NO ID SEGMENT, which recHref could not build
+     before — so it would have returned null and the button simply would not
+     have rendered. Keyed on the real href, because "a button rendered" passes
+     on one pointing at our own report. */
+  { name: "opportunities · money owed opens Rec's balances due",
+    path: "/{org}/opportunities",
+    needs: "body[data-oppm-rec='1'][data-oppm-evidence='1'][data-oppm-blank='1']",
+    act: async page => {
+      await page.waitForSelector("[data-opp-finding='facility-ar'] .find-foot", { timeout: 45000 });
+      await page.evaluate(() => {
+        const foot = document.querySelector("[data-opp-finding='facility-ar'] .find-foot");
+        const rec = foot.querySelector("a[data-opp-foot-link='rec']");
+        const set = (k, v) => { if (v) document.body.setAttribute(k, "1"); };
+        set("data-oppm-rec", rec && /^https:\/\/www\.rec\.us\/admin\/o\/[0-9a-f-]{36}\/facilities\/balance-due$/.test(rec.href));
+        // Our own report stays beside it: it is what proves the number, and
+        // dropping it would leave no way back to the evidence.
+        const ours = foot.querySelector("a.drill-2");
+        set("data-oppm-evidence", ours && ours.getAttribute("href").indexOf("/facilities") > 0 && ours.getAttribute("href").indexOf("token=") > 0);
+        set("data-oppm-blank", rec && rec.target === "_blank");
+      });
+    } },
+
+  /* Each owed RENTAL opens that rental in Rec — and the second row carries no
+     id, so it must fall back to our own report rather than to a guess. */
+  { name: "opportunities · an owed rental opens in Rec",
+    path: "/{org}/opportunities",
+    needs: "body[data-oppr-rec='1'][data-oppr-report='1']",
+    act: async page => {
+      await page.waitForSelector("[data-opp-finding='facility-ar'] a.il", { timeout: 45000 });
+      await page.evaluate(() => {
+        const as = [...document.querySelectorAll("[data-opp-finding='facility-ar'] a.il")];
+        const rec = as.find(a => a.getAttribute("data-opp-item-link") === "rec");
+        const rep = as.find(a => a.getAttribute("data-opp-item-link") === "report");
+        const set = (k, v) => { if (v) document.body.setAttribute(k, "1"); };
+        set("data-oppr-rec", rec && /\/facility-rentals\/11111111-2222-3333-4444-555555555555$/.test(rec.href));
+        set("data-oppr-report", rep && rep.getAttribute("href").indexOf("/facilities") > 0);
+      });
+    } },
+
+  /* "Customers section should open to their profile page in Rec, not the
+     community intel report."
+
+     THE FIXTURE'S SECOND CUSTOMER CARRIES NO UUID, which is what a feed
+     cached before card 17689 gained "User ID" looks like — it holds only the
+     six-character staff code, and a /users/ URL built from that 404s while
+     looking perfectly correct. So one row must open Rec and the other must
+     fall back, or the case cannot tell a page that honours `rec` from one
+     that ignores it. */
+  { name: "opportunities · a named customer opens their Rec profile",
+    path: "/{org}/opportunities",
+    needs: "body[data-oppu-rec='1'][data-oppu-report='1'][data-oppu-blank='1']",
+    act: async page => {
+      await page.waitForSelector("[data-opp-finding='dormant-households'] a.il", { timeout: 45000 });
+      await page.evaluate(() => {
+        const as = [...document.querySelectorAll("[data-opp-finding='dormant-households'] a.il")];
+        const rec = as.find(a => a.getAttribute("data-opp-item-link") === "rec");
+        const rep = as.find(a => a.getAttribute("data-opp-item-link") === "report");
+        const set = (k, v) => { if (v) document.body.setAttribute(k, "1"); };
+        set("data-oppu-rec", rec && /^https:\/\/www\.rec\.us\/admin\/o\/[0-9a-f-]{36}\/users\/7c9e6679-7425-40de-944b-e07fc1f90ae7$/.test(rec.href)
+          && rec.textContent.indexOf("Chelsea") === 0);
+        set("data-oppu-report", rep && rep.getAttribute("href").indexOf("/users") > 0 && rep.getAttribute("href").indexOf("token=") > 0);
+        set("data-oppu-blank", rec && rec.target === "_blank");
+      });
+    } },
+
+  /* "A lot of the 'reach out to these people' infers we'd want a downloadable
+     CSV file or segment directly in Rec."
+
+     READS THE BYTES THE POPUP IS HANDED, not the button — a button wired to
+     the wrong list renders identically, and the BOM lives in the delivery
+     path rather than in the builder. window.open is stubbed, NOT
+     saveTextViaPopup, so the delivery path is covered. */
+  { name: "opportunities · the contact list downloads as a CSV",
+    path: "/{org}/opportunities",
+    needs: "body[data-oppc-bom='1'][data-oppc-hdr='1'][data-oppc-rows='3'][data-oppc-scoped='1']",
+    act: async page => {
+      await page.waitForSelector("[data-opp-audience='adaptive-only-households'] button.csv", { timeout: 45000 });
+      await page.evaluate(() => {
+        window.__payload = null;
+        window.open = () => ({
+          document: { write() {}, close() {} },
+          set __recExport(v) { window.__payload = v; },
+          get __recExport() { return window.__payload; },
+        });
+      });
+      await page.click("[data-opp-audience='adaptive-only-households'] button.csv");
+      await page.evaluate(() => {
+        const p = window.__payload;
+        if (!p) return;                 // the button never reached the writer
+        const set = (k, v) => { if (v) document.body.setAttribute(k, String(v)); };
+        // On the BYTES: TextDecoder strips a BOM by default, so decoding first
+        // would pass either way — and bytes are what Excel sniffs.
+        const b = p.bytes;
+        set("data-oppc-bom", b[0] === 0xEF && b[1] === 0xBB && b[2] === 0xBF ? "1" : "");
+        const lines = new TextDecoder().decode(b).replace(/\r\n$/, "").split("\r\n");
+        // The header comes from the payload's own column set, so a page with
+        // its own copy would write a different one.
+        set("data-oppc-hdr", lines[0] === "Name,Email,Phone,City,Zip,Last Active,Lifetime Net $,Group" ? "1" : "");
+        set("data-oppc-rows", String(lines.length - 1));
+        // Scoped to THIS finding — the other audience's contact must not be in
+        // it, which is what catches a button wired to the wrong list.
+        set("data-oppc-scoped", lines.join("\n").indexOf("alan@x.test") < 0
+          && lines.join("\n").indexOf("ada@x.test") > 0 ? "1" : "");
+      });
+    } },
+
+  /* THE HONEST HALF. One finding Rec's segment builder can reproduce and one
+     it cannot, in the same fixture, rendered differently — directions that
+     quietly build a different audience are worse than none. */
+  { name: "opportunities · a segment Rec cannot build says so",
+    path: "/{org}/opportunities",
+    needs: "[data-opp-audience='zip-gap'] [data-opp-segment='unsupported']",
+    also: ["[data-opp-audience='adaptive-only-households'] [data-opp-segment='supported']"] },
+
+  // A trimmed list says so. The zip audience carries 1 of 1,400.
+  { name: "opportunities · a trimmed contact list admits it",
+    path: "/{org}/opportunities",
+    needs: "[data-opp-audience='zip-gap'] .why",
+    act: async page => {
+      const t = await page.$eval("[data-opp-audience='zip-gap'] .why", e => e.textContent);
+      if (!/1,400/.test(t)) throw new Error("the trimmed note does not name the true size: " + t);
+    } },
+
+  /* In print the strip stays as a CONTENTS LIST and the download disappears:
+     a link is dead on paper and a button is worse. */
+  { name: "opportunities · print keeps the contents and drops the controls",
+    path: "/{org}/opportunities?_print=1",
+    needs: ".jump",
+    absent: ".jump a, a.il" },
 
 
   /* ── Surveys ─────────────────────────────────────────────────────────────
@@ -4431,6 +4884,15 @@ const CASES = [
   { name: "org landing · no wizard card", path: "/{org}",
     needs: ".card", absent: 'a.card[href*="/report-wizard"]' },
 
+  /* HIDDEN FROM THE ORG, and only a browser can see it: org.html builds its
+     cards client-side, so the card BUILDER is in the served JS on every load
+     and grepping the HTML proves nothing. Dan's rule, 2026-09-14: every new
+     report ships hidden and he turns it on per org. The page itself stays
+     OPEN — "i should still be able to click on it and view it" — which is why
+     this keys on the CARD's absence and not on the route. */
+  { name: "org landing · no opportunities card until it is turned on", path: "/{org}",
+    needs: ".card", absent: 'a.card[href*="/opportunities"], .card-wrap a[href*="/opportunities"]' },
+
   { name: "org landing · the data reports are ONE card with a chip each",
     path: "/" + AQ_ORG, token: AQ_TOKEN,
     act: async page => {
@@ -6416,6 +6878,17 @@ try {
                    JSON.stringify({ reportSettings: true }));
 } catch (_) {}
 
+/* DEFAULT-HIDDEN REPORTS ARE LEFT HIDDEN HERE, ON PURPOSE.
+
+   An earlier version of this file opted every org into DEFAULT_HIDDEN_REPORTS,
+   because the page was gated on the toggle and its cases were testing a 404.
+   Dan then corrected the rule — "i should still be able to click on it and
+   view it, just the eye 'hides' it from them" — so the page is open to every
+   org and only the CARD is hidden. Opting in here would now defeat the one
+   case that can see that: a harness that silently switches on every hidden
+   report cannot test hidden-by-default at all. */
+
+
 
 const child = spawn(process.execPath, [path.join(__dirname, "..", "server.js")], {
   env: { ...process.env, PORT: String(PORT), DATA_DIR: dataDir,
@@ -6624,6 +7097,20 @@ function waitForServer(started) {
       if (found && c.absent) {
         const stillThere = await page.$(c.absent);
         if (stillThere) { found = false; errs.push('"' + c.absent + '" should NOT be present, but it is'); }
+      }
+      /* `also` asserts FURTHER selectors that must ALL be present alongside
+         `needs`. A CSS selector list ("a, b") matches EITHER, so a case that
+         needs two facts on screen at once cannot say so in one selector — and
+         every such claim used to have to become its own case, re-loading the
+         page to check a second attribute of the same render.
+         It is honoured HERE rather than merged into `needs` because the two
+         mean different things in a failure: `needs` is "the page rendered at
+         all", `also` is "it rendered the right numbers". */
+      if (found && Array.isArray(c.also)) {
+        for (const sel of c.also) {
+          const hit = await page.$(sel);
+          if (!hit) { found = false; errs.push('"' + sel + '" (also) is missing'); }
+        }
       }
       bodyLen = await page.evaluate(() => document.body.innerText.trim().length);
       // WHAT THE CASE MEASURED, not just which selector was missing. Every
