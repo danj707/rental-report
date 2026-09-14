@@ -6619,8 +6619,14 @@
         const sd = s || start, ed = en || end;
         setRows(null); setErr(null);
         const tok = CFG.token ? '&token=' + encodeURIComponent(CFG.token) : '';
+        // THE STATUS IS CHECKED BEFORE THE BODY IS PARSED. This catch puts
+        // er.message ON SCREEN, so a bare r.json() shows the reader a PARSER
+        // error when the edge answers a 502 with the plain text "upstream
+        // error" — which is what Dan hit on the Lessons report, on this same
+        // class of slow card. The feed's own soft-failure shape (200 with
+        // { error }) is unchanged and still handled below.
         fetch('/' + CFG.slug + '/facilities/api/summary?start_date=' + sd + '&end_date=' + ed + tok)
-          .then(r => r.json())
+          .then(async r => { if (!r.ok) throw await reportFetchError(r); return r.json(); })
           .then(d => { if (d && d.error) { setErr(d.error); setRows([]); } else { setRows(refineRows((d && d.rows) || [])); } })
           .catch(er => { setErr(er.message); setRows([]); });
         // Instructor lessons happen on these same courts but book through the

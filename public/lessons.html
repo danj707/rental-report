@@ -544,8 +544,18 @@ function App() {
     const sd = s || start, ed = e2 || end;
     setState("loading"); setInsights(null);
     const instrQS = instructor ? "&instructor=" + encodeURIComponent(instructor) : "";
+    // THE STATUS IS CHECKED BEFORE THE BODY IS PARSED, and that is not
+    // tidiness. Dan hit this on production: the instructor-payout card went
+    // past Railway's EDGE timeout, the edge answered with the plain text
+    // "upstream error", and a bare r.json() threw a PARSER message at the
+    // reader — `Unexpected token 'u', "upstream error" is not valid JSON` —
+    // on a page whose own route had a remedy to offer. reportFetchError
+    // reads the body only when it can, so an edge failure degrades to the
+    // status and the 5xx branch says what to try. Same fix the 2026-09-04
+    // and 2026-09-12 sweeps applied to seventeen other call sites; this
+    // page was written afterwards and never had it.
     fetch(withToken("/" + slug + "/lessons/api/data?start_date=" + sd + "&end_date=" + ed + instrQS))
-      .then(r => r.json())
+      .then(async r => { if (!r.ok) throw await reportFetchError(r); return r.json(); })
       .then(j => { if (!j.ok) throw new Error(j.error || "Failed to load"); setData(j); setState("done"); })
       .catch(err => { setErrMsg(err.message); setState("error"); });
   }, [slug, token, start, end, instructor]);
@@ -563,7 +573,7 @@ function App() {
     const qs = new URLSearchParams({ start_date: start, end_date: end });
     if (instructor) qs.set("instructor", instructor);
     fetch(withToken("/" + slug + "/lessons/api/funnel?" + qs.toString()))
-      .then(r => r.json())
+      .then(async r => { if (!r.ok) throw await reportFetchError(r); return r.json(); })
       .then(j => { if (!j.ok) throw new Error(j.error || "Failed to load"); setFunnel(j); setFunnelState("done"); })
       .catch(err => { console.error("[lessons] funnel: " + err.message); setFunnelState("error"); });
   }, [slug, token, start, end, instructor]);
