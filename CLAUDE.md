@@ -2008,6 +2008,41 @@ a guess at what the value it sets will look like.*
 
 ## REC INSIGHTS, READ OUT LOUD — a prototype on ONE page (2026-09-11)
 
+### CLOSED, NOT DEFERRED — Dan has decided against it (2026-09-14)
+
+Asked whether the Opportunities report should get a Listen button:
+*"hmm lets skip the listen button, i will want to rip all that out eventually,
+fun concept but hated it."*
+
+**So do not add voice to any new surface, and do not raise it as an obvious next
+step.** The notes below stay because the measurements and traps are real and the
+removal has not happened yet — read them as the record of a prototype being wound
+down, not as a feature to extend.
+
+- **Nothing was removed today**, because he said *eventually*. `speakScript`
+  still exists in **`public/products.html` alone** (one page, one call site —
+  that seam was the whole design) and the route is still
+  `POST /:org/:report/api/speak`.
+- **`public/opportunities.html` has zero voice code**, which is the state it
+  stays in.
+- **UNSETTING `ELEVENLABS_API_KEY` IS THE ZERO-CODE KILL SWITCH, and it is worth
+  doing before the removal.** The route already treats an absent key as
+  *configuration rather than failure* — it 404s (marked `refuse404`) and the page
+  falls back to `speechSynthesis`, which is exactly what every PR preview and
+  local boot already does. So unsetting it in Railway stops the text leaving the
+  platform, stops the spend, and breaks nothing.
+- **That matters more than usual here: the key in
+  `danj707/rec-training-video-skill` is COMMITTED TO A PUBLIC REPO and must be
+  treated as burned.** If the live Railway value is that key rather than a
+  rotated one, unsetting it neutralises the exposure today.
+
+When the removal does happen it is: the button and `speakScript`/`stopSpeech`
+block in `products.html`, the speak route and its cache/budget, the
+`insights-listen` beacon in both allowlists and its Slack branch, and
+`scripts/insights-listen.spec.js` plus its render case. **The beacon's event name
+stays out of `events.jsonl`'s history** — rows already written keep describing
+what happened, the same rule as `campmap-book`'s `kind`.
+
 Dan: *"stupid question--can we read the rec AI insights outloud?"* then
 *"try it on one page so i can hear it. and I have an eleven labs account bty"*.
 
