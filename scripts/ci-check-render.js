@@ -6705,6 +6705,30 @@ try {
                    JSON.stringify({ reportSettings: true }));
 } catch (_) {}
 
+/* DEFAULT-HIDDEN REPORTS HAVE TO BE OPTED IN, OR THEIR OWN CASES TEST A 404.
+   This harness boots on a FRESH DATA_DIR, so no org has ever been switched on
+   — and for a report in DEFAULT_HIDDEN_REPORTS that means the page 404s and
+   every case for it reports "the page came up blank", which reads as a broken
+   page rather than as a report nobody enabled. Caught in CI the first time a
+   report shipped hidden (Opportunities, 2026-09-14).
+
+   THE SEMANTICS INVERT: for a default-hidden report, being LISTED in an org's
+   visibility array means SHOWN. Written for every org because `org` is not
+   resolved until after the spawn — the same reason WIZARD_ENABLED_ORGS below
+   reads its slug list out of server.js. */
+try {
+  const srcV = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
+  const i = srcV.indexOf("const DEFAULT_HIDDEN_REPORTS = new Set(");
+  const defaultHidden = require("vm").runInNewContext(
+    srcV.slice(srcV.indexOf("[", i), srcV.indexOf("]", i) + 1));
+  const o = srcV.indexOf("const ORGS = {");
+  const slugs = Object.keys(require("vm").runInNewContext(
+    "(" + srcV.slice(srcV.indexOf("{", o), srcV.indexOf("\nconst REPORT_TYPES", o)).trim().replace(/;$/, "") + ")"));
+  const vis = {};
+  slugs.forEach(sl => { vis[sl] = defaultHidden.slice(); });
+  fs.writeFileSync(path.join(dataDir, "report-visibility.json"), JSON.stringify(vis));
+} catch (_) {}
+
 
 const child = spawn(process.execPath, [path.join(__dirname, "..", "server.js")], {
   env: { ...process.env, PORT: String(PORT), DATA_DIR: dataDir,
