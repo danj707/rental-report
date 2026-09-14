@@ -4114,9 +4114,21 @@ const REPORT_VISIBILITY_SEEDS = {
   // Applied 2026-09-14. Opportunities is default-hidden, and for a
   // default-hidden report being LISTED means SHOWN — see reportHiddenForOrg.
   "opportunities:2026-09-14": { report: "opportunities", orgs: ["watertown"] },
+  // Dan turned this on for Shrewsbury in the admin grid and it did not stick:
+  // the grid's own eye was inverted for a default-hidden report, so the click
+  // that looked like "show" was the one that hid it again. See the toggle route.
+  "opportunities:2026-09-14-shrewsbury": { report: "opportunities", orgs: ["shrewsbury"] },
 };
 
-(function seedReportVisibility() {
+/* CALLED FROM storeBoot(), NOT AT MODULE SCOPE, and that is the whole reason it
+   works. At module scope readJSON/writeJSON see the CONTAINER'S OWN DISK - the
+   store is not configured yet - so the seed read an empty file, wrote the row to
+   a filesystem that is thrown away, and wrote its own applied-marker there too.
+   The marker never reaching the store is what made it silent: it logged
+   "shown for watertown" on every boot of every replica, for weeks, and the org
+   stayed hidden. Same shape as loadDynamicOrgs, which is called twice for this
+   exact reason and says so. */
+function seedReportVisibility() {
   try {
     const seedFile = path.join(DATA_DIR, "report-seeds.json");
     const applied = readJSON(seedFile, {});
@@ -4136,7 +4148,7 @@ const REPORT_VISIBILITY_SEEDS = {
     }
     if (changed) writeJSON(VISIBILITY_FILE, all);
   } catch (e) { console.warn("[seed] report visibility:", e.message); }
-})();
+}
 
 // ── Project-update announcements (admin-published dashboard popups) ───
 function getAnnouncements() {
@@ -16836,8 +16848,16 @@ app.post("/api/admin/toggle-report", express.json(), (req, res) => {
   setHiddenReports(slug, hidden);
   /* hiddenNow is the SERVER's answer rather than something the client re-derives
      from the list. For a single key the two agree; for the set above they cannot,
-     because the list holds the individual report keys and never the card's. */
-  res.json({ ok: true, hidden, hiddenNow: hidden.includes(report), label: report });
+     because the list holds the individual report keys and never the card's.
+
+     IT GOES THROUGH reportHiddenForOrg, NOT hidden.includes(). For a
+     DEFAULT_HIDDEN report the store's meaning INVERTS - being listed means
+     SHOWN - so the raw membership test answered backwards for exactly the
+     reports that ship hidden. The click that turned Opportunities ON drew a
+     closed eye and toasted "hidden", so the next click turned it off again and
+     the grid then said "visible" about a card the org page does not draw. One
+     function owns that inversion; every reader of it must ask that function. */
+  res.json({ ok: true, hidden, hiddenNow: reportHiddenForOrg(slug, report), label: report });
 });
 
 // ── Project-update announcements ─────────────────────────────────────
@@ -21689,9 +21709,12 @@ app.get("/", (req, res) => {
         }
         HIDDEN_REPORTS[slug] = data.hidden;
         const card = btn.closest('.report-card');
-        // Default-hidden reports invert: presence in the list means SHOWN.
-        // (Facilities is now visible-by-default, so nothing is inverted here.)
-        const DEFAULT_HIDDEN = [];
+        /* Default-hidden reports invert: presence in the list means SHOWN.
+           INJECTED from the server's own set rather than typed here - this was a
+           hand-kept [] that had been emptied when facilities graduated to
+           visible-by-default, so the comment above it described an inversion the
+           code no longer did, for every report that has shipped hidden since. */
+        const DEFAULT_HIDDEN = ${JSON.stringify([...DEFAULT_HIDDEN_REPORTS])};
         const present = data.hidden.indexOf(report) >= 0;
         /* PREFER THE SERVER'S ANSWER. The Data Reports card is N keys behind one
            switch, so the stored list holds the individual report keys and never
@@ -23921,6 +23944,19 @@ app.use(express.static(path.join(__dirname, "public"), { maxAge: "10m" }));
 const STORE_BOOT_TIMEOUT_MS = 25000;
 
 async function storeBoot() {
+  try {
+    await storeConnect();
+  } finally {
+    /* THE SEED RUNS HERE, past every return above, or it writes into a store
+       that has not answered yet. A finally covers the disk-mode early return,
+       the configure timeout and a thrown connect alike: in every one of those
+       the seed still has to run, it just runs against whichever backend is
+       actually live. */
+    seedReportVisibility();
+  }
+}
+
+async function storeConnect() {
   if (!STORE_DATABASE_URL) {
     console.log("[store] disk mode — no DATABASE_URL/STORE_DATABASE_URL set");
     return;

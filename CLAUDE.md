@@ -322,6 +322,132 @@ restore from a copy.
   come back", not "what do they spend when they do".
 - **No per-instructor CAC.** The input is one number for the whole view, because
   there is no per-instructor spend anywhere to split it by.
+## THE EYE SAID VISIBLE AND THE CARD WAS NOT THERE (2026-09-14)
+
+Dan, with Shrewsbury's dashboard open and no Opportunities card anywhere on it,
+beside the admin grid showing Opportunities with an **open eye**: *"the
+opportunities report isn't showing up on an org's page, even though I turned it
+on (for shrewsbury)."*
+
+**TWO INDEPENDENT BUGS, AND THE FIRST ONE MADE HIS CLICK UNDO ITSELF.** Measured
+before anything was changed, through the open visibility API: `opportunities`
+read `visible:false` for **shrewsbury, watertown AND apex** — i.e. for everybody,
+including the org a seed had supposedly switched on hours earlier.
+
+### THE TOGGLE WORKED. THE ANSWER IT SENT BACK WAS INVERTED.
+
+`POST /api/admin/toggle-report` ended with
+
+```js
+res.json({ ok: true, hidden, hiddenNow: hidden.includes(report), label: report });
+```
+
+— the RAW membership test. For a `DEFAULT_HIDDEN_REPORTS` entry the store's
+meaning **inverts**: being listed means SHOWN. So the click that turned
+Opportunities ON came back `hiddenNow: true`, the grid drew a **closed** eye and
+toasted *"hidden from shrewsbury"*, and the obvious next click turned it back
+OFF — which answered `hiddenNow: false`, drew an **open** eye and toasted
+*"visible on shrewsbury"*. That is Dan's screenshot exactly: an open eye over a
+card the org page does not render.
+
+**THE INITIAL RENDER WAS RIGHT THE WHOLE TIME**, which is why this survived —
+the admin grid's own server-side `oppHidden = reportHiddenForOrg(slug, …)` is
+correct, and the spec already pinned it. What nothing covered is the answer the
+route POSTs back and the grid then draws its eye from. *One function owns that
+inversion and every reader of it has to ask that function*, including the one
+that only runs after a click.
+
+**And the client's fallback had gone stale in the same direction.** `toggleVis`
+carries `const DEFAULT_HIDDEN = []` under a comment reading *"Default-hidden
+reports invert: presence in the list means SHOWN"* — emptied when facilities
+graduated to visible-by-default, and never updated for anything that has shipped
+hidden since. It is injected from `DEFAULT_HIDDEN_REPORTS` now. Dead today (the
+server always sends `hiddenNow`) and exactly the kind of hand-kept copy this file
+keeps recording.
+
+### THE SEED LOGGED SUCCESS ON EVERY BOOT AND WROTE INTO A DISK THAT IS THROWN AWAY
+
+Watertown was not toggled by anybody — it was seeded, and production's own logs
+say so, twice, once per replica:
+
+```
+21:08:23  [seed] opportunities:2026-09-14 → opportunities shown for watertown
+21:08:24  [seed] opportunities:2026-09-14 → opportunities shown for watertown
+```
+
+…while the visibility API said `visible:false` for watertown all along.
+
+**`seedReportVisibility` RAN AT MODULE SCOPE, BEFORE `storeBoot()`.** At that
+point `readJSON`/`writeJSON` see the **container's own filesystem** — the store
+is not configured yet — so the seed read an empty file, wrote the visibility row
+to a disk that is discarded, **and wrote its own applied-marker to the same
+place**. The marker never reaching Postgres is what made it silent rather than
+merely broken: nothing was ever recorded as applied, so it re-ran on every boot
+of every replica, logged success every time, and could never take effect.
+
+**`loadDynamicOrgs` ALREADY CARRIES THIS LESSON, IN A COMMENT, TWELVE LINES
+AWAY** — it is a function precisely so it can run twice, *"once here at module
+scope (the store is not configured yet, so this reads the volume) and again from
+storeBoot() once Postgres has answered."* The seed is called from `storeBoot`'s
+**`finally`** now: one call site, past the disk-mode early return, the configure
+timeout and a thrown connect alike, because in every one of those the seed still
+has to run — it just runs against whichever backend is actually live.
+
+*Generalise it: a boot task that WRITES is not in the same class as one that
+reads. A read at module scope is stale; a write at module scope is discarded,
+and it takes its own idempotency marker with it.*
+
+### THE CONSEQUENCE NOBODY WOULD HAVE SEEN: the nightly job built ZERO orgs
+
+`opportunitiesDailyJob` walks
+`Object.keys(ORGS).filter(sl => !reportHiddenForOrg(sl, "opportunities"))` — a
+deliberate cost decision, and correct. With the seed never landing and the toggle
+undoing itself, **that filter selected nothing**, so the 03:20 cron and the whole
+pacing/budget change built no org at all. Everything anyone has read has come off
+the on-demand path. Worth knowing before reading a green cron as evidence.
+
+### Shrewsbury rides a SECOND dated key, not an edit to the first
+
+`"opportunities:2026-09-14-shrewsbury"`. A seed applies **once** and the org's own
+toggle owns it forever after, so editing an applied key is how a report Dan has
+since switched off comes back on its own overnight. The `2026-09-14` key is left
+exactly as it is; it has never actually applied anywhere, and reasoning about
+that is precisely what the never-edit-an-applied-key rule exists to avoid.
+
+### Guards
+
+`scripts/report-visibility.spec.js` 23 → **40 assertions**, in CI.
+Mutation-tested five ways, all failing by name: the toggle answering from raw
+list membership again (the bug as Dan hit it), the seed called at module scope
+as well, the seed never called from `storeBoot`, the grid's `DEFAULT_HIDDEN`
+back to a hand-kept `[]`, and the shrewsbury key dropped.
+
+**THE SEED HALF IS A SOURCE ASSERTION AND HAS TO BE.** In **disk mode** — which
+is what the live half runs — module scope and post-boot are indistinguishable,
+and the live *"the seed made Opportunities visible for Watertown on a fresh
+boot"* assertion **passed throughout the outage**. So the guard is the call
+site: the seed must be reached from `storeBoot`'s `finally`, must not be a
+module-scope IIFE, and must have **exactly one** call site.
+
+**The live half is what covers the eye**, because no source assertion can see
+that the route's answer agrees with what the org page renders: it toggles, reads
+`hiddenNow` back, and then requires the org landing page to actually carry the
+card.
+
+**AND ITS "the dashboard does not offer it" ASSERTION WAS VACUOUS.** It grepped
+the HTML for `/opportunities?` — but `org.html` builds its cards **client-side**
+from the injected `reports` list, so that link is in no build's markup and the
+absence passed on every one. Both halves read `window.ORG_CONFIG.reports` now,
+with a preceding assertion that the list was found at all. Nth instance in this
+file of an absence assertion satisfied by a page that never rendered the thing.
+
+**One mutation DIED instead of failing** — restoring the `(function …)` IIFE
+form without its `)();` is a SyntaxError, so the server never booted and
+`JSON.parse` threw on `Error: connect ECONNREFUSED`, naming nothing. Two fixes:
+every live read goes through a safe `json()` helper, and the mutation was
+rewritten to the form somebody would actually write (a module-scope call *added*
+beside the storeBoot one), which fails on the call-site count by name.
+
 ## EVERY NEW REPORT SHIPS HIDDEN (STANDING RULE, Dan 2026-09-14)
 
 Dan, asking for Opportunities to be merged: *"make sure you add it to each
