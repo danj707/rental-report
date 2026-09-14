@@ -126,7 +126,7 @@ if (!process.env.SKIP_SOURCE) {
      orgs is ~260 queries; spending them on a report an org cannot see is the
      storm this job is paced to avoid. */
   ok(/filter\(sl => !reportHiddenForOrg\(sl, "opportunities"\)\)/.test(src),
-    "the 05:20 job still only builds for orgs that can see it");
+    "the nightly job still only builds for orgs that can see it");
   ok(!/OPPORTUNITIES_ALL_ORGS|OPPORTUNITIES_EXCLUDED/.test(src),
     "the two flags it replaced are GONE, not left unread — two lists is the bug");
 
@@ -148,6 +148,43 @@ if (!process.env.SKIP_SOURCE) {
     "the admin grid renders a visibility toggle for it");
   ok(/const oppHidden = reportHiddenForOrg\(slug, 'opportunities'\)/.test(src),
     "…and reads the inverted default so a fresh org shows it as hidden");
+
+  /* THE EYE THE GRID DRAWS AFTER A CLICK. The initial render above was always
+     right; what was wrong is the answer the toggle POSTs back, which the grid
+     then draws. `hidden.includes(report)` is the RAW membership test, and for a
+     default-hidden report the store's meaning inverts — so the click that
+     turned Opportunities ON drew a CLOSED eye, and the next click (turning it
+     off) drew an OPEN one over a card the org page does not render. Scoped to
+     the toggle route, because `hidden.includes(` appears elsewhere. */
+  ok(/hiddenNow: reportHiddenForOrg\(slug, report\)/.test(toggle),
+    "the toggle answers through reportHiddenForOrg, so the eye it draws is not inverted");
+  ok(!/hiddenNow: hidden\.includes\(report\)/.test(toggle),
+    "…and never re-derives that answer from raw list membership");
+
+  /* The client's own fallback, for a caller that answers without hiddenNow.
+     It was a hand-kept [] whose comment still described an inversion it no
+     longer did — emptied when facilities graduated to visible-by-default, and
+     never updated for the reports that have shipped hidden since. */
+  ok(/const DEFAULT_HIDDEN = \$\{JSON\.stringify\(\[\.\.\.DEFAULT_HIDDEN_REPORTS\]\)\}/.test(src),
+    "the admin grid's DEFAULT_HIDDEN is injected from the server's set, not typed by hand");
+
+  /* ── THE SEED'S CALL SITE IS THE WHOLE OF ITS CORRECTNESS ──────────────
+     At module scope readJSON/writeJSON see the container's own disk, because
+     the store is not configured until storeBoot(). The seed therefore read an
+     empty file, wrote the visibility row AND its own applied-marker to a
+     filesystem that is thrown away, and logged "shown for watertown" on every
+     boot of every replica while the org stayed hidden. Only a source assertion
+     can see this: in disk mode — which is what the live half below runs — the
+     two orderings are indistinguishable, and the live seed assertion passed
+     throughout. Same lesson loadDynamicOrgs already carries. */
+  ok(/\}\s*finally\s*\{[\s\S]{0,600}?seedReportVisibility\(\);/.test(src),
+    "the visibility seed runs from storeBoot's finally, past every early return");
+  ok(!/\(function seedReportVisibility\(\)/.test(src),
+    "…and NOT as a module-scope IIFE, which writes into a store that has not answered yet");
+  {
+    const callSites = (src.match(/seedReportVisibility\(\);/g) || []).length;
+    eq(callSites, 1, "…called from exactly one place, so the ordering cannot drift");
+  }
 
   // The cross-project visibility API.
   const visApi = src.slice(src.indexOf('app.get("/api/org-visibility/:slug"'),
@@ -193,6 +230,12 @@ if (!process.env.SKIP_LIVE) {
       let b = ""; res.on("data", d => b += d); res.on("end", () => r({ status: res.statusCode, body: b }));
     }).on("error", e => r({ status: 0, body: String(e) }));
   });
+  /* READ THROUGH A SAFE PARSE. A mutation that stops the server booting made
+     JSON.parse throw on "Error: connect ECONNREFUSED", and the spec DIED with a
+     SyntaxError naming nothing instead of failing on the assertion that
+     provoked it. Nth instance in this repo of a guard that dies rather than
+     reporting. */
+  const json = (body) => { try { return JSON.parse(body || "{}"); } catch (_) { return {}; } };
   const post = (p_, obj) => new Promise(r => {
     const body = JSON.stringify(obj);
     const rq = http.request({ host: "127.0.0.1", port: PORT, path: p_, method: "POST",
@@ -208,11 +251,18 @@ if (!process.env.SKIP_LIVE) {
 
     /* THE SEED, ON A REAL BOOT. This server started on an empty DATA_DIR, so
        Watertown is visible here only if the seed actually ran. */
-    const wt = JSON.parse((await get("/api/org-visibility/watertown")).body || "{}");
+    const wt = json((await get("/api/org-visibility/watertown")).body);
     const w0 = (wt.available || []).find(a => a.type === "opportunities");
     ok(w0 && w0.visible === true, "the seed made Opportunities visible for Watertown on a fresh boot");
+    /* Shrewsbury rides a SECOND dated key rather than being added to the first.
+       A seed applies once and the org's own toggle owns it forever after, so
+       editing an applied key is how a report Dan has since switched off comes
+       back on its own. */
+    const sh = json((await get("/api/org-visibility/shrewsbury")).body);
+    const s0 = (sh.available || []).find(a => a.type === "opportunities");
+    ok(s0 && s0.visible === true, "…and for Shrewsbury, which Dan asked for and the inverted eye undid");
 
-    const before = JSON.parse((await get("/api/org-visibility/" + slug)).body || "{}");
+    const before = json((await get("/api/org-visibility/" + slug)).body);
     const b0 = (before.available || []).find(a => a.type === "opportunities");
     ok(b0 && b0.visible === false, "the visibility API reports it HIDDEN before anyone opts in");
 
@@ -223,18 +273,42 @@ if (!process.env.SKIP_LIVE) {
     const pg = await get("/" + slug + "/opportunities" + q);
     ok(pg.status !== 404, "a hidden report is still openable by URL — the eye hides it from the org, it does not lock it — got " + pg.status);
 
-    // …and the org's own dashboard does NOT carry the card while it is hidden.
+    /* …and the org's own dashboard does NOT carry the card while it is hidden.
+       READ OUT OF THE INJECTED ORG_CONFIG, not by grepping the HTML for a link:
+       org.html builds its cards client-side from `reports`, so the markup never
+       contains one and a grep for it is satisfied by every build. That is the
+       vacuous-absence trap this file already records twice. */
+    const landReports = (body) => {
+      const m = (body || "").match(/window\.ORG_CONFIG\s*=\s*(\{[\s\S]*?\});/);
+      try { return JSON.parse(m[1]).reports || []; } catch (_) { return null; }
+    };
     const land = await get("/" + slug + q);
-    ok(!/data-report="opportunities"|\/opportunities\?/.test(land.body || ""),
-      "…while the org's dashboard does not offer it");
+    const r0 = landReports(land.body);
+    ok(Array.isArray(r0) && r0.length > 0, "the org page injects its report list, or the two assertions on it are vacuous");
+    ok(!(r0 || []).includes("opportunities"), "…while the org's dashboard does not offer it");
 
     const t2 = await post("/api/admin/toggle-report", { password: PW, org: slug, report: "opportunities" });
     eq(t2.status, 200, "the toggle ACCEPTS opportunities — without this Dan cannot enable it at all");
 
+    /* THE ANSWER THE GRID DRAWS ITS EYE FROM. This is the bug Dan hit: the
+       click that turned the report ON came back saying it was hidden, so the
+       grid drew a closed eye, and his next click turned it back off while the
+       grid then claimed it was visible. Only the live half can see that the
+       route's answer agrees with what the org page actually renders. */
+    const t2b = json(t2.body);
+    eq(t2b.hiddenNow, false, "…and answers hiddenNow:false once it is SHOWN, so the eye opens");
+    const land2 = await get("/" + slug + q);
+    ok((landReports(land2.body) || []).includes("opportunities"),
+      "…and the org's dashboard now actually carries the card the eye claims");
+
+    const t3 = await post("/api/admin/toggle-report", { password: PW, org: slug, report: "opportunities" });
+    eq(json(t3.body).hiddenNow, true, "…and hiddenNow:true when it is hidden again");
+    await post("/api/admin/toggle-report", { password: PW, org: slug, report: "opportunities" });
+
     const pg2 = await get("/" + slug + "/opportunities" + q);
     ok(pg2.status !== 404, "…and it stays openable once shown — got " + pg2.status);
 
-    const after = JSON.parse((await get("/api/org-visibility/" + slug)).body || "{}");
+    const after = json((await get("/api/org-visibility/" + slug)).body);
     const a2 = (after.available || []).find(x => x.type === "opportunities");
     ok(a2 && a2.visible === true, "…and every surface then agrees it is visible");
 
