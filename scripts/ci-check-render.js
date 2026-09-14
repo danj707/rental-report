@@ -49,6 +49,22 @@ const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "render-check-"));
    one and its token would 404 this report before anything rendered. */
 const AQ_ORG = "render-check-aquatics";
 const AQ_TOKEN = "render-check-aquatics-token";
+
+/* The Instructor Lessons report is gated on ONE org — LESSONS_REPORT_ORGS is
+   {san-francisco-rec-park} — and the org resolved further down is whichever
+   campmap-seeded org comes first, whose token would 404 this report before
+   anything rendered. So these cases carry SF's own slug and token, read out of
+   the ORGS literal the same way the resolver below reads it. */
+const LS_ORG = "san-francisco-rec-park";
+const LS_TOKEN = (() => {
+  try {
+    const src = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
+    const i = src.indexOf("const ORGS = {");
+    const j = src.indexOf("\nconst REPORT_TYPES", i);
+    const O = require("vm").runInNewContext("(" + src.slice(src.indexOf("{", i), j).trim().replace(/;$/, "") + ")");
+    return (O[LS_ORG] || {}).token || "";
+  } catch (e) { return ""; }
+})();
 try {
   fs.writeFileSync(path.join(dataDir, "orgs.json"), JSON.stringify({
     [AQ_ORG]: { token: AQ_TOKEN, orgId: "8ae77057-6bce-4c20-b0f2-366ed5fa14dd",
@@ -1289,6 +1305,80 @@ let STUB_MODE = "";
 let CURRENT_STUB_DELAY_MS = 0;
 
 const STUBS = [
+  /* /:org/lessons/api/funnel — the aggregated output of cards 21847 and 21848.
+     THE STUB READS ?instructor= AND ANSWERS DIFFERENTLY, because that is what
+     the real route does and it is the only way a case can tell a page that
+     FORWARDS the filter from one that merely renders a picker: the scoped and
+     unscoped payloads carry deliberately different figures, so a page that
+     dropped the parameter renders a perfectly plausible tab with the wrong
+     numbers in it.
+
+     `lsone` returns a single instructor (the picker must be ABSENT — a control
+     that cannot narrow anything is the dead end this repo keeps recording) and
+     `lsunwired` returns the shape a card with no public link produces, which
+     must read as "not wired yet" rather than as a confident 0% funnel. */
+  /* The Instructor Lessons OVERVIEW feed. It must sit ABOVE the generic
+     /api/data stub, which matches /:org/lessons/api/data too — the
+     fall-through this repo has recorded twice, whose signature is a page that
+     renders a plausible shell full of another report's numbers.
+
+     It is a FAITHFUL shape rather than a stub of convenience: the page reads
+     `sport`, `priceBands` and `heat` as objects, and a payload missing one is
+     not something the real route can ever send. */
+  { match: /\/lessons\/api\/data/, body: () => ({
+      ok: true, range: { start: "2026-01-01", end: "2026-12-31" },
+      totals: { lessons: 60, active: 55, canceled: 5, paid: 6000, refunded: 200,
+                instructors: 2, avgPrice: 110, students: 24, repeatStudents: 9,
+                repeatShare: 38, maxByOneStudent: 7 },
+      instructors: [{ name: "Ada Coach", lessons: 35, rev: 3800, students: 14 },
+                    { name: "Bo Coach",  lessons: 25, rev: 2200, students: 10 }],
+      monthly: [{ month: "2026-01", lessons: 25, rev: 2600 },
+                { month: "2026-02", lessons: 35, rev: 3400 }],
+      sport: { Tennis: 40, Swim: 20 },
+      priceBands: { "$0-49": 5, "$50-99": 20, "$100+": 35 },
+      heat: { "Mon-9": 4, "Tue-10": 6, "Wed-17": 9 },
+    }) },
+
+  { match: /\/lessons\/api\/funnel/, body: (u) => {
+      const who = (/[?&]instructor=([^&]*)/.exec(u) || [])[1];
+      const instr = who ? decodeURIComponent(who) : "";
+      const scoped = !!instr;
+      if (STUB_MODE === "lsunwired") return {
+        ok: true, range: { start: "2026-01-01", end: "2026-12-31" },
+        instructors: ["Ada Coach", "Bo Coach"], instructor: "", instructorUnknown: false,
+        acquisition: { ok: false, reason: "unwired" },
+        retention: { ok: false, reason: "unwired" },
+      };
+      return {
+        ok: true, range: { start: "2026-01-01", end: "2026-12-31" },
+        instructors: STUB_MODE === "lsone" ? ["Ada Coach"] : ["Ada Coach", "Bo Coach"],
+        instructor: instr, instructorUnknown: false,
+        acquisition: { ok: true,
+          totals: { inquiries: scoped ? 7 : 30, accepted: scoped ? 4 : 18, pending: scoped ? 2 : 9,
+                    acceptedPct: 60, neverAnsweredPct: 30, acceptedBooked30Pct: 50, pendingBooked30Pct: 11.1,
+                    booked30: scoped ? 3 : 12, bookedSame30: scoped ? 2 : 8, prior: 4 },
+          byStatus: { ACCEPTED: { n: scoped ? 4 : 18, booked30: 3, bookedSame30: 2 },
+                      PENDING:  { n: scoped ? 2 : 9,  booked30: 1, bookedSame30: 0 },
+                      REJECTED: { n: 1, booked30: 0, bookedSame30: 0 },
+                      CANCELED: { n: 2, booked30: 0, bookedSame30: 0 } },
+          monthly: [{ month: "2026-01", n: 10, accepted: 6, booked30: 4 },
+                    { month: "2026-02", n: 20, accepted: 12, booked30: 8 }] },
+        retention: { ok: true,
+          totals: { bookings: scoped ? 12 : 60, live: scoped ? 11 : 55, canceled: scoped ? 1 : 5,
+                    customers: scoped ? 5 : 24, net: scoped ? 1100 : 6000,
+                    meanLtv: 250, medianLtv: 200, p90Ltv: 500, meanLessons: 2.2, medianLessons: 2,
+                    repeat: 3, oneAndDone: 2, fivePlus: 1, repeatPct: 60,
+                    meanLtvRepeat: 350, meanLtvOnce: 80,
+                    medianDaysToSecond: 22.5, secondWithin30: 2, secondWithin60: 3, secondWithin90: 3, secondTotal: 3,
+                    windowBookings: 4, windowNet: 400, windowReturningNetPct: 50 },
+          channel: { self: 40, instructor: 0, staff: 15, other: 0, unknown: 5, fastTrack: 2 },
+          monthly: [{ month: "2026-01", bookings: 20, net: 2000, netNew: 1200, netRet: 800, newCust: 12, returningCust: 2, customers: 14 },
+                    { month: "2026-02", bookings: 35, net: 4000, netNew: 900, netRet: 3100, newCust: 6, returningCust: 9, customers: 15 }],
+          cohorts: [{ cohort: "2026-01", size: 12, months: { 0: 12, 1: 5, 2: 2 } },
+                    { cohort: "2026-02", size: 6,  months: { 0: 6, 1: 2 } }] },
+      };
+    } },
+
   /* Card 21682 (Aquatic Lane Hours), the first of the per-org custom data
      reports. THE FIXTURE IS SHAPED SO A WRONG ROLL-UP CANNOT LOOK RIGHT: two
      months, two locations inside each, and month totals (13 and 21) and a grand
@@ -1927,6 +2017,82 @@ const EUCLID_COLUMNS = async page => {
 };
 
 const CASES = [
+
+  /* ── Instructor Lessons: acquisition + retention ────────────────────────
+     Every case here is keyed on a COMPUTED FIGURE or on an ABSENCE. "The
+     acquisition tab rendered" passes just as happily on a tab reading the
+     wrong feed, on one ignoring the instructor filter, and on one printing a
+     confident 0% for a card that has no public link yet. */
+  { name: "lessons · the acquisition tab draws the funnel from the feed",
+    path: "/" + LS_ORG + "/lessons?tab=acquisition", token: LS_TOKEN,
+    act: async (page) => {
+      await page.waitForFunction(() => !!document.querySelector("[data-ls-inq]"), { timeout: 15000 });
+      await page.evaluate(() => {
+        const t = document.querySelector('[data-ls-tab="acquisition"]');
+        document.body.dataset.lsLit = t && t.getAttribute("aria-current") === "page" ? "1" : "0";
+        document.body.dataset.lsInq = document.querySelector("[data-ls-inq]").getAttribute("data-ls-inq");
+      });
+    },
+    // BOTH halves, stamped: `needs` is one querySelector, so a comma list is an
+    // OR and would pass on a tab that drew the right number under the wrong
+    // heading — or lit the right heading over somebody else's feed.
+    needs: 'body[data-ls-lit="1"][data-ls-inq="30"]' },
+
+  { name: "lessons · a deep link lands on the tab it names",
+    path: "/" + LS_ORG + "/lessons?tab=retention", token: LS_TOKEN,
+    needs: '[data-ls-tab="retention"][aria-current="page"]' },
+
+  { name: "lessons · an unknown tab lands on Overview rather than on nothing",
+    path: "/" + LS_ORG + "/lessons?tab=nonsense", token: LS_TOKEN,
+    needs: '[data-ls-tab="overview"][aria-current="page"]' },
+
+  { name: "lessons · the retention tab draws LTV and the cohort grid",
+    path: "/" + LS_ORG + "/lessons?tab=retention", token: LS_TOKEN,
+    needs: '[data-ls-customers="24"]' },
+
+  /* THE ASK. A picker that renders and does not scope looks identical, so the
+     stub answers the scoped request with different figures and the case keys
+     on THEM: 7 inquiries where the unscoped tab reads 30. A page that dropped
+     ?instructor= from its fetch fails here and nowhere else. */
+  { name: "lessons · the instructor filter actually scopes the funnel",
+    path: "/" + LS_ORG + "/lessons?tab=acquisition&instructor=" + encodeURIComponent("Ada Coach"),
+    token: LS_TOKEN,
+    needs: '[data-ls-inq="7"]' },
+
+  { name: "lessons · ...and the retention tab with it, saying what it is scoped to",
+    path: "/" + LS_ORG + "/lessons?tab=retention&instructor=" + encodeURIComponent("Ada Coach"),
+    token: LS_TOKEN,
+    act: async (page) => {
+      await page.waitForFunction(() => !!document.querySelector("[data-ls-customers]"), { timeout: 15000 });
+      await page.evaluate(() => {
+        const sc = document.querySelector("[data-ls-scoped]");
+        document.body.dataset.lsScope = sc ? sc.getAttribute("data-ls-scoped") : "none";
+        document.body.dataset.lsCust = document.querySelector("[data-ls-customers]").getAttribute("data-ls-customers");
+      });
+    },
+    // The figure AND the sentence that says what it covers. A scoped number
+    // with nothing on screen naming the scope is how a reader quotes one
+    // instructor's LTV as the department's.
+    needs: 'body[data-ls-scope="Ada Coach"][data-ls-cust="5"]' },
+
+  // Absent, not disabled: with one instructor there is nothing to choose
+  // between, and a select that can only pick what is already on screen is the
+  // dead end this repo keeps writing down.
+  { name: "lessons · no instructor picker where there is nothing to choose between",
+    path: "/" + LS_ORG + "/lessons?tab=acquisition", token: LS_TOKEN, stubMode: "lsone",
+    absent: "[data-ls-instr]",
+    needs: '[data-ls-inq="30"]' },
+
+  /* A card with no public link is a CONFIGURATION, not a failure — and it must
+     not render as one. A 0% funnel would say this org's instructors answer
+     nobody; the note says the card needs a link. Keyed on the figures being
+     ABSENT as well as the note being present, because a page that rendered
+     both would be telling the reader two different things. */
+  { name: "lessons · an unwired card says so rather than reporting zero",
+    path: "/" + LS_ORG + "/lessons?tab=acquisition", token: LS_TOKEN, stubMode: "lsunwired",
+    absent: "[data-ls-inq]",
+    needs: ".ls-unwired" },
+
 
   /* ── Surveys ─────────────────────────────────────────────────────────────
      Dan's one hard rule — "just NEVER on a customer facing report ... ONLY on
