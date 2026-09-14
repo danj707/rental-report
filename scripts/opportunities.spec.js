@@ -477,7 +477,7 @@ if (!SKIP_SOURCE) {
     ? server.slice(server.indexOf("async function opportunitiesDailyJob"),
                    server.indexOf("cron.schedule(\"" + oppCron[1] + " " + oppCron[2]))
     : "";
-  ok(/for \(const slug of slugs\)/.test(job) && /await buildOpportunitiesFor\(slug\)/.test(job),
+  ok(/for \(const slug of slugs\)/.test(job) && /await buildOpportunitiesFor\(slug[,)]/.test(job),
     "the job walks orgs SEQUENTIALLY rather than fanning out");
   ok(/setTimeout\(r, OPP_ORG_PACE_MS\)/.test(job), "…and paces between them");
   ok(/catch \(e\)/.test(job), "one org's failure does not stop the rest");
@@ -485,6 +485,32 @@ if (!SKIP_SOURCE) {
   // A FAILED FETCH MUST STAY null. This is the single line the whole
   // suppression design rests on.
   const build = server.slice(server.indexOf("async function buildOpportunitiesFor"), server.indexOf("async function ensureOpportunities"));
+
+  /* THE BUDGET IS THE CALLER'S — the cron waits longer than the page.
+     Watertown's Programs card returned the identical 608 rows in 54.1s and then
+     262.6s twenty minutes later, so 120s does not separate "too slow" from
+     "unlucky". The load-bearing assertion is the LAST one: a single feed that
+     forgets to pass feedOpts silently keeps the 120s budget on the cron, which
+     is invisible in review and is exactly the feed this was built for. */
+  ok(/const OPP_CRON_FEED_TIMEOUT_MS = (\d+);/.test(server), "the cron has its own per-feed budget");
+  const cronBudget = Number((server.match(/const OPP_CRON_FEED_TIMEOUT_MS = (\d+);/) || [0, 0])[1]);
+  ok(cronBudget > 120000, "…and it is LONGER than the page's 120s, or the change is decorative"
+    + " (" + cronBudget + "ms)");
+  ok(/const timeoutMs = \(opts && opts\.timeoutMs\) \|\| 120000;/.test(server),
+    "fetchMBDirect honours a caller's timeout and still DEFAULTS to 120s");
+  ok(/buildOpportunitiesFor\(slug, \{ feedTimeoutMs: OPP_CRON_FEED_TIMEOUT_MS \}\)/.test(job),
+    "the daily job spends the longer budget");
+  const ensure = server.slice(server.indexOf("async function ensureOpportunities"),
+                              server.indexOf("const OPP_ORG_PACE_MS"));
+  ok(ensure.length > 0 && /buildOpportunitiesFor/.test(ensure),
+    "…the on-demand slice reaches its own call, or the assertion below is vacuous");
+  ok(/await buildOpportunitiesFor\(slug\)/.test(ensure) && !/feedTimeoutMs/.test(ensure),
+    "…and the ON-DEMAND path does not, so a page request cannot hang past the edge timeout");
+  const feedJobs = (build.match(/safe\(\(\) =>/g) || []).length;
+  const feedJobsBudgeted = (build.match(/safe\(\(\) => fetch[A-Za-z]*\([^)]*feedOpts\)/g) || []).length;
+  ok(feedJobs > 0 && feedJobs === feedJobsBudgeted,
+    "EVERY feed carries the caller's budget — one that forgets it stays on 120s silently ("
+      + feedJobsBudgeted + "/" + feedJobs + ")");
   ok(/Array\.isArray\(v\) \? v : null/.test(build), "a feed that fails becomes null, never an empty list");
   ok(!/catch[^)]*\)\s*=>\s*\[\]/.test(build), "…and nothing defaults a failed feed to []");
 

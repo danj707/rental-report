@@ -602,15 +602,42 @@ from the hour; it cannot make a card whose wall clock swings 54s→263s fit insi
 120s every night. The refusal guard is what keeps a bad night survivable, and a
 partial build is still stored.
 
-**The per-feed timeout is the other lever and is deliberately not pulled.** The
-objection recorded above — a longer timeout lengthens every on-demand build —
-applies to the PAGE path and not to a cron, so the honest version is a timeout
-that differs by caller. Dan chose the schedule instead; if `programs` keeps
-missing at 03:20, that is the next thing to reach for, not a bigger `Promise`.
+### THE BUDGET IS THE CALLER'S — and this is the half that actually fixes Programs
+
+Dan, on the two sections still empty: *"programs is the main one not working."*
+
+He is right, and moving the hour was never going to be enough on its own: it
+takes OUR load out of the way and cannot make a card whose wall clock swings
+54s→263s fit inside 120s. So `fetchMBDirect` takes an optional timeout and the
+two callers spend different amounts:
+
+| caller | per-feed budget | why |
+|---|---|---|
+| the 03:20 cron | **300s** (`OPP_CRON_FEED_TIMEOUT_MS`) | nobody is waiting |
+| the page (`ensureOpportunities`) | **120s**, unchanged | Railway's edge kills a long request |
+
+**300s IS SIZED FROM THE READINGS, not judged** — unlike `OPP_FEED_CONCURRENCY`,
+which is labelled a judgement two sections up. Of four measurements of that card
+over this window, the two that completed were 54.1s and 262.6s and the two that
+aborted were censored at the 120s wall; 300s covers every completed one.
+
+**IT IS AFFORDABLE ONLY ON THE CRON, and the concurrency limit is what makes it
+so.** Nine feeds at 300s each would be 45 minutes stacked; at three-at-a-time it
+is three waves, and the orgs are already walked one at a time.
+
+**THE PAGE KEEPS 120s DELIBERATELY.** A five-minute request dies at the edge as a
+502 with no body — a failure this repo has already shipped once — and the refusal
+guard means a partial on-demand build is still stored and still retried, so the
+reader gets what answered instead of a hang.
+
+**The load-bearing guard is not the constant, it is that EVERY feed carries it.**
+One feed that forgets `feedOpts` silently stays on 120s, which is invisible in
+review and would be exactly the feed this was built for; the spec counts the
+budgeted feeds against the total and the mutation fails reading `(8/9)`.
 
 ### Guards
 
-`scripts/opportunities.spec.js` 322 → 341 → **344 assertions**, and the new half LIFTS
+`scripts/opportunities.spec.js` 322 → 341 → 344 → **351 assertions**, and the new half LIFTS
 AND RUNS both helpers — a regex over `mapPaced` passes on an implementation that
 starts all nine anyway, so the assertion **observes the peak in flight** rather
 than reading the source. Mutation-tested eight ways, all eight caught by an
@@ -638,6 +665,21 @@ rationale restored, and the leader lock dropped.
 TypeError naming nothing. Nth instance in this file. The match is read through a
 safe default now, and the minutes fall back to `Infinity` rather than `0`, or the
 ordering assertion would pass VACUOUSLY on a schedule it could not read.
+
+**The budget half is mutation-tested five more ways, all failing by name**: the
+cron budget dropped so the cron is back on 120s, the constant set to 120s so the
+change is decorative, ONE feed forgetting `feedOpts` (the silent half-wiring —
+fails reading `8/9`), the PAGE given the cron's budget, and `fetchMBDirect` no
+longer honouring a caller's timeout.
+
+**And two of my own assertions failed on correct code first**, both the recorded
+slice trap: the pre-existing *"walks orgs SEQUENTIALLY"* test pinned
+`buildOpportunitiesFor(slug)` with no argument, so adding one broke a test with
+nothing about sequencing having changed; and the on-demand slice was bounded by
+`opportunitiesLearnedNothing`, which is declared ABOVE `ensureOpportunities`, so
+it sliced backwards to an empty string — an assertion over nothing. It is bounded
+by `OPP_ORG_PACE_MS` now, with a preceding assertion that the slice is non-empty,
+or the whole claim is vacuous.
 
 ## THE OPPORTUNITIES REPORT, ANSWERED IN FIVE MORE (2026-09-14)
 

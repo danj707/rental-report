@@ -13789,13 +13789,13 @@ function oppWindow(now) {
 // The Facilities summary card is not a REPORT_TYPES entry, so fetchMBDirect
 // cannot reach it — but its billed/collected columns are the only place an
 // unpaid rental exists. Fetched the same way the hub's own route does.
-async function fetchFacilitiesSummaryDirect(slug, start, end) {
+async function fetchFacilitiesSummaryDirect(slug, start, end, opts) {
   const org = ORGS[slug];
   if (!org || !org.orgId) return null;
   const params = buildMetabaseParams({ start_date: start, end_date: end }, "facilities", org.orgId);
   const qs = params.length ? "?parameters=" + encodeURIComponent(JSON.stringify(params)) : "";
   const resp = await fetch(METABASE_URL + "/api/public/card/" + FACILITIES_SUMMARY_UUID + "/query/json" + qs,
-    { signal: AbortSignal.timeout(180000) });
+    { signal: AbortSignal.timeout((opts && opts.timeoutMs) || 180000) });
   if (!resp.ok) return null;
   const body = await resp.json();
   return Array.isArray(body) ? body : null;
@@ -13827,6 +13827,25 @@ async function fetchFacilitiesSummaryDirect(slug, start, end) {
    `opportunitiesLearnedNothing` — this only lowers how often it fires. */
 const OPP_FEED_CONCURRENCY = 3;
 
+/* THE NIGHTLY BUILD GETS A LONGER PER-FEED BUDGET THAN THE PAGE, and this is
+   the one number here that IS sized from measurement rather than judged.
+   Watertown's Programs card, over this build's own 365-day window, returned the
+   identical 608 rows in 54.1s and then 262.6s twenty minutes later, and twice
+   aborted at the 120s wall in between. A 4.9x spread on input that cannot have
+   changed is replica load, not the card — so 120s does not separate "too slow"
+   from "unlucky", it just loses the coin toss about half the time.
+
+   300s covers every completed reading we have. It is affordable ONLY on the
+   cron: nobody is waiting, the orgs are walked one at a time, and the feeds
+   inside an org are already limited to three at once — so the worst case is
+   three waves, not nine stacked timeouts.
+
+   THE PAGE PATH DELIBERATELY KEEPS 120s. A five-minute request dies at
+   Railway's edge as a 502 with no body, which this repo has already shipped
+   once; and the refusal guard means a partial on-demand build is still stored
+   and still retried, so the reader gets what answered rather than a hang. */
+const OPP_CRON_FEED_TIMEOUT_MS = 300000;
+
 async function mapPaced(jobs, limit) {
   const out = new Array(jobs.length);
   let next = 0;
@@ -13840,8 +13859,9 @@ async function mapPaced(jobs, limit) {
   return out;
 }
 
-async function buildOpportunitiesFor(slug) {
+async function buildOpportunitiesFor(slug, opts) {
   const win = oppWindow();
+  const feedOpts = (opts && opts.feedTimeoutMs) ? { timeoutMs: opts.feedTimeoutMs } : undefined;
   // The fetch is deferred into a thunk so mapPaced controls when it STARTS —
   // a bare promise has already begun, and a concurrency limit over nine
   // in-flight requests limits nothing.
@@ -13850,15 +13870,15 @@ async function buildOpportunitiesFor(slug) {
     .catch(e => { console.warn("[opportunities] " + slug + " feed failed: " + e.message); return null; });
   const [programs, waitlist, fasttrack, facility, facilitiesSummary, demographics, users, memberships, courts] =
     await mapPaced([
-      safe(() => fetchMBDirect(slug, "programs", win.start, win.end)),
-      safe(() => fetchMBDirect(slug, "waitlist", null, null)),
-      safe(() => fetchMBDirect(slug, "fasttrack", null, null)),
-      safe(() => fetchMBDirect(slug, "facility", win.start, win.end)),
-      safe(() => fetchFacilitiesSummaryDirect(slug, win.start, win.end)),
-      safe(() => fetchMBDirect(slug, "program-demographics", null, null)),
-      safe(() => fetchMBDirect(slug, "users", null, null)),
-      safe(() => fetchMBDirect(slug, "memberships", null, null)),
-      safe(() => fetchMBDirect(slug, "court-utilization", win.start, win.end)),
+      safe(() => fetchMBDirect(slug, "programs", win.start, win.end, feedOpts)),
+      safe(() => fetchMBDirect(slug, "waitlist", null, null, feedOpts)),
+      safe(() => fetchMBDirect(slug, "fasttrack", null, null, feedOpts)),
+      safe(() => fetchMBDirect(slug, "facility", win.start, win.end, feedOpts)),
+      safe(() => fetchFacilitiesSummaryDirect(slug, win.start, win.end, feedOpts)),
+      safe(() => fetchMBDirect(slug, "program-demographics", null, null, feedOpts)),
+      safe(() => fetchMBDirect(slug, "users", null, null, feedOpts)),
+      safe(() => fetchMBDirect(slug, "memberships", null, null, feedOpts)),
+      safe(() => fetchMBDirect(slug, "court-utilization", win.start, win.end, feedOpts)),
     ], OPP_FEED_CONCURRENCY);
   const feeds = { programs, waitlist, fasttrack, facility, facilitiesSummary, demographics, users, memberships, courts };
   const payload = OPPORTUNITIES.buildOpportunities(
@@ -13942,7 +13962,7 @@ async function opportunitiesDailyJob() {
   let ok = 0;
   for (const slug of slugs) {
     try {
-      const payload = await buildOpportunitiesFor(slug);
+      const payload = await buildOpportunitiesFor(slug, { feedTimeoutMs: OPP_CRON_FEED_TIMEOUT_MS });
       // The comment below has always said a failure must not overwrite a good
       // snapshot; a build where every feed timed out is that failure without
       // throwing, so it has to be tested rather than assumed.
@@ -14246,7 +14266,7 @@ app.get("/:org/annual-report", (req, res) => {
 });
 
 // Helper: fetch Metabase data directly (server-side, no HTTP round-trip)
-async function fetchMBDirect(orgSlug, reportType, startDate, endDate) {
+async function fetchMBDirect(orgSlug, reportType, startDate, endDate, opts) {
   const org = ORGS[orgSlug];
   if (!org) return null;
   // Match main data route: GL prefers per-org, all others prefer shared UUID + org_id
@@ -14260,7 +14280,11 @@ async function fetchMBDirect(orgSlug, reportType, startDate, endDate) {
   const paramStr = params.length > 0 ? "?parameters=" + encodeURIComponent(JSON.stringify(params)) : "";
   const url = METABASE_URL + "/api/public/card/" + mbUuid + "/query/json" + paramStr;
   console.log("[annual-report] fetch " + reportType + " → " + url.substring(0, 120));
-  const resp = await fetch(url, { signal: AbortSignal.timeout(120000) });
+  /* THE BUDGET IS THE CALLER'S, and 120s is only right for a caller somebody is
+     waiting on. A cron can afford to wait for a card whose wall clock swings;
+     a page request cannot, because Railway's edge gives up long before. */
+  const timeoutMs = (opts && opts.timeoutMs) || 120000;
+  const resp = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
   if (!resp.ok) { console.error("[annual-report] " + reportType + " returned " + resp.status); return null; }
   return resp.json();
 }
