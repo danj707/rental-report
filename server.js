@@ -4071,6 +4071,47 @@ function visibleReportsForOrg(slug) {
   } catch (e) { console.warn("[migrate] facilities visibility:", e.message); }
 })();
 
+/* ── ONE-TIME VISIBILITY SEEDS ────────────────────────────────────────────
+   Dan: "enable the observations report for Watertown too" — the Opportunities
+   report, which ships hidden for every org under his standing rule.
+
+   A SEED IS AN INITIAL VALUE, NOT A SECOND SOURCE OF TRUTH. It applies ONCE,
+   per named seed, and then the org's own eye toggle owns that report forever.
+   The marker is what makes that true: without it, every deploy would re-enable
+   a report he had since turned off, which is the most infuriating shape a
+   "default" can have — the switch works and then silently un-works overnight.
+
+   So: add a seed with a NEW key to turn something on for named orgs; never
+   edit an applied one, and never remove the marker to "re-run" it. Turning a
+   report off again is the toggle's job, not this map's. */
+const REPORT_VISIBILITY_SEEDS = {
+  // Applied 2026-09-14. Opportunities is default-hidden, and for a
+  // default-hidden report being LISTED means SHOWN — see reportHiddenForOrg.
+  "opportunities:2026-09-14": { report: "opportunities", orgs: ["watertown"] },
+};
+
+(function seedReportVisibility() {
+  try {
+    const seedFile = path.join(DATA_DIR, "report-seeds.json");
+    const applied = readJSON(seedFile, {});
+    const all = readJSON(VISIBILITY_FILE, {});
+    let changed = false;
+    for (const [key, seed] of Object.entries(REPORT_VISIBILITY_SEEDS)) {
+      if (applied[key]) continue;                      // already run: never again
+      for (const slug of seed.orgs) {
+        // An org that is not served here must not get a phantom entry.
+        if (!ORGS[slug]) { console.warn("[seed] " + key + ": unknown org " + slug); continue; }
+        const list = Array.isArray(all[slug]) ? all[slug] : [];
+        if (!list.includes(seed.report)) { all[slug] = list.concat(seed.report); changed = true; }
+      }
+      applied[key] = new Date().toISOString();
+      writeJSON(seedFile, applied);
+      console.log("[seed] " + key + " → " + seed.report + " shown for " + seed.orgs.join(", "));
+    }
+    if (changed) writeJSON(VISIBILITY_FILE, all);
+  } catch (e) { console.warn("[seed] report visibility:", e.message); }
+})();
+
 // ── Project-update announcements (admin-published dashboard popups) ───
 function getAnnouncements() {
   const a = readJSON(ANNOUNCEMENTS_FILE, []);
@@ -13382,22 +13423,26 @@ function saveOpportunitySnapshots(s) { writeJSON(OPPORTUNITIES_FILE, s); }
    Dan: "make sure you add it to each org's dashboard, not viewable. I'll
    enable viewing for the orgs I want."
 
-   SEE AND CLICK ARE TWO DIFFERENT GATES and this report needs both — the
-   Report Wizard section of CLAUDE.md records campmap serving ~24 visitors a
-   month through direct links the whole time it was "retired", because that
-   Set only controls whether a report is SURFACED. So the page, the data
-   route, the PDF and the insights route all read the SAME per-org state the
-   card does: an org Dan has not turned on cannot reach it by URL either.
+   THE EYE HIDES IT FROM THE ORG. IT DOES NOT LOCK THE REPORT.
 
-   It also decides which orgs the 05:20 job builds a snapshot for, so the
-   ~260-query daily fan-out is spent only on orgs somebody actually looks at.
+   Dan, after the first version gated the page too and he could not open his
+   own card: "i should still be able to click on it and view it, just the eye
+   'hides' it from them." That is what the toggle means for every other report
+   here — it controls whether a report is SURFACED on the org's dashboard, not
+   whether it works — and this one is no exception. So the routes stay open for
+   every org and the visibility toggle governs the CARD alone.
+
+   (The first build read the toggle here as well, on the SEE-and-CLICK
+   reasoning this repo records for the Report Wizard. That reasoning is about a
+   feature being switched OFF, not about a card being hidden from an org while
+   we are still looking at it. Dan's call, and it is the right one.)
+
    The two module-level flags this replaced are gone rather than left unread:
    two lists is the bug, one list is the fix. (Their names are deliberately not
    written here — the spec forbids them by literal, and a comment quoting a
    banned string fails the guard on correct code, which this file has now done
    to itself three times.) */
-const opportunitiesEnabled = (slug) =>
-  !!ORGS[slug] && !reportHiddenForOrg(slug, "opportunities");
+const opportunitiesEnabled = (slug) => !!ORGS[slug];
 
 function oppWindow(now) {
   const end = now || new Date();
@@ -13472,7 +13517,13 @@ async function ensureOpportunities(slug, opts) {
    already warm, and it takes them one org at a time. */
 const OPP_ORG_PACE_MS = 4000;
 async function opportunitiesDailyJob() {
-  const slugs = Object.keys(ORGS).filter(opportunitiesEnabled);
+  /* BUILT FOR THE ORGS THAT CAN SEE IT, not for every org the routes serve.
+     Nine feeds across ~29 orgs is ~260 Metabase queries a night, and spending
+     them on a report an org cannot see is the fan-out this job is paced to
+     avoid. An org Dan opens through the admin grid while it is still hidden
+     builds ON DEMAND instead (ensureOpportunities falls through to a real
+     build), so the page he clicks into is never empty — only slower once. */
+  const slugs = Object.keys(ORGS).filter(sl => !reportHiddenForOrg(sl, "opportunities"));
   console.log("[opportunities] daily build starting for " + slugs.length + " orgs");
   let ok = 0;
   for (const slug of slugs) {

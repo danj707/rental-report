@@ -14,19 +14,47 @@ exactly what this file already records about `SHARED_UUIDS` (*"wiring the uuid
 IS the rollout. Nothing stages it per org"*). Caught because he asked, not
 because anything would have stopped it.
 
-### ONE SWITCH, AND IT GOVERNS THE PAGE AS WELL AS THE CARD
+### THE EYE HIDES IT FROM THE ORG. IT DOES NOT LOCK THE REPORT.
 
-`opportunitiesEnabled(slug)` is now `!reportHiddenForOrg(slug, "opportunities")`
-— the org's own visibility toggle — and the two module-level flags it replaced
-are **deleted rather than left unread**. Two lists is the bug.
+**A CORRECTION, AND IT REVERSES WHAT I BUILT FIRST.** The first version gated
+the PAGE on the toggle too, on the SEE-and-CLICK reasoning this file records
+for the Report Wizard. Dan clicked his own admin card and got *"The
+Opportunities report is not enabled for this organization"*: **"i should still
+be able to click on it and view it, just the eye 'hides' it from them."**
 
-**SEE AND CLICK ARE TWO DIFFERENT GATES and Dan said "not viewable", so this
-report needs both.** The Report Wizard section of this file records campmap
-serving ~24 visitors a month through direct links the whole time it was
-"retired", because that Set only controls whether a report is SURFACED. So the
-page, the data route, the PDF and the insights route all read the SAME per-org
-state the card does: **an org that is off 404s the URL**, proven live with a
-VALID org token rather than assumed.
+He is right, and the distinction is worth keeping: that reasoning is about a
+feature being switched **OFF**, not about a card being hidden from an org while
+we are still looking at it. The eye means what it means for every other report
+here — it controls whether a report is **SURFACED on the org's dashboard**, not
+whether it works. So `opportunitiesEnabled(slug)` is just `!!ORGS[slug]`, the
+routes stay open, and the toggle governs the CARD alone. The two module-level
+flags it replaced are still **deleted rather than left unread**.
+
+**THE NIGHTLY JOB STILL FOLLOWS VISIBILITY, and that is a cost decision rather
+than a gate.** Nine feeds across ~29 orgs is ~260 Metabase queries a night, and
+spending them on a report an org cannot see is the fan-out the job is paced to
+avoid. An org opened through the admin grid while still hidden builds **on
+demand** instead, so the page is never empty — only slower once.
+
+### A SEED IS AN INITIAL VALUE, NOT A SECOND SOURCE OF TRUTH
+
+Dan: *"enable the observations report for Watertown too"* — Opportunities, which
+ships hidden. The admin API needs `DASHBOARD_PASSWORD`, which **Railway redacts
+from an OAuth caller**, so this cannot be flipped from a session; it is seeded
+in code instead, using the one-time shape `migrateFacilitiesVisibility()`
+already set.
+
+**THE MARKER IS THE WHOLE FEATURE.** Without it every deploy re-enables a report
+he has since switched off — *the switch works, then silently un-works
+overnight*, which is worse than it never having worked. `REPORT_VISIBILITY_SEEDS`
+is keyed by a dated seed name, each applies **once**, and the org's own toggle
+owns that report forever after. Add a NEW key to turn something on; never edit
+an applied one and never delete a marker to "re-run" it. Turning a report off
+again is the toggle's job.
+
+**An org this server does not serve gets no phantom entry** — a seed naming a
+slug that is not in `ORGS` warns and skips, rather than writing a visibility
+row nothing can ever read.
 
 It also decides which orgs the 05:20 job builds for
 (`Object.keys(ORGS).filter(opportunitiesEnabled)`), so the ~260-query daily
@@ -68,10 +96,24 @@ the page no longer following the toggle, the card added ungated, the toggle
 route refusing it, the visibility API reporting the wrong state, the admin grid
 losing its toggle, and the daily job building every org regardless.
 
-**The live half boots a real server and drives the real routes** — hidden,
-refused, toggled, opened — because no source assertion can see six code paths
-agreeing. `SKIP_LIVE=1` and `SKIP_SOURCE=1` each drop a half, and **each half
-alone was seen to catch the shipping-visible bug**.
+**The live half boots a real server and drives the real routes** — hidden but
+still OPENABLE, the card absent from the org's dashboard, toggled, and the seed
+having fired on a fresh boot — because no source assertion can see six code
+paths agreeing. `SKIP_LIVE=1` and `SKIP_SOURCE=1` each drop a half, and **each
+half alone was seen to catch the shipping-visible bug**.
+
+**THE RENDER HARNESS DELIBERATELY DOES NOT OPT ORGS IN.** It did briefly, while
+the page was gated and the Opportunities cases were testing a 404 — and that is
+now reverted, because **a harness that silently switches on every hidden report
+cannot test hidden-by-default at all.** `org landing · no opportunities card
+until it is turned on` is the case that needed it gone.
+
+**AND I EDITED server.js WHILE A MUTATION RUNNER OWNED IT** — third instance of
+the overlapping-runs trap in one session. The runner holds an `orig` snapshot
+and restores it in a `finally`, so my seed would have been wiped by a run that
+looked like it succeeded. Killing it left the file MUTATED rather than restored.
+*Never edit a file a mutation runner is holding; and if you must, rebuild it
+from the committed state rather than guessing at the current mixture.*
 
 **MY OWN "THE PAGE IS REFUSED" ASSERTION WAS VACUOUS FIRST.** It requested the
 page with **no org token**, so the org-token middleware 404'd it whatever the
@@ -1965,6 +2007,41 @@ to be killed by pid sweep. *A re-exec sentinel must be an explicit env flag, not
 a guess at what the value it sets will look like.*
 
 ## REC INSIGHTS, READ OUT LOUD — a prototype on ONE page (2026-09-11)
+
+### CLOSED, NOT DEFERRED — Dan has decided against it (2026-09-14)
+
+Asked whether the Opportunities report should get a Listen button:
+*"hmm lets skip the listen button, i will want to rip all that out eventually,
+fun concept but hated it."*
+
+**So do not add voice to any new surface, and do not raise it as an obvious next
+step.** The notes below stay because the measurements and traps are real and the
+removal has not happened yet — read them as the record of a prototype being wound
+down, not as a feature to extend.
+
+- **Nothing was removed today**, because he said *eventually*. `speakScript`
+  still exists in **`public/products.html` alone** (one page, one call site —
+  that seam was the whole design) and the route is still
+  `POST /:org/:report/api/speak`.
+- **`public/opportunities.html` has zero voice code**, which is the state it
+  stays in.
+- **UNSETTING `ELEVENLABS_API_KEY` IS THE ZERO-CODE KILL SWITCH, and it is worth
+  doing before the removal.** The route already treats an absent key as
+  *configuration rather than failure* — it 404s (marked `refuse404`) and the page
+  falls back to `speechSynthesis`, which is exactly what every PR preview and
+  local boot already does. So unsetting it in Railway stops the text leaving the
+  platform, stops the spend, and breaks nothing.
+- **That matters more than usual here: the key in
+  `danj707/rec-training-video-skill` is COMMITTED TO A PUBLIC REPO and must be
+  treated as burned.** If the live Railway value is that key rather than a
+  rotated one, unsetting it neutralises the exposure today.
+
+When the removal does happen it is: the button and `speakScript`/`stopSpeech`
+block in `products.html`, the speak route and its cache/budget, the
+`insights-listen` beacon in both allowlists and its Slack branch, and
+`scripts/insights-listen.spec.js` plus its render case. **The beacon's event name
+stays out of `events.jsonl`'s history** — rows already written keep describing
+what happened, the same rule as `campmap-book`'s `kind`.
 
 Dan: *"stupid question--can we read the rec AI insights outloud?"* then
 *"try it on one page so i can hear it. and I have an eleven labs account bty"*.
@@ -4561,7 +4638,11 @@ fail.
   `DEFAULT_HIDDEN_REPORTS` (listed = SHOWN, the semantics invert) and leave it
   off the `MAY_BE_VISIBLE` whitelist in `report-visibility.spec.js`. He turns it
   on one org at a time from the admin grid's own toggle — never by editing
-  either list. **Check the report is actually TOGGLEABLE before calling it
+  either list. **THE EYE HIDES IT FROM THE ORG; IT MUST NOT LOCK THE REPORT** —
+  Dan, 2026-09-14: *"i should still be able to click on it and view it, just the
+  eye 'hides' it from them."* So gate the CARD and leave the routes open. To
+  turn one on for a named org without him clicking, add a dated key to
+  `REPORT_VISIBILITY_SEEDS` — it applies ONCE and the toggle owns it after. **Check the report is actually TOGGLEABLE before calling it
   done**: `POST /api/admin/toggle-report` has its own allowlist, and a report
   missing from it 400s, which leaves a switch he cannot flip.
 - **Wire a Slack activity notification into every new user-facing surface** —

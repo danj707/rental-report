@@ -89,6 +89,22 @@ const hiddenFn = new Function("DEFAULT_HIDDEN_REPORTS", "getHiddenReports",
 }
 
 if (!process.env.SKIP_SOURCE) {
+  /* ── THE SEED APPLIES ONCE, AND THAT IS THE WHOLE POINT ────────────────
+     Dan: "enable the observations report for Watertown too." A seed is an
+     INITIAL VALUE. Without a marker every deploy would re-enable a report he
+     had since switched off — the switch works, then silently un-works
+     overnight, which is worse than it never having worked. */
+  const seedBlk = src.slice(src.indexOf("const REPORT_VISIBILITY_SEEDS = {"),
+                            src.indexOf("})();", src.indexOf("function seedReportVisibility")));
+  ok(/"opportunities:2026-09-14":[\s\S]*orgs: \["watertown"\]/.test(seedBlk),
+    "Watertown is seeded to see Opportunities");
+  ok(/if \(applied\[key\]\) continue;/.test(seedBlk),
+    "…ONCE — an applied seed never runs again, so hiding it later sticks");
+  ok(/writeJSON\(seedFile, applied\)/.test(seedBlk),
+    "…and the marker is written, or 'once' is a comment rather than a fact");
+  ok(/if \(!ORGS\[slug\]\)/.test(seedBlk),
+    "…and an org this server does not serve gets no phantom entry");
+
   /* ── EVERY SURFACE HAS TO AGREE, and they are six different code paths.
      A card hidden on the org page while the cross-project API reports it
      visible is how rec-dashboard starts linking orgs to a report they cannot
@@ -98,10 +114,19 @@ if (!process.env.SKIP_SOURCE) {
   ok(/if \(!reportHiddenForOrg\(slug, 'opportunities'\)\) available\.push\('opportunities'\);/.test(src),
     "the org dashboard adds the card through the inverted gate");
 
-  // The page, the data route, the PDF and the insights route — ONE switch.
+  /* THE EYE HIDES, IT DOES NOT LOCK. Dan: "i should still be able to click on
+     it and view it, just the eye 'hides' it from them." The first build gated
+     the page on the toggle too and he could not open his own admin card — so
+     this asserts the OPPOSITE of what it used to, deliberately. */
   const gate = src.slice(src.indexOf("const opportunitiesEnabled ="), src.indexOf("function oppWindow"));
-  ok(/reportHiddenForOrg\(slug, "opportunities"\)/.test(gate),
-    "the PAGE reads the same per-org state the card does, so 'not viewable' means not viewable");
+  ok(!/reportHiddenForOrg\(slug, "opportunities"\)/.test(gate),
+    "the PAGE is NOT gated on the visibility toggle — hiding a card must not lock the report");
+
+  /* …but the nightly fan-out still follows visibility. Nine feeds across ~29
+     orgs is ~260 queries; spending them on a report an org cannot see is the
+     storm this job is paced to avoid. */
+  ok(/filter\(sl => !reportHiddenForOrg\(sl, "opportunities"\)\)/.test(src),
+    "the 05:20 job still only builds for orgs that can see it");
   ok(!/OPPORTUNITIES_ALL_ORGS|OPPORTUNITIES_EXCLUDED/.test(src),
     "the two flags it replaced are GONE, not left unread — two lists is the bug");
 
@@ -132,9 +157,6 @@ if (!process.env.SKIP_SOURCE) {
   ok(/visible: !reportHiddenForOrg\(slug, rt\)/.test(visApi),
     "…it goes through the same predicate every other surface does");
 
-  // The daily job spends ~260 Metabase queries; it must follow the switch.
-  ok(/Object\.keys\(ORGS\)\.filter\(opportunitiesEnabled\)/.test(src),
-    "the 05:20 job only builds snapshots for orgs that are turned on");
 }
 
 /* ── THE LIVE HALF ───────────────────────────────────────────────────────
@@ -184,19 +206,33 @@ if (!process.env.SKIP_LIVE) {
     const slug = "apex";
     ok(!!TOKEN, "the org token was found, or every page assertion here is vacuous");
 
+    /* THE SEED, ON A REAL BOOT. This server started on an empty DATA_DIR, so
+       Watertown is visible here only if the seed actually ran. */
+    const wt = JSON.parse((await get("/api/org-visibility/watertown")).body || "{}");
+    const w0 = (wt.available || []).find(a => a.type === "opportunities");
+    ok(w0 && w0.visible === true, "the seed made Opportunities visible for Watertown on a fresh boot");
+
     const before = JSON.parse((await get("/api/org-visibility/" + slug)).body || "{}");
     const b0 = (before.available || []).find(a => a.type === "opportunities");
     ok(b0 && b0.visible === false, "the visibility API reports it HIDDEN before anyone opts in");
 
-    // WITH a valid token, so the only thing refusing it is the visibility gate.
+    /* HIDDEN, BUT STILL OPENABLE. This is the assertion Dan's correction
+       turned around: with the card hidden he must still be able to click it
+       from the admin grid and read it. WITH a valid token, so the only thing
+       that could refuse it is the visibility gate. */
     const pg = await get("/" + slug + "/opportunities" + q);
-    eq(pg.status, 404, "an org that is not turned on cannot reach the page by URL either");
+    ok(pg.status !== 404, "a hidden report is still openable by URL — the eye hides it from the org, it does not lock it — got " + pg.status);
+
+    // …and the org's own dashboard does NOT carry the card while it is hidden.
+    const land = await get("/" + slug + q);
+    ok(!/data-report="opportunities"|\/opportunities\?/.test(land.body || ""),
+      "…while the org's dashboard does not offer it");
 
     const t2 = await post("/api/admin/toggle-report", { password: PW, org: slug, report: "opportunities" });
     eq(t2.status, 200, "the toggle ACCEPTS opportunities — without this Dan cannot enable it at all");
 
     const pg2 = await get("/" + slug + "/opportunities" + q);
-    ok(pg2.status !== 404, "…and one switch opens the page as well as the card — got " + pg2.status);
+    ok(pg2.status !== 404, "…and it stays openable once shown — got " + pg2.status);
 
     const after = JSON.parse((await get("/api/org-visibility/" + slug)).body || "{}");
     const a2 = (after.available || []).find(x => x.type === "opportunities");
