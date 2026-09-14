@@ -1,5 +1,892 @@
 # Project notes for Claude
 
+## EVERY NEW REPORT SHIPS HIDDEN (STANDING RULE, Dan 2026-09-14)
+
+Dan, asking for Opportunities to be merged: *"make sure you add it to each
+org's dashboard, not viewable. I'll enable viewing for the orgs I want."* Then
+the general form: **"by default all new reports should be hidden unless I say
+otherwise."**
+
+**IT WOULD HAVE GONE LIVE ON ALL 29 DASHBOARDS ON MERGE.**
+`OPPORTUNITIES_ALL_ORGS = true` made `opportunitiesEnabled` true for every org,
+and `DEFAULT_HIDDEN_REPORTS` was empty — so the deploy WAS the rollout, which is
+exactly what this file already records about `SHARED_UUIDS` (*"wiring the uuid
+IS the rollout. Nothing stages it per org"*). Caught because he asked, not
+because anything would have stopped it.
+
+### ONE SWITCH, AND IT GOVERNS THE PAGE AS WELL AS THE CARD
+
+`opportunitiesEnabled(slug)` is now `!reportHiddenForOrg(slug, "opportunities")`
+— the org's own visibility toggle — and the two module-level flags it replaced
+are **deleted rather than left unread**. Two lists is the bug.
+
+**SEE AND CLICK ARE TWO DIFFERENT GATES and Dan said "not viewable", so this
+report needs both.** The Report Wizard section of this file records campmap
+serving ~24 visitors a month through direct links the whole time it was
+"retired", because that Set only controls whether a report is SURFACED. So the
+page, the data route, the PDF and the insights route all read the SAME per-org
+state the card does: **an org that is off 404s the URL**, proven live with a
+VALID org token rather than assumed.
+
+It also decides which orgs the 05:20 job builds for
+(`Object.keys(ORGS).filter(opportunitiesEnabled)`), so the ~260-query daily
+fan-out is spent only on orgs somebody actually looks at — and an org Dan
+switches on gets a **cold on-demand build on first open** (`ensureOpportunities`
+falls through to `buildOpportunitiesFor`), not an empty page waiting for 05:20.
+
+### SIX SURFACES HAVE TO AGREE, AND EACH READS CORRECTLY ALONE
+
+That is why this needed a spec rather than a one-line diff:
+
+| surface | what it needed |
+|---|---|
+| `DEFAULT_HIDDEN_REPORTS` | the entry — the store's meaning INVERTS, so listed = SHOWN |
+| the org dashboard's `available` | the card was **never pushed there at all**, so it had to be added |
+| `opportunitiesEnabled` | gate on the same per-org state |
+| `POST /api/admin/toggle-report` | **its allowlist refused `opportunities` — the POST 400'd, so Dan could not have enabled it for anybody** |
+| `GET /api/org-visibility/:slug` | it read `!hidden.has(rt)`, which reports the OPPOSITE of the truth for a default-hidden report — rec-dashboard would have linked orgs to a report they cannot open, the `town-of-shrewsbury` 404 in a new costume |
+| the admin grid | a card + `toggleVis` button, reading the inverted default |
+
+### THE FROZEN LIST IS THE ENFORCEMENT
+
+A visibility default is the one change that ships to 29 dashboards on merge and
+is **invisible in review** — the diff says `new Set([])`. So
+`report-visibility.spec.js` freezes `MAY_BE_VISIBLE`, a **whitelist of what may
+be seen without Dan asking**. It is deliberately not a blacklist of what must be
+hidden: a blacklist is satisfied by forgetting to add to it, which is precisely
+how this goes wrong. Shipping a visible report now fails a guard, and turning
+one on is a diff somebody has to justify.
+
+### Guards
+
+`scripts/report-visibility.spec.js` (**23 assertions, in CI**), which LIFTS AND
+RUNS `reportHiddenForOrg` against both semantics — a regex over `new Set([...])`
+passes on an inverted comparison, and the inversion is where the whole meaning
+lives. Mutation-tested **eight ways, all eight caught by name**: the report
+shipped visible to all 29 orgs (the bug Dan pre-empted), the inversion dropped,
+the page no longer following the toggle, the card added ungated, the toggle
+route refusing it, the visibility API reporting the wrong state, the admin grid
+losing its toggle, and the daily job building every org regardless.
+
+**The live half boots a real server and drives the real routes** — hidden,
+refused, toggled, opened — because no source assertion can see six code paths
+agreeing. `SKIP_LIVE=1` and `SKIP_SOURCE=1` each drop a half, and **each half
+alone was seen to catch the shipping-visible bug**.
+
+**MY OWN "THE PAGE IS REFUSED" ASSERTION WAS VACUOUS FIRST.** It requested the
+page with **no org token**, so the org-token middleware 404'd it whatever the
+visibility gate said — it passed while proving nothing. It reads the token out
+of `ORGS` now (never printed) and asserts the token was found, or the whole
+page half is decorative again.
+
+**And two of the spec's own assertions failed on correct code**, both already-
+recorded traps: `facilities` is NOT default-hidden (it graduated to
+visible-by-default in a one-time migration, so asserting it was hidden was
+simply wrong), and a slice anchored on `if (!REPORT_TYPES.includes(report)`
+landed on a **subscription** route, because that line appears twice — *an
+assertion refuted by different code is not guarding the thing it names.* Scoped
+to `app.post("/api/admin/toggle-report"` now.
+
+**A comment of mine tripped its own guard, fifth instance in this file.** The
+"these two flags are gone" assertion is a literal string test, and the comment
+explaining the deletion quoted both names. Reworded rather than teaching the
+assertion to ignore comments — a regex comment-stripper is unsound on
+server.js, and keeping the guard dumb is the more robust half.
+
+## THE OPPORTUNITIES REPORT, ANSWERED IN FIVE MORE (2026-09-14)
+
+Dan, on the built report, with four screenshots:
+
+> *"can we get a bit more separation between sections, like this 'Your Community'
+> section needs a bit more header, something. Maybe use similar colors from the
+> community intel report to separate specific sections.*
+> *typo, enrol?*
+> *For the managed rentals section, call out how much time could be saved by
+> using instant bookings*
+> *for the 'money owed' section, refer them back into Rec instead, there's a
+> whole 'balances due' report, use this format for Shrewsbury
+> https://www.rec.us/admin/o/0a9c47af-…/facilities/balance-due*
+> *Customers section should open to their profile page in Rec, not the community
+> intel report"*
+
+**FOUR OF THE FIVE COST NOTHING BUT CODE. THE FIFTH COST A CARD PUSH**, and it
+is the one worth reading: *"open to their profile page in Rec"* is unbuildable
+until the feed carries an id that resolves.
+
+### THE REC-ID TRAP IS THE WHOLE OF ASK 5 — card 17689 had no user uuid at all
+
+`recLink()` has refused household rows since the day it was written, because the
+community feed's `Rec ID` is a **six-character staff code** (`HG1HK8`) and a
+`/admin/o/<org>/users/HG1HK8` URL **404s while looking perfectly correct**. So
+Dan's ask was not a wiring job: card 17689 emitted **no `users.id` anywhere**,
+and the only uuid on it (`Household ID`) addresses a household, not a person.
+
+**One column, `u.id::text AS "User ID"`**, placed directly under `Rec ID` with a
+comment naming the trap, so the next reader finds the fix beside the thing it
+fixes. Same column card 18151 v2 added for check-ins, for the same reason.
+
+**IT NEEDED NO TAG FLIP, AND THE CARD'S OWN DESCRIPTION SAID SO BEFOREHAND** —
+*"`{{org_id}}` Text ONLY — no date tags, so an API update to this card needs NO
+re-flip in the UI."* Read back after the push: **one tag, `org_id`, type
+`text`**, no `string/=` duplicate set, trailing `ORDER BY` intact. **So the
+report was never down**, which is the first push in this file with no outage to
+declare. *Read a card's description before budgeting for the flip window.*
+
+**ADDITIVE, PROVEN ON THE LIVE CARD RATHER THAN IN A FINGERPRINT.** Through the
+public endpoint with the app's own parameter shape, Shrewsbury:
+
+| | before | after |
+|---|---|---|
+| rows | **4,558** | **4,558** |
+| `User ID` present | — | **4,558** |
+| distinct | — | **4,558** |
+| values that are not a uuid | — | **0** |
+| `Rec ID` values that are a uuid | **0** | **0** — that is the trap |
+
+4,558 rows against 4,558 distinct ids is 1:1 on the card's own grain, so the
+column can neither fan out nor collapse. A sample head-of-household row carries
+`Rec ID "HG1HK8"` beside `User ID 9ba5655f-…` — the trap and its fix on one real
+row.
+
+**THE md5 FINGERPRINT TIMED OUT AT 60s AND IS NOT CLAIMED.** The 1:1 count took
+10.8s; `md5(string_agg(to_jsonb(t)…))` over the full row set did not fit the MCP
+ceiling. Said plainly rather than dressed up: the additive proof here is the live
+before/after row count plus the 1:1 identity, and the structural argument that a
+column added to a plain SELECT list with no DISTINCT, no GROUP BY and **no
+UNION** cannot move another column — the positional-UNION trap that bit card
+19570 does not apply because there is no UNION.
+
+**ONLY THE DORMANT FINDING GETS IT.** Every other people-family finding's items
+are bands, zips or activity pairs — aggregates, which correctly still open
+Community Intel. `dormant-households` is the one whose rows are *named people*,
+and it is exactly the screenshot Dan sent.
+
+**THE CACHE INVARIANT IS FREE, BY CONSTRUCTION.** A feed cached before the push
+has no `User ID`, `recLink` refuses the absent value, and the row falls back to
+Community Intel. No presence gate had to be written; the refusal IS the gate.
+
+### THE DESK-TIME FIGURE IS PER RENTAL, AND THE DETECTOR'S OWN BASIS SAID WHY
+
+Dan's screenshot read *"All 505 rentals in this window were booked by staff"* —
+and those are reservation **dates**. `dStaffBooked` has warned about that in its
+own basis since it shipped (*"a recurring rental is one conversation and many
+rows"*), and this is the half that acts on it.
+
+**MEASURED AT SHREWSBURY OVER A YEAR: 541 reservation dates behind 178
+RENTALS**, 540 of the dates and 177 of the rentals staff-booked. A per-row
+estimate would have been **three times the truth**.
+
+- **`managedRentalCount` reads `summaryRows` (card 19570 v2.3), the only feed
+  carrying a rental identifier** — card 17294, which the detector otherwise
+  runs on, emits `Reservation ID` and nothing else.
+- **PRESENCE, NOT VALUE.** A feed cached before v2.3 cannot say, so the function
+  returns `null` and the time claim is simply **not made** — never "0 hours".
+  **AND `return rentals.size || null` MADE THAT GATE DECORATIVE**: the mutation
+  that deleted the gate SURVIVED, because the `|| null` answered for it. It is
+  `return rentals.size` now, so an org whose rentals are all self-service reads
+  **0** (*the feed says none*) and a pre-v2.3 feed reads **null** (*the feed
+  cannot say*) — the `hasAbsent` distinction, restored by mutation.
+- **A cancelled reservation and an instant one are both excluded** — neither is
+  a conversation somebody is having at a desk.
+- **20 MINUTES IS AN INPUT AND THE REPORT SAYS SO ON SCREEN**, in the finding's
+  own detail *and* in its basis, which prints the rate so a director can argue
+  with it. Nothing in Rec records staff time. Same treatment as
+  `DIR_FT_MINUTES_PER_REG`: **set `OPP_MINUTES_PER_MANAGED_RENTAL` to 0 and the
+  whole claim disappears** rather than printing a zero.
+
+### MONEY OWED IS WORKED IN REC, AND `recHref` COULD NOT EXPRESS THE URL
+
+`/admin/o/<org>/facilities/balance-due` is a **report, not a record** — no id
+segment — so `recHref`, which required `REC_PATH[kind] + "/" + rec.id`, would
+have returned null and the button would never have rendered.
+
+- **`recPage(name)` is WHITELISTED BY NAME, not a free path.** The org uuid is
+  ours and the path is ours; handing an arbitrary string to the URL builder is
+  how a typo becomes a confident 404 — the same failure `recLink` refuses one
+  function up, arriving by a different door. The mutation that accepts any name
+  fails by name.
+- **Our own report stays beside it as the secondary.** Dan said *"instead"*, and
+  Rec is the button — but the Facilities summary is what **proves** the number,
+  and dropping it would leave no way back to the evidence.
+- **Each owed RENTAL now opens that rental in Rec too**, off card 19570 v2.3's
+  `Rental ID`. The grouping key falls back to `Reservation ID`, which is also a
+  uuid but the **wrong record**, so the id travels on the group and `recLink`
+  refuses anything that is not a uuid.
+
+### THE SPELLING GUARD HAD TO BE ABLE TO FAIL, AND TO MISS
+
+*"typo, enrol?"* — `enrol` / `enrols` / `enrolment(s)` are British;
+**`enrolled` and `enrolling` are the SAME in both dialects** and must not move.
+
+**A NAIVE `\benrol\b` FIRES ON CORRECT CODE**: `const enrol = new Map()` in the
+age-band detector — the `/programme/i`-matching-`programMedianPrice` defect, one
+field over. Renamed `enrolIdx`, so the guard can stay dumb and literal.
+(`enrolRows` is safe: there is no word boundary after `enrol` in it.)
+
+The guard is pinned **both ways** — it must miss `enrolled enrolling enrollment
+enrollments enrolls enrolRows`, and still catch a real *"never enrol"* — or the
+fix would be a guard that can never fail. Also fixed: `Counting enrolments…` on
+the Programs Schedule loader, because half a rename reads worse than none.
+
+### THE COPY DESCRIBES THE PROGRAMMING, NOT THE PARTICIPANTS (2026-09-14)
+
+Dan, on the section header *"Adaptive & inclusive — The programming built for
+participants with disabilities"*: **"don't use the word disabilities, think of
+something more PC friendly."**
+
+Two strings, both reworded to say what the section CONTAINS rather than who it
+is for:
+
+| | |
+|---|---|
+| family blurb | *"Your adaptive, therapeutic and inclusive programming"* |
+| profile finding | *"The adaptive and inclusive programming you run"* |
+
+**REACHING FOR A EUPHEMISM ABOUT PEOPLE IS THE OTHER WAY TO ANSWER THIS AND THE
+WORSE ONE.** *"Of all abilities"* is the parks-and-rec industry standard and was
+the obvious swap — it is even already in our own match vocabulary — but it is
+still a label applied to people, and disability advocates read it as evasive.
+Naming the three word families the detector actually matches sidesteps the
+question entirely, and it is **what the orgs themselves call these activities**:
+Apex *Therapeutic Recreation*, Shrewsbury *Adaptive*, Watertown *Adaptive
+Programming*. A description of programming cannot be wrong about anybody.
+
+**`ADAPTIVE_RE` IS NOT COPY AND KEEPS `disabilit`.** That pattern reads the
+ORG'S OWN activity names, so dropping the word there would stop finding the
+provision at any org that uses it — **silently, and at exactly the orgs this
+section exists for**. Our words changed; their vocabulary did not. The mutation
+that guts the matcher to satisfy the copy guard fails by name, which is the
+pair that makes either half meaningful.
+
+*Generalise it: a wording rule applies to the text we write, never to the text
+we match on. Conflating the two turns a copy edit into a silent detector
+regression.*
+
+**The guard RUNS the detectors and reads every string a reader can see** — each
+family's label, blurb and suppression reason, and each finding's title,
+headline, detail, action, basis and every item's own label and sub. A guard
+checking only the blurb passes on a finding BODY that still says it, which is
+most of the words in that section; the mutation that moves the phrase from the
+header into the detail proves the difference. It also asserts the adaptive
+section actually rendered, or the loop asserts nothing at all.
+
+322 assertions. Mutation-tested four ways, all four caught by name: the blurb
+reverted, the title reverted, the phrase moved into a finding body, and the
+matcher gutted.
+
+### THE SECTION COLOURS ARE LIFTED, NOT INVENTED
+
+Each family owns a hue, and it is **the same hue its own findings already
+wear** — money the red of `.chip.k-uncollected`, your community the violet-green
+of `.obs`. Two palettes on one page would make the section colour read as a
+second, contradicting classification.
+
+The vocabulary comes from `public/users.html`: a tinted gradient band with a
+coloured left accent and matching ink, which is what `.obs`, `.insights-wrap`
+and `.future-box` already do there, and what `.kpi`'s `border-top` accent does
+beside them. **`print-color-adjust` in both spellings** — the band IS the
+separation, and a printer that drops it leaves the sections running together.
+
+### Guards
+
+`scripts/opportunities.spec.js` 258 → **312 assertions**, in CI.
+**Mutation-tested 23 ways, all 23 caught by an assertion naming the defect**:
+the zip title reverted to British, an enrolment count reverted, desk time
+counted per reservation date, the presence gate dropped, a real zero folded back
+into "cannot say", a cancelled reservation counted as a conversation, a
+self-service rental counted as desk time, the rate no longer stated as an
+assumption, the basis no longer printing it, the action no longer naming the
+saving, the balances-due page dropped, `recPage` accepting an arbitrary path,
+each rental's Rec link dropped, the rental link built from the reservation-id
+fallback, the customer profile link dropped, the customer linked by the
+six-character Rec ID, the item no longer carrying it, the money family losing
+its colour, the band losing its accent bar, the band dropped by the printer,
+`recHref` unable to build a pathless URL, the foot button ignoring Rec, and our
+own report dropped from beside it.
+
+**Four `ci-check-render.js` cases**, because none of this is visible in source:
+a stylesheet reads plausibly either way, and an anchor to the wrong place
+renders identically to one to the right place.
+
+- **the colours case stamps the COMPUTED band colours** and requires the six
+  families to be telling apart — one shared accent would make the band
+  decoration rather than separation — plus a gradient on every one.
+- **the two Rec cases key on the real href**, including that it opens in its own
+  tab and that our own report is still beside it carrying the org token.
+- **the customer case needs the fixture's SECOND customer to carry no uuid**,
+  which is what a pre-push feed looks like: one row must open Rec and the other
+  must fall back, or the case cannot tell a page that honours `rec` from one
+  that ignores it. Same shape as the adaptive callout's own fixture.
+
+**The money family had to become `ok` for any of this to be reachable**, and it
+was the fixture's `unavailable` case — so that state moved to a new
+`stubMode: "oppdown"`. Worth knowing: the fixture has six families and needs
+four `ok` plus three distinct suppression states, which is one more slot than
+exists. A stub mode is the way out, not dropping a state.
+
+**A RENDER CASE CANNOT BE MUTATION-TESTED BY CHANGING THE LIBRARY, and two of
+my mutations reported SURVIVED on guards that are fine.** Removing
+`rec: recLink("rental", …)` and `rec: recLink("user", …)` from
+`lib/opportunities.js` changed nothing in the browser — **the harness answers
+every `/api/` request from `STUBS`, so the detector never runs**, and the
+fixture supplies `rec` directly. The page-side equivalent is the renderer
+ignoring the row's own `rec` (`const rh = null`), and that fails **exactly**
+the three Rec-link cases and nothing else. The library half is the spec's job
+and the spec catches both. *A mutation that does not reproduce the bug has not
+tested the guard* — the recorded lesson, in a new form: match the mutation to
+the LAYER the guard actually covers.
+
+**THE FIXTURE'S OWN COPY CARRIED THE BRITISH SPELLING TOO** — *"never enrol"*,
+copied from the detector. Fixed with it; a fixture that repeats the defect is
+the `per-section` trap this file already records.
+
+### A sandbox note, because it cost twenty minutes
+
+The first render pass was **13 of 17 green, including all four new cases**. The
+remaining four failed with `Navigation timeout of 45000 ms exceeded` — and then,
+minutes later, cases that had just PASSED failed the same way when run alone,
+**on a completely clean tree with `git stash`**. So it is the environment
+degrading across repeated Chromium launches, not the page: *a navigation timeout
+that spreads to cases which already passed is the harness, never a regression.*
+Prove it with `git stash` before spending time on a diff that is not the cause.
+
+## THE OPPORTUNITIES REPORT, ANSWERED IN SIX (2026-09-14)
+
+Dan, on the built report: *"wow that opportunities report is....a lot. great
+info."* Then six asks, and the last of them is the standing verdict on the
+money design: *"Love the real money stuff"* — so the four separate totals stay
+four, and nothing below blends them.
+
+| ask | answer |
+|---|---|
+| *"add a section in there about adaptive programs (it's an activity see if you find that and focus on it, any org that has adaptive programs should get a special callout section on it"* | a new family, **first on the page**, gated on existence rather than volume |
+| *"Add a quick overview at the top with links to jump to each section"* | a contents strip carrying **every** family, suppressed ones included |
+| *"Build out clickable links to each program or section, user, etc. Great info but if I can't click on it it's not useful"* | the row's own LABEL is the link, to the record in Rec where an id resolves |
+| *"Its program, not programme"* | purged, and guarded |
+| *"A lot of the 'reach out to these people' infers we'd want a downloadable CSV file or segment directly in Rec. See if we can use the segments tool to build out a clickable segment (or at least give admins directions on how to do this."* | a CSV per audience, plus per-finding segment directions that say honestly which findings Rec **cannot** express |
+
+**NONE OF IT COST A CARD PUSH.** Card 17295 has emitted `activity_name`,
+`category_name`, `program_id` and `section_id` since v6, and card 17722 emits
+`Activity` and a real `Participant ID`. Every column the six asks need was
+already on the feed and read by nothing.
+
+### ADAPTIVE IS A WORD FAMILY, NOT A VALUE — measured platform-wide
+
+`program_activity → activity` is where it lives, and **every org spells it
+differently.** These are all eight distinct activity names that exist on the
+platform (2026-09-14):
+
+> Adaptive · Adaptive Programming · Adaptive Recreation · Therapeutic ·
+> Therapeutic Recreation · Inclusion & Accessibility · Inclusive Programs ·
+> Inclusive Rec
+
+**Four spellings among the orgs served here alone** — Apex *Therapeutic
+Recreation* (17 programs / 147 sections), Shrewsbury *Adaptive* (16 / 44), West
+Sacramento *Adaptive Recreation* (3 / 42), Watertown *Adaptive Programming*
+(4 / 13). So a literal list is right for whoever wrote it and wrong for the
+next org — and one of the eight is **misspelled in the org's own data**
+(`Inclusion and Accessiblity`), which a list misses and a word match does not.
+
+**FALSE POSITIVES WERE MEASURED, NOT ASSUMED.** The same pattern run against
+every activity name on the platform matches those eight and **nothing else** —
+no *Therapeutic Massage*, no *all-inclusive*. `unified`, `sensory`,
+`disabilit` and `all abilities` match nothing today and are carried for the
+next org at zero cost. It is **`accessib`, not `access`**, so a future *Early
+Access Pass* cannot walk in; the spec drives that exact near-miss.
+
+**THE CATEGORY IS TESTED TOO AND IS NOT SUFFICIENT ON ITS OWN:** Apex files
+Therapeutic Recreation under the category **Fitness**, so a category-only test
+misses its 147 sections entirely. Both are read; either matching is evidence.
+
+### THE FLOOR IS DELIBERATELY NOT A FLOOR — "any org", literally
+
+Adaptive provision runs from **147 sections (Apex) down to ONE (Needham)**
+across the ten orgs that have it, so the ordinary floors would silence the
+callout at exactly the orgs whose provision is smallest. The family gate is
+*does this org run any*; the detectors inside carry their own small floors,
+and **one family waiting for an adaptive place is a finding** (`FLOORS
+.adaptiveWaiting = 1`) where everywhere else on this report a waitlist needs
+repetition — the alternative provision usually does not exist.
+
+**THE SUPPRESSION LINE IS ABOUT THE TAGGING, NOT ABOUT THE ORGANIZATION.** An
+org with none reads *"no program here is tagged with an adaptive, therapeutic
+or inclusive activity — if you run this programming, tagging the activity in
+Rec fills this section in"*. The courts line can say *"this organization does
+not rent courts"*; this one cannot, because an org that runs adaptive
+programming without tagging it would read that as a claim about their
+provision, which would be both wrong and offensive. The spec fails if the
+wording ever becomes a claim about the org.
+
+### IT IS A CALLOUT, NOT A FAULT FINDER — and that is what shapes the detectors
+
+A half-empty adaptive section is not a capacity mistake, and a program priced
+at a fifth of everything else is not under-pricing. Measured across the nine
+orgs running it:
+
+| | adaptive | everything else |
+|---|---|---|
+| Apex, median price per head | **$51** | $239 |
+| West Sacramento | **$12** | $97 |
+| Bloomington | **$38** | $207 |
+| Watertown | **$33** | $123 |
+| Shrewsbury | **22 of 44 sections free** | — |
+
+So the subsidy detector states the gap as **a number to have ready when
+somebody asks what inclusive programming costs**, carries **no dollar value**,
+is filed `attention` rather than `upside`, and the spec fails if the copy ever
+suggests raising the price.
+
+**AND ADAPTIVE CANCELS LESS THAN THE REST AT SEVEN OF THE NINE** — Apex 3.4% vs
+7.2%, Chico 4.8% vs 14.4%, Watertown 0% vs 9.6%, Malibu 12.5% vs 22.1%. Danvers
+is the exception (10.7% vs 3.2%). That is what makes the cancellation detector
+worth having: it fires at Danvers and essentially nowhere else, and it says on
+screen that this is the unusual direction.
+
+### THE ROW'S LABEL IS THE LINK — and one id is deliberately refused
+
+`recLink(kind, id)` returns a link only where the id **actually resolves** in
+the Rec admin, and the page renders the label as an anchor to it: program and
+section rows go to `/admin/o/<org>/programming/…`, in their own tab. A row
+with no Rec id still goes somewhere — our own report, carrying the token.
+
+**THE REC-ID TRAP, ALREADY RECORDED IN THIS FILE FOR CHECK-INS, IS WHY
+HOUSEHOLD ROWS GET NO LINK AT ALL.** The community feed's `Rec ID` is a
+six-character staff code (`5OLLPM`), not a uuid, and a user link built from it
+**404s while looking perfectly correct**. `recLink` requires a uuid and returns
+null otherwise; the demographics feed's `Participant ID` IS a uuid and does
+resolve. *A confident link to a 404 is worse than no link.*
+
+### THE SEGMENT ANSWER IS HONEST PER FINDING, AND THAT IS THE WHOLE DESIGN
+
+Read out of the segment tool's own schema rather than guessed. A Rec segment is
+defined by **structured criteria** — eligibility (age, gender), group, program
+(activity / season / program / section / completion date), membership (plan,
+status), reservation (site type, location, date), pass (type, status, dates) —
+and **there is no "these 412 households" segment**. So a list this report
+computes by looking across feeds cannot be handed to the builder as a list:
+
+| finding | as a segment |
+|---|---|
+| age-gap · pass-lapse · **adaptive-only** | **supported** — the exact filters are printed |
+| cross-promo · stream-cross-sell · member-no-program | **partial** — the filters reach the near side, and the page says where they stop |
+| **dormant-households** | **unsupported** — there is no last-transaction field, and this is the finding that most looks like it should be a segment |
+| **zip-gap** | **unsupported** — there is no address or zip field anywhere in the vocabulary |
+
+Saying *unsupported* is the point. **Directions that quietly produce the wrong
+audience are worse than none**, and the two that cannot be expressed are the
+two an admin would most likely try.
+
+**A "create the segment for them" button was NOT built, and could not be**: the
+report server has no path to the Rec segment API, and even with one the
+audiences above are not expressible as criteria. What it can do is hand over
+the list and the exact steps. **The segments URL is deliberately not deep-linked**
+— it could not be verified from here (every admin path answers 307 to login and
+neither the admin docs nor the help centre has an article), and this file's own
+rule is not to print a link nobody has confirmed.
+
+### THE CSV IS CAPPED AT 250, AND THE ARITHMETIC IS WHY
+
+The contact rows travel **on the finding**, and the finding lives on the daily
+snapshot — **one document holding every org, read whole on every page load**. A
+contact row is ~165 bytes of JSON; six audience findings at a thousand rows
+each would add a megabyte per org and ~29 MB to a blob that is currently tens
+of kilobytes. So `AUDIENCE_CAP = 250`, `peopleTotal` carries the TRUE size, and
+the page says *"the file carries the first 250 of 1,400"* and points at
+Community Intel, whose own contact export is uncapped and already built. **A
+list that is quietly 250 of 1,400 is worse than one that says so.**
+
+`CONTACT_COLS` is declared once in the library and **carried to the page on the
+payload** rather than retyped there — two copies drift the first time a column
+is added and the header stops describing the rows under it. Delivery is
+`csvFromRows` + `saveTextViaPopup` **with the BOM**, like every other download
+here.
+
+### The contents strip lists SUPPRESSED families too
+
+A contents list that silently omitted the suppressed ones would undo the whole
+suppression design one line above the sections themselves — an org must be able
+to see that Courts was looked at and came back short. They render greyed with a
+zero. **In print the strip stays but the links do not**: a link is dead on
+paper, and "what is in this report and how much of it" is exactly what a
+printed cover wants.
+
+### VERIFIED AGAINST LIVE DATA, not only against fixtures
+
+The shipping library was lifted and RUN over the real Programs feed, fetched
+cache-independently through the public endpoint — a fixture proves the
+arithmetic, and only real data proves the vocabulary finds anything:
+
+| | |
+|---|---|
+| **shrewsbury** | 565 sections in 22.1s → **36 adaptive**, activity `Adaptive`, 13 programs / 209 enrolments |
+| its waitlist finding | **4 real people waiting** — Rec Connect Summer Days Ages 15-21 (3 waiting, 6/8 enrolled) and Ages 15-35 (1 waiting, 6/6) |
+| its subsidy finding | median **$0** per participant against **$75** everywhere else, with **15 sections charging nothing at all** |
+| **watertown** | 608 sections → **4 adaptive**, activity `Adaptive Programming`, 2 programs — the small-org case, and the callout renders |
+| **apex** | the Programs card timed out, which is its documented behaviour at that org and not a regression here |
+
+Every program row came back carrying a `rec program` link and every waitlist
+row a `rec section` one, on live ids.
+
+### Guards
+
+`scripts/opportunities.spec.js` 118 → **256 assertions**, in CI.
+**Mutation-tested 38 ways, all 38 failing by an assertion that NAMES the
+defect**: the family removed, sorted below Programs, the callout no longer
+pinned first, the vocabulary reduced to one literal spelling, widened to bare
+`access`, the category dropped, the activity dropped, the family gated on
+volume, the suppression line blaming the org, a failed feed reading as "no
+adaptive programs", the waitlist floor raised, one cancellation reported as a
+pattern, the rate computed over too few sections, the subsidy given a dollar
+value, the subsidy told to raise the price, the subsidy firing at parity,
+adaptive-only counting every adaptive household, the contact rows dropped, the
+segment directions going generic, the segment no longer saying what it cannot
+do, dormancy and zip each claimed as expressible, `recLink` rendering a
+six-character Rec ID, three separate Rec links removed one at a time, the cap
+hidden, the page growing its own CSV columns, the BOM dropped, the strip
+listing only live families, the strip linking in print, the row label ceasing
+to be a link, `opp-csv` dropped from either allowlist or falling into the
+shared Slack line or debounced per org, the org uuid never reaching the page,
+and a British spelling coming back.
+
+**THREE OF MY OWN GUARDS WERE DEFECTIVE AND MUTATION IS WHAT SHOWED ALL
+THREE** — every one of them the same lesson, *an assertion satisfied by
+different code is not guarding the thing it names*:
+
+- the `SLACK_NOTIFY` check sliced **+2000 characters** from the declaration and
+  ran on into `SLACK_EVENT_META`, whose own `"opp-csv"` key satisfied it while
+  the Set had lost the event. Scoped to the statement's own `]);` now.
+- the message-branch check tested `rec.event === "opp-csv"` file-wide — which
+  the **debounce block** also contains, so deleting the message branch
+  survived. Scoped past it.
+- `/programme/i` **fires on `programMedianPrice`**, so the spelling guard
+  failed on correct code. Word boundaries now, plus an assertion that the
+  pattern still catches a real *"programme"* — or the fix would be a guard that
+  can never fail.
+
+**And the spec DIED instead of failing, seven times over.** A mutation that
+removes a family makes `families.find(...)` undefined and `.state` on that
+throws a bare `TypeError` naming nothing — the *"a guard that dies instead of
+failing has not told anyone what broke"* lesson, re-learned. `famOf()` and
+`findOf()` read through safe defaults, so every one of those now fails by name.
+
+**Eight `ci-check-render.js` cases, and the three browser-only claims were
+each seen to fail EXACTLY the case that names them** while the other twelve
+kept passing: `recHref` returning null (the Rec link case alone), the contents
+strip rendering links in print (the print case alone), and the download button
+wired to every audience list rather than this finding's own (the CSV case
+alone, on `data-oppc-scoped`). A render case that has not been seen to fail on
+the real regression is not a guard.
+
+The fixture is shaped so a wrong implementation cannot look right: the adaptive callout's first item carries a
+Rec id and its second deliberately does **not**, so one case requires a real
+`rec.us` href on one row and a token-carrying fallback on the other — a fixture
+with only one kind of row could not tell a page that ignored `rec` from one
+that honoured it. Two audience findings carry **opposite segment states** for
+the same reason. The CSV case reads the **bytes the popup is handed**
+(`window.open` stubbed, not `saveTextViaPopup`, so the delivery path and the
+BOM are covered) and requires the other audience's contact to be **absent** from
+the file, which is what catches a button wired to the wrong list.
+
+### Also fixed while in here
+
+`Neighbourhoods` → `Neighborhoods` and `postcodes` → `zip codes` on the
+audience findings, `utilisation` in a card comment, and the Opportunities
+route's own 404 copy — the same defect class Dan named, and half a rename reads
+worse than none.
+
+### NOT BUILT, and worth knowing
+
+- **No participant-level adaptive list.** The demographics feed carries a real
+  `Participant ID`, so a per-child roster is possible — but it is a list of
+  children with disabilities, and where that list travels is a decision rather
+  than a feature. The household contact list is the deliverable.
+- **No adaptive fill-rate finding.** The Programs family already reports
+  under-fill, and a half-empty adaptive section is the one place that number
+  means something different; folding it in would invite exactly the reading the
+  callout exists to prevent.
+- **`site_activity` is not consulted** for adaptive facilities. Already
+  recorded elsewhere in this file: it is essentially unpopulated.
+- **No "create this segment" button.** The report server has no path to the Rec
+  segment API, and the two audiences an admin would most want (dormant, zip)
+  are not expressible as criteria anyway — so a button would either fail or
+  build a different list. Directions plus the CSV is the honest shape.
+
+## THE OPPORTUNITIES REPORT — the analysis layer, computed once a day (2026-09-13)
+
+Dan, after a survey of what our reports can surface that a table cannot:
+*"Build me out an opportunities card, using data an org has. This would compute
+once a day, similar to the directors report. If the org doesn't do court
+rentals, obviously don't suggest court stuff."* Sample org: **Shrewsbury**.
+
+**EVERY OTHER REPORT ANSWERS "WHAT HAPPENED". THIS ONE ANSWERS "SO DO THIS"** —
+21 detectors over nine feeds we already serve, each finding ranked, dollar-sized
+where a dollar can honestly be attached, and linked back to the report that
+proves it. `lib/opportunities.js` is PURE (no Express, no Metabase, no fs), so
+`scripts/opportunities.spec.js` lifts and RUNS the detectors rather than
+regexing them — every defect in here is arithmetic about a threshold, and a
+regex passes on an inverted comparison.
+
+Live on Shrewsbury: **18 findings**, and the court family suppressed by name.
+
+### THE THREE RULES THE WHOLE THING RESTS ON
+
+**1. A FEED THAT DID NOT ANSWER IS NOT AN ORG WITH NOTHING TO FIX.** `null` (the
+fetch failed) and `[]` (the org genuinely has none of this) render differently —
+*"could not be analysed today"* against *"not enough of this to analyse"*. The
+server's `safe()` deliberately does NOT default to a list, and the spec asserts
+the two states can never be equal. Collapse them and a director is told their
+facilities are fine on the morning Metabase was down. Same presence-not-value
+rule as `hasAbsent` / `ciHasStatus`.
+
+**2. SUPPRESSION IS VISIBLE.** Dan's court rule is a floor per family, and the
+floor that fired is PRINTED: *"Courts — not analysed: this organisation does not
+rent courts"*. An org that reads that knows the report looked; an org shown a
+gap cannot tell that from a bug. The gate reads the **court feed when there is
+one and the facility feed's own site type when there is not**, so an org whose
+court card is unavailable but whose rentals plainly show no courts is still
+suppressed rather than shown an error.
+
+**3. DOLLARS OF DIFFERENT KINDS ARE NEVER ADDED TOGETHER.** An empty seat is a
+CEILING on what could have been sold; an unpaid invoice is owed today; a mailing
+list is neither. The page shows **four separate totals** and says on screen why
+they are not summed — one blended "total opportunity" figure would be the
+largest number on the page and the least true. The render case's fixture is
+built so no pair sums to another, so a page that blended them cannot hit any of
+them.
+
+### WHAT SHREWSBURY ACTUALLY GETS, and why the sample org mattered
+
+Building against one org's real data is what shaped the thresholds. Measured
+over the last 365 days:
+
+| | |
+|---|---|
+| **102 sections across 24 programs ran under 50% full** | $104,860 of empty seats — ice-skating toddler and youth sections at 15% median fill |
+| 41 sections refunded above 20% of what they charged | $17,592, against a 9.6% org-wide rate |
+| **125 waitlist places across 19 programs** | $11,733 of demand turned away |
+| 19 cancelled sections across 7 programs | $5,929 refunded — Youth Summer Basketball cancelled **4 of 4** |
+| **Coolidge Pickleball Court 02 cancelled 21 of 25 bookings** | 84% against a 6% org average — the single best operational finding on the page |
+| all 504 rentals staff-booked | zero self-service |
+| 212 of 245 field bookings at $0 | on a site type that bills elsewhere |
+| teens 13-17 | index **0.58** against their share of the org's own community |
+| 22 of 23 active member households | have never enrolled in a program |
+| **14 court bookings** | family suppressed, by name |
+
+**THE COURT SUPPRESSION IS NOT THEORETICAL** — Shrewsbury has 15 court-type
+reservations of 504, and is exactly the org Dan's rule describes.
+
+### FOUR REAL DEFECTS FOUND BY BUILDING AGAINST LIVE DATA
+
+Every one of these renders plausibly and would have shipped as a wrong number.
+
+- **THE COMMUNITY FEED'S MONEY IS THE HOUSEHOLD'S, REPEATED ON EVERY MEMBER
+  ROW.** Measured: **1012 of 1012 multi-person households carry identical
+  `Net Revenue` across all their members.** So a per-person sum multiplies money
+  by household size — the first build reported **$886,348 of program spend at an
+  org whose whole program net is $278,819**, a 3x inflation that looked like a
+  big number rather than a bug. `makeContext` now exposes TWO views: `userRows`
+  (person grain, for ages, which belong to a person) and `userHouseholds` (one
+  row per household, preferring the head, for anything counting money or
+  customers). The spec's fixture is 50 households of 4 people at $1,000 each —
+  $50,000 against a per-person $200,000, two numbers nothing could confuse.
+- **THE MEMBERSHIP→ENROLMENT JOIN DOES NOT EXIST ON THE OBVIOUS KEY.** The
+  natural join is memberships' `User ID` against demographics' `Participant ID`,
+  and at Shrewsbury **those meet on 2 of 677 ids while the same feeds' household
+  ids meet on 1298 of 1298.** Joined that way the finding reports *"100% of your
+  members never enrolled"* at every org forever — a statement about the join,
+  not the org. It joins **email → household → enrolment** now, which resolved
+  **676 of 676**, and it **refuses to report at all below a 60% resolve rate**:
+  a join that mostly misses is broken plumbing, not a finding. (The answer at
+  Shrewsbury is real: only 3 of 676 member households have ever enrolled.)
+- **THE DORMANT WINDOW CANNOT BE A CONSTANT.** Shrewsbury's first transaction is
+  2025-09-15, so a fixed 365-day window returns **zero dormant households** — a
+  clean bill of health produced by the org being young. The window is **half the
+  org's own transaction history, capped at a year**, and an org with under eight
+  months of history gets no dormancy claim at all.
+- **MY OWN PROTOTYPE READ A NULL AGE AS ZERO** (`n(r.Age)` → 0 → band "0-4"),
+  which filed 60 un-aged rows under the under-fives and inverted that band's
+  entire verdict. `ageBand()` rejects null, empty and out-of-range explicitly,
+  and the spec drives a fixture with 60 null ages that must not become infants.
+
+### THREE DETECTORS WHOSE FIRST VERSION PRODUCED AN INCOHERENT SENTENCE
+
+Found by reading the rendered output rather than the code:
+
+- **Idle sites measured against the MEDIAN site** printed *"28 of 50 sites took
+  2 bookings or fewer; your median site took 1"* — incoherent on its face,
+  because bookings per site are wildly skewed (a handful of sites carry most of
+  504). The yardstick is the **busiest** site now, and the finding is withheld
+  when more than 80% of sites qualify, which describes the shape of the org
+  rather than finding anything.
+- **Quiet hours reported 7pm and 8pm with zero bookings** at an org that closes
+  at six. **Nothing in the booking data can tell a closed hour from an open
+  empty one**, so only hours BETWEEN two hours the org demonstrably books are
+  reported — an hour it is provably open for.
+- **Cross-promotion at PROGRAM level is dominated by camp Week C ↔ camp Week D**
+  (46x lift, and useless — it is the same product). Computed at **ACTIVITY**
+  level, excluding same-activity pairs, and only where lift ≥ 1.15: two
+  activities sharing fewer households than chance are the worst bet on the page.
+
+### FOUR OF MY OWN SPEC ASSERTIONS WERE VACUOUS, and mutation is what showed it
+
+All four passed against a correct build AND against the mutation they named,
+and all four were fixed in the SPEC rather than by weakening the mutation:
+
+- the repetition floor was never reached — with ONE thin section the detector's
+  earlier items floor fires first, so a one-row fixture cannot tell the two
+  thresholds apart. Three thin sections across three different programs does.
+- the uncharged-bookings fixture had **no paid bookings at all**, so the median
+  rate was null and the finding fell out on arithmetic; the "does this org
+  charge for this elsewhere" floor was never reached. It carries two paid
+  bookings now — a rate that exists and evidence that does not.
+- the cross-promotion anti-fixture shared **nobody**, so the shared-count floor
+  excluded it long before the lift test. It now overlaps 100 + 100 of 200
+  households by exactly 50 — lift 1.00, no affinity, nothing to promote.
+- **the suppression render case keyed on the family WRAPPER's attribute**, which
+  renders whether or not anything is drawn inside it — so deleting the entire
+  suppression notice SURVIVED. The hook is on the visible line now.
+
+**AND TWO OF MY MUTATIONS DID NOT APPLY AT ALL**, reporting SURVIVED on guards
+that were fine: `\&\&` inside a `python3 -c` double-quoted shell string never
+matched the source. The runner asserts the file actually changed now. *A
+mutation that does not reproduce the bug has not tested the guard* — and one
+that silently fails to apply is worse, because it reads as a hole.
+
+**One mutation is genuinely BENIGN and is recorded as such:** an uncapped
+section is excluded three independent ways (the capacity floor, the
+fill-percentage test, and the arithmetic — empty seats are capacity minus
+enrolled, so an uncapped section contributes a NEGATIVE figure that can never
+clear the dollar floor). Relaxing all three still produces no finding, so no
+mutation can show either guard is load-bearing, and claiming otherwise would be
+reporting a guard that is not doing the work.
+
+### THE ROUTE ORDERING TRAP, CAUGHT TWICE IN ONE BLOCK
+
+`opportunities` is deliberately **not** in `REPORT_TYPES` — it has no card of
+its own — so every generic `/:org/:report/api/*` route 404s it with
+`Unknown report`. The beacon route was registered above the generic log route
+from the start… **and the DATA route, three lines away in the same block, was
+not.** The report answered `Unknown report` on every load until it was driven
+against a real server.
+
+**My spec had guarded the log route's position and missed the identical trap
+beside it** — the *"a guard that names one spelling of a thing is not a guard
+against the thing"* lesson, fifth instance in this file. All four routes are now
+asserted as a SET against their generic counterparts.
+
+Only the REGISTRATIONS moved above `/:org/:report/api/data`; the builders, the
+snapshot store and the cron stay where they are, because
+`const OPPORTUNITIES_FILE = path.join(DATA_DIR, …)` that far up the file is the
+temporal dead zone this repo has already shipped twice. A route handler is a
+closure that reads those bindings at REQUEST time.
+
+**A third instance of the same class, in `lib/opportunities.js` itself:** the
+`enrolledByBand` block read `userRows` two lines above its own declaration, and
+`makeContext` threw `Cannot access 'userRows' before initialization` on the
+first real run.
+
+### COST, AND WHY IT IS DAILY
+
+Nine feeds per org, several of them the heaviest cards on the platform (the
+Programs card alone measured **54s** at Shrewsbury). Across ~29 orgs that is
+~260 Metabase queries — built per page load it is the fan-out that killed the
+Report Wizard.
+
+- **Daily at 05:20**, behind `leaderCron` so two replicas do not both run it,
+  and after the 4:50/5:00/5:10 prewarm jobs so the feeds it wants are warm.
+- **SEQUENTIAL, one org at a time, paced 4s.** The spec asserts the loop rather
+  than a `Promise.all` — fanned out this is the post-deploy prewarm storm that
+  502'd the facility Summary and got a card rolled back.
+- **One org's failure does not overwrite that org's last good snapshot**, and
+  does not stop the other twenty-eight.
+- Measured end to end: **26.5s** to build Shrewsbury cold, **11ms** from the
+  snapshot.
+- **One snapshot per org, not an archive.** Yesterday's opportunities are not a
+  historical record anyone wants; they are the same list with a stale date.
+
+### DECISIONS ON SCREEN
+
+- **A finding carrying a dollar figure must say what to do about it** — the spec
+  fails otherwise. A number with nowhere to go is the dead end this file keeps
+  recording.
+- **Every finding states how its number was worked out**, in words, because a
+  director who cannot argue with a figure stops trusting the page. The
+  ceiling-shaped ones say they are ceilings.
+- **Uncharged bookings are reported as a QUESTION, not as lost revenue.** 212 of
+  245 field bookings at $0 is most likely deliberate policy; the finding says so
+  and offers the figure as *"the value of what you donate to the community,
+  which is worth knowing at budget time"*.
+- **A detector that throws reports itself** rather than vanishing — a silently
+  missing finding is indistinguishable from an org with nothing to fix.
+- **Item lists are capped at 8** with an "and N more", so one finding cannot
+  fill the page.
+- Slack: `opp-drill` carries WHICH finding and what it was worth, **debounced
+  per finding** (working down three in a morning is three decisions), with its
+  own message branch — the shared line would print the report type twice and the
+  finding never, the defect already fixed once in the feedback branch.
+
+### Guards
+
+`scripts/opportunities.spec.js` (**118 assertions, in CI**), which LIFTS AND
+RUNS all 21 detectors over fixtures built so a wrong implementation produces a
+wrong NUMBER. `SKIP_SOURCE=1` drops the server-wiring half (85 remain).
+Mutation-tested **20 ways, 19 caught by name** (the twentieth recorded benign
+above): a failed feed defaulting to `[]` on either side, the court floor
+removed, the household dedupe dropped, the dormant window hardcoded, cancelled
+sections double-counted as refund outliers, the repetition floor removed, a null
+age read as zero, day passes counted as lapsed memberships, the member join
+reverted to user ids, quiet hours outside the opening envelope, idle sites back
+on the median, uncharged bookings without proof, cancelled reservations counted
+as owed, empty seats priced at the whole charge, a throwing detector swallowed,
+cross-promotion between under-represented activities, the beacon route moved
+below the generic one, and the daily job fanned out.
+
+**Five `ci-check-render.js` cases**, each keyed on a rendered VALUE or an
+absence — "a findings card appeared" passes on a page reading the wrong field
+out of every finding it draws. All five mutation-tested in a browser: the totals
+blended, one total wrong, the suppression notice deleted, an unavailable feed
+rendered as "came back clean", and drill links left in print mode.
+
+**`ci-check-render.js` gained `also`**, a list of selectors that must ALL be
+present alongside `needs`. A CSS selector list matches EITHER, so a case needing
+two facts on screen at once could not say so — and it is honoured separately
+from `needs` because the two mean different things in a failure: `needs` is "the
+page rendered", `also` is "it rendered the right numbers". Verified non-vacuous
+by a mutation that breaks only an `also` selector.
+
+**AND A CLEAN RUN REPORTED 48 FAILURES, ALL SELF-INFLICTED.** A `nohup` render
+sweep was orphaned when its shell exited and left its own server behind; the
+next sweep then reported `net::ERR_CONNECTION_REFUSED` on 48 of 379 cases —
+which reads exactly like a mass regression. Re-run alone: **379 of 379 green.**
+Third instance of the overlapping-runs trap in this file, and the tell is in the
+error itself — a connection refused is the harness's server dying, never a page
+failing to render. Check for strays by reading `/proc/*/cmdline` from a script
+in its own call, never in the same command line as the thing being run.
+
+Verified live rather than asserted: the page returns 200, the beacon returns 200
+**and lands a row in `events.jsonl`** carrying the finding, target and value
+(the `?event=` query-string convention — a JSON body 400s and, being
+fire-and-forget, never complains, which has now bitten this repo five times), an
+unknown event is refused, and a tokenless request 404s.
+
+### NOT BUILT
+
+- **No per-finding dismissal or snooze.** A director who has decided to live
+  with a finding sees it again tomorrow. It needs somewhere to store the
+  decision per org and a rule for when a dismissal expires — a real feature, not
+  a flag.
+- **No trend.** "Your under-fill got worse" is the more useful sentence and
+  needs two snapshots plus a floor in each; today there is one snapshot per org
+  by design.
+- **No instructor-level findings.** `instructor` is on the Programs card and
+  fill-rate-by-instructor is computable, but it is a performance claim about a
+  named person off small N, and that is a decision rather than a detector.
+- **Cost is instructor pay and nothing else.** There is no facility or staff
+  cost anywhere in the data, so "costs more to run than it earns" is not
+  computable — the report says "ran half empty" and prices the empty seats,
+  which is what the data can actually support.
+
+
 ## THE HUB'S FEED KEY CARRIED NO VERSION, SO v2.3 COULD NOT REACH THE PAGE (2026-09-12)
 
 Dan, minutes after the rental-count work shipped and deployed, with Watertown's
@@ -3669,6 +4556,14 @@ fail.
   configured** — cards 21682-21685 carry El Segundo's hardcoded `org_id`
   default, which an API save silently wipes along with the tag types, and that
   is a loss a flip cannot undo. Those still go through the UI.
+- **EVERY NEW REPORT SHIPS HIDDEN.** Dan, 2026-09-14: *"by default all new
+  reports should be hidden unless I say otherwise."* Add it to
+  `DEFAULT_HIDDEN_REPORTS` (listed = SHOWN, the semantics invert) and leave it
+  off the `MAY_BE_VISIBLE` whitelist in `report-visibility.spec.js`. He turns it
+  on one org at a time from the admin grid's own toggle — never by editing
+  either list. **Check the report is actually TOGGLEABLE before calling it
+  done**: `POST /api/admin/toggle-report` has its own allowlist, and a report
+  missing from it 400s, which leaves a switch he cannot flip.
 - **Wire a Slack activity notification into every new user-facing surface** —
   new features, buttons, export/download options, and other notable interactions
   should ping the Slack activity feed, without being asked. Dan wants visibility

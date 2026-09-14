@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex" />
+<title>Opportunities</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.9/babel.min.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body { background: #faf9f7; color: #1c1917; margin: 0; padding: 0 0 60px;
+    font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+
+  .toolbar { position: sticky; top: var(--rec-banner-h, 0px); z-index: 100; display: flex; align-items: center; gap: 10px; padding: 8px 20px; background: #2c2c2c; color: #eee; font-size: 13px; flex-wrap: wrap; }
+  .toolbar-title { font-weight: 600; margin-right: 4px; }
+  .toolbar-back { color: #9ca3af; text-decoration: none; font-size: 12px; }
+  .toolbar-back:hover { color: #fff; }
+  .toolbar-spacer { flex: 1; }
+  .toolbar button { padding: 6px 14px; border: 1px solid rgba(255,255,255,.25); border-radius: 4px; background: rgba(255,255,255,.08); color: #fff; font-size: 12px; font-family: inherit; cursor: pointer; white-space: nowrap; }
+  .toolbar button:hover { background: rgba(255,255,255,.18); }
+  .toolbar button:disabled { opacity: .5; cursor: default; }
+  .toolbar .btn-pdf { background: #374151; border-color: #4b5563; font-weight: 600; }
+
+  .page { max-width: 1400px; margin: 16px auto; padding: 24px 28px; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+  .banner { margin: -24px -28px 18px; height: 170px; overflow: hidden; position: relative; background: #e8e6e0; }
+  .banner img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .banner .banner-shade { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,0) 45%, rgba(0,0,0,.38)); }
+  .banner .banner-cap { position: absolute; left: 22px; bottom: 12px; color: #fff; text-shadow: 0 1px 6px rgba(0,0,0,.55); }
+  .banner .banner-cap .bc-org { font-size: 11px; letter-spacing: 1.8px; text-transform: uppercase; font-weight: 700; opacity: .92; }
+  .banner .banner-cap .bc-title { font-size: 21px; font-weight: 800; margin-top: 1px; }
+  .report-header { display:flex; justify-content:space-between; align-items:center; border-bottom:2.5px solid #111; padding-bottom:10px; margin-bottom:14px; gap:16px; }
+  .report-header-left { display:flex; align-items:center; gap:14px; }
+  .report-header-logo { height:42px; max-width:140px; object-fit:contain; object-position:left center; }
+  .report-header .org-label { font-size:10px; letter-spacing:1.6px; text-transform:uppercase; color:#777; font-weight:600; }
+  .report-header .title { font-size:17px; font-weight:700; margin-top:1px; color:#111827; }
+  .report-header-right { text-align:right; }
+  .report-header .rh-meta { font-size:11px; color:#666; }
+  .report-header .rh-period { font-size:13px; font-weight:700; color:#111827; }
+
+  /* ── The headline strip. FOUR numbers, never one. ── */
+  .tot-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin-bottom: 6px; }
+  .tot { border: 1px solid #e8e6e0; border-radius: 9px; padding: 12px 14px; background: #fff; border-top: 3px solid #d6d3d1; }
+  .tot.k-uncollected { border-top-color: #b91c1c; }
+  .tot.k-at-risk     { border-top-color: #ea580c; }
+  .tot.k-upside      { border-top-color: #15803d; }
+  .tot.k-audience    { border-top-color: #6d28d9; }
+  .tot .lbl { font-size: 9.5px; text-transform: uppercase; letter-spacing: .08em; color: #a8a29e; font-weight: 700; }
+  .tot .val { font-size: 24px; font-weight: 800; letter-spacing: -0.01em; margin-top: 3px; }
+  .tot .sub { font-size: 10.5px; color: #78716c; margin-top: 3px; line-height: 1.45; }
+  .tot-note { font-size: 11px; color: #78716c; margin: 8px 0 18px; font-style: italic; }
+
+  /* ── SECTION SEPARATION. Dan: "can we get a bit more separation between
+     sections, like this 'Your Community' section needs a bit more header,
+     something. Maybe use similar colors from the community intel report to
+     separate specific sections."
+
+     The vocabulary is lifted from public/users.html rather than invented: a
+     tinted band with a coloured left accent and a matching ink, which is what
+     .obs (green), .insights-wrap (indigo) and .future-box (violet) already do
+     there, and what .kpi's border-top accent does beside them.
+
+     EACH FAMILY OWNS A HUE, and it is the SAME hue its findings already wear —
+     money is the red of .chip.k-uncollected, your community the violet of
+     .chip.k-audience. Two palettes on one page would make the section colour
+     read as a second, contradicting classification. ── */
+  .fam { margin: 30px 0 0; --fam: #a8a29e; --fam-bg: #faf9f7; --fam-ink: #44403c; }
+  .fam:first-of-type { margin-top: 20px; }
+  .fam[data-opp-family="adaptive"]   { --fam: #6d28d9; --fam-bg: #f5f3ff; --fam-ink: #5b21b6; }
+  .fam[data-opp-family="programs"]   { --fam: #4338ca; --fam-bg: #eef2ff; --fam-ink: #3730a3; }
+  .fam[data-opp-family="people"]     { --fam: #047857; --fam-bg: #f0fdf4; --fam-ink: #065f46; }
+  .fam[data-opp-family="facilities"] { --fam: #1d4ed8; --fam-bg: #eff6ff; --fam-ink: #1e40af; }
+  .fam[data-opp-family="courts"]     { --fam: #b45309; --fam-bg: #fffbeb; --fam-ink: #92400e; }
+  .fam[data-opp-family="money"]      { --fam: #b91c1c; --fam-bg: #fef2f2; --fam-ink: #991b1b; }
+
+  .fam-h { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+    border-left: 5px solid var(--fam); border-radius: 3px 9px 9px 3px;
+    background: linear-gradient(100deg, var(--fam-bg) 0%, #fff 82%);
+    padding: 11px 15px; margin-bottom: 14px;
+    /* The band IS the separation, so it has to survive the printer — the same
+       reason the Musco row highlight carries both spellings. */
+    -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .fam-h .fh-t { font-size: 15.5px; font-weight: 800; color: var(--fam-ink); letter-spacing: -.01em; }
+  .fam-h .fh-b { font-size: 11.5px; color: #78716c; }
+  .fam-h .fh-n { margin-left: auto; font-size: 10px; font-weight: 800; color: var(--fam-ink);
+    background: #fff; border: 1px solid var(--fam); border-radius: 999px; padding: 2px 9px;
+    letter-spacing: .04em; text-transform: uppercase;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  /* A suppressed family keeps its band and loses its colour — it was looked at
+     and came back short, which is a different thing from being absent. */
+  .fam[data-opp-state="ok"] + .fam { border-top: 1px solid #f0efec; padding-top: 26px; margin-top: 26px; }
+
+  /* A suppressed family is SHOWN, with the reason. See rule 2 in lib/opportunities.js. */
+  .fam-off { background: #faf9f7; border: 1px dashed #d6d3d1; border-radius: 8px; padding: 10px 14px; font-size: 12px; color: #78716c; }
+  .fam-off b { color: #57534e; }
+  .fam-clear { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 10px 14px; font-size: 12px; color: #166534; }
+
+  .find { border: 1px solid #e8e6e0; border-radius: 10px; padding: 14px 16px; margin-bottom: 12px; background: #fff; break-inside: avoid; }
+  .find-top { display: flex; align-items: flex-start; gap: 12px; }
+  .find-top .ft-l { flex: 1; min-width: 0; }
+  .chip { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 9.5px; font-weight: 800;
+    text-transform: uppercase; letter-spacing: .07em; border: 1px solid transparent; vertical-align: middle;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .chip.k-uncollected { background: #fef2f2; color: #991b1b; border-color: #fecaca; }
+  .chip.k-at-risk     { background: #fff7ed; color: #9a3412; border-color: #fed7aa; }
+  .chip.k-upside      { background: #f0fdf4; color: #166534; border-color: #bbf7d0; }
+  .chip.k-audience    { background: #f5f3ff; color: #5b21b6; border-color: #ddd6fe; }
+  .chip.k-attention   { background: #f5f5f4; color: #57534e; border-color: #e7e5e4; }
+  .find h3 { font-size: 14.5px; font-weight: 800; margin: 5px 0 3px; }
+  .find .headline { font-size: 12.5px; font-weight: 700; color: #1c1917; }
+  .find .detail { font-size: 12px; color: #57534e; margin-top: 5px; line-height: 1.6; }
+  .find .ft-v { text-align: right; white-space: nowrap; }
+  .find .ft-v .v { font-size: 21px; font-weight: 800; letter-spacing: -.01em; }
+  .find .ft-v .c { font-size: 10px; color: #a8a29e; text-transform: uppercase; letter-spacing: .06em; font-weight: 700; }
+
+  table.items { width: 100%; border-collapse: collapse; margin-top: 11px; font-size: 12px; }
+  table.items td { padding: 6px 8px; border-top: 1px solid #f5f5f4; vertical-align: top; }
+  table.items tr:first-child td { border-top: 1px solid #e8e6e0; }
+  table.items .il { font-weight: 700; }
+  table.items .is { color: #78716c; font-size: 11.5px; margin-top: 1px; }
+  table.items .iv { text-align: right; white-space: nowrap; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .more { font-size: 11px; color: #a8a29e; padding: 5px 8px 0; }
+
+  .act { margin-top: 11px; padding: 9px 12px; background: #f7fee7; border-left: 3px solid #65a30d; border-radius: 0 5px 5px 0; font-size: 12px; line-height: 1.55;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .act b { color: #3f6212; }
+  .find-foot { display: flex; align-items: center; gap: 10px; margin-top: 9px; flex-wrap: wrap; }
+  .basis { font-size: 11px; color: #a8a29e; line-height: 1.55; flex: 1; min-width: 220px; }
+  .basis b { color: #78716c; }
+  .drill { font-size: 11.5px; font-weight: 700; text-decoration: none; color: #1d4ed8; border: 1px solid #bfdbfe; background: #eff6ff; padding: 5px 11px; border-radius: 5px; white-space: nowrap; }
+  .drill:hover { background: #dbeafe; }
+  /* Rec is the primary when a finding is worked there; our own report sits
+     beside it as the quieter secondary, because it is what proves the number. */
+  .drill-pair { display: inline-flex; gap: 7px; align-items: center; flex-wrap: wrap; }
+  .drill-2 { color: #78716c; border-color: #e8e6e0; background: #faf9f7; font-weight: 600; }
+  .drill-2:hover { background: #f0efec; }
+
+  /* ── The contents strip. Dan: "Add a quick overview at the top with links
+        to jump to each section." A count per family, so the strip says what
+        is in the report as well as where to go. ── */
+  .jump { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 18px; padding: 11px 13px;
+    background: #faf9f7; border: 1px solid #e8e6e0; border-radius: 9px; align-items: center; }
+  .jump .jl { font-size: 9.5px; text-transform: uppercase; letter-spacing: .08em; color: #a8a29e;
+    font-weight: 700; margin-right: 2px; }
+  .jump a, .jump span.j { display: inline-flex; align-items: center; gap: 6px; font-size: 12px;
+    text-decoration: none; color: #1c1917; border: 1px solid #e8e6e0; background: #fff;
+    border-radius: 999px; padding: 4px 11px; font-weight: 600; }
+  .jump a:hover { border-color: #a8a29e; background: #f5f5f4; }
+  .jump .n { font-size: 10.5px; font-weight: 800; color: #fff; background: #57534e; border-radius: 999px;
+    min-width: 17px; text-align: center; padding: 0 5px; line-height: 16px;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .jump .n.z { background: #d6d3d1; color: #57534e; }
+  .jump .off { color: #a8a29e; }
+
+  /* An item whose label goes somewhere. A row that opens the program in Rec
+     and a row that opens one of our reports look the same on purpose — what
+     the reader wants is for the name to be clickable. */
+  table.items a.il { color: #1d4ed8; text-decoration: none; border-bottom: 1px solid #bfdbfe; }
+  table.items a.il:hover { border-bottom-color: #1d4ed8; }
+  table.items .ext { font-size: 10px; color: #a8a29e; font-weight: 600; margin-left: 5px;
+    text-transform: uppercase; letter-spacing: .05em; }
+
+  /* The audience block: the list itself, and what to do with it in Rec. */
+  .aud { margin-top: 11px; padding: 10px 12px; background: #f5f3ff; border: 1px solid #ddd6fe;
+    border-radius: 7px; font-size: 11.5px; line-height: 1.6; color: #44403c;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .aud .ah { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .aud .at { font-weight: 800; color: #5b21b6; font-size: 12px; }
+  .aud button.csv { font: inherit; font-weight: 700; font-size: 11.5px; cursor: pointer;
+    border: 1px solid #c4b5fd; background: #fff; color: #5b21b6; border-radius: 5px; padding: 5px 11px; }
+  .aud button.csv:hover { background: #ede9fe; }
+  .aud ol { margin: 7px 0 0; padding-left: 18px; }
+  .aud li { margin-bottom: 3px; }
+  .aud .why { margin-top: 6px; color: #78716c; }
+  .aud .sg { margin-top: 8px; padding-top: 7px; border-top: 1px dashed #ddd6fe; }
+  .aud .sg b { color: #5b21b6; }
+
+  .ai { border: 1px solid #ddd6fe; background: #faf8ff; border-radius: 10px; padding: 14px 16px; margin: 16px 0; }
+  .ai h3 { margin: 0 0 8px; font-size: 13px; font-weight: 800; color: #5b21b6; }
+  .ai .ai-item { margin-bottom: 11px; }
+  .ai .ai-t { font-weight: 800; font-size: 12.5px; }
+  .ai .ai-b { font-size: 12px; color: #44403c; line-height: 1.6; margin-top: 2px; }
+  .ai .ai-a { font-size: 11.5px; color: #5b21b6; margin-top: 3px; font-weight: 600; }
+
+  .cov { margin-top: 22px; background: #faf9f7; border: 1px solid #e8e6e0; border-radius: 8px; padding: 12px 14px; }
+  .cov h4 { margin: 0 0 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: #a8a29e; }
+  .cov .cv { font-size: 11.5px; color: #78716c; line-height: 1.7; }
+  .cov .bad { color: #b91c1c; font-weight: 700; }
+
+  .report-footer { margin-top: 20px; padding-top: 10px; border-top: 1px solid #e8e6e0; display: flex; justify-content: space-between; font-size: 10.5px; color: #a8a29e; }
+  .state { padding: 40px 20px; text-align: center; color: #78716c; font-size: 13px; }
+  .state.err { color: #b91c1c; }
+
+  @media print {
+    body { background: #fff; padding: 0; }
+    .toolbar { display: none !important; }
+    .page { max-width: none; margin: 0; box-shadow: none; padding: 10px 14px; }
+    .banner { height: 120px; margin: -10px -14px 12px; }
+    .find { break-inside: avoid; }
+    .fam { break-inside: auto; }
+    /* The strip stays in print as a CONTENTS LIST — the links are dead on
+       paper, and it is rendered without hrefs there, but "what is in this
+       report and how much of it" is exactly what a printed cover wants. */
+    .jump { break-inside: avoid; }
+    .aud button.csv { display: none; }
+  }
+</style>
+<script src="/open-pdf.js" defer></script>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+const { useState, useEffect } = React;
+
+const fmtMoney = (n) => "$" + Math.round(n || 0).toLocaleString();
+const fmtNum = (n) => (n == null ? "—" : Math.round(n).toLocaleString());
+
+/* The four totals are four separate cards on purpose, and the note under them
+   says why. An empty seat is a ceiling on what could have been sold, an unpaid
+   invoice is owed today, and a mailing list is neither — one blended "total
+   opportunity" figure would be the most impressive and least true number on
+   the page. */
+const TOTAL_CARDS = [
+  { key: "uncollected", kind: "uncollected", label: "Owed to you now", money: true,
+    sub: "Already invoiced and unpaid. The only figure here that is not an estimate." },
+  { key: "atRisk", kind: "at-risk", label: "Money that walked back out", money: true,
+    sub: "Refunded or cancelled after you had collected it." },
+  { key: "upside", kind: "upside", label: "Upside, at best", money: true,
+    sub: "A ceiling: every empty seat sold and every waiting family enrolled." },
+  { key: "audience", kind: "audience", label: "People you can reach", money: false,
+    sub: "Households and members already in your records, deliberately carrying no dollar figure." },
+];
+
+const REPORT_LABEL = {
+  programs: "Programs", waitlist: "Waitlist Demand", fasttrack: "Fast Track",
+  facility: "Facility Rental Schedule", facilities: "Facilities", users: "Community Intel",
+  memberships: "Memberships", roster: "Class Roster",
+};
+
+/* WHERE A NAMED THING ACTUALLY LIVES. Dan: "Build out clickable links to each
+   program or section, user, etc. Great info but if I can't click on it it's
+   not useful."
+
+   `rec` is only ever set where the library holds an id that really resolves —
+   see recLink() there, and the Rec-ID trap it refuses. So a row either opens
+   the record in Rec, or opens the report that proves it, and never a guess. */
+const REC_PATH = {
+  program: "programming/programs", section: "programming/sections",
+  user: "users", rental: "facility-rentals",
+};
+function recHref(orgId, rec) {
+  if (!orgId || !rec) return null;
+  /* A Rec REPORT rather than a record: no id segment. The library whitelists
+     the path (REC_PAGES there), so this never builds one from a free string. */
+  if (rec.kind === "page") return rec.path ? "https://www.rec.us/admin/o/" + orgId + "/" + rec.path : null;
+  if (!REC_PATH[rec.kind]) return null;
+  return "https://www.rec.us/admin/o/" + orgId + "/" + REC_PATH[rec.kind] + "/" + rec.id;
+}
+
+/* What the foot button says about a Rec page. Named here rather than on the
+   finding so the wording of a destination lives with the destination. */
+const REC_PAGE_LABEL = { "balance-due": "Balances Due" };
+
+function Finding({ f, slug, token, orgId, isPrint, cols }) {
+  const withToken = (url) => token ? url + (url.includes("?") ? "&" : "?") + "token=" + encodeURIComponent(token) : url;
+  const drillHref = (link) => link ? withToken("/" + slug + "/" + link.report + (link.query ? "?" + link.query : "")) : null;
+  const footRec = recHref(orgId, f.rec);
+
+  /* The beacon says WHICH finding a director actually acted on — the one thing
+     a view count cannot tell us, and what decides whether a detector earns its
+     place on this page. Fire-and-forget with keepalive, and ?event= in the
+     QUERY STRING: a JSON body comes back 400 Unknown event and never complains,
+     which has now bitten this repo five times. */
+  const beacon = (event, extra) => {
+    try {
+      const qs = new URLSearchParams(Object.assign({ event, finding: f.id }, extra || {}));
+      fetch("/" + slug + "/opportunities/api/log?" + qs.toString(), { method: "POST", keepalive: true }).catch(() => {});
+    } catch (e) { /* a beacon must never break the click it is reporting on */ }
+  };
+  const drill = (link) => {
+    if (!link) return;
+    beacon("opp-drill", { to: link.report, value: f.value == null ? "" : String(f.value) });
+  };
+
+  /* The list is the deliverable. Through saveTextViaPopup with the BOM, like
+     every other download here: a download started by a sandboxed iframe is
+     silently dropped, and Excel sniffs bytes rather than trusting UTF-8. */
+  const downloadCsv = () => {
+    const rows = f.people || [];
+    if (!rows.length || !window.csvFromRows || !window.saveTextViaPopup) return;
+    const table = [cols.map(c => c[1])].concat(rows.map(r => cols.map(c => r[c[0]] == null ? "" : r[c[0]])));
+    window.saveTextViaPopup(window.csvFromRows(table), f.id + "-" + slug + ".csv", { bom: true });
+    beacon("opp-csv", { rows: String(rows.length) });
+  };
+
+  return (
+    <div className="find" data-opp-finding={f.id} data-opp-kind={f.kind} data-opp-value={f.value == null ? "" : f.value}>
+      <div className="find-top">
+        <div className="ft-l">
+          <span className={"chip k-" + f.kind}>{f.kind === "at-risk" ? "At risk" : f.kind === "uncollected" ? "Owed now" : f.kind}</span>
+          <h3>{f.title}</h3>
+          <div className="headline">{f.headline}</div>
+          {f.detail ? <div className="detail">{f.detail}</div> : null}
+        </div>
+        {f.value != null ? (
+          <div className="ft-v">
+            <div className="v">{fmtMoney(f.value)}</div>
+            <div className="c">{f.kind === "uncollected" ? "owed" : f.kind === "at-risk" ? "at risk" : "at best"}</div>
+          </div>
+        ) : null}
+      </div>
+
+      {f.items && f.items.length ? (
+        <table className="items">
+          <tbody>
+            {f.items.map((it, i) => {
+              const rh = recHref(orgId, it.rec);
+              const href = rh || drillHref(it.link);
+              return (
+                <tr key={i}>
+                  <td>
+                    {href && !isPrint ? (
+                      <div>
+                        <a className="il" data-opp-item-link={rh ? "rec" : "report"}
+                           href={href} target={rh ? "_blank" : undefined}
+                           rel={rh ? "noopener noreferrer" : undefined}
+                           onClick={() => it.link && drill(it.link)}>{it.label}</a>
+                        {rh ? <span className="ext">in Rec ↗</span> : null}
+                      </div>
+                    ) : <div className="il">{it.label}</div>}
+                    <div className="is">{it.sub}</div>
+                  </td>
+                  <td className="iv">{it.value != null ? fmtMoney(it.value) : ""}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      ) : null}
+      {f.more > 0 ? <div className="more">and {f.more} more</div> : null}
+
+      {(f.people && f.people.length) || f.segment ? (
+        <div className="aud" data-opp-audience={f.id}>
+          <div className="ah">
+            <span className="at">Reaching these people</span>
+            {f.people && f.people.length ? (
+              <button className="csv" onClick={downloadCsv} data-opp-csv={f.people.length}>
+                ⬇ Download {f.people.length.toLocaleString()} contacts (CSV)
+              </button>
+            ) : null}
+          </div>
+          {/* TRIMMED, NEVER TRUNCATED SILENTLY. peopleTotal is the real size;
+              when the two differ the reader is told, because a list that is
+              quietly 1,000 of 2,400 is worse than one that says so. */}
+          {f.people && f.peopleTotal > f.people.length ? (
+            <div className="why">The file carries the first {f.people.length.toLocaleString()} of {f.peopleTotal.toLocaleString()},
+              highest value first. Community Intel exports the full list with no cap.</div>
+          ) : null}
+          {f.segment && f.segment.state !== "unsupported" && f.segment.steps.length ? (
+            <div className="sg" data-opp-segment={f.segment.state}>
+              <b>{f.segment.state === "supported" ? "As a Rec segment:" : "As a Rec segment (partly):"}</b>
+              <ol>{f.segment.steps.map((t, i) => <li key={i}>{t}</li>)}</ol>
+            </div>
+          ) : null}
+          {f.segment && f.segment.state === "unsupported" ? (
+            <div className="sg why" data-opp-segment="unsupported">
+              <b>No segment can express this.</b> {f.segment.why}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      {f.action ? <div className="act"><b>What to do:</b> {f.action}</div> : null}
+
+      <div className="find-foot">
+        {f.basis ? <div className="basis"><b>How this is worked out:</b> {f.basis}</div> : <div className="basis" />}
+        {/* Absent, not disabled, where there is nothing to open.
+
+            A finding carrying `rec` is WORKED in Rec, so that is the button —
+            Dan, on money owed: "refer them back into Rec instead, there's a
+            whole 'balances due' report". Our own report still opens beside it
+            as the secondary: it is what proves the number, and dropping it
+            would leave no way back to the evidence. */}
+        {!isPrint && footRec ? (
+          <span className="drill-pair">
+            {f.link ? (
+              <a className="drill drill-2" href={drillHref(f.link)} onClick={() => drill(f.link)}>
+                {REPORT_LABEL[f.link.report] || f.link.report}
+              </a>
+            ) : null}
+            <a className="drill" href={footRec} target="_blank" rel="noopener noreferrer"
+               data-opp-foot-link="rec"
+               onClick={() => beacon("opp-drill", { to: "rec:" + (f.rec.name || f.rec.kind), value: f.value == null ? "" : String(f.value) })}>
+              Open {REC_PAGE_LABEL[f.rec.name] || "this"} in Rec ↗
+            </a>
+          </span>
+        ) : f.link && !isPrint ? (
+          <a className="drill" href={drillHref(f.link)} data-opp-foot-link="report" onClick={() => drill(f.link)}>
+            Open {REPORT_LABEL[f.link.report] || f.link.report} →
+          </a>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function App() {
+  const cfg = window.ORG_CONFIG || {};
+  const slug = cfg.slug || "";
+  const orgName = cfg.displayName || slug;
+  const token = cfg.token || "";
+  const orgId = cfg.orgId || "";
+  const isPrint = new URLSearchParams(window.location.search).get("_print") === "1";
+  const wantInsights = new URLSearchParams(window.location.search).get("insights") === "1";
+
+  const [data, setData] = useState(null);
+  const [state, setState] = useState("loading");
+  const [errMsg, setErrMsg] = useState("");
+  const [insights, setInsights] = useState(null);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [pdfLoading, setPdfLoading] = useState(false);
+
+  function withToken(url) {
+    return token ? url + (url.includes("?") ? "&" : "?") + "token=" + encodeURIComponent(token) : url;
+  }
+
+  useEffect(() => {
+    fetch(withToken("/" + slug + "/opportunities/api/data"))
+      // A non-JSON body means a route or middleware error (a plain-text 404,
+      // an edge 502) — surface it as itself rather than as a JSON parse error.
+      .then(async r => {
+        const t = await r.text();
+        try { return JSON.parse(t); }
+        catch { throw new Error("HTTP " + r.status + " — " + t.slice(0, 140)); }
+      })
+      .then(j => {
+        if (!j.ok) throw new Error(j.error || "Failed to load");
+        setData(j); setState("done");
+        setInsights(isPrint && wantInsights && j.insights && j.insights.length ? j.insights : null);
+      })
+      .catch(e => { setErrMsg(e.message); setState("error"); });
+  }, []);
+
+  const genInsights = () => {
+    setAiLoading(true);
+    fetch(withToken("/" + slug + "/opportunities/api/insights"), { method: "POST" })
+      .then(async r => {
+        const t = await r.text();
+        try { return JSON.parse(t); }
+        catch { throw new Error("HTTP " + r.status + " — " + t.slice(0, 140)); }
+      })
+      .then(j => { if (j.ok && j.insights) setInsights(j.insights); else throw new Error(j.error || "no insights"); })
+      .catch(e => alert("Insights failed: " + e.message))
+      .finally(() => setAiLoading(false));
+  };
+
+  function downloadPdf() {
+    setPdfLoading(true);
+    // Opened in its own window rather than downloaded — a download started by a
+    // sandboxed iframe is silently dropped. See open-pdf.js.
+    openReportPdf(withToken("/" + slug + "/opportunities/api/pdf" + (insights ? "?insights=1" : "")), { label: "Opportunities" });
+    setTimeout(() => setPdfLoading(false), 1500);
+  }
+
+  const d = data;
+  const generated = d && d.generatedAt ? new Date(d.generatedAt) : null;
+  const win = d && d.window ? d.window : null;
+
+  return (
+    <div>
+      {!isPrint && (
+        <div className="toolbar">
+          <span className="toolbar-title">💡 Opportunities</span>
+          <a className="toolbar-back" href={withToken("/" + slug)}>← All reports</a>
+          <span className="toolbar-spacer" />
+          <button onClick={genInsights} disabled={aiLoading || state !== "done"}>
+            {aiLoading ? "Thinking…" : insights ? "✨ Rec Insights" : "✨ Generate Rec Insights"}
+          </button>
+          <button onClick={() => window.print()} disabled={state !== "done"}>🖨 Print</button>
+          <button className="btn-pdf" onClick={downloadPdf} disabled={pdfLoading || state !== "done"}>
+            {pdfLoading ? "Building…" : "📄 PDF"}
+          </button>
+        </div>
+      )}
+
+      {state === "loading" && <div className="state">Reading your reports…</div>}
+      {state === "error" && <div className="state err">Couldn&rsquo;t load opportunities: {errMsg}</div>}
+
+      {state === "done" && d && (
+        <div className="page">
+          {cfg.bannerUrl ? (
+            <div className="banner">
+              <img src={cfg.bannerUrl} alt="" />
+              <div className="banner-shade" />
+              <div className="banner-cap">
+                <div className="bc-org">{orgName}</div>
+                <div className="bc-title">Opportunities</div>
+              </div>
+            </div>
+          ) : null}
+
+          <div className="report-header">
+            <div className="report-header-left">
+              {cfg.logoUrl ? <img className="report-header-logo" src={cfg.logoUrl} alt="" /> : null}
+              <div>
+                <div className="org-label">{orgName}</div>
+                <div className="title">Opportunities</div>
+              </div>
+            </div>
+            <div className="report-header-right">
+              <div className="rh-period">{d.totals.findings} things worth a look</div>
+              <div className="rh-meta">
+                {win ? "Activity from " + win.start + " to " + win.end : ""}
+                {generated ? " · built " + generated.toLocaleDateString(undefined, { month: "short", day: "numeric" }) : ""}
+              </div>
+            </div>
+          </div>
+
+          <div className="tot-grid">
+            {TOTAL_CARDS.map(c => (
+              <div className={"tot k-" + c.kind} key={c.key} data-opp-total={c.key} data-opp-total-val={d.totals[c.key]}>
+                <div className="lbl">{c.label}</div>
+                <div className="val">{c.money ? fmtMoney(d.totals[c.key]) : fmtNum(d.totals[c.key])}</div>
+                <div className="sub">{c.sub}</div>
+              </div>
+            ))}
+          </div>
+          <div className="tot-note">
+            These four are deliberately not added together. Money already owed, money refunded, money that
+            might be earned and a list of people are four different kinds of thing — a single combined figure
+            would be the largest number on this page and the least true.
+          </div>
+
+          {/* WHAT IS IN THIS REPORT, AND HOW TO GET THERE. A suppressed family
+              is listed too, greyed — the whole suppression design says an org
+              must be able to see that a section was looked at and came back
+              empty, and a contents list that silently omitted those would
+              undo it one line above the sections themselves. */}
+          <div className="jump" data-opp-jump={d.families.length}>
+            <span className="jl">In this report</span>
+            {d.families.map(fam => {
+              const n = fam.state === "ok" ? fam.findings.length : 0;
+              const live = fam.state === "ok";
+              // No href in print: a link is dead on paper, and this stays as a
+              // contents list there rather than pretending to be clickable.
+              return isPrint ? (
+                <span className={"j" + (live ? "" : " off")} key={fam.key}>
+                  {fam.emoji} {fam.label} <span className={"n" + (n ? "" : " z")}>{n}</span>
+                </span>
+              ) : (
+                <a href={"#fam-" + fam.key} key={fam.key} className={live ? "" : "off"}
+                   data-opp-jump-to={fam.key}>
+                  {fam.emoji} {fam.label} <span className={"n" + (n ? "" : " z")}>{n}</span>
+                </a>
+              );
+            })}
+          </div>
+
+          {insights && insights.length ? (
+            <div className="ai">
+              <h3>✨ Rec Insights</h3>
+              {insights.map((it, i) => (
+                <div className="ai-item" key={i}>
+                  <div className="ai-t">{it.title}</div>
+                  <div className="ai-b">{it.body}</div>
+                  {it.action ? <div className="ai-a">→ {it.action}</div> : null}
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          {d.families.map(fam => (
+            <div className="fam" id={"fam-" + fam.key} key={fam.key} data-opp-family={fam.key} data-opp-state={fam.state} data-opp-reason={fam.reason || ""}>
+              <div className="fam-h">
+                <span className="fh-t">{fam.emoji} {fam.label}</span>
+                <span className="fh-b">{fam.blurb}</span>
+                {fam.state === "ok" ? <span className="fh-n" data-opp-count={fam.findings.length}>{fam.findings.length} {fam.findings.length === 1 ? "finding" : "findings"}</span> : null}
+              </div>
+
+              {fam.state === "ok" && fam.findings.map(f => (
+                <Finding key={f.id} f={f} slug={slug} token={token} orgId={orgId}
+                         isPrint={isPrint} cols={d.contactColumns || []} />
+              ))}
+
+              {/* SUPPRESSION IS VISIBLE. An org that does not rent courts sees
+                  this line rather than a silent gap — because a silent gap is
+                  indistinguishable from a broken report. */}
+              {fam.state === "insufficient" && (
+                <div className="fam-off" data-opp-off={fam.reason}>Not analysed — <b>{fam.reason}</b>. Nothing here is wrong; there is simply not
+                  enough of this kind of activity for anything said about it to be worth reading.</div>
+              )}
+              {fam.state === "unavailable" && (
+                <div className="fam-off" data-opp-down={fam.reason}>Could not be analysed today — <b>{fam.reason}</b>. This is a loading
+                  problem on our side, not a finding about your organization. It should return on tomorrow&rsquo;s build.</div>
+              )}
+              {fam.state === "clear" && (
+                <div className="fam-clear">Nothing to act on here right now — this section was analysed and came back clean.</div>
+              )}
+            </div>
+          ))}
+
+          <div className="cov">
+            <h4>What this was built from</h4>
+            <div className="cv">
+              {d.coverage.map((c, i) => (
+                <span key={i}>
+                  {i ? " · " : ""}
+                  <span className={c.state === "unavailable" ? "bad" : ""}>
+                    {c.feed}{c.state === "unavailable" ? " (unavailable)" : " " + fmtNum(c.rows) + " rows"}
+                  </span>
+                </span>
+              ))}
+            </div>
+            <div className="cv" style={{ marginTop: 6 }}>
+              Rebuilt once a day from the same reports on your dashboard, over the last {d.windowDays} days of
+              activity. Every figure here links back to the report it came from — if a number looks wrong, that
+              is where to check it.
+            </div>
+          </div>
+
+          <div className="report-footer">
+            <span>Powered by Rec Technologies · rec.us</span>
+            <span>Confidential — {orgName} · Opportunities</span>
+          </div>
+
+          <div id="report-ready" style={{ display: "none" }} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  </script>
+  <script src="/report-loader.js" defer></script>
+  <script src="/nav-breadcrumb.js" defer></script>
+  <script src="/feedback-widget.js" defer></script>
+</body>
+</html>

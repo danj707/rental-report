@@ -73,6 +73,12 @@ SELECT
   hoh.first_name || ' ' || hoh.last_name           AS "HoH Name",
   u.created_at                                     AS "Created At",
   u.rec_id                                         AS "Rec ID",
+  /* THE LINKABLE ID. "Rec ID" above is a SIX-CHARACTER staff code, not a
+     uuid, and an admin URL built from it 404s while looking perfectly
+     correct — already recorded for check-ins (card 18151 v2) and now for
+     Opportunities, whose household rows open the person in Rec. This is
+     users.id and it resolves at /admin/o/<org>/users/<id>. */
+  u.id::text                                       AS "User ID",
   u.first_name                                     AS "First Name",
   u.last_name                                      AS "Last Name",
   COALESCE(NULLIF(u.email, ''), hoh.email)         AS "Email",

@@ -307,6 +307,9 @@ jobs:
       - name: Rental schedule columns (they grow into spare width; the page and the server agree on the name)
         run: node scripts/facility-columns.spec.js
 
+      - name: Opportunities (detector thresholds; a failed feed is not an empty one; court suppression; the daily build is sequential)
+        run: node scripts/opportunities.spec.js
+
       - name: Report settings (one cache-key builder; a setting seeds and never overrides; TTL floor)
         run: node scripts/report-settings.spec.js
 

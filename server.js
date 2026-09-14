@@ -1880,6 +1880,7 @@ const REPORT_DIRECTORY = {
   "instructor-payout": { label: "Instructor Payout",        emoji: "💰" },
   rentalcalendar:      { label: "Rental Calendar",          emoji: "🏟️" },
   "directors-report":  { label: "Director's Report",        emoji: "📰" },
+  opportunities:       { label: "Opportunities",            emoji: "💡" },
   lessons:             { label: "Instructor Lessons",       emoji: "🎾" },
   campmap:             { label: "Campsite Map",             emoji: "🏕️" },
   facilities:          { label: "Facilities",               emoji: "🏞️" },
@@ -1985,7 +1986,7 @@ const CUSTOM_REPORTS = {
     label: "Aquatics Classes by Month",
     chip: "Classes", chipIcon: "\u{1F4C6}",
     emoji: "\u{1F3CA}",
-    desc: "Class sessions, hours and revenue by month, pool, programme and instructor",
+    desc: "Class sessions, hours and revenue by month, pool, program and instructor",
     card: 21683,
     uuid: process.env.MB_AQUATIC_CLASSES_UUID || "60ada9bc-76c3-4139-b5cb-072bc79c7eb8",
     orgIds: [CUSTOM_REPORT_ORG_IDS.elSegundo],
@@ -2988,7 +2989,17 @@ async function resolveBannerUrl(org) {
 // the inverse of the normal opt-out hidden-list semantics. Use reportHiddenForOrg().
 // (Facilities graduated out of here — it's now visible by default, replacing the
 //  retired standalone Court Utilization card.)
-const DEFAULT_HIDDEN_REPORTS = new Set([]);
+/* REPORTS LISTED HERE ARE OPT-IN PER ORG: the store's meaning INVERTS, so
+   "listed in the org's hidden array" means SHOWN. See reportHiddenForOrg.
+
+   DAN'S STANDING RULE, 2026-09-14: "by default all new reports should be
+   hidden unless I say otherwise." So a new report goes in here when it ships,
+   and comes out only when he says so — one org at a time through the admin
+   grid's own toggle, never by editing this Set. `report-visibility.spec.js`
+   pins the list of reports that are visible by default, so adding a report
+   that anyone can see without him asking fails a guard rather than appearing
+   on 29 dashboards on deploy. */
+const DEFAULT_HIDDEN_REPORTS = new Set(["opportunities"]);
 // Reports RETIRED as standalone cards: kept as valid report types + endpoints
 // (so the Facilities hub's native Court Utilization tab, chat, and /api/data all
 // keep working) but no longer rendered as a clickable card on org/admin grids.
@@ -4033,6 +4044,7 @@ function visibleReportsForOrg(slug) {
     (org[r]?.mbUuid || SHARED_UUIDS[r]) && !hidden.has(r));
   if (RENTAL_CALENDAR_ORGS.has(slug) && !hidden.has("rentalcalendar")) out.push("rentalcalendar");
   if (directorsReportEnabled(slug) && !hidden.has("directors-report")) out.push("directors-report");
+  if (opportunitiesEnabled(slug) && !hidden.has("opportunities")) out.push("opportunities");
   if (lessonsReportEnabled(slug) && !hidden.has("lessons")) out.push("lessons");
   customReportsForOrg(slug).forEach(k => { if (!hidden.has(k)) out.push(k); });
   if ((org.gl?.mbUuid || SHARED_UUIDS.gl) && !hidden.has("qoq")) out.push("qoq");
@@ -5023,7 +5035,7 @@ setTimeout(() => { checkCardParamTypes().catch(() => {}); }, 150 * 1000).unref?.
 // Inert if the env var is unset. Fire-and-forget — never blocks or breaks logging.
 // To change what pings Slack, edit SLACK_NOTIFY. High-frequency events (view/fetch)
 // are debounced per org+report so Slack isn't a firehose.
-const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "campmap-filter", "campmap-amenity", "pdf", "excel", "print", "summary", "game", "map", "outdoor", "fields", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email", "checkin-loc", "checkin-member", "checkin-failed", "form-open", "epact", "settings-open", "settings-unlock", "settings-locked", "settings-save", "settings-reset", "deadlink", "generate", "wizard-save", "mb-autorenew", "mb-salesmix", "ft-export", "panel-csv", "intel-csv", "wizard-feedback", "roster-open", "report-csv", "survey-response", "insights-listen"]);
+const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "campmap-filter", "campmap-amenity", "pdf", "excel", "print", "summary", "game", "map", "outdoor", "fields", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email", "checkin-loc", "checkin-member", "checkin-failed", "form-open", "epact", "settings-open", "settings-unlock", "settings-locked", "settings-save", "settings-reset", "deadlink", "generate", "wizard-save", "mb-autorenew", "mb-salesmix", "ft-export", "panel-csv", "intel-csv", "wizard-feedback", "roster-open", "report-csv", "survey-response", "insights-listen", "opp-drill", "opp-print", "opp-csv"]);
 const SLACK_DEBOUNCE_MS = { view: 30 * 60 * 1000, fetch: 30 * 60 * 1000,
   // A broken report stays broken. The health check only reports NEW failures,
   // but a flapping card would otherwise post every hour.
@@ -5035,6 +5047,11 @@ const SLACK_DEBOUNCE_MS = { view: 30 * 60 * 1000, fetch: 30 * 60 * 1000,
 const SLACK_DEFAULT_DEBOUNCE_MS = 60 * 1000; // dedup rapid double-fires of one-off events
 const slackLastSent = new Map();
 const SLACK_EVENT_META = {
+  // WHICH opportunity a director acted on. Debounced per finding below, because
+  // working down three findings in a morning is three decisions, not one.
+  "opp-drill":       { emoji: "\u{1F4A1}", verb: "followed up an opportunity on" },
+  "opp-print":       { emoji: "\u{1F4A1}", verb: "exported the opportunities list for" },
+  "opp-csv":         { emoji: "\u{1F4C7}", verb: "downloaded a contact list from" },
   // WHICH chart someone needed the numbers out of — the most useful signal we
   // have about where the reports stop being enough on screen.
   "panel-csv":       { emoji: "\u{1F4C8}", verb: "downloaded chart data from" },
@@ -5188,6 +5205,15 @@ function notifySlack(rec) {
     // key would keep only the first roster they opened.
     : rec.event === "roster-open"
       ? `${rec.org}|${rec.report}|roster-open|${rec.section || ""}`
+    // Per FINDING: working down three opportunities in a morning is three
+    // decisions, and the default org|report|event key would record only the
+    // first one clicked — which is precisely the signal this event exists for.
+    : rec.event === "opp-drill"
+      ? `${rec.org}|opportunities|opp-drill|${rec.finding || ""}`
+    // Per FINDING again: pulling the dormant list and then the member list is
+    // two audiences to work, and the default key would keep only the first.
+    : rec.event === "opp-csv"
+      ? `${rec.org}|opportunities|opp-csv|${rec.finding || ""}`
     // Per SURVEY and per PAGE — deliberately NOT debounced at all in practice,
     // because a survey is answered once per person per browser anyway. What the
     // key defends against is two different surveys, or one survey answered from
@@ -5290,6 +5316,22 @@ function notifySlack(rec) {
     const ref = rec.ref ? `\n> referred from ${rec.ref}` : "";
     text = `${meta.emoji} *DEAD LINK* — someone opened \`${rec.path}\` with a valid-looking token`
          + ` and got a 404 (${why})${suggest}${ref}`;
+  } else if (rec.event === "opp-drill") {
+    // WHICH finding, and what it was worth. The shared line would read
+    // "followed up an opportunity on *opportunities*" — the report type twice
+    // and the thing acted on never, the defect already fixed once in the
+    // feedback branch and once in the Fast Track one.
+    const what = rec.finding ? `*${rec.finding}*` : "an opportunity";
+    const worth = Number.isFinite(rec.value) && rec.value > 0 ? ` \u00B7 $${rec.value.toLocaleString()}` : "";
+    const to = rec.to ? ` \u2192 opened *${rec.to}*` : "";
+    text = `${meta.emoji} ${orgName} (\`${rec.org}\`) followed up ${what}${worth}${to}`;
+  } else if (rec.event === "opp-csv") {
+    // WHICH list and HOW MANY people. The shared line would read "downloaded a
+    // contact list from *opportunities*" — the report type twice and the
+    // audience never, the defect this file has now fixed four times.
+    const what = rec.finding ? `*${rec.finding}*` : "a contact list";
+    const n = Number.isFinite(rec.rows) ? ` \u00B7 ${rec.rows.toLocaleString()} contact${rec.rows === 1 ? "" : "s"}` : "";
+    text = `${meta.emoji} ${orgName} (\`${rec.org}\`) downloaded ${what}${n}`;
   } else if (rec.event === "checkin-loc") {
     const where = rec.location ? `*${rec.location}*` : "*all locations*";
     const n = Number.isFinite(rec.checkins) ? ` \u00B7 ${rec.checkins.toLocaleString()} check-in${rec.checkins === 1 ? "" : "s"}` : "";
@@ -5917,6 +5959,7 @@ function buildMetrics(org, daysBack) {
   // Include non-Metabase reports that have their own routes (e.g. rentalcalendar)
   if (RENTAL_CALENDAR_ORGS.has(org)) configuredReports.push('rentalcalendar');
   if (directorsReportEnabled(org)) configuredReports.push('directors-report');
+  if (opportunitiesEnabled(org)) configuredReports.push('opportunities');
   if (lessonsReportEnabled(org)) configuredReports.push('lessons');
   customReportsForOrg(org).forEach(k => configuredReports.push(k));
   return { summary, daily, subCounts, subByCadence, totalSubscribers: allSubs.length, insights, configuredReports };
@@ -6381,7 +6424,11 @@ async function generatePdf(orgSlug, reportType, startDate, endDate, filters = {}
   // screen has (979 / 0.7 ≈ 1399), so the PDF is the screen, printed smaller.
   // Doing it per-grid in print CSS would have to be redone for every grid
   // anyone adds later.
-  const isDirectors = reportType === "directors-report";
+  // Opportunities shares the Director's Report's layout problem for the same
+  // reason: its cards are `repeat(auto-fit, minmax(...))`, so at the 979px a
+  // landscape Letter gives them every grid reflows. Handed the 1400px the
+  // screen has and scaled down, the PDF is the screen printed smaller.
+  const isDirectors = reportType === "directors-report" || reportType === "opportunities";
   // The custom data reports FIRST, or they fall all the way through this chain
   // to its default and every one of them prints "Facility Rental Schedule" in
   // its own footer. Read from the registry rather than added to the ladder, so
@@ -6396,6 +6443,8 @@ async function generatePdf(orgSlug, reportType, startDate, endDate, filters = {}
       ? "Facilities"
     : reportType === "directors-report"
       ? "Director's Report"
+    : reportType === "opportunities"
+      ? "Opportunities"
     : reportType === "lessons"
       ? "Instructor Lessons"
     : reportType === "historic"
@@ -7788,9 +7837,12 @@ app.get("/api/org-visibility/:slug", (req, res) => {
     }
   }
   // Also check non-REPORT_TYPES that can be toggled (chat, report-wizard, rentalcalendar, directors-report)
-  for (const rt of ["chat", "report-wizard", "rentalcalendar", "directors-report", "lessons"]) {
+  for (const rt of ["chat", "report-wizard", "rentalcalendar", "directors-report", "lessons", "opportunities"]) {
     if (RETIRED_REPORTS.has(rt)) continue; // globally not surfaced
-    available.push({ type: rt, visible: !hidden.has(rt) });
+    // A default-hidden report INVERTS the store's meaning, so reading
+    // `!hidden.has(rt)` here would tell rec-dashboard the opposite of the
+    // truth for every org that has not opted in — which is all of them.
+    available.push({ type: rt, visible: !reportHiddenForOrg(slug, rt) });
   }
   // Default-hidden WIP reports use inverted visibility semantics
   available.push({ type: "facilities", visible: !reportHiddenForOrg(slug, "facilities") });
@@ -8378,6 +8430,38 @@ Object.keys(CUSTOM_REPORTS).forEach((key) => {
 // Events are logged against the `facility` report type: the hub reads the
 // facility card, so that is what the activity genuinely belongs to, and it keeps
 // getReportActivity() looking at a report type that exists.
+/* THE OPPORTUNITIES BEACON NEEDS ITS OWN ROUTE, ABOVE THE GENERIC ONE.
+   `opportunities` is deliberately not in REPORT_TYPES (it has no card of its
+   own), so the generic /:org/:report/api/log answers
+   `404 Unknown report: "opportunities"` — the trap that has now bitten this
+   repo five times, and which a fire-and-forget beacon never complains about.
+   Express matches in registration order, so this must stay above it.
+
+   WHICH opportunity somebody clicked THROUGH on is the whole signal. "Someone
+   opened Opportunities" is a view count we already have; "three directors this
+   week clicked into the half-empty programs and nobody has ever touched the
+   cross-promotion list" is what says which of these are worth keeping. */
+app.post("/:org/opportunities/api/log", (req, res) => {
+  const slug = req.params.org;
+  if (!ORGS[slug]) return res.status(404).json({ ok: false, error: "Unknown org" });
+  const event = req.query.event;
+  const ALLOWED = ["opp-drill", "opp-print", "opp-csv"];
+  if (!ALLOWED.includes(event)) return res.status(400).json({ ok: false, error: "Unknown event" });
+  // Clamped server-side, never echoed back from the query string.
+  const val = Number(req.query.value);
+  const extra = {
+    finding: String(req.query.finding || "").slice(0, 60),
+    to: String(req.query.to || "").slice(0, 40),
+    value: Number.isFinite(val) && val >= 0 && val <= 99999999 ? Math.round(val) : undefined,
+  };
+  // How many people a downloaded list actually carried. "Somebody exported a
+  // list" says nothing; "they pulled 412 dormant households" is the signal.
+  const rows = Number(req.query.rows);
+  if (Number.isFinite(rows) && rows >= 0 && rows <= 1000000) extra.rows = Math.round(rows);
+  logEvent(slug, "opportunities", event, req, extra);
+  res.json({ ok: true });
+});
+
 app.post("/:org/facilities/api/log", (req, res) => {
   const slug = req.params.org;
   if (!ORGS[slug]) return res.status(404).json({ ok: false, error: "Unknown org" });
@@ -10400,6 +10484,103 @@ app.get("/:org/lessons/api/pdf", async (req, res) => {
   }
 });
 
+
+/* THE OPPORTUNITIES ROUTES SIT ABOVE THE GENERIC ONES, and that placement is
+   the whole reason they work. Express matches in registration order, and
+   `/:org/:report/api/data` below resolves the report type against REPORT_TYPES
+   — which `opportunities` is deliberately not in, having no card of its own.
+   Registered below it, every one of these answers `Unknown report` instead.
+
+   That is the same trap as the beacon route further up, and it is worth saying
+   twice because I fell into it: the first build of this report guarded the LOG
+   route's position in the spec and left the DATA route unguarded three lines
+   away — a guard that names one spelling of a thing is not a guard against the
+   thing. scripts/opportunities.spec.js now checks every one of them.
+
+   Only the REGISTRATIONS live here. The builders, the snapshot store and the
+   cron stay where they are defined, because `const OPPORTUNITIES_FILE =
+   path.join(DATA_DIR, …)` would be a temporal dead zone this far up the file —
+   the class of bug this repo has already shipped twice. A route handler is a
+   closure that reads those bindings at REQUEST time, by which point module
+   evaluation is long finished. */
+app.get("/:org/opportunities", async (req, res) => {
+  const slug = req.params.org;
+  const org  = ORGS[slug];
+  if (!org) return res.status(404).send("Unknown org");
+  if (!opportunitiesEnabled(slug)) {
+    // Marked deliberate, or every stale link posts a DEAD LINK alert naming
+    // the path the 404 exists to keep quiet. refuse404 answers JSON, which is
+    // wrong for a page route, so the marking is done by hand here.
+    res.locals.deliberate404 = true;
+    return res.status(404).send("The Opportunities report is not enabled for this organization.");
+  }
+  logEvent(slug, "opportunities", "view", req);
+  const orgConfig = {
+    slug,
+    displayName: org.displayName || (slug.charAt(0).toUpperCase() + slug.slice(1) + " Parks & Recreation"),
+    logoUrl: org.logoUrl || "",
+    bannerUrl: await resolveBannerUrl(org),
+    token: org.token || "",
+    // The Rec admin uuid, so a finding can link to the program, section or
+    // participant itself rather than only back to one of our own reports.
+    // The slug is each project's own name for an organization and drifts; the
+    // uuid is the organization.
+    orgId: org.orgId || "",
+  };
+  const html = require("fs").readFileSync(path.join(__dirname, "public", "opportunities.html"), "utf8");
+  res.type("html").send(html.replace("</head>", orgConfigInject(orgConfig, req) + "</head>"));
+});
+
+app.get("/:org/opportunities/api/data", async (req, res) => {
+  const slug = req.params.org;
+  if (!ORGS[slug]) return res.status(404).json({ ok: false, error: "Unknown org" });
+  if (!opportunitiesEnabled(slug)) return refuse404(res, { ok: false, error: "Not enabled" });
+  try {
+    const data = await ensureOpportunities(slug, { refresh: req.query.refresh === "1" });
+    res.json({ ok: true, ...data });
+  } catch (e) {
+    console.error("[opportunities] " + slug + ": " + e.message);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.post("/:org/opportunities/api/insights", express.json(), async (req, res) => {
+  const slug = req.params.org;
+  if (!ORGS[slug]) return res.status(404).json({ ok: false, error: "Unknown org" });
+  if (!opportunitiesEnabled(slug)) return refuse404(res, { ok: false, error: "Not enabled" });
+  try {
+    const store = loadOpportunitySnapshots();
+    const payload = store[slug] || await ensureOpportunities(slug);
+    if (payload.insights) return res.json({ ok: true, insights: payload.insights });
+    const insights = await opportunitiesInsightsFor(slug, payload);
+    if (!insights) return res.status(503).json({ ok: false, error: "Insights unavailable" });
+    const all = loadOpportunitySnapshots();
+    if (all[slug]) { all[slug].insights = insights; saveOpportunitySnapshots(all); }
+    res.json({ ok: true, insights });
+  } catch (e) {
+    console.error("[opportunities] insights " + slug + ": " + e.message);
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+app.get("/:org/opportunities/api/pdf", async (req, res) => {
+  const slug = req.params.org;
+  if (!ORGS[slug]) return res.status(404).send("Unknown org");
+  if (!opportunitiesEnabled(slug)) {
+    res.locals.deliberate404 = true;
+    return res.status(404).send("The Opportunities report is not enabled for this organization.");
+  }
+  try {
+    logEvent(slug, "opportunities", "pdf", req);
+    const pdf = await generatePdf(slug, "opportunities", null, null, req.query);
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", 'attachment; filename="opportunities-' + slug + '.pdf"');
+    res.send(pdf);
+  } catch (e) {
+    console.error("[opportunities] pdf " + slug + ": " + e.message);
+    res.status(500).send("PDF generation failed: " + e.message);
+  }
+});
 
 app.get("/:org/:report/api/data", resolveOrg, async (req, res) => {
   try {
@@ -13171,6 +13352,198 @@ async function directorsQuarterlyJob() {
 setTimeout(() => { directorsQuarterlyJob().catch(() => {}); }, 2 * 60 * 1000);
 setInterval(() => { directorsQuarterlyJob().catch(() => {}); }, 6 * 60 * 60 * 1000);
 
+
+// ━━ OPPORTUNITIES — the standing "so do this" list, computed once a day ━━━
+//
+// Every other report here answers "what happened". This one reads them all and
+// answers "what is worth doing about it": a ranked list of findings, each with
+// a dollar figure where one can honestly be attached and a link back to the
+// report that proves it.
+//
+// COMPUTED DAILY, LIKE THE DIRECTOR'S REPORT AND FOR THE SAME REASON — it
+// reads NINE feeds, several of which are the heaviest cards on the platform
+// (the Programs card alone measured 54s at Shrewsbury). Building that per page
+// load is the fan-out that killed the Report Wizard. The cron builds one org
+// at a time, paced, and the page serves the snapshot.
+//
+// The detectors themselves live in lib/opportunities.js and are PURE, so
+// scripts/opportunities.spec.js lifts and RUNS them over fixtures.
+const OPPORTUNITIES = require("./lib/opportunities");
+const OPPORTUNITIES_FILE = path.join(DATA_DIR, "opportunities-snapshots.json");
+const OPP_WINDOW_DAYS = 365;
+// One snapshot per org — a standing list of what to do TODAY, not an archive.
+// Yesterday's opportunities are not a historical record anyone wants; they are
+// the same list with a stale date on it.
+function loadOpportunitySnapshots() { return readJSON(OPPORTUNITIES_FILE, {}); }
+function saveOpportunitySnapshots(s) { writeJSON(OPPORTUNITIES_FILE, s); }
+
+/* ONE SWITCH, and it is the org's own visibility toggle.
+
+   Dan: "make sure you add it to each org's dashboard, not viewable. I'll
+   enable viewing for the orgs I want."
+
+   SEE AND CLICK ARE TWO DIFFERENT GATES and this report needs both — the
+   Report Wizard section of CLAUDE.md records campmap serving ~24 visitors a
+   month through direct links the whole time it was "retired", because that
+   Set only controls whether a report is SURFACED. So the page, the data
+   route, the PDF and the insights route all read the SAME per-org state the
+   card does: an org Dan has not turned on cannot reach it by URL either.
+
+   It also decides which orgs the 05:20 job builds a snapshot for, so the
+   ~260-query daily fan-out is spent only on orgs somebody actually looks at.
+   The two module-level flags this replaced are gone rather than left unread:
+   two lists is the bug, one list is the fix. (Their names are deliberately not
+   written here — the spec forbids them by literal, and a comment quoting a
+   banned string fails the guard on correct code, which this file has now done
+   to itself three times.) */
+const opportunitiesEnabled = (slug) =>
+  !!ORGS[slug] && !reportHiddenForOrg(slug, "opportunities");
+
+function oppWindow(now) {
+  const end = now || new Date();
+  const start = new Date(end.getTime() - (OPP_WINDOW_DAYS - 1) * 86400000);
+  const ymd = (d) => d.toISOString().slice(0, 10);
+  return { start: ymd(start), end: ymd(end) };
+}
+
+// The Facilities summary card is not a REPORT_TYPES entry, so fetchMBDirect
+// cannot reach it — but its billed/collected columns are the only place an
+// unpaid rental exists. Fetched the same way the hub's own route does.
+async function fetchFacilitiesSummaryDirect(slug, start, end) {
+  const org = ORGS[slug];
+  if (!org || !org.orgId) return null;
+  const params = buildMetabaseParams({ start_date: start, end_date: end }, "facilities", org.orgId);
+  const qs = params.length ? "?parameters=" + encodeURIComponent(JSON.stringify(params)) : "";
+  const resp = await fetch(METABASE_URL + "/api/public/card/" + FACILITIES_SUMMARY_UUID + "/query/json" + qs,
+    { signal: AbortSignal.timeout(180000) });
+  if (!resp.ok) return null;
+  const body = await resp.json();
+  return Array.isArray(body) ? body : null;
+}
+
+/* A FAILED FETCH MUST STAY `null`, NEVER `[]`.
+   The whole suppression design downstream rests on telling "this org has no
+   courts" apart from "the court card did not answer this morning", and an
+   empty array collapses those two into one. `safe()` here deliberately does
+   NOT default to a list. */
+async function buildOpportunitiesFor(slug) {
+  const win = oppWindow();
+  const safe = (p) => p.then(v => (Array.isArray(v) ? v : null))
+    .catch(e => { console.warn("[opportunities] " + slug + " feed failed: " + e.message); return null; });
+  const [programs, waitlist, fasttrack, facility, facilitiesSummary, demographics, users, memberships, courts] =
+    await Promise.all([
+      safe(fetchMBDirect(slug, "programs", win.start, win.end)),
+      safe(fetchMBDirect(slug, "waitlist", null, null)),
+      safe(fetchMBDirect(slug, "fasttrack", null, null)),
+      safe(fetchMBDirect(slug, "facility", win.start, win.end)),
+      safe(fetchFacilitiesSummaryDirect(slug, win.start, win.end)),
+      safe(fetchMBDirect(slug, "program-demographics", null, null)),
+      safe(fetchMBDirect(slug, "users", null, null)),
+      safe(fetchMBDirect(slug, "memberships", null, null)),
+      safe(fetchMBDirect(slug, "court-utilization", win.start, win.end)),
+    ]);
+  const payload = OPPORTUNITIES.buildOpportunities(
+    { programs, waitlist, fasttrack, facility, facilitiesSummary, demographics, users, memberships, courts },
+    { windowDays: OPP_WINDOW_DAYS, window: win }
+  );
+  payload.slug = slug;
+  return payload;
+}
+
+// Serve the snapshot; build on demand only when there is none (a new org, or
+// the morning after this ships). `refresh=1` rebuilds.
+async function ensureOpportunities(slug, opts) {
+  const refresh = !!(opts && opts.refresh);
+  const all = loadOpportunitySnapshots();
+  if (!refresh && all[slug]) return { ...all[slug], fromSnapshot: true };
+  const payload = await buildOpportunitiesFor(slug);
+  const store = loadOpportunitySnapshots();
+  store[slug] = payload;
+  saveOpportunitySnapshots(store);
+  console.log("[opportunities] snapshot saved: " + slug + " — " + payload.totals.findings + " findings");
+  return payload;
+}
+
+/* THE DAILY JOB IS SEQUENTIAL AND PACED, AND THAT IS NOT TIDINESS.
+   Nine feeds per org across ~29 orgs is 260 queries against the same Metabase
+   the reports themselves use. Fired in parallel that is the post-deploy
+   prewarm storm that 502'd the facility Summary and got a card rolled back.
+   It runs after the 4:50/5:00/5:10 prewarm jobs so the feeds it wants are
+   already warm, and it takes them one org at a time. */
+const OPP_ORG_PACE_MS = 4000;
+async function opportunitiesDailyJob() {
+  const slugs = Object.keys(ORGS).filter(opportunitiesEnabled);
+  console.log("[opportunities] daily build starting for " + slugs.length + " orgs");
+  let ok = 0;
+  for (const slug of slugs) {
+    try {
+      const payload = await buildOpportunitiesFor(slug);
+      const store = loadOpportunitySnapshots();
+      store[slug] = payload;
+      saveOpportunitySnapshots(store);
+      ok++;
+    } catch (e) {
+      // One org's failure must not stop the other twenty-eight, and it must
+      // not overwrite that org's last good snapshot with nothing.
+      console.warn("[opportunities] " + slug + " failed: " + e.message);
+    }
+    await new Promise(r => setTimeout(r, OPP_ORG_PACE_MS));
+  }
+  console.log("[opportunities] daily build done: " + ok + "/" + slugs.length);
+}
+cron.schedule("20 5 * * *", leaderCron("opportunities", () => opportunitiesDailyJob().catch(() => {})));
+
+const OPPORTUNITIES_SYS_PROMPT = `You are an operations advisor to a US municipal parks & recreation director. You receive a pre-computed list of OPPORTUNITIES found across their reporting data — each with a title, a headline, a dollar value where one exists, and the rows behind it.
+
+Your job is to tell the director what to do FIRST and WHY, in their own operational language.
+
+Rules:
+- Use ONLY the numbers in the payload. Never invent a figure, a program name or a site name.
+- Do not restate the list. Connect findings to each other: a program with a waitlist beside a program running half empty in the same season is one staffing decision, not two.
+- Lead with the single highest-leverage action, and say what it is worth.
+- Money of different kinds is never added together: an empty seat is a ceiling, an unpaid invoice is owed today.
+- Be blunt about what the data cannot say. If a finding is ambiguous (free bookings that may be deliberate policy, seasonal customers that look dormant), say so.
+- ADAPTIVE AND INCLUSIVE PROGRAMMING IS HELD TO A DIFFERENT STANDARD, and the payload's own wording says so. Never suggest raising its prices, cutting its capacity, or merging its thin sections: it runs small and cheap on purpose, and that subsidy is the finding rather than a problem. The two things worth acting on there are people waiting for a place and sections being cancelled.
+- 3 to 5 insights. Each: a one-line title, then 2-3 sentences.
+
+Return a JSON array, no markdown fences:
+[{"type":"opportunity|risk|signal","title":"...","body":"...","action":"..."}]`;
+
+async function opportunitiesInsightsFor(slug, payload) {
+  if (!anthropic) return null;
+  try {
+    // The items are the bulk and the model needs the shape more than the tail.
+    const slim = {
+      totals: payload.totals,
+      window: payload.window,
+      families: (payload.families || []).map(f => ({
+        label: f.label, state: f.state, reason: f.reason,
+        findings: (f.findings || []).map(x => ({
+          title: x.title, kind: x.kind, value: x.value, count: x.count,
+          headline: x.headline, detail: x.detail,
+          items: (x.items || []).slice(0, 5).map(i => ({ label: i.label, sub: i.sub, value: i.value })),
+        })),
+      })),
+    };
+    const resp = await anthropic.messages.create({
+      model: INSIGHTS_MODEL, max_tokens: 900,
+      system: OPPORTUNITIES_SYS_PROMPT,
+      messages: [{ role: "user", content: JSON.stringify(slim) }],
+    });
+    const text = (resp.content || []).filter(c => c.type === "text").map(c => c.text).join("");
+    const u = resp.usage || {};
+    logEvent(slug, "opportunities", "ai-generate", null, {
+      inTok: u.input_tokens || 0, outTok: u.output_tokens || 0,
+      costUsd: insightsCostUsd(resp.model || INSIGHTS_MODEL, u.input_tokens || 0, u.output_tokens || 0),
+    });
+    const ins = salvageInsights(text);
+    return ins.length ? ins : null;
+  } catch (e) {
+    console.warn("[opportunities] insights failed: " + e.message);
+    return null;
+  }
+}
+
 // ── overview: RETIRED, and the refusal is EXPLICIT ───────────────────────────
 // The route used to be deleted outright with a comment saying so, which left it
 // falling through to the generic 404 — unmarked. noteDeadLink() alerts on "a 404
@@ -15852,6 +16225,9 @@ app.get("/:org", async (req, res, next) => {
   if ((org.gl?.mbUuid || SHARED_UUIDS.gl) && !orgHidden.has('qoq')) available.push('qoq');
   // Facilities hub — hidden by default for all orgs; shows only when opted in
   if (!reportHiddenForOrg(slug, 'facilities')) available.push('facilities');
+  // Opportunities — on every org's dashboard, hidden until Dan turns it on.
+  // reportHiddenForOrg carries the inverted default-hidden semantics.
+  if (!reportHiddenForOrg(slug, 'opportunities')) available.push('opportunities');
   // Instructor Lessons — programs-pipeline report, per-org pilot (SF)
   if (lessonsReportEnabled(slug) && !orgHidden.has('lessons')) available.push('lessons');
   // Custom data reports — per-org (El Segundo aquatics); see CUSTOM_REPORTS.
@@ -15940,7 +16316,7 @@ app.post("/api/admin/toggle-report", express.json(), (req, res) => {
      in and could not be moved out of through its own API, which is how a card
      with a missing chip would have become unfixable. Found by mutation testing:
      the set-toggle spec's own setup step was silently 400ing. */
-  if (!REPORT_TYPES.includes(report) && report !== "chat" && report !== "report-wizard" && report !== "rentalcalendar" && report !== "facilities" && report !== "directors-report" && report !== "lessons" && report !== DATA_REPORTS_KEY && !customReportsForOrg(slug).includes(report)) return res.status(400).json({ error: "Unknown report type" });
+  if (!REPORT_TYPES.includes(report) && report !== "chat" && report !== "report-wizard" && report !== "rentalcalendar" && report !== "facilities" && report !== "directors-report" && report !== "lessons" && report !== "opportunities" && report !== DATA_REPORTS_KEY && !customReportsForOrg(slug).includes(report)) return res.status(400).json({ error: "Unknown report type" });
   const hidden = getHiddenReports(slug);
 
   /* THE DATA REPORTS CARD IS N KEYS BEHIND ONE SWITCH, so it flips as a SET.
@@ -17631,6 +18007,7 @@ app.get("/", (req, res) => {
     calendar:    { label: "Program Calendar",               icon: "🗓️", desc: "Public class & rental schedule (week / list view)", color: "#ea580c", ai: true },
     fasttrack:   { label: "Fast Track",             icon: "⚡", desc: "Pre-registration demand signal with conversion tracking", color: "#6366f1", ai: true },
     waitlist:    { label: "Waitlist Demand",        icon: "⏳", desc: "Waitlist pressure, conversion, and unmet demand — the add-another-section signal", color: "#b45309" },
+    opportunities: { label: "Opportunities",        icon: "💡", desc: "A daily ranked list of what is worth acting on, read across every other report", color: "#ca8a04", ai: true },
     users:       { label: "Community Intel",            icon: "👥", desc: "Demographics, revenue, and strategy intelligence across your community", color: "#7c3aed", ai: true },
     "instructor-payout": { label: "Instructor Payout", ai: true, icon: "💰", desc: "Revenue splits and payout calculations by instructor", color: "#6366f1" },
 
@@ -17759,6 +18136,24 @@ app.get("/", (req, res) => {
         </a>`);
 
       }
+      /* Opportunities — HIDDEN by default for every org (inverted semantics).
+         This toggle is the ONLY way it goes live for an org, and it governs the
+         PAGE as well as the card: opportunitiesEnabled() reads the same state,
+         so an org that is off 404s the URL rather than merely lacking a tile. */
+      const oppHidden = reportHiddenForOrg(slug, 'opportunities');
+      const oppDim = oppHidden ? ' report-card-hidden' : '';
+      cards.push(`
+        <a href="/${slug}/opportunities${tokenQS}" class="report-card${oppDim}" style="border-left:3px solid #ca8a04;background:linear-gradient(135deg,#fefce8 0%,#fef9c3 100%)" data-org="${slug}" data-report="opportunities">
+          <span class="report-icon">\u{1F4A1}</span>
+          <div class="report-body">
+            <div class="report-label" style="color:#713f12">Opportunities <span class="ai-pill-inline" style="background:#fde68a;color:#713f12">NEW</span></div>
+            <div class="report-desc">A daily ranked list of what is worth acting on, read across every other report</div>
+          </div>
+          <button type="button" class="vis-toggle" onclick="event.preventDefault();event.stopPropagation();toggleVis('${slug}','opportunities',this)" title="${oppHidden ? 'Hidden from org page' : 'Visible on org page'}">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="display:${oppHidden ? 'none' : 'block'}"><path d="M8 3C3 3 1 8 1 8s2 5 7 5 7-5 7-5-2-5-7-5z" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="display:${oppHidden ? 'block' : 'none'}"><path d="M8 3C3 3 1 8 1 8s2 5 7 5 7-5 7-5-2-5-7-5z" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.5" fill="none"/><line x1="2" y1="14" x2="14" y2="2" stroke="currentColor" stroke-width="1.5"/></svg>
+          </button>
+        </a>`);
       // Facilities hub — new WIP report, HIDDEN by default (inverted semantics)
       const facHidden = reportHiddenForOrg(slug, 'facilities');
       const facDim = facHidden ? ' report-card-hidden' : '';
