@@ -185,6 +185,18 @@ was the fixture's `unavailable` case — so that state moved to a new
 four `ok` plus three distinct suppression states, which is one more slot than
 exists. A stub mode is the way out, not dropping a state.
 
+**A RENDER CASE CANNOT BE MUTATION-TESTED BY CHANGING THE LIBRARY, and two of
+my mutations reported SURVIVED on guards that are fine.** Removing
+`rec: recLink("rental", …)` and `rec: recLink("user", …)` from
+`lib/opportunities.js` changed nothing in the browser — **the harness answers
+every `/api/` request from `STUBS`, so the detector never runs**, and the
+fixture supplies `rec` directly. The page-side equivalent is the renderer
+ignoring the row's own `rec` (`const rh = null`), and that fails **exactly**
+the three Rec-link cases and nothing else. The library half is the spec's job
+and the spec catches both. *A mutation that does not reproduce the bug has not
+tested the guard* — the recorded lesson, in a new form: match the mutation to
+the LAYER the guard actually covers.
+
 **THE FIXTURE'S OWN COPY CARRIED THE BRITISH SPELLING TOO** — *"never enrol"*,
 copied from the detector. Fixed with it; a fixture that repeats the defect is
 the `per-section` trap this file already records.
