@@ -1146,9 +1146,114 @@ if (!SKIP_SOURCE) {
     "…and is told not to price it like everything else");
 }
 
-if (failures.length) {
-  console.error("\n" + failures.length + " FAILED:");
-  failures.forEach(f => console.error("  ✗ " + f));
-  process.exit(1);
-}
-console.log(passed + " assertions passed.");
+/* ── THE BUILD ITSELF: paced, and a failure that is not stored ──────────────
+   Both halves are LIFTED AND RUN. A regex over `mapPaced` passes on an
+   implementation that starts all nine anyway — the whole defect was nine
+   requests already in flight — so the assertion has to OBSERVE how many run at
+   once. And `opportunitiesLearnedNothing` is one comparison, which is exactly
+   the shape a regex reads correctly while inverted.
+
+   Everything below is async, so the summary print moved inside the same IIFE:
+   it must still be the LAST thing that runs, or the count reports before the
+   assertions have been made. */
+(async () => {
+  const serverSrc = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
+
+  const lift = (name) => {
+    let start = serverSrc.indexOf("async function " + name + "(");
+    if (start < 0) start = serverSrc.indexOf("function " + name + "(");
+    if (start < 0) return null;
+    // Count braces from the function BODY, never from the first `{` in the
+    // declaration — on a destructured parameter that one is not the body, a
+    // trap this repo has hit three times.
+    const bodyStart = serverSrc.indexOf("{", serverSrc.indexOf(")", start));
+    let depth = 0, i = bodyStart;
+    for (; i < serverSrc.length; i++) {
+      if (serverSrc[i] === "{") depth++;
+      else if (serverSrc[i] === "}") { depth--; if (depth === 0) break; }
+    }
+    return serverSrc.slice(start, i + 1);
+  };
+
+  const mapPacedSrc = lift("mapPaced");
+  const learnedSrc = lift("opportunitiesLearnedNothing");
+  ok(!!mapPacedSrc, "mapPaced lifts out of server.js");
+  ok(!!learnedSrc, "opportunitiesLearnedNothing lifts out of server.js");
+
+  if (mapPacedSrc && learnedSrc) {
+    const mod = new Function(mapPacedSrc + "\n" + learnedSrc +
+      "\nreturn { mapPaced, opportunitiesLearnedNothing };")();
+
+    // ── concurrency is OBSERVED, not read off the source.
+    const runPaced = async (limit, n) => {
+      let inFlight = 0, peak = 0;
+      const jobs = Array.from({ length: n }, (_, i) => async () => {
+        inFlight++; peak = Math.max(peak, inFlight);
+        await new Promise(r => setTimeout(r, 5));
+        inFlight--;
+        return i;
+      });
+      const out = await mod.mapPaced(jobs, limit);
+      return { out, peak };
+    };
+
+    const r = await runPaced(3, 9);
+    ok(r.peak <= 3, "mapPaced never runs more than its limit at once — peak was " + r.peak);
+    ok(r.peak > 1, "…and it does run them concurrently, not one at a time — peak " + r.peak);
+    eq(JSON.stringify(r.out), JSON.stringify([0, 1, 2, 3, 4, 5, 6, 7, 8]),
+      "mapPaced keeps results in the order the jobs were given");
+
+    const one = await runPaced(1, 4);
+    eq(one.peak, 1, "a limit of 1 is genuinely sequential");
+    const wide = await runPaced(20, 3);
+    eq(wide.peak, 3, "a limit above the job count does not over-run");
+
+    // ── the refusal
+    const ln = mod.opportunitiesLearnedNothing;
+    ok(ln({ feedsAnswered: 0, feedsTotal: 9 }) === true,
+      "a build where every feed failed is refused");
+    ok(ln({ feedsAnswered: 1, feedsTotal: 9 }) === false,
+      "ONE feed answering is a real, partial result and is kept");
+    ok(ln({ feedsAnswered: 9, feedsTotal: 9 }) === false, "a full build is kept");
+    ok(ln(null) === true, "…and a missing payload is refused rather than stored");
+  }
+
+  /* ── the wiring, which no lift can see.
+     Each assertion is scoped to its own function's text: a file-wide test for
+     `opportunitiesLearnedNothing` passes when only ONE of the two callers
+     checks it, and the daily job and the on-demand path are exactly the two
+     that must. */
+  if (!SKIP_SOURCE) {
+    const buildFn = lift("buildOpportunitiesFor") || "";
+    ok(!/Promise\.all\(\[/.test(buildFn),
+      "the build no longer fires all nine feeds at once (the bug exactly as it shipped)");
+    ok(/mapPaced\(/.test(buildFn), "…it paces them instead");
+    ok(/OPP_FEED_CONCURRENCY/.test(buildFn),
+      "…against a named limit rather than a literal buried in the call");
+    ok(/feedsAnswered/.test(buildFn) && /v !== null/.test(buildFn),
+      "the build counts the feeds that ANSWERED, asked as presence rather than volume");
+    /* The thunk is what makes the limit mean anything: a bare promise has
+       already started, so a limiter over nine of them limits nothing. That is
+       the version of this fix that looks right and changes nothing. */
+    ok(/safe = \(fn\) => \(\) =>/.test(buildFn),
+      "each feed is deferred into a thunk, so the limit controls when it STARTS");
+
+    const ensureFn = lift("ensureOpportunities") || "";
+    ok(/opportunitiesLearnedNothing\(/.test(ensureFn),
+      "the on-demand path refuses to store a build that learned nothing");
+    const refusalIdx = ensureFn.indexOf("opportunitiesLearnedNothing");
+    const saveIdx = ensureFn.indexOf("saveOpportunitySnapshots");
+    ok(refusalIdx >= 0 && saveIdx > refusalIdx, "…and it refuses BEFORE saving, not after");
+
+    const jobFn = lift("opportunitiesDailyJob") || "";
+    ok(/opportunitiesLearnedNothing\(/.test(jobFn),
+      "the daily job refuses too, so a bad morning cannot overwrite a good snapshot");
+  }
+
+  if (failures.length) {
+    console.error("\n" + failures.length + " FAILED:");
+    failures.forEach(f => console.error("  ✗ " + f));
+    process.exit(1);
+  }
+  console.log(passed + " assertions passed.");
+})();

@@ -13806,28 +13806,91 @@ async function fetchFacilitiesSummaryDirect(slug, start, end) {
    courts" apart from "the court card did not answer this morning", and an
    empty array collapses those two into one. `safe()` here deliberately does
    NOT default to a list. */
+/* NINE AT ONCE IS THE SAME FAN-OUT THE DAILY JOB IS PACED TO AVOID, and this
+   is where it was still happening. The job takes one ORG at a time; inside an
+   org it fired all nine of the heaviest cards on the platform simultaneously.
+   At 05:20 that is harmless because pre-warm has already warmed them. On the
+   ON-DEMAND path it is nine cold queries into a Metabase that may also be
+   serving a post-deploy pre-warm, and they contend until every one of them
+   hits its own timeout wall.
+
+   MEASURED, the first time an org was opened this way — watertown, 2026-09-14:
+   eight aborted at 17:59:36 (their full 120s) and the facilities summary at
+   18:00:36 (its full 180s). Not one of the nine returned, and the all-null
+   result was then stored as that org's standing answer.
+
+   OPP_FEED_CONCURRENCY is a judgement, not a measurement: sequential is the
+   shape this repo reaches for, and nine sequential cold cards at up to 120s
+   each is longer than any request should live. Small enough that each query
+   has room, large enough that a warm org still answers quickly. The guard that
+   actually makes a bad build survivable is the one below in
+   `opportunitiesLearnedNothing` — this only lowers how often it fires. */
+const OPP_FEED_CONCURRENCY = 3;
+
+async function mapPaced(jobs, limit) {
+  const out = new Array(jobs.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < jobs.length) {
+      const i = next++;
+      out[i] = await jobs[i]();
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, jobs.length) }, worker));
+  return out;
+}
+
 async function buildOpportunitiesFor(slug) {
   const win = oppWindow();
-  const safe = (p) => p.then(v => (Array.isArray(v) ? v : null))
+  // The fetch is deferred into a thunk so mapPaced controls when it STARTS —
+  // a bare promise has already begun, and a concurrency limit over nine
+  // in-flight requests limits nothing.
+  const safe = (fn) => () => Promise.resolve().then(fn)
+    .then(v => (Array.isArray(v) ? v : null))
     .catch(e => { console.warn("[opportunities] " + slug + " feed failed: " + e.message); return null; });
   const [programs, waitlist, fasttrack, facility, facilitiesSummary, demographics, users, memberships, courts] =
-    await Promise.all([
-      safe(fetchMBDirect(slug, "programs", win.start, win.end)),
-      safe(fetchMBDirect(slug, "waitlist", null, null)),
-      safe(fetchMBDirect(slug, "fasttrack", null, null)),
-      safe(fetchMBDirect(slug, "facility", win.start, win.end)),
-      safe(fetchFacilitiesSummaryDirect(slug, win.start, win.end)),
-      safe(fetchMBDirect(slug, "program-demographics", null, null)),
-      safe(fetchMBDirect(slug, "users", null, null)),
-      safe(fetchMBDirect(slug, "memberships", null, null)),
-      safe(fetchMBDirect(slug, "court-utilization", win.start, win.end)),
-    ]);
+    await mapPaced([
+      safe(() => fetchMBDirect(slug, "programs", win.start, win.end)),
+      safe(() => fetchMBDirect(slug, "waitlist", null, null)),
+      safe(() => fetchMBDirect(slug, "fasttrack", null, null)),
+      safe(() => fetchMBDirect(slug, "facility", win.start, win.end)),
+      safe(() => fetchFacilitiesSummaryDirect(slug, win.start, win.end)),
+      safe(() => fetchMBDirect(slug, "program-demographics", null, null)),
+      safe(() => fetchMBDirect(slug, "users", null, null)),
+      safe(() => fetchMBDirect(slug, "memberships", null, null)),
+      safe(() => fetchMBDirect(slug, "court-utilization", win.start, win.end)),
+    ], OPP_FEED_CONCURRENCY);
+  const feeds = { programs, waitlist, fasttrack, facility, facilitiesSummary, demographics, users, memberships, courts };
   const payload = OPPORTUNITIES.buildOpportunities(
-    { programs, waitlist, fasttrack, facility, facilitiesSummary, demographics, users, memberships, courts },
+    feeds,
     { windowDays: OPP_WINDOW_DAYS, window: win }
   );
   payload.slug = slug;
+  /* PRESENCE, NOT VOLUME. `safe()` returns null ONLY when a feed failed — a
+     card that genuinely has no rows returns []. So counting the non-null feeds
+     separates "this org has nothing" from "nothing answered", which is the
+     same distinction the suppression copy rests on, asked one level up. */
+  payload.feedsAnswered = Object.values(feeds).filter(v => v !== null).length;
+  payload.feedsTotal = Object.keys(feeds).length;
+  payload.builtAt = new Date().toISOString();
   return payload;
+}
+
+/* A BUILD THAT LEARNED NOTHING IS NOT A RESULT, AND MUST NOT BE STORED AS ONE.
+
+   The daily job has always refused to overwrite an org's last good snapshot
+   with a failure. The on-demand path had no such guard — and for a newly
+   enabled org there IS no last good snapshot, so the FIRST failed build became
+   the standing answer, served with no TTL and no retry until 05:20 the next
+   morning. Dan opened Watertown one minute after it was switched on, every
+   feed timed out, and the report read "could not be analysed today" for the
+   rest of the day while the underlying cards were perfectly healthy.
+
+   Zero of nine is the only shape refused. A PARTIAL build is stored, because
+   the report says per family which feeds answered and a partial answer is a
+   real one. */
+function opportunitiesLearnedNothing(payload) {
+  return !payload || payload.feedsAnswered === 0;
 }
 
 // Serve the snapshot; build on demand only when there is none (a new org, or
@@ -13837,10 +13900,18 @@ async function ensureOpportunities(slug, opts) {
   const all = loadOpportunitySnapshots();
   if (!refresh && all[slug]) return { ...all[slug], fromSnapshot: true };
   const payload = await buildOpportunitiesFor(slug);
+  if (opportunitiesLearnedNothing(payload)) {
+    // Return it — the page then says honestly that nothing could be analysed
+    // today — but do NOT persist it, so the next open tries again instead of
+    // being handed this one forever.
+    console.warn("[opportunities] " + slug + ": every feed failed — not storing this build");
+    return { ...payload, notStored: true };
+  }
   const store = loadOpportunitySnapshots();
   store[slug] = payload;
   saveOpportunitySnapshots(store);
-  console.log("[opportunities] snapshot saved: " + slug + " — " + payload.totals.findings + " findings");
+  console.log("[opportunities] snapshot saved: " + slug + " — " + payload.totals.findings + " findings"
+    + " (" + payload.feedsAnswered + "/" + payload.feedsTotal + " feeds)");
   return payload;
 }
 
@@ -13864,10 +13935,17 @@ async function opportunitiesDailyJob() {
   for (const slug of slugs) {
     try {
       const payload = await buildOpportunitiesFor(slug);
-      const store = loadOpportunitySnapshots();
-      store[slug] = payload;
-      saveOpportunitySnapshots(store);
-      ok++;
+      // The comment below has always said a failure must not overwrite a good
+      // snapshot; a build where every feed timed out is that failure without
+      // throwing, so it has to be tested rather than assumed.
+      if (opportunitiesLearnedNothing(payload)) {
+        console.warn("[opportunities] " + slug + ": every feed failed — keeping the previous snapshot");
+      } else {
+        const store = loadOpportunitySnapshots();
+        store[slug] = payload;
+        saveOpportunitySnapshots(store);
+        ok++;
+      }
     } catch (e) {
       // One org's failure must not stop the other twenty-eight, and it must
       // not overwrite that org's last good snapshot with nothing.

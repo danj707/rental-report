@@ -457,6 +457,119 @@ explaining the deletion quoted both names. Reworded rather than teaching the
 assertion to ignore comments — a regex comment-stripper is unsound on
 server.js, and keeping the guard dumb is the more robust half.
 
+## WATERTOWN'S FIRST OPEN CACHED A TOTAL FAILURE AS THE ANSWER (2026-09-14)
+
+Dan, one minute after the seed switched Opportunities on for Watertown, with
+every section reading *"Could not be analysed today"*: **"watertown was a no
+bueno"**.
+
+**THE CARDS WERE ALL HEALTHY. The report was serving a snapshot of nine
+timeouts, built 42 minutes earlier and cached with no TTL and no retry.**
+
+### THE LOGS DATE IT TO THE SECOND, and the shape is the diagnosis
+
+```
+17:59:36  [opportunities] watertown feed failed: The operation was aborted due to timeout   × 8
+18:00:36  [opportunities] watertown feed failed: The operation was aborted due to timeout
+18:00:36  [opportunities] snapshot saved: watertown — 0 findings
+```
+
+Eight aborted **in the same millisecond**, exactly 120s after they started, and
+the ninth at exactly its own 180s. **Not one of the nine returned.** That is not
+nine independently slow cards; it is nine cards started together and starved
+together — and the give-away is that they did not fail at nine different times.
+
+### TWO DEFECTS, and the second is what made it last all day
+
+**1. THE FAN-OUT RULE WAS APPLIED BETWEEN ORGS AND NOT INSIDE ONE.** This file
+already records the daily job as *"SEQUENTIAL, one org at a time, paced 4s …
+fanned out this is the post-deploy prewarm storm that 502'd the facility
+Summary"*. That is true of the loop over orgs, and inside a single org
+`buildOpportunitiesFor` was a **`Promise.all` of the nine heaviest cards on the
+platform**. At 05:20 that is harmless — prewarm has already warmed them. On the
+ON-DEMAND path it is nine cold queries into a Metabase that was also serving the
+post-deploy prewarm, and they contend until every one hits its own wall.
+
+*Generalise it: a pacing rule that names one axis is not a pacing rule. The loop
+was paced and the thing inside the loop was not, and the write-up describing the
+pacing is what made it look handled.*
+
+**2. A BUILD THAT LEARNED NOTHING WAS STORED AS A RESULT.** `ensureOpportunities`
+saved whatever came back and served it forever after. The daily job has always
+had the guard — its own comment says a failure *"must not overwrite that org's
+last good snapshot with nothing"* — and the on-demand path had none. **For a
+newly enabled org there IS no last good snapshot, so the first failed build
+becomes the standing answer**, which is precisely the case a seed creates.
+
+So the one-in-a-day event (a cold org opened during a deploy) produced a
+result that then outlived the condition that caused it. **A cached failure is
+worse than a slow page, because nothing retries it.**
+
+### `opportunitiesLearnedNothing` IS PRESENCE, ASKED ONE LEVEL UP
+
+`safe()` returns `null` only when a feed FAILED — a card that genuinely has no
+rows returns `[]`, which is the whole `null`-vs-`[]` rule this report rests on.
+So counting the non-null feeds separates *"this org has nothing"* from
+*"nothing answered"* without a second mechanism, and the refusal is one
+comparison over that count.
+
+- **ZERO OF NINE IS THE ONLY SHAPE REFUSED.** A partial build is stored, because
+  the report already says per family which feeds answered and a partial answer
+  is a real one. Refusing partials would have refused the rebuild that fixed
+  Watertown (7 of 9).
+- **The refused payload is still RETURNED**, so the page says honestly that
+  nothing could be analysed today — it is simply not persisted, so the next open
+  tries again. Returning nothing instead would trade a stale wrong answer for a
+  blank one.
+- **Both callers check it**, and the spec asserts each within its OWN function's
+  text: a file-wide test passes when only one of the two does, and the two are
+  exactly the on-demand path and the daily job.
+
+### THE CONCURRENCY LIMIT IS A JUDGEMENT AND IS LABELLED AS ONE
+
+`OPP_FEED_CONCURRENCY = 3`. Sequential is the shape this repo reaches for, and
+nine sequential cold cards at up to 120s each is longer than any request should
+live; nine at once is what just failed. **No measurement chooses 3** — it is
+small enough that each query has room and large enough that a warm org still
+answers quickly, and the write-up says so rather than dressing it up. The guard
+that actually makes a bad build survivable is the refusal above; the limit only
+lowers how often it fires.
+
+**THE THUNK IS THE HALF THAT IS EASY TO GET WRONG.** `safe()` takes a FUNCTION
+now, not a promise: a bare promise has already started, so a concurrency limiter
+wrapped around nine in-flight requests limits nothing while reading perfectly.
+The mutation that hands the limiter pre-started promises fails by name.
+
+### Remediated live, and the measurement is worth keeping
+
+`?refresh=1` against production rebuilt Watertown in **2m00s: 7 findings,
+$10,426 uncollected, 12,938 audience, four of six families OK** — on the
+unfixed code, with Metabase quiet. So the cards were never the problem; the
+contention was.
+
+**The Programs card still timed out even then**, and it takes the adaptive
+family with it (same feed). Watertown's Programs card is the heaviest thing this
+report asks for and 120s is marginal for it cold. **Not raised here**: a longer
+timeout lengthens every on-demand build, and the honest fix for that card is the
+card, not the caller. Expect `programs` and `adaptive` to read *"could not be
+loaded"* at Watertown until the 05:20 build catches it warm.
+
+### Guards
+
+`scripts/opportunities.spec.js` 322 → **341 assertions**, and the new half LIFTS
+AND RUNS both helpers — a regex over `mapPaced` passes on an implementation that
+starts all nine anyway, so the assertion **observes the peak in flight** rather
+than reading the source. Mutation-tested eight ways, all eight caught by an
+assertion naming the defect: the build back to `Promise.all` (the bug as it
+shipped), the limiter handed pre-started promises, `mapPaced` ignoring its limit,
+`mapPaced` losing the job order, the refusal inverted, the on-demand path storing
+a failure, the daily job overwriting a good snapshot, and the feed count
+hardcoded.
+
+**The spec's tail is now an async IIFE**, because these assertions are async and
+the summary print has to remain the LAST thing that runs — the third instance in
+this file of *a spec that reports before its assertions have been made*.
+
 ## THE OPPORTUNITIES REPORT, ANSWERED IN FIVE MORE (2026-09-14)
 
 Dan, on the built report, with four screenshots:
