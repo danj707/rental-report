@@ -591,6 +591,48 @@ if (!SKIP_SOURCE) {
   // ── It LEADS. A callout that sorts below five families is not a callout ──
   eq((O.FAMILIES[0] || {}).key, "adaptive", "the adaptive family is first on the page");
 
+  /* ── WE DESCRIBE THE PROGRAMMING, NOT THE PARTICIPANTS ─────────────────
+     Dan, on the section header: "don't use the word disabilities, think of
+     something more PC friendly."
+
+     RUN, not regexed, and over EVERY string the reader can see — a blurb, a
+     title, a headline, a detail, an action, a basis and every item's own label
+     and sub. A guard that checked only the blurb would pass on a finding body
+     that still said it, which is most of the words on that section. */
+  {
+    const rows = baseProgramFeed().concat([adaptiveSection({
+      program: "Therapeutic Recreation Swim", section: "TR Swim A",
+      activity_name: "Therapeutic Recreation", enrolled: 8, capacity: 12, charged: 400,
+    })]);
+    const out = O.buildOpportunities({ programs: rows }, { now: NOW });
+    const words = /disabilit|disabled|handicap|special needs/i;
+    // Every family blurb, not just this one — the next section added must not
+    // reintroduce it either.
+    (out.families || []).forEach(f => {
+      ok(!words.test(String(f.label) + " " + String(f.blurb) + " " + String(f.reason || "")),
+        "the " + f.key + " section header describes the programming, not the participants");
+      (f.findings || []).forEach(fi => {
+        const seen = [fi.title, fi.headline, fi.detail, fi.action, fi.basis]
+          .concat((fi.items || []).map(i => String(i.label) + " " + String(i.sub))).join(" ");
+        ok(!words.test(seen), fi.id + " says nothing about participants' disabilities — got: "
+          + (seen.match(words) || [""])[0]);
+      });
+    });
+    // …and it really did render the adaptive section, or the loop above
+    // asserted nothing at all.
+    ok(famOf(out, "adaptive").findings.length > 0, "…on a page that really does have an adaptive section");
+  }
+
+  /* THE MATCHER IS NOT COPY, AND IT KEEPS THE WORD. ADAPTIVE_RE reads the
+     ORG'S OWN activity names, so dropping `disabilit` there would stop finding
+     the provision at any org that uses it — silently, and at exactly the orgs
+     this section exists for. Without this pair, the guard above is satisfied
+     by gutting the detector. */
+  ok(O.isAdaptiveName("Disability Services"),
+    "an org whose own activity says 'Disability' is still found — their vocabulary is not our copy");
+  ok(O.isAdaptiveName("Adaptive Recreation") && O.isAdaptiveName("Therapeutic Recreation"),
+    "…alongside the spellings the orgs served here actually use");
+
   // ── The profile is PINNED above a priced waitlist in its own family ─────
   {
     const rows = baseProgramFeed();

@@ -135,6 +135,52 @@ enrollments enrolls enrolRows`, and still catch a real *"never enrol"* — or th
 fix would be a guard that can never fail. Also fixed: `Counting enrolments…` on
 the Programs Schedule loader, because half a rename reads worse than none.
 
+### THE COPY DESCRIBES THE PROGRAMMING, NOT THE PARTICIPANTS (2026-09-14)
+
+Dan, on the section header *"Adaptive & inclusive — The programming built for
+participants with disabilities"*: **"don't use the word disabilities, think of
+something more PC friendly."**
+
+Two strings, both reworded to say what the section CONTAINS rather than who it
+is for:
+
+| | |
+|---|---|
+| family blurb | *"Your adaptive, therapeutic and inclusive programming"* |
+| profile finding | *"The adaptive and inclusive programming you run"* |
+
+**REACHING FOR A EUPHEMISM ABOUT PEOPLE IS THE OTHER WAY TO ANSWER THIS AND THE
+WORSE ONE.** *"Of all abilities"* is the parks-and-rec industry standard and was
+the obvious swap — it is even already in our own match vocabulary — but it is
+still a label applied to people, and disability advocates read it as evasive.
+Naming the three word families the detector actually matches sidesteps the
+question entirely, and it is **what the orgs themselves call these activities**:
+Apex *Therapeutic Recreation*, Shrewsbury *Adaptive*, Watertown *Adaptive
+Programming*. A description of programming cannot be wrong about anybody.
+
+**`ADAPTIVE_RE` IS NOT COPY AND KEEPS `disabilit`.** That pattern reads the
+ORG'S OWN activity names, so dropping the word there would stop finding the
+provision at any org that uses it — **silently, and at exactly the orgs this
+section exists for**. Our words changed; their vocabulary did not. The mutation
+that guts the matcher to satisfy the copy guard fails by name, which is the
+pair that makes either half meaningful.
+
+*Generalise it: a wording rule applies to the text we write, never to the text
+we match on. Conflating the two turns a copy edit into a silent detector
+regression.*
+
+**The guard RUNS the detectors and reads every string a reader can see** — each
+family's label, blurb and suppression reason, and each finding's title,
+headline, detail, action, basis and every item's own label and sub. A guard
+checking only the blurb passes on a finding BODY that still says it, which is
+most of the words in that section; the mutation that moves the phrase from the
+header into the detail proves the difference. It also asserts the adaptive
+section actually rendered, or the loop asserts nothing at all.
+
+322 assertions. Mutation-tested four ways, all four caught by name: the blurb
+reverted, the title reverted, the phrase moved into a finding body, and the
+matcher gutted.
+
 ### THE SECTION COLOURS ARE LIFTED, NOT INVENTED
 
 Each family owns a hue, and it is **the same hue its own findings already

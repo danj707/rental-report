@@ -1320,9 +1320,9 @@ const STUBS = [
            second deliberately does NOT — so one case can require a real
            rec.us link on one row and a fall-back to our own report on the
            other, which a fixture with only one kind of row could not do. */
-        { key: "adaptive", label: "Adaptive & inclusive", emoji: "\u267F", blurb: "Built for participants with disabilities", state: "ok", reason: "", findings: [
+        { key: "adaptive", label: "Adaptive & inclusive", emoji: "\u267F", blurb: "Your adaptive, therapeutic and inclusive programming", state: "ok", reason: "", findings: [
           { id: "adaptive-profile", family: "adaptive", kind: "attention", value: null, count: 6, pin: 0,
-            title: "What you run for participants with disabilities",
+            title: "The adaptive and inclusive programming you run",
             headline: "2 programs across 6 sections \u00B7 31 participants enrolled",
             detail: "Your organization files this under Therapeutic Recreation.",
             action: "Read the rest of this section before the Programs one.",
