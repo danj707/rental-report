@@ -1,5 +1,174 @@
 # Project notes for Claude
 
+## THE RENTAL CALENDAR IS A FULL-SCREEN MAP NOW (2026-09-14)
+
+Dan, after looking at **playrecreate.com** — a consumer app that aggregates SF
+Rec & Park (Rec), NYC Parks, ActiveNet and PerfectMind into one discovery layer:
+*"lets make our rental calendar a full screen map, with locations in a list on
+the site, I like that view better."*
+
+**THEIR ROOT URL IS THE MAP.** Every SEO landing page they serve links into
+`/?sport=basketball&court=<slug>` — the map is the product and the pages are
+funnels into it. That is the shape Dan asked for, and it is what shipped:
+`.rc-shell` owns the viewport, a 410px **locations rail** on the left, a
+**full-bleed Leaflet canvas** on the right, one date/filter bar across the top.
+
+### THE MAP AND THE RAIL SHARE A GROUPING AND DELIBERATELY DIFFER ON SCOPE
+
+`groupByLocation(allSites, shownSites)` is the ONE grouping, read by both —
+because the rail's *"12 of 23 available"* and the pin's own badge are the same
+sentence about the same park, and two groupings is how they start disagreeing.
+
+**What they pass it is different, on purpose, and that is pre-existing
+behaviour preserved rather than a new rule:** the rail honours the location
+filter (it IS the list), the map does not, so picking one park never zeroes
+every other pin's count.
+
+- **A location with no pin is still in the rail**, labelled *"Not on the map
+  yet"*. Dropping it would make a park that exists unreachable from the only
+  list on the page.
+- **Alphabetical and STABLE.** Available-first is what the competitor does (by
+  distance), and it would reshuffle the whole list every time the date moves.
+  The colour dot carries availability; a list you scan wants a fixed order.
+- **`locAvailability` is unchanged**, so a green dot in the rail cannot disagree
+  with the pin beside it or with the bars underneath it.
+- Expanding a card flies the map to its pin; a pin click selects and scrolls the
+  card into view. `focusReq` carries a **nonce**, or clicking the same card
+  twice only ever flies once.
+
+### `scrollWheelZoom` IS ON NOW, AND THAT FOLLOWS FROM THE LAYOUT
+
+It was off while the map was a 340px panel inside a scrolling page — there,
+scroll-to-zoom steals the page scroll. The canvas owns its own half of the
+viewport now and the rail scrolls separately, so there is nothing to steal.
+
+### THE TOGGLE CANNOT LIVE IN A PANE IT CAN HIDE
+
+On a phone the two panes do not fit, so `data-pane` shows one at a time. The
+first build put the Map/List toggle in the **rail head** — and the map pane
+hides the rail, so the only way back to the list went away with the list. It is
+in the top bar. **Found by the render check, not by review**: the case that
+clicks List failed with *"Node is either not clickable or not an Element"*.
+
+### FOUR THINGS ONLY THE RENDER SHOWED
+
+- **The hour ruler crushed to `6a7a8a9a10a11a12p`** — 18 hours over ~250px of
+  track is ~14px an hour against ~20px labels. `TimeRuler` takes an `every`
+  argument and the rail asks for every third hour. **By argument, not by an
+  `:nth-child` rule**, which would silently re-pick the wrong ticks the day
+  anything else is rendered into that track. The in-bar hour labels and the
+  half-hour gridlines are hidden in the rail by CLASS, for the same reason.
+- **The unmapped-locations note sat on top of Leaflet's zoom control.**
+- **The wizard's × is a DISMISS, not a collapse** (`if (!isOpen) return null`),
+  so starting it collapsed to save rail space made the feature unreachable.
+  Reverted; it stays expanded at the top of the rail with its own ×.
+- **I dropped the *"Powered by rec.us"* attribution with the old footer.**
+  Restored into the header. Removing attribution is not a layout decision.
+
+### TWO REAL DEFECTS IN MY OWN DIFF, both found by re-reading it
+
+- **The groupings were recomputed on every render.** `LocationMap`'s marker
+  redraw depends on that array's identity, so every marker would be torn down
+  and rebuilt constantly and any open popup would close the moment anything else
+  re-rendered — **the exact failure the original `mapped` useMemo was written
+  for**, reintroduced one level up. Memoised, and moved ABOVE the early returns:
+  a `useMemo` below `if (loading) return` changes the hook count per render.
+- **`DayView`, `WeekOverview`, `startOfWeek`, `DOW` and the whole `view`/week
+  branch are DELETED, not left unread.** Nothing rendered the week grid and
+  `view` could only ever be `'day'`. A component nothing renders is the dead end
+  this file keeps recording.
+
+### Guards
+
+**This page had NO render coverage at all** — the state already recorded here
+for the waitlist report and the rental schedule. Nine `ci-check-render.js` cases
+now, every one keyed on a computed figure or an absence: the rail beside the map
+with `.wrap` **ABSENT** (the 1080px column the layout replaced), three locations
+listed once each, per-location availability, the expanded card's own row count,
+the unpinned notice, two pins for three locations, and the phone's one-pane
+toggle read from each pane's **COMPUTED display** rather than from `data-pane`,
+which flips whether or not the CSS honours it.
+
+Mutation-tested five ways, **and the two that matter SURVIVED the first
+version**: with no filter applied a location's `all` and `shown` are the SAME
+LIST, so a rail reading the wrong one renders identically. Both cases are driven
+under **`?type=court`** now — Arsenal has 3 sites and 2 courts, Filippello 2 and
+1 — so `loc.all` and `loc.shown` give different numbers and `data-rc-loc-total`
+says which was read. *A fixture where a wrong implementation cannot look wrong
+is not a guard.* All five now fail by the case that names them: the rail
+rendering every site under every card, one availability for the whole org, the
+stacked `.wrap` back, unpinned locations dropped, and the toggle back inside the
+rail.
+
+**THE AVAILABILITY STUB FELL THROUGH TO THE CAMPMAP'S.** `STUBS` is searched
+with `.find` and `/\/api\/availability-batch/` (the campmap's nightly
+`checkInDates` shape) sits **above** where I added mine — so the rental calendar
+was answered with a payload it cannot read and every park rendered *"No
+availability on this date"*. One matcher branching on the org in the URL now.
+Nth instance of this exact fall-through, after the `/api/data` one.
+
+**AND `org` IS NOT THE ORG IN THE PATH.** Stubs are called `body(url, org)`
+where `org` is the harness's ONE resolved test org. A stub keyed on it answered
+`/watertown/rentalcalendar` with the campground's sites — a perfectly plausible
+one-location rail. Branch on the URL.
+
+**A HARNESS GAP, latent until this page used `act`:** the pre-act wait is
+`.prompt-panel, .toolbar, .card, .report-header` and the rental calendar carries
+none of them (its toolbar class is `.toolbar-row`), so its first act-driven case
+hung for the full timeout and reported as an uncaught error — which reads as the
+page being broken. `.rc-shell` added, the same fix `.report-header` got.
+
+**And a stamp that printed nothing.** The harness surfaces attributes matching
+`/^data-rc-.*-seen$/`; I wrote a bare `data-rc-seen`, which never matched, so
+every `measured — …` line I had added was silently absent while I was debugging
+blind.
+
+**THE FIXTURE'S OPEN WINDOW IS 06:00–23:30 AND THE CASE STILL DOES NOT ASSERT
+"open".** A narrow window makes the result depend on the WALL CLOCK: past the
+last slot every block is behind `now`, the park correctly reads *"today's hours
+have ended"*, and a case asserting it is open fails on good code for a quarter
+of the day. The stable claim is that Filippello is **booked with 0 free** (a
+reservation beats `past` in `deriveBlocks`, so that is true at any hour) while
+the other two are **not booked**. A flaky assertion is not a guard.
+
+### WHAT ELSE IS WORTH TAKING FROM playrecreate, and what is NOT
+
+Read out of their own bundle and SEO pages rather than guessed. Nothing below is
+built.
+
+- **They browse by SPORT, not by site type.** `/basketball`, `/pickleball` —
+  the player's vocabulary over Rec's (`court` / `field` / `outdoor-event-space`).
+  We have `court_sport` and the amenity tags to do it.
+- **"Open for" is a DURATION filter** (*"No courts match — try a smaller 'open
+  for'"*) — "I want two hours" instead of picking a start and an end. That is
+  the single most transferable control they have.
+- **"What's open right now"** is their default question; ours is "what is free
+  on a date you pick".
+- **Distance sorting and "0.1 mi away"**, off the browser's location.
+- **Amenity chips with icons** — lights, restrooms, water, accessible, surface.
+- **They state provenance and staleness** — *"Live from rec.us"* / *"Availability
+  as of {date}"* — which is the same load-vs-empty rule this file already
+  enforces.
+- **They suggest an ALTERNATIVE when a court is full** (*"Fully booked — try
+  {alt}, or book ahead"*). A dead end with a way out.
+- **Not for us:** the friends/chat/check-in/crowd-report half, the AI assistant,
+  and the "I'm down to play" social feed. That is a consumer network, not an
+  org's rental calendar.
+
+**They call `api.rec.us` with a spoofed `Origin: https://www.rec.us` and a
+browser UA** — the same WAF bypass this file already records for
+`nightly-availability` (`sec-fetch-mode: cors`). Worth knowing that a third
+party is reading that endpoint at volume.
+
+### NOT DONE
+
+- **The embed (`?embed=1`) gets the same split**, sized to the iframe
+  (`height:100%;min-height:560px`) rather than a layout of its own. If a city
+  is iframing this at 400px tall it will be cramped — nobody has said so, and a
+  second layout is a second thing to keep right.
+- **No URL state for the open location.** `?type=` and `?location=` still work;
+  which card is expanded is not shareable.
+
 ## LESSON ACQUISITION AND RETENTION — the two channels nobody could see (2026-09-14)
 
 Dan, on the SF instructor report: *"see if you can come up with metrics for
