@@ -412,7 +412,15 @@ async function reportFetchError(r) {
   // The status still travels, because "which failure was it" is the first thing
   // asked when one of these is reported, and a sentence alone loses it.
   if (msg) return new Error(msg + ' (HTTP ' + status + ')');
-  if (status === 504) return new Error('The report timed out — try a shorter date range (HTTP 504)');
+  // 502 AND 503 ARE THE SAME EVENT AS 504 HERE, and leaving them out cost a
+  // reader a useful message on production. Our own route answers 504 with a
+  // sentence; when the card runs past RAILWAY'S EDGE timeout the request never
+  // reaches the app at all and the edge answers 502/503 with the plain text
+  // "upstream error" — so the body carries nothing, and the old fallback said
+  // only "Server returned 502". The cause is identical (the report took too
+  // long) and so is the remedy, so all three say it.
+  if (status === 502 || status === 503 || status === 504)
+    return new Error('The report timed out — try a shorter date range (HTTP ' + status + ')');
   return new Error('Server returned ' + status);
 }
 if (typeof window !== 'undefined') window.reportFetchError = reportFetchError;

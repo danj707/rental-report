@@ -143,13 +143,54 @@ function report() {
        products.html is the one Dan hit. A feed fetch is the shape that throws
        from the status and then returns r.json(); an action POST that reads
        `json.error` off the body is not this bug and is left alone. */
+    /* ...AND THE PAGE THAT NEVER CHECKED THE STATUS AT ALL. The predicate
+       below used to REQUIRE `if (!r.ok) throw new Error(` before it would
+       look at a line — so it saw only pages that had got this half right,
+       and a bare `.then(r => r.json())` was skipped entirely. lessons.html
+       shipped with exactly that and Dan hit it on production: the card ran
+       past RAILWAY'S EDGE timeout, the edge answered the plain text
+       "upstream error", and the reader was shown
+       `Unexpected token 'u', "upstream error" is not valid JSON` — a PARSER
+       message, from a page whose own route had a remedy to offer. That is a
+       worse failure than the bare status this assertion was written for, and
+       the assertion could not see it.
+
+       Second instance of the same shape in this file: the early-return gate
+       recorded above also went quiet on precisely the page carrying the bug.
+       A guard that only inspects the code that already tried is not a guard
+       against not trying. So a feed fetch is now EITHER spelling, and both
+       have to reach the body. */
     s.split('\n').forEach((ln, i) => {
-      const feed = /\.then\((async\s+)?(function\s*\(\s*\w+\s*\)|\(?\s*\w+\s*\)?\s*=>)\s*\{\s*if\s*\(\s*!\s*\w+\.ok\s*\)\s*throw new Error\(/.test(ln)
-                && /\.json\(\)/.test(ln);
-      if (!feed) return;
+      const checksStatus = /\.then\((async\s+)?(function\s*\(\s*\w+\s*\)|\(?\s*\w+\s*\)?\s*=>)\s*\{\s*if\s*\(\s*!\s*\w+\.ok\s*\)\s*throw new Error\(/.test(ln)
+                        && /\.json\(\)/.test(ln);
+      /* The bare form: `.then(r => r.json())` as the WHOLE handler, with no
+         status check at all.
+
+         AND IT IS ONLY A FINDING WHERE THE MESSAGE REACHES THE READER. The
+         first widening flagged ten call sites and only THREE were this bug —
+         the other seven are deliberate soft-failure paths whose `.catch`
+         swallows into a degraded state (`setLessons(null)`, `setPermitsOk(
+         false)`, an empty leaderboard), plus one fetch of a THIRD-PARTY host
+         where `reportFetchError` — which is about OUR route's body — would be
+         the wrong tool. A bare parse still throws there, and the catch is the
+         design; nobody is shown a parser message. Rewriting those would be the
+         bulk-sweep mistake this file already records: improving the average
+         message while making one of them worse.
+
+         So the discriminator is the CATCH: this assertion is about what the
+         reader is told, so it fires only where the chain's own catch puts the
+         error text on screen. */
+      const bare = /\.then\(\s*(?:\(\s*)?(\w+)\s*\)?\s*=>\s*\1\.json\(\s*\)\s*\)/.test(ln);
+      let shown = false;
+      if (bare) {
+        const chain = s.split('\n').slice(i, i + 14).join('\n');
+        const c = chain.indexOf('.catch(');
+        if (c >= 0) shown = /setErr|setErrMsg|\.message/.test(chain.slice(c, c + 200));
+      }
+      if (!checksStatus && !(bare && shown)) return;
       if (/\.text\(\)|json\.error|j\.error/.test(ln)) return;   // already reads the body
       ok(/reportFetchError/.test(ln),
-         f + ':' + (i + 1) + ' reads the body rather than throwing the bare status');
+         f + ':' + (i + 1) + ' checks the status and reads the body, rather than parsing whatever came back');
     });
     /* AND THE OWNING ARROW IS ASYNC. `throw await` inside a non-async arrow is
        a SyntaxError that takes the whole babel block with it — the blank-page

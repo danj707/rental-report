@@ -287,8 +287,11 @@ function App() {
     const m = sel.match(/^(\d{4})-Q([1-4])$/);
     if (!m) return;
     setState("loading");
+    // Same as above: this chain's catch puts e.message on screen, so the
+    // status has to be checked before the body is parsed or an edge 502
+    // reaches the reader as a JSON parser message.
     fetch(withToken("/" + slug + "/directors-report/api/quarter?year=" + m[1] + "&q=" + m[2]))
-      .then(r => r.json())
+      .then(async r => { if (!r.ok) throw await reportFetchError(r); return r.json(); })
       .then(j => {
         if (!j.ok) throw new Error(j.error || "Failed to load");
         setData(j); setState("done");
