@@ -1986,7 +1986,7 @@ const CUSTOM_REPORTS = {
     label: "Aquatics Classes by Month",
     chip: "Classes", chipIcon: "\u{1F4C6}",
     emoji: "\u{1F3CA}",
-    desc: "Class sessions, hours and revenue by month, pool, programme and instructor",
+    desc: "Class sessions, hours and revenue by month, pool, program and instructor",
     card: 21683,
     uuid: process.env.MB_AQUATIC_CLASSES_UUID || "60ada9bc-76c3-4139-b5cb-072bc79c7eb8",
     orgIds: [CUSTOM_REPORT_ORG_IDS.elSegundo],
@@ -5025,7 +5025,7 @@ setTimeout(() => { checkCardParamTypes().catch(() => {}); }, 150 * 1000).unref?.
 // Inert if the env var is unset. Fire-and-forget — never blocks or breaks logging.
 // To change what pings Slack, edit SLACK_NOTIFY. High-frequency events (view/fetch)
 // are debounced per org+report so Slack isn't a firehose.
-const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "campmap-filter", "campmap-amenity", "pdf", "excel", "print", "summary", "game", "map", "outdoor", "fields", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email", "checkin-loc", "checkin-member", "checkin-failed", "form-open", "epact", "settings-open", "settings-unlock", "settings-locked", "settings-save", "settings-reset", "deadlink", "generate", "wizard-save", "mb-autorenew", "mb-salesmix", "ft-export", "panel-csv", "intel-csv", "wizard-feedback", "roster-open", "report-csv", "survey-response", "insights-listen", "opp-drill", "opp-print"]);
+const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "campmap-filter", "campmap-amenity", "pdf", "excel", "print", "summary", "game", "map", "outdoor", "fields", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email", "checkin-loc", "checkin-member", "checkin-failed", "form-open", "epact", "settings-open", "settings-unlock", "settings-locked", "settings-save", "settings-reset", "deadlink", "generate", "wizard-save", "mb-autorenew", "mb-salesmix", "ft-export", "panel-csv", "intel-csv", "wizard-feedback", "roster-open", "report-csv", "survey-response", "insights-listen", "opp-drill", "opp-print", "opp-csv"]);
 const SLACK_DEBOUNCE_MS = { view: 30 * 60 * 1000, fetch: 30 * 60 * 1000,
   // A broken report stays broken. The health check only reports NEW failures,
   // but a flapping card would otherwise post every hour.
@@ -5041,6 +5041,7 @@ const SLACK_EVENT_META = {
   // working down three findings in a morning is three decisions, not one.
   "opp-drill":       { emoji: "\u{1F4A1}", verb: "followed up an opportunity on" },
   "opp-print":       { emoji: "\u{1F4A1}", verb: "exported the opportunities list for" },
+  "opp-csv":         { emoji: "\u{1F4C7}", verb: "downloaded a contact list from" },
   // WHICH chart someone needed the numbers out of — the most useful signal we
   // have about where the reports stop being enough on screen.
   "panel-csv":       { emoji: "\u{1F4C8}", verb: "downloaded chart data from" },
@@ -5199,6 +5200,10 @@ function notifySlack(rec) {
     // first one clicked — which is precisely the signal this event exists for.
     : rec.event === "opp-drill"
       ? `${rec.org}|opportunities|opp-drill|${rec.finding || ""}`
+    // Per FINDING again: pulling the dormant list and then the member list is
+    // two audiences to work, and the default key would keep only the first.
+    : rec.event === "opp-csv"
+      ? `${rec.org}|opportunities|opp-csv|${rec.finding || ""}`
     // Per SURVEY and per PAGE — deliberately NOT debounced at all in practice,
     // because a survey is answered once per person per browser anyway. What the
     // key defends against is two different surveys, or one survey answered from
@@ -5310,6 +5315,13 @@ function notifySlack(rec) {
     const worth = Number.isFinite(rec.value) && rec.value > 0 ? ` \u00B7 $${rec.value.toLocaleString()}` : "";
     const to = rec.to ? ` \u2192 opened *${rec.to}*` : "";
     text = `${meta.emoji} ${orgName} (\`${rec.org}\`) followed up ${what}${worth}${to}`;
+  } else if (rec.event === "opp-csv") {
+    // WHICH list and HOW MANY people. The shared line would read "downloaded a
+    // contact list from *opportunities*" — the report type twice and the
+    // audience never, the defect this file has now fixed four times.
+    const what = rec.finding ? `*${rec.finding}*` : "a contact list";
+    const n = Number.isFinite(rec.rows) ? ` \u00B7 ${rec.rows.toLocaleString()} contact${rec.rows === 1 ? "" : "s"}` : "";
+    text = `${meta.emoji} ${orgName} (\`${rec.org}\`) downloaded ${what}${n}`;
   } else if (rec.event === "checkin-loc") {
     const where = rec.location ? `*${rec.location}*` : "*all locations*";
     const n = Number.isFinite(rec.checkins) ? ` \u00B7 ${rec.checkins.toLocaleString()} check-in${rec.checkins === 1 ? "" : "s"}` : "";
@@ -8420,7 +8432,7 @@ app.post("/:org/opportunities/api/log", (req, res) => {
   const slug = req.params.org;
   if (!ORGS[slug]) return res.status(404).json({ ok: false, error: "Unknown org" });
   const event = req.query.event;
-  const ALLOWED = ["opp-drill", "opp-print"];
+  const ALLOWED = ["opp-drill", "opp-print", "opp-csv"];
   if (!ALLOWED.includes(event)) return res.status(400).json({ ok: false, error: "Unknown event" });
   // Clamped server-side, never echoed back from the query string.
   const val = Number(req.query.value);
@@ -8429,6 +8441,10 @@ app.post("/:org/opportunities/api/log", (req, res) => {
     to: String(req.query.to || "").slice(0, 40),
     value: Number.isFinite(val) && val >= 0 && val <= 99999999 ? Math.round(val) : undefined,
   };
+  // How many people a downloaded list actually carried. "Somebody exported a
+  // list" says nothing; "they pulled 412 dormant households" is the signal.
+  const rows = Number(req.query.rows);
+  if (Number.isFinite(rows) && rows >= 0 && rows <= 1000000) extra.rows = Math.round(rows);
   logEvent(slug, "opportunities", event, req, extra);
   res.json({ ok: true });
 });
@@ -10483,7 +10499,7 @@ app.get("/:org/opportunities", async (req, res) => {
     // the path the 404 exists to keep quiet. refuse404 answers JSON, which is
     // wrong for a page route, so the marking is done by hand here.
     res.locals.deliberate404 = true;
-    return res.status(404).send("The Opportunities report is not enabled for this organisation.");
+    return res.status(404).send("The Opportunities report is not enabled for this organization.");
   }
   logEvent(slug, "opportunities", "view", req);
   const orgConfig = {
@@ -10492,6 +10508,11 @@ app.get("/:org/opportunities", async (req, res) => {
     logoUrl: org.logoUrl || "",
     bannerUrl: await resolveBannerUrl(org),
     token: org.token || "",
+    // The Rec admin uuid, so a finding can link to the program, section or
+    // participant itself rather than only back to one of our own reports.
+    // The slug is each project's own name for an organization and drifts; the
+    // uuid is the organization.
+    orgId: org.orgId || "",
   };
   const html = require("fs").readFileSync(path.join(__dirname, "public", "opportunities.html"), "utf8");
   res.type("html").send(html.replace("</head>", orgConfigInject(orgConfig, req) + "</head>"));
@@ -10534,7 +10555,7 @@ app.get("/:org/opportunities/api/pdf", async (req, res) => {
   if (!ORGS[slug]) return res.status(404).send("Unknown org");
   if (!opportunitiesEnabled(slug)) {
     res.locals.deliberate404 = true;
-    return res.status(404).send("The Opportunities report is not enabled for this organisation.");
+    return res.status(404).send("The Opportunities report is not enabled for this organization.");
   }
   try {
     logEvent(slug, "opportunities", "pdf", req);
@@ -13452,6 +13473,7 @@ Rules:
 - Lead with the single highest-leverage action, and say what it is worth.
 - Money of different kinds is never added together: an empty seat is a ceiling, an unpaid invoice is owed today.
 - Be blunt about what the data cannot say. If a finding is ambiguous (free bookings that may be deliberate policy, seasonal customers that look dormant), say so.
+- ADAPTIVE AND INCLUSIVE PROGRAMMING IS HELD TO A DIFFERENT STANDARD, and the payload's own wording says so. Never suggest raising its prices, cutting its capacity, or merging its thin sections: it runs small and cheap on purpose, and that subsidy is the finding rather than a problem. The two things worth acting on there are people waiting for a place and sections being cancelled.
 - 3 to 5 insights. Each: a one-line title, then 2-3 sentences.
 
 Return a JSON array, no markdown fences:

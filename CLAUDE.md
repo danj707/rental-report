@@ -1,5 +1,266 @@
 # Project notes for Claude
 
+## THE OPPORTUNITIES REPORT, ANSWERED IN SIX (2026-09-14)
+
+Dan, on the built report: *"wow that opportunities report is....a lot. great
+info."* Then six asks, and the last of them is the standing verdict on the
+money design: *"Love the real money stuff"* — so the four separate totals stay
+four, and nothing below blends them.
+
+| ask | answer |
+|---|---|
+| *"add a section in there about adaptive programs (it's an activity see if you find that and focus on it, any org that has adaptive programs should get a special callout section on it"* | a new family, **first on the page**, gated on existence rather than volume |
+| *"Add a quick overview at the top with links to jump to each section"* | a contents strip carrying **every** family, suppressed ones included |
+| *"Build out clickable links to each program or section, user, etc. Great info but if I can't click on it it's not useful"* | the row's own LABEL is the link, to the record in Rec where an id resolves |
+| *"Its program, not programme"* | purged, and guarded |
+| *"A lot of the 'reach out to these people' infers we'd want a downloadable CSV file or segment directly in Rec. See if we can use the segments tool to build out a clickable segment (or at least give admins directions on how to do this."* | a CSV per audience, plus per-finding segment directions that say honestly which findings Rec **cannot** express |
+
+**NONE OF IT COST A CARD PUSH.** Card 17295 has emitted `activity_name`,
+`category_name`, `program_id` and `section_id` since v6, and card 17722 emits
+`Activity` and a real `Participant ID`. Every column the six asks need was
+already on the feed and read by nothing.
+
+### ADAPTIVE IS A WORD FAMILY, NOT A VALUE — measured platform-wide
+
+`program_activity → activity` is where it lives, and **every org spells it
+differently.** These are all eight distinct activity names that exist on the
+platform (2026-09-14):
+
+> Adaptive · Adaptive Programming · Adaptive Recreation · Therapeutic ·
+> Therapeutic Recreation · Inclusion & Accessibility · Inclusive Programs ·
+> Inclusive Rec
+
+**Four spellings among the orgs served here alone** — Apex *Therapeutic
+Recreation* (17 programs / 147 sections), Shrewsbury *Adaptive* (16 / 44), West
+Sacramento *Adaptive Recreation* (3 / 42), Watertown *Adaptive Programming*
+(4 / 13). So a literal list is right for whoever wrote it and wrong for the
+next org — and one of the eight is **misspelled in the org's own data**
+(`Inclusion and Accessiblity`), which a list misses and a word match does not.
+
+**FALSE POSITIVES WERE MEASURED, NOT ASSUMED.** The same pattern run against
+every activity name on the platform matches those eight and **nothing else** —
+no *Therapeutic Massage*, no *all-inclusive*. `unified`, `sensory`,
+`disabilit` and `all abilities` match nothing today and are carried for the
+next org at zero cost. It is **`accessib`, not `access`**, so a future *Early
+Access Pass* cannot walk in; the spec drives that exact near-miss.
+
+**THE CATEGORY IS TESTED TOO AND IS NOT SUFFICIENT ON ITS OWN:** Apex files
+Therapeutic Recreation under the category **Fitness**, so a category-only test
+misses its 147 sections entirely. Both are read; either matching is evidence.
+
+### THE FLOOR IS DELIBERATELY NOT A FLOOR — "any org", literally
+
+Adaptive provision runs from **147 sections (Apex) down to ONE (Needham)**
+across the ten orgs that have it, so the ordinary floors would silence the
+callout at exactly the orgs whose provision is smallest. The family gate is
+*does this org run any*; the detectors inside carry their own small floors,
+and **one family waiting for an adaptive place is a finding** (`FLOORS
+.adaptiveWaiting = 1`) where everywhere else on this report a waitlist needs
+repetition — the alternative provision usually does not exist.
+
+**THE SUPPRESSION LINE IS ABOUT THE TAGGING, NOT ABOUT THE ORGANIZATION.** An
+org with none reads *"no program here is tagged with an adaptive, therapeutic
+or inclusive activity — if you run this programming, tagging the activity in
+Rec fills this section in"*. The courts line can say *"this organization does
+not rent courts"*; this one cannot, because an org that runs adaptive
+programming without tagging it would read that as a claim about their
+provision, which would be both wrong and offensive. The spec fails if the
+wording ever becomes a claim about the org.
+
+### IT IS A CALLOUT, NOT A FAULT FINDER — and that is what shapes the detectors
+
+A half-empty adaptive section is not a capacity mistake, and a program priced
+at a fifth of everything else is not under-pricing. Measured across the nine
+orgs running it:
+
+| | adaptive | everything else |
+|---|---|---|
+| Apex, median price per head | **$51** | $239 |
+| West Sacramento | **$12** | $97 |
+| Bloomington | **$38** | $207 |
+| Watertown | **$33** | $123 |
+| Shrewsbury | **22 of 44 sections free** | — |
+
+So the subsidy detector states the gap as **a number to have ready when
+somebody asks what inclusive programming costs**, carries **no dollar value**,
+is filed `attention` rather than `upside`, and the spec fails if the copy ever
+suggests raising the price.
+
+**AND ADAPTIVE CANCELS LESS THAN THE REST AT SEVEN OF THE NINE** — Apex 3.4% vs
+7.2%, Chico 4.8% vs 14.4%, Watertown 0% vs 9.6%, Malibu 12.5% vs 22.1%. Danvers
+is the exception (10.7% vs 3.2%). That is what makes the cancellation detector
+worth having: it fires at Danvers and essentially nowhere else, and it says on
+screen that this is the unusual direction.
+
+### THE ROW'S LABEL IS THE LINK — and one id is deliberately refused
+
+`recLink(kind, id)` returns a link only where the id **actually resolves** in
+the Rec admin, and the page renders the label as an anchor to it: program and
+section rows go to `/admin/o/<org>/programming/…`, in their own tab. A row
+with no Rec id still goes somewhere — our own report, carrying the token.
+
+**THE REC-ID TRAP, ALREADY RECORDED IN THIS FILE FOR CHECK-INS, IS WHY
+HOUSEHOLD ROWS GET NO LINK AT ALL.** The community feed's `Rec ID` is a
+six-character staff code (`5OLLPM`), not a uuid, and a user link built from it
+**404s while looking perfectly correct**. `recLink` requires a uuid and returns
+null otherwise; the demographics feed's `Participant ID` IS a uuid and does
+resolve. *A confident link to a 404 is worse than no link.*
+
+### THE SEGMENT ANSWER IS HONEST PER FINDING, AND THAT IS THE WHOLE DESIGN
+
+Read out of the segment tool's own schema rather than guessed. A Rec segment is
+defined by **structured criteria** — eligibility (age, gender), group, program
+(activity / season / program / section / completion date), membership (plan,
+status), reservation (site type, location, date), pass (type, status, dates) —
+and **there is no "these 412 households" segment**. So a list this report
+computes by looking across feeds cannot be handed to the builder as a list:
+
+| finding | as a segment |
+|---|---|
+| age-gap · pass-lapse · **adaptive-only** | **supported** — the exact filters are printed |
+| cross-promo · stream-cross-sell · member-no-program | **partial** — the filters reach the near side, and the page says where they stop |
+| **dormant-households** | **unsupported** — there is no last-transaction field, and this is the finding that most looks like it should be a segment |
+| **zip-gap** | **unsupported** — there is no address or zip field anywhere in the vocabulary |
+
+Saying *unsupported* is the point. **Directions that quietly produce the wrong
+audience are worse than none**, and the two that cannot be expressed are the
+two an admin would most likely try.
+
+**A "create the segment for them" button was NOT built, and could not be**: the
+report server has no path to the Rec segment API, and even with one the
+audiences above are not expressible as criteria. What it can do is hand over
+the list and the exact steps. **The segments URL is deliberately not deep-linked**
+— it could not be verified from here (every admin path answers 307 to login and
+neither the admin docs nor the help centre has an article), and this file's own
+rule is not to print a link nobody has confirmed.
+
+### THE CSV IS CAPPED AT 250, AND THE ARITHMETIC IS WHY
+
+The contact rows travel **on the finding**, and the finding lives on the daily
+snapshot — **one document holding every org, read whole on every page load**. A
+contact row is ~165 bytes of JSON; six audience findings at a thousand rows
+each would add a megabyte per org and ~29 MB to a blob that is currently tens
+of kilobytes. So `AUDIENCE_CAP = 250`, `peopleTotal` carries the TRUE size, and
+the page says *"the file carries the first 250 of 1,400"* and points at
+Community Intel, whose own contact export is uncapped and already built. **A
+list that is quietly 250 of 1,400 is worse than one that says so.**
+
+`CONTACT_COLS` is declared once in the library and **carried to the page on the
+payload** rather than retyped there — two copies drift the first time a column
+is added and the header stops describing the rows under it. Delivery is
+`csvFromRows` + `saveTextViaPopup` **with the BOM**, like every other download
+here.
+
+### The contents strip lists SUPPRESSED families too
+
+A contents list that silently omitted the suppressed ones would undo the whole
+suppression design one line above the sections themselves — an org must be able
+to see that Courts was looked at and came back short. They render greyed with a
+zero. **In print the strip stays but the links do not**: a link is dead on
+paper, and "what is in this report and how much of it" is exactly what a
+printed cover wants.
+
+### VERIFIED AGAINST LIVE DATA, not only against fixtures
+
+The shipping library was lifted and RUN over the real Programs feed, fetched
+cache-independently through the public endpoint — a fixture proves the
+arithmetic, and only real data proves the vocabulary finds anything:
+
+| | |
+|---|---|
+| **shrewsbury** | 565 sections in 22.1s → **36 adaptive**, activity `Adaptive`, 13 programs / 209 enrolments |
+| its waitlist finding | **4 real people waiting** — Rec Connect Summer Days Ages 15-21 (3 waiting, 6/8 enrolled) and Ages 15-35 (1 waiting, 6/6) |
+| its subsidy finding | median **$0** per participant against **$75** everywhere else, with **15 sections charging nothing at all** |
+| **watertown** | 608 sections → **4 adaptive**, activity `Adaptive Programming`, 2 programs — the small-org case, and the callout renders |
+| **apex** | the Programs card timed out, which is its documented behaviour at that org and not a regression here |
+
+Every program row came back carrying a `rec program` link and every waitlist
+row a `rec section` one, on live ids.
+
+### Guards
+
+`scripts/opportunities.spec.js` 118 → **256 assertions**, in CI.
+**Mutation-tested 38 ways, all 38 failing by an assertion that NAMES the
+defect**: the family removed, sorted below Programs, the callout no longer
+pinned first, the vocabulary reduced to one literal spelling, widened to bare
+`access`, the category dropped, the activity dropped, the family gated on
+volume, the suppression line blaming the org, a failed feed reading as "no
+adaptive programs", the waitlist floor raised, one cancellation reported as a
+pattern, the rate computed over too few sections, the subsidy given a dollar
+value, the subsidy told to raise the price, the subsidy firing at parity,
+adaptive-only counting every adaptive household, the contact rows dropped, the
+segment directions going generic, the segment no longer saying what it cannot
+do, dormancy and zip each claimed as expressible, `recLink` rendering a
+six-character Rec ID, three separate Rec links removed one at a time, the cap
+hidden, the page growing its own CSV columns, the BOM dropped, the strip
+listing only live families, the strip linking in print, the row label ceasing
+to be a link, `opp-csv` dropped from either allowlist or falling into the
+shared Slack line or debounced per org, the org uuid never reaching the page,
+and a British spelling coming back.
+
+**THREE OF MY OWN GUARDS WERE DEFECTIVE AND MUTATION IS WHAT SHOWED ALL
+THREE** — every one of them the same lesson, *an assertion satisfied by
+different code is not guarding the thing it names*:
+
+- the `SLACK_NOTIFY` check sliced **+2000 characters** from the declaration and
+  ran on into `SLACK_EVENT_META`, whose own `"opp-csv"` key satisfied it while
+  the Set had lost the event. Scoped to the statement's own `]);` now.
+- the message-branch check tested `rec.event === "opp-csv"` file-wide — which
+  the **debounce block** also contains, so deleting the message branch
+  survived. Scoped past it.
+- `/programme/i` **fires on `programMedianPrice`**, so the spelling guard
+  failed on correct code. Word boundaries now, plus an assertion that the
+  pattern still catches a real *"programme"* — or the fix would be a guard that
+  can never fail.
+
+**And the spec DIED instead of failing, seven times over.** A mutation that
+removes a family makes `families.find(...)` undefined and `.state` on that
+throws a bare `TypeError` naming nothing — the *"a guard that dies instead of
+failing has not told anyone what broke"* lesson, re-learned. `famOf()` and
+`findOf()` read through safe defaults, so every one of those now fails by name.
+
+**Eight `ci-check-render.js` cases, and the three browser-only claims were
+each seen to fail EXACTLY the case that names them** while the other twelve
+kept passing: `recHref` returning null (the Rec link case alone), the contents
+strip rendering links in print (the print case alone), and the download button
+wired to every audience list rather than this finding's own (the CSV case
+alone, on `data-oppc-scoped`). A render case that has not been seen to fail on
+the real regression is not a guard.
+
+The fixture is shaped so a wrong implementation cannot look right: the adaptive callout's first item carries a
+Rec id and its second deliberately does **not**, so one case requires a real
+`rec.us` href on one row and a token-carrying fallback on the other — a fixture
+with only one kind of row could not tell a page that ignored `rec` from one
+that honoured it. Two audience findings carry **opposite segment states** for
+the same reason. The CSV case reads the **bytes the popup is handed**
+(`window.open` stubbed, not `saveTextViaPopup`, so the delivery path and the
+BOM are covered) and requires the other audience's contact to be **absent** from
+the file, which is what catches a button wired to the wrong list.
+
+### Also fixed while in here
+
+`Neighbourhoods` → `Neighborhoods` and `postcodes` → `zip codes` on the
+audience findings, `utilisation` in a card comment, and the Opportunities
+route's own 404 copy — the same defect class Dan named, and half a rename reads
+worse than none.
+
+### NOT BUILT, and worth knowing
+
+- **No participant-level adaptive list.** The demographics feed carries a real
+  `Participant ID`, so a per-child roster is possible — but it is a list of
+  children with disabilities, and where that list travels is a decision rather
+  than a feature. The household contact list is the deliverable.
+- **No adaptive fill-rate finding.** The Programs family already reports
+  under-fill, and a half-empty adaptive section is the one place that number
+  means something different; folding it in would invite exactly the reading the
+  callout exists to prevent.
+- **`site_activity` is not consulted** for adaptive facilities. Already
+  recorded elsewhere in this file: it is essentially unpopulated.
+- **No "create this segment" button.** The report server has no path to the Rec
+  segment API, and the two audiences an admin would most want (dormant, zip)
+  are not expressible as criteria anyway — so a button would either fail or
+  build a different list. Directions plus the CSV is the honest shape.
+
 ## THE OPPORTUNITIES REPORT — the analysis layer, computed once a day (2026-09-13)
 
 Dan, after a survey of what our reports can surface that a table cannot:

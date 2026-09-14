@@ -1308,8 +1308,54 @@ const STUBS = [
       generatedAt: "2026-09-13T09:20:00.000Z",
       windowDays: 365,
       window: { start: "2025-09-14", end: "2026-09-13" },
-      totals: { findings: 3, upside: 12000, atRisk: 3400, uncollected: 770, audience: 5500 },
+      totals: { findings: 5, upside: 12000, atRisk: 3400, uncollected: 770, audience: 5500 },
+      // ONE definition of the CSV's shape, carried from the library. A page
+      // that grew its own copy would write a header that stops describing the
+      // rows underneath it.
+      contactColumns: [["name", "Name"], ["email", "Email"], ["phone", "Phone"],
+                       ["city", "City"], ["zip", "Zip"], ["lastActive", "Last Active"],
+                       ["lifetimeNet", "Lifetime Net $"], ["group", "Group"]],
       families: [
+        /* THE ADAPTIVE CALLOUT. Its first row carries a Rec `rec` id and its
+           second deliberately does NOT — so one case can require a real
+           rec.us link on one row and a fall-back to our own report on the
+           other, which a fixture with only one kind of row could not do. */
+        { key: "adaptive", label: "Adaptive & inclusive", emoji: "\u267F", blurb: "Built for participants with disabilities", state: "ok", reason: "", findings: [
+          { id: "adaptive-profile", family: "adaptive", kind: "attention", value: null, count: 6, pin: 0,
+            title: "What you run for participants with disabilities",
+            headline: "2 programs across 6 sections \u00B7 31 participants enrolled",
+            detail: "Your organization files this under Therapeutic Recreation.",
+            action: "Read the rest of this section before the Programs one.",
+            basis: "Programs whose activity names adaptive provision.",
+            items: [
+              { label: "Therapeutic Swim", sub: "4 sections \u00B7 18/24 enrolled", value: null,
+                rec: { kind: "program", id: "3fa85f64-5717-4562-b3fc-2c963f66afa6" },
+                link: { report: "programs", query: "" } },
+              { label: "Sensory Gym", sub: "2 sections \u00B7 13/16 enrolled", value: null,
+                link: { report: "programs", query: "" } },
+            ],
+            more: 0, link: { report: "programs", query: "" } },
+          /* The audience half: contact rows, and a segment Rec CAN build.
+             Three contacts with three different emails, so a CSV built from
+             the wrong list cannot land on this by accident. */
+          { id: "adaptive-only-households", family: "adaptive", kind: "audience", value: null, count: 3,
+            title: "Families who only ever come to you for adaptive programming",
+            headline: "3 of the 10 households in your adaptive programs (30%) have enrolled in nothing else",
+            detail: "", action: "Ask them.", basis: "Households with an adaptive enrolment and no other.",
+            items: [{ label: "3 households, adaptive only", sub: "of 10", value: null, link: { report: "users", query: "tab=strategy" } }],
+            more: 0, link: { report: "users", query: "tab=strategy" },
+            people: [
+              { name: "Ada Lovelace", email: "ada@x.test", phone: "5550001", city: "Town", zip: "01545", lastActive: "2026-08-01", lifetimeNet: 420, group: "Adaptive only" },
+              { name: "Grace Hopper", email: "grace@x.test", phone: "5550002", city: "Town", zip: "01545", lastActive: "2026-07-14", lifetimeNet: 310, group: "Adaptive only" },
+              { name: "Katherine J", email: "kj@x.test", phone: "5550003", city: "Town", zip: "01546", lastActive: "2026-06-02", lifetimeNet: 90, group: "Adaptive only" },
+            ],
+            peopleTotal: 3,
+            segment: { state: "supported", why: "", steps: [
+              "New segment \u2192 filter category Program \u2192 field Activity",
+              "Pick \u201CTherapeutic Recreation\u201D",
+              "That segment is everybody in adaptive programming. It does NOT exclude the families who also take something else.",
+            ] } },
+        ] },
         { key: "programs", label: "Programs", emoji: "\u{1F3AF}", blurb: "Fill and demand", state: "ok", reason: "", findings: [
           { id: "underfilled-programs", family: "programs", kind: "upside", value: 12000, count: 9,
             title: "Programs that keep running half empty",
@@ -1326,17 +1372,25 @@ const STUBS = [
             more: 0, link: { report: "programs", query: "" } },
         ] },
         { key: "people", label: "Your community", emoji: "\u{1F465}", blurb: "Who is reachable", state: "ok", reason: "", findings: [
+          /* The OTHER segment state, in the same fixture on purpose: one
+             finding Rec can reproduce and one it cannot. With only the
+             supported one present, a page that rendered both states
+             identically would pass. */
           { id: "zip-gap", family: "people", kind: "audience", value: null, count: 5500,
-            title: "Neighbourhoods registered with you that never enrol",
-            headline: "5500 households in 12 postcodes have an account and have never taken a program",
+            title: "Neighborhoods registered with you that never enrol",
+            headline: "5500 households in 12 zip codes have an account and have never taken a program",
             detail: "", action: "Check whether non-resident pricing is what stops them.",
             basis: "Households in your records that appear in no enrolment.",
             items: [{ label: "01604", sub: "22 of 86 households enrolled", value: null, link: { report: "users", query: "tab=demo" } }],
-            more: 4, link: { report: "users", query: "" } },
+            more: 4, link: { report: "users", query: "" },
+            people: [{ name: "Alan T", email: "alan@x.test", phone: "5559999", city: "Elsewhere", zip: "01604", lastActive: "2026-05-05", lifetimeNet: 12, group: "01604" }],
+            peopleTotal: 1400,
+            segment: { state: "unsupported", steps: [],
+              why: "Rec segments filter on age, gender, group, program, membership, reservation and pass \u2014 there is no address or zip field." } },
         ] },
         { key: "facilities", label: "Facilities", emoji: "\u{1F3DE}\uFE0F", blurb: "How your sites are used", state: "clear", reason: "", findings: [] },
         { key: "courts", label: "Courts", emoji: "\u{1F3BE}", blurb: "Court-by-court demand", state: "insufficient",
-          reason: "this organisation does not rent courts", findings: [] },
+          reason: "this organization does not rent courts", findings: [] },
         { key: "money", label: "Money owed", emoji: "\u{1F4B5}", blurb: "Billed and not collected", state: "unavailable",
           reason: "The Facilities summary could not be loaded", findings: [] },
       ],
@@ -2012,7 +2066,7 @@ const CASES = [
        anything is drawn inside it, so deleting the suppression notice entirely
        SURVIVED the case. An assertion satisfied by a wrapper is not guarding
        what the reader can see. */
-    needs: "[data-opp-family='courts'][data-opp-state='insufficient'] .fam-off[data-opp-off='this organisation does not rent courts']",
+    needs: "[data-opp-family='courts'][data-opp-state='insufficient'] .fam-off[data-opp-off='this organization does not rent courts']",
     absent: "[data-opp-family='courts'] .find" },
 
   /* A FEED THAT DID NOT LOAD MUST NOT READ AS A CLEAN BILL OF HEALTH. These
@@ -2033,6 +2087,147 @@ const CASES = [
     path: "/{org}/opportunities?_print=1",
     needs: "[data-opp-finding='canceled-sections'][data-opp-value='3400']",
     absent: ".toolbar, .drill" },
+
+  /* ── Dan's four asks on this report, each keyed on what the reader can
+        actually do rather than on markup existing. ──────────────────────── */
+
+  // "any org that has adaptive programs should get a special callout section
+  // on it" — and a callout that sorts below five families is not one. Keyed on
+  // the FIRST .fam in the document, not merely on the section being present.
+  { name: "opportunities · the adaptive callout leads the page",
+    path: "/{org}/opportunities",
+    /* Keyed on WHICH family comes first in document order, stamped from the
+       page. `:first-of-type` cannot say it — the .fam divs are siblings of the
+       banner and the totals grid, so div:first-of-type is the banner and the
+       selector matched nothing on a perfectly correct page. */
+    needs: "body[data-opp-first='adaptive']",
+    also: ["[data-opp-finding='adaptive-profile']", "[data-opp-family='adaptive'][data-opp-state='ok']"],
+    act: async page => {
+      await page.waitForSelector(".fam[data-opp-family]", { timeout: 45000 });
+      await page.evaluate(() => {
+        const first = document.querySelector(".fam[data-opp-family]");
+        document.body.setAttribute("data-opp-first", first ? first.getAttribute("data-opp-family") : "");
+      });
+    } },
+
+  /* "Add a quick overview at the top with links to jump to each section."
+     A SUPPRESSED FAMILY IS LISTED TOO: the whole suppression design says an
+     org must be able to see that a section was looked at, and a contents list
+     that silently omitted those would undo it one line above the sections
+     themselves. So the strip must carry the courts chip as well as the live
+     ones, and its anchor must actually land on something. */
+  { name: "opportunities · the contents strip reaches every section",
+    path: "/{org}/opportunities",
+    needs: ".jump [data-opp-jump-to='adaptive']",
+    also: [".jump [data-opp-jump-to='courts']", ".jump [data-opp-jump-to='money']",
+           "#fam-adaptive", "#fam-courts"] },
+  { name: "opportunities · every contents chip lands on a real section",
+    path: "/{org}/opportunities",
+    needs: "body[data-jump-ok='1']",
+    act: async page => {
+      const ok = await page.evaluate(() => {
+        const as = [...document.querySelectorAll(".jump a[data-opp-jump-to]")];
+        return as.length >= 5 && as.every(a => {
+          const h = a.getAttribute("href") || "";
+          return h.charAt(0) === "#" && !!document.querySelector(h);
+        });
+      });
+      await page.evaluate(v => document.body.setAttribute("data-jump-ok", v ? "1" : ""), ok);
+    } },
+
+  /* "Build out clickable links to each program or section, user, etc. Great
+     info but if I can't click on it it's not useful."
+
+     THE FIXTURE CARRIES ONE ROW WITH A REC ID AND ONE WITHOUT, on purpose:
+     the two must render differently — one opens the record in Rec, the other
+     falls back to the report that proves it — and a fixture with only one
+     kind could not tell a page that ignored `rec` from one that honoured it.
+     Keyed on the real href, because "an anchor rendered" passes on a link to
+     the wrong place. */
+  { name: "opportunities · a named program opens in Rec",
+    path: "/{org}/opportunities",
+    needs: "body[data-oppl-rec='1'][data-oppl-report='1'][data-oppl-blank='1']",
+    act: async page => {
+      await page.waitForSelector("[data-opp-finding='adaptive-profile'] a.il", { timeout: 45000 });
+      await page.evaluate(() => {
+        const as = [...document.querySelectorAll("[data-opp-finding='adaptive-profile'] a.il")];
+        const rec = as.find(a => a.getAttribute("data-opp-item-link") === "rec");
+        const rep = as.find(a => a.getAttribute("data-opp-item-link") === "report");
+        const set = (k, v) => { if (v) document.body.setAttribute(k, "1"); };
+        // The row WITH an id goes to the Rec record itself.
+        set("data-oppl-rec", rec && /^https:\/\/www\.rec\.us\/admin\/o\/[0-9a-f-]{36}\/programming\/programs\/3fa85f64-5717-4562-b3fc-2c963f66afa6$/.test(rec.href));
+        // The row WITHOUT one still goes somewhere — our own report, carrying
+        // the org token, because an un-tokened link 404s.
+        set("data-oppl-report", rep && rep.getAttribute("href").indexOf("/programs") > 0 && rep.getAttribute("href").indexOf("token=") > 0);
+        // And a Rec link opens in its own tab rather than over the report.
+        set("data-oppl-blank", rec && rec.target === "_blank");
+      });
+    } },
+
+  /* "A lot of the 'reach out to these people' infers we'd want a downloadable
+     CSV file or segment directly in Rec."
+
+     READS THE BYTES THE POPUP IS HANDED, not the button — a button wired to
+     the wrong list renders identically, and the BOM lives in the delivery
+     path rather than in the builder. window.open is stubbed, NOT
+     saveTextViaPopup, so the delivery path is covered. */
+  { name: "opportunities · the contact list downloads as a CSV",
+    path: "/{org}/opportunities",
+    needs: "body[data-oppc-bom='1'][data-oppc-hdr='1'][data-oppc-rows='3'][data-oppc-scoped='1']",
+    act: async page => {
+      await page.waitForSelector("[data-opp-audience='adaptive-only-households'] button.csv", { timeout: 45000 });
+      await page.evaluate(() => {
+        window.__payload = null;
+        window.open = () => ({
+          document: { write() {}, close() {} },
+          set __recExport(v) { window.__payload = v; },
+          get __recExport() { return window.__payload; },
+        });
+      });
+      await page.click("[data-opp-audience='adaptive-only-households'] button.csv");
+      await page.evaluate(() => {
+        const p = window.__payload;
+        if (!p) return;                 // the button never reached the writer
+        const set = (k, v) => { if (v) document.body.setAttribute(k, String(v)); };
+        // On the BYTES: TextDecoder strips a BOM by default, so decoding first
+        // would pass either way — and bytes are what Excel sniffs.
+        const b = p.bytes;
+        set("data-oppc-bom", b[0] === 0xEF && b[1] === 0xBB && b[2] === 0xBF ? "1" : "");
+        const lines = new TextDecoder().decode(b).replace(/\r\n$/, "").split("\r\n");
+        // The header comes from the payload's own column set, so a page with
+        // its own copy would write a different one.
+        set("data-oppc-hdr", lines[0] === "Name,Email,Phone,City,Zip,Last Active,Lifetime Net $,Group" ? "1" : "");
+        set("data-oppc-rows", String(lines.length - 1));
+        // Scoped to THIS finding — the other audience's contact must not be in
+        // it, which is what catches a button wired to the wrong list.
+        set("data-oppc-scoped", lines.join("\n").indexOf("alan@x.test") < 0
+          && lines.join("\n").indexOf("ada@x.test") > 0 ? "1" : "");
+      });
+    } },
+
+  /* THE HONEST HALF. One finding Rec's segment builder can reproduce and one
+     it cannot, in the same fixture, rendered differently — directions that
+     quietly build a different audience are worse than none. */
+  { name: "opportunities · a segment Rec cannot build says so",
+    path: "/{org}/opportunities",
+    needs: "[data-opp-audience='zip-gap'] [data-opp-segment='unsupported']",
+    also: ["[data-opp-audience='adaptive-only-households'] [data-opp-segment='supported']"] },
+
+  // A trimmed list says so. The zip audience carries 1 of 1,400.
+  { name: "opportunities · a trimmed contact list admits it",
+    path: "/{org}/opportunities",
+    needs: "[data-opp-audience='zip-gap'] .why",
+    act: async page => {
+      const t = await page.$eval("[data-opp-audience='zip-gap'] .why", e => e.textContent);
+      if (!/1,400/.test(t)) throw new Error("the trimmed note does not name the true size: " + t);
+    } },
+
+  /* In print the strip stays as a CONTENTS LIST and the download disappears:
+     a link is dead on paper and a button is worse. */
+  { name: "opportunities · print keeps the contents and drops the controls",
+    path: "/{org}/opportunities?_print=1",
+    needs: ".jump",
+    absent: ".jump a, a.il" },
 
 
   /* ── Surveys ─────────────────────────────────────────────────────────────

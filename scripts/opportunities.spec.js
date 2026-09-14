@@ -9,7 +9,7 @@
  *
  * The source half (server.js wiring: registration, the daily cron, the beacon
  * route's position, the Slack sets) is skipped by SKIP_SOURCE=1, so the
- * behavioural half can be shown to catch a regression on its own.
+ * behavioral half can be shown to catch a regression on its own.
  */
 const fs = require("fs");
 const path = require("path");
@@ -53,6 +53,13 @@ function baseProgramFeed() {
   return rows;
 }
 function ctxOf(feeds) { return O.makeContext(feeds, { now: NOW }); }
+/* READ A FAMILY THROUGH A SAFE DEFAULT. A mutation that removes a family makes
+   `families.find(...)` undefined, and `.state` on that throws a bare TypeError
+   naming nothing — the "a guard that dies instead of failing has not told
+   anyone what broke" lesson this repo keeps re-learning. These two make every
+   assertion below fail BY NAME instead. */
+function famOf(out, key) { return (out.families || []).find(f => f.key === key) || { state: "(absent)", reason: "", findings: [] }; }
+function findOf(out, key, id) { return famOf(out, key).findings.find(f => f.id === id) || null; }
 
 // ══ 1. THE RULE THAT EVERYTHING ELSE RESTS ON ════════════════════════════
 // null (the fetch failed) and [] (the org has none of this) are different
@@ -493,13 +500,421 @@ if (!SKIP_SOURCE) {
   ok(/id="report-ready"/.test(page), "the PDF's readiness marker is present");
   ok(/openReportPdf/.test(page), "the PDF opens through the shared popup helper");
   ok(/keepalive: true/.test(page), "the beacon is fire-and-forget");
-  ok(/event: "opp-drill"/.test(page) && /api\/log\?/.test(page),
-    "…and sends ?event= in the QUERY STRING, not a JSON body");
+  /* The INTENT is "the event name rides the query string", not any one
+     spelling of it — a spec that pins one spelling is not a guard against the
+     thing. So: the beacon builds a URLSearchParams carrying `event`, appends
+     it to api/log?, and the fetch carries NO body. A JSON body comes back
+     400 Unknown event and, being fire-and-forget, never complains. */
+  const beaconFn = page.slice(page.indexOf("const beacon ="), page.indexOf("const drill ="));
+  ok(/URLSearchParams\(/.test(beaconFn) && /\bevent\b/.test(beaconFn),
+    "the beacon puts the event name in a query string");
+  ok(/api\/log\?" \+ qs/.test(beaconFn), "…appended to the log route's URL");
+  ok(!/body:/.test(beaconFn), "…and sends no JSON body, which the route would 400");
+  ok(/beacon\("opp-drill"/.test(page), "the drill-through fires opp-drill");
+  ok(/beacon\("opp-csv"/.test(page), "a contact download fires opp-csv");
   ok(!/\\u[0-9a-fA-F]{4}/.test(page.replace(/\\\\u/g, "")) || true, "no unrendered escapes in JSX text");
   // The four totals must stay four.
   ok(/TOTAL_CARDS/.test(page) && (page.match(/key: "(upside|atRisk|uncollected|audience)"/g) || []).length === 4,
     "the page renders four separate totals");
   ok(/deliberately not added together/i.test(page), "…and says on screen why they are not summed");
+}
+
+// ══ ADAPTIVE & INCLUSIVE ═════════════════════════════════════════════════
+// Dan: "add a section in there about adaptive programs (it's an activity, see
+// if you find that and focus on it) — any org that has adaptive programs
+// should get a special callout section on it."
+{
+  /* THE VOCABULARY IS MEASURED, NOT GUESSED. These eight are every distinct
+     activity name on the platform that names adaptive provision (measured
+     2026-09-14), and the four in bold below are what the orgs served here
+     actually use — Apex "Therapeutic Recreation", Shrewsbury "Adaptive",
+     West Sacramento "Adaptive Recreation", Watertown "Adaptive Programming".
+     Four spellings among four orgs is the whole argument for a word match. */
+  const REAL = [
+    "Adaptive", "Adaptive Programming", "Adaptive Recreation", "Therapeutic",
+    "Therapeutic Recreation", "Inclusion & Accessibility", "Inclusive Programs",
+    "Inclusive Rec",
+    // The org's own misspelling of its category, which a literal list misses.
+    "Inclusion and Accessiblity",
+  ];
+  REAL.forEach(n => ok(O.isAdaptiveName(n), "adaptive vocabulary matches " + JSON.stringify(n)));
+
+  /* AND THE NEAR MISSES, which is the half a word match can get wrong. None of
+     these exists on the platform today; each is the plausible name that would
+     make the pattern over-reach, and the pattern was tightened until they do
+     not match (`accessib`, not `access`). */
+  ["Swimming", "Tennis", "Early Access Pass", "Access Control", "Adult Fitness",
+   "Aquatics", "Camps", "Senior Programs", "Dance"]
+    .forEach(n => ok(!O.isAdaptiveName(n), "adaptive vocabulary does NOT match " + JSON.stringify(n)));
+
+  // THE ACTIVITY IS WHERE IT LIVES, AND THE CATEGORY ALONE IS NOT ENOUGH:
+  // Apex files Therapeutic Recreation under the category "Fitness", so a
+  // category-only test misses its 147 sections entirely.
+  ok(O.isAdaptiveSection({ activity_name: "Therapeutic Recreation", category_name: "Fitness" }),
+    "an adaptive ACTIVITY under a generic category is still adaptive");
+  ok(O.isAdaptiveSection({ activity_name: "Uncategorized", category_name: "Adaptive Programming" }),
+    "…and an adaptive CATEGORY counts too");
+  ok(!O.isAdaptiveSection({ activity_name: "Swimming", category_name: "Aquatics" }),
+    "…while an ordinary section is not");
+
+  const adaptiveSection = (o) => section(Object.assign({
+    program: "Adaptive Rec", program_id: "33333333-3333-3333-3333-333333333333",
+    activity_name: "Therapeutic Recreation", category_name: "Fitness",
+  }, o));
+
+  // ── The gate: ANY adaptive program lights the section ──────────────────
+  {
+    const one = baseProgramFeed().concat([adaptiveSection({
+      section: "Solo", section_id: "44444444-4444-4444-4444-444444444444",
+      enrolled: 4, capacity: 6, fill_pct: 67, charged: 100, net_total: 100,
+    })]);
+    const fam = famOf(O.buildOpportunities({ programs: one }, { now: NOW }), "adaptive");
+    eq(fam.state, "ok", "ONE adaptive section is enough to render the callout");
+    ok(fam.findings.some(f => f.id === "adaptive-profile"), "…and the profile finding is in it");
+  }
+  {
+    const fam = famOf(O.buildOpportunities({ programs: baseProgramFeed() }, { now: NOW }), "adaptive");
+    eq(fam.state, "insufficient", "an org with none is suppressed, visibly");
+    // THE WORDING IS ABOUT THE TAGGING, NOT ABOUT THE ORGANIZATION. An org that
+    // runs adaptive programming without tagging the activity would otherwise
+    // read this as a claim that they provide none.
+    ok(/tagged/i.test(fam.reason), "…and the reason is about the TAGGING");
+    ok(!/does not (run|provide|offer)/i.test(fam.reason),
+      "…never a claim that the organization provides none");
+    ok(/tagging the activity/i.test(fam.reason), "…and it names the fix");
+  }
+  {
+    const fam = famOf(O.buildOpportunities({ programs: null }, { now: NOW }), "adaptive");
+    eq(fam.state, "unavailable", "a failed Programs feed is unavailable, not 'no adaptive programs'");
+  }
+
+  // ── It LEADS. A callout that sorts below five families is not a callout ──
+  eq((O.FAMILIES[0] || {}).key, "adaptive", "the adaptive family is first on the page");
+
+  // ── The profile is PINNED above a priced waitlist in its own family ─────
+  {
+    const rows = baseProgramFeed();
+    for (let i = 0; i < 5; i++) rows.push(adaptiveSection({
+      section: "A" + i, section_id: "44444444-4444-4444-4444-00000000000" + i,
+      enrolled: 6, capacity: 10, fill_pct: 60, charged: 300, net_total: 300,
+      waitlist_active: i < 2 ? 3 : 0,
+    }));
+    const fam = famOf(O.buildOpportunities({ programs: rows }, { now: NOW }), "adaptive");
+    eq((fam.findings[0] || {}).id, "adaptive-profile",
+      "the callout leads its family even when a priced finding sits beside it");
+    const wl = fam.findings.find(f => f.id === "adaptive-waitlist") || {};
+    ok(wl.value != null && wl.value > 0, "…and the waitlist finding does carry a value");
+    eq(wl.count, 6, "the waitlist counts every waiting person");
+  }
+
+  // ── ONE waiting family is a finding. Everywhere else on this report a
+  //    waitlist needs repetition; here the alternative usually does not exist.
+  {
+    const rows = baseProgramFeed().concat([adaptiveSection({
+      section: "Only", section_id: "44444444-4444-4444-4444-4444444444ff",
+      enrolled: 8, capacity: 8, fill_pct: 100, charged: 400, net_total: 400, waitlist_active: 1,
+    })]);
+    const fam = famOf(O.buildOpportunities({ programs: rows }, { now: NOW }), "adaptive");
+    const wl = fam.findings.find(f => f.id === "adaptive-waitlist") || {};
+    ok(wl.id === "adaptive-waitlist", "a single person waiting for an adaptive place is reported");
+    eq(wl.count, 1, "…and counted as one");
+    eq(O.FLOORS.adaptiveWaiting, 1, "the adaptive waitlist floor is one person");
+    ok(O.FLOORS.itemsPerFinding > O.FLOORS.adaptiveWaiting,
+      "…deliberately lower than the ordinary pattern floor");
+  }
+
+  // ── Cancellations: the ONE genuine risk signal, and it must not cry wolf.
+  //    Measured, adaptive cancels LESS than the rest at seven of the nine orgs
+  //    that run it, so firing here has to mean something.
+  {
+    const mk = (aCancel, aTotal) => {
+      const rows = baseProgramFeed();   // 14 clean non-adaptive sections
+      for (let i = 0; i < aTotal; i++) rows.push(adaptiveSection({
+        section: "A" + i, section_id: "44444444-4444-4444-4444-0000000000" + (10 + i),
+        section_status: i < aCancel ? "Canceled" : "Past",
+        enrolled: i < aCancel ? 0 : 6, capacity: 10, fill_pct: 60, charged: 300, net_total: 300,
+      }));
+      return findOf(O.buildOpportunities({ programs: rows }, { now: NOW }), "adaptive", "adaptive-cancellations");
+    };
+    ok(!mk(1, 6), "ONE cancelled adaptive section is a bad week, not a pattern");
+    ok(!mk(2, 3), "…and three sections is too few for a rate to mean anything");
+    ok(mk(3, 8), "three of eight cancelled, against a clean rest, is reported");
+    eq(O.FLOORS.adaptiveSections, 4, "the rate needs at least four adaptive sections");
+  }
+
+  // ── The subsidy. Stated as a fact, never as a pricing error ─────────────
+  {
+    const cheap = baseProgramFeed();   // $100/head
+    for (let i = 0; i < 4; i++) cheap.push(adaptiveSection({
+      section: "A" + i, section_id: "44444444-4444-4444-4444-0000000000a" + i,
+      enrolled: 10, capacity: 10, fill_pct: 100, charged: 120, net_total: 120,
+    }));
+    const sub = findOf(O.buildOpportunities({ programs: cheap }, { now: NOW }), "adaptive", "adaptive-subsidy") || {};
+    ok(sub.id === "adaptive-subsidy", "a fivefold price gap is reported");
+    ok(/\$12\b/.test(sub.headline || "") && /\$100\b/.test(sub.headline || ""),
+      "…with both medians on screen — got: " + sub.headline);
+    eq(sub.value, null, "…and carries NO dollar value: it is not money to collect");
+    eq(sub.kind, "attention", "…and is not filed as an opportunity");
+    ok(!/under.?pric|too cheap|raise|increase the price/i.test((sub.headline || "") + (sub.detail || "") + (sub.action || "")),
+      "…and never suggests raising the price");
+    ok(/on purpose|deliberate/i.test(sub.detail || ""), "…and says the subsidy is probably deliberate");
+
+    // Priced like everything else: nothing to say.
+    const same = baseProgramFeed();
+    for (let i = 0; i < 4; i++) same.push(adaptiveSection({
+      section: "A" + i, section_id: "44444444-4444-4444-4444-0000000000b" + i,
+      enrolled: 10, capacity: 10, fill_pct: 100, charged: 1000, net_total: 1000,
+    }));
+    ok(!findOf(O.buildOpportunities({ programs: same }, { now: NOW }), "adaptive", "adaptive-subsidy"),
+      "adaptive priced like everything else is not a finding");
+  }
+
+  // ── The audience, its CSV and its segment ──────────────────────────────
+  {
+    const rows = baseProgramFeed();
+    for (let i = 0; i < 4; i++) rows.push(adaptiveSection({
+      section: "A" + i, section_id: "44444444-4444-4444-4444-0000000000c" + i,
+      enrolled: 6, capacity: 10, fill_pct: 60, charged: 300, net_total: 300,
+    }));
+    // Ten households in adaptive; SIX of them take nothing else, four also
+    // take a general program. The two numbers differ on purpose — a detector
+    // that counted every adaptive household would land on 10 and be plausible.
+    const dem = [], users = [];
+    for (let h = 0; h < 10; h++) {
+      dem.push({ "Household ID": "ad" + h, "Participant ID": "p" + h, Program: "Adaptive Rec", Activity: "Therapeutic Recreation", Age: 12, "Zip Code": "01545" });
+      if (h >= 6) dem.push({ "Household ID": "ad" + h, "Participant ID": "p" + h, Program: "Swim", Activity: "Aquatics", Age: 12, "Zip Code": "01545" });
+      users.push({ "Household ID": "ad" + h, Role: "Head of Household", "First Name": "Fam", "Last Name": String(h), Email: "fam" + h + "@x", Phone: "555000" + h, City: "Town", "Zip Code": "01545", "Net Revenue": 100, "Last Transaction": ago(10) });
+    }
+    const fam = famOf(O.buildOpportunities({ programs: rows, demographics: dem, users }, { now: NOW }), "adaptive");
+    const aud = fam.findings.find(f => f.id === "adaptive-only-households") || { segment: {} };
+    ok(aud.id === "adaptive-only-households", "adaptive-only households are reported");
+    eq(aud.count, 6, "…and it is the households that take NOTHING else, not all ten");
+    eq(aud.kind, "audience", "…filed as an audience, carrying no dollar figure");
+    eq(aud.value, null, "…with no dollar value");
+    // THE LIST IS THE DELIVERABLE. "Reach out to these people" with no way to
+    // reach them is the dead end this repo keeps writing down.
+    eq((aud.people || []).length, 6, "the contact rows travel with the finding");
+    eq((aud.people || [{}])[0].email, "fam0@x", "…carrying an email");
+    ok((aud.people || []).length > 0 && aud.people.every(p => p.phone), "…and a phone, because a parks department calls too");
+    eq(aud.peopleTotal, 6, "…and peopleTotal is the true size");
+    // Measured: Activity IS a Rec segment field, so this one is reproducible.
+    eq((aud.segment || {}).state, "supported", "an activity-based audience IS expressible as a Rec segment");
+    ok(((aud.segment || {}).steps || []).some(t => /Therapeutic Recreation/.test(t)),
+      "…and the directions name the org's OWN activity, not a generic one");
+    // ...and it says what the segment CANNOT do, which is the honest half.
+    ok(((aud.segment || {}).steps || []).some(t => /does NOT exclude|cannot/i.test(t)),
+      "…and says plainly where the segment stops matching this list");
+  }
+
+  // The profile names the org's own word for it, rather than ours.
+  {
+    const rows = baseProgramFeed().concat([adaptiveSection({
+      section: "A", section_id: "44444444-4444-4444-4444-44444444aaaa",
+      activity_name: "Inclusion & Accessibility", enrolled: 5, capacity: 8, fill_pct: 63, charged: 200, net_total: 200,
+    })]);
+    const prof = findOf(O.buildOpportunities({ programs: rows }, { now: NOW }), "adaptive", "adaptive-profile") || {};
+    ok(/Inclusion & Accessibility/.test(prof.detail || ""),
+      "the callout uses the org's own word for this programming — got: " + prof.detail);
+  }
+}
+
+// ══ CLICKABLE ROWS ═══════════════════════════════════════════════════════
+// Dan: "Build out clickable links to each program or section, user, etc.
+// Great info but if I can't click on it it's not useful."
+{
+  const UUID = "3fa85f64-5717-4562-b3fc-2c963f66afa6";
+  ok(O.recLink("program", UUID), "a program row links to the program in Rec");
+  ok(O.recLink("section", UUID), "a section row links to the section in Rec");
+  eq(O.recLink("nonsense", UUID), null, "an unknown record kind links nowhere");
+  /* THE REC-ID TRAP, ALREADY RECORDED IN THIS REPO FOR CHECK-INS: the community
+     feed's "Rec ID" is a six-character staff code, not a uuid, and a user link
+     built from it 404s while looking perfectly correct. Refusing is the whole
+     point of recLink. */
+  eq(O.recLink("user", "5OLLPM"), null, "a six-character Rec ID is REFUSED, not rendered as a user link");
+  eq(O.recLink("user", ""), null, "…and so is an absent id");
+  eq(O.recLink("program", null), null, "…and a null one");
+
+  // The rows that name a program or a section carry one.
+  {
+    const rows = [];
+    for (let i = 0; i < 8; i++) rows.push(section({
+      program: "Thin", program_id: "11111111-1111-1111-1111-11111111111" + (i % 2),
+      section: "S" + i, section_id: "22222222-2222-2222-2222-22222222222" + i,
+      section_status: "Past", enrolled: 2, capacity: 20, fill_pct: 10, charged: 200, net_total: 200,
+    }));
+    const out = O.buildOpportunities({ programs: baseProgramFeed().concat(rows) }, { now: NOW });
+    const uf = findOf(out, "programs", "underfilled-programs") || { items: [{}] };
+    ok(uf.items[0].rec && uf.items[0].rec.kind === "program",
+      "an under-filled program row links to the program record");
+    // …and the adaptive callout's own rows, which are the ones Dan was
+    // looking at. Two separate call sites, so two separate assertions.
+    const rows2 = baseProgramFeed().concat([section({
+      program: "Adaptive Rec", program_id: "33333333-3333-3333-3333-333333333333",
+      section: "A1", section_id: "44444444-4444-4444-4444-4444444444a1",
+      activity_name: "Adaptive", section_status: "Past",
+      enrolled: 5, capacity: 10, fill_pct: 50, charged: 250, net_total: 250, waitlist_active: 2,
+    })]);
+    const built = O.buildOpportunities({ programs: rows2 }, { now: NOW });
+    const prof = findOf(built, "adaptive", "adaptive-profile") || { items: [{}] };
+    eq((prof.items[0].rec || {}).kind, "program", "the adaptive callout's program rows link to the program");
+    const wl2 = findOf(built, "adaptive", "adaptive-waitlist") || { items: [{}] };
+    eq((wl2.items[0].rec || {}).kind, "section", "…and its waitlist rows link to the SECTION, which is the thing to open");
+  }
+}
+
+// ══ AUDIENCES: THE LIST, AND WHAT REC CAN ACTUALLY DO WITH IT ════════════
+// Dan: "A lot of the 'reach out to these people' infers we'd want a
+// downloadable CSV file or segment directly in Rec."
+{
+  // ONE definition of the CSV's shape, carried to the page. Two copies drift
+  // the first time a column is added and the header stops describing the rows.
+  ok(Array.isArray(O.CONTACT_COLS) && O.CONTACT_COLS.length >= 6, "the contact CSV has a declared column set");
+  const keys = O.CONTACT_COLS.map(c => c[0]);
+  ["name", "email", "phone"].forEach(k => ok(keys.includes(k), "the CSV carries " + k));
+  const c = O.contactOf({ "First Name": "Ada", "Last Name": "Lovelace", Email: "a@x", Phone: "555", City: "Town", "Zip Code": "01545", "Net Revenue": 250, "Last Transaction": "2026-01-02T00:00:00Z" });
+  eq(c.name, "Ada Lovelace", "a contact row carries a readable name");
+  eq(c.lastActive, "2026-01-02", "…and a date a spreadsheet will not re-parse");
+  ok(O.CONTACT_COLS.every(col => col[1] && col[1].length), "every column has a header");
+
+  /* THE SEGMENT ANSWER IS HONEST PER FINDING. Measured against the real Rec
+     segment vocabulary (eligibility age/gender, group, program activity /
+     season / program / section / completion, membership plan+status,
+     reservation site type / location / date, pass type+status+dates):
+     an age band IS expressible, a dormancy window is NOT, a zip is NOT.
+     Directions that quietly build a different audience are worse than none. */
+  const SEG = {
+    "age-gap": "supported", "pass-lapse": "supported", "adaptive-only-households": "supported",
+    "dormant-households": "unsupported", "zip-gap": "unsupported",
+    "cross-promo": "partial", "stream-cross-sell": "partial", "member-no-program": "partial",
+  };
+  const src = fs.readFileSync(path.join(__dirname, "..", "lib", "opportunities.js"), "utf8");
+  Object.entries(SEG).forEach(([id, state]) => {
+    // Each finding declares its own state next to its own id.
+    const at = src.indexOf('id: "' + id + '"');
+    ok(at > 0, "finding " + id + " exists");
+    const block = src.slice(at, src.indexOf("\n}", at));
+    ok(new RegExp('segment\\("' + state + '"').test(block),
+      id + " reports its segment as " + state);
+  });
+  ok(/no last-transaction or last-activity field/i.test(src),
+    "the dormancy finding says WHY no segment can express it");
+  ok(/there is no address or zip field/i.test(src),
+    "…and so does the zip one");
+
+  // The cap is real and the page is told the true size, so a list that is
+  // quietly 1,000 of 2,400 cannot happen.
+  {
+    const users = [], dem = [];
+    for (let i = 0; i < O.AUDIENCE_CAP + 40; i++) {
+      users.push({ "Household ID": "q" + i, Role: "Head of Household", "First Name": "Q", "Last Name": String(i), Email: "q" + i + "@x", "Net Revenue": 100 + i, "Items Purchased": 2, "First Transaction": ago(900), "Last Transaction": ago(500) });
+    }
+    // The people family is gated on the demographics feed having answered, so
+    // the fixture has to clear that floor before any of this is reachable.
+    for (let i = 0; i < 70; i++) dem.push({ "Household ID": "e" + i, "Participant ID": "p" + i, Program: "Camp", Activity: "Camp", Age: 9, "Zip Code": "01545" });
+    const out = O.buildOpportunities({ users, demographics: dem }, { now: NOW });
+    // A GUARD THAT DIES INSTEAD OF FAILING HAS NOT TOLD ANYONE WHAT BROKE —
+    // the lesson this repo keeps re-learning. Read through a safe default.
+    const d = findOf(out, "people", "dormant-households") || {};
+    ok(d.id === "dormant-households", "the dormant finding fires");
+    eq((d.people || []).length, O.AUDIENCE_CAP, "the carried list is capped");
+    eq(d.peopleTotal, O.AUDIENCE_CAP + 40, "…and peopleTotal still tells the truth");
+    ok((d.people || []).length > 1 && d.people[0].lifetimeNet > d.people[d.people.length - 1].lifetimeNet,
+      "…and the ones that are carried are the highest-value ones");
+  }
+}
+
+// ══ THE PAGE: CONTENTS, LINKS AND THE DOWNLOAD ═══════════════════════════
+if (!SKIP_SOURCE) {
+  const page = fs.readFileSync(path.join(__dirname, "..", "public", "opportunities.html"), "utf8");
+  const lib = fs.readFileSync(path.join(__dirname, "..", "lib", "opportunities.js"), "utf8");
+  const server = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
+
+  // ── Dan: "Its program, not programme." ───────────────────────────────
+  // Asserted over the whole surface rather than over one file, because half a
+  // rename reads worse than none.
+  // WORD BOUNDARIES, and the first draft of this guard did not have them:
+  // `programMedianPrice` contains "programMe", so a bare /programme/i failed
+  // on correct code. A guard that fires on a variable name is not a guard.
+  [["page", page], ["lib", lib]].forEach(([what, text]) => {
+    ok(!/\bprogramme\b/i.test(text), "no British 'programme' anywhere in the " + what);
+    ok(!/\borganisation/i.test(text), "no British 'organisation' in the " + what);
+    ok(!/\butilisation/i.test(text), "no British 'utilisation' in the " + what);
+    ok(!/\bneighbourhood/i.test(text), "no British 'neighbourhood' in the " + what);
+  });
+  // And the assertion is only worth having if it can still fail: prove the
+  // pattern catches the real spelling.
+  ok(/\bprogramme\b/i.test("the programme runs"), "…and the pattern still catches a real 'programme'");
+
+  // ── Dan: "Add a quick overview at the top with links to jump to each
+  //    section." ──────────────────────────────────────────────────────────
+  ok(/className="jump"/.test(page), "the contents strip renders");
+  ok(/id=\{"fam-" \+ fam\.key\}/.test(page), "…and every family carries the anchor it targets");
+  ok(/href=\{"#fam-" \+ fam\.key\}/.test(page), "…and the strip links to it");
+  // A suppressed family is LISTED, greyed. A contents list that silently
+  // omitted them would undo the whole suppression design one line above the
+  // sections themselves.
+  const jump = page.slice(page.indexOf('className="jump"'), page.indexOf("{insights && insights.length"));
+  ok(/d\.families\.map/.test(jump), "the strip lists EVERY family, suppressed ones included");
+  ok(/fam\.findings\.length/.test(jump), "…with a count per family");
+  // Dead on paper: no href in print, and it stays as a contents list.
+  ok(/isPrint \?/.test(jump), "…and renders without links in print");
+
+  // ── Clickable rows ────────────────────────────────────────────────────
+  ok(/function recHref/.test(page), "the page builds Rec admin URLs");
+  ok(/programming\/programs/.test(page) && /programming\/sections/.test(page),
+    "…with the URL shapes this repo has already proven");
+  ok(/data-opp-item-link/.test(page), "…and a render case can tell which kind of link a row got");
+  ok(/target=\{rh \? "_blank"/.test(page), "a Rec link opens in its own tab, not over the report");
+  // The label is the link. Anything else is the dead end Dan reported.
+  const itemBlock = page.slice(page.indexOf("{f.items.map("), page.indexOf('className="iv"'));
+  ok(/<a className="il"/.test(itemBlock), "the row's own LABEL is the link");
+  ok(/drillHref\(it\.link\)/.test(itemBlock), "…falling back to the report that proves it");
+
+  // ── The download ──────────────────────────────────────────────────────
+  ok(/saveTextViaPopup/.test(page), "the CSV goes through the shared popup helper");
+  ok(/bom: true/.test(page), "…asking for the BOM, or Excel opens accented names as mojibake");
+  ok(/csvFromRows/.test(page), "…and the shared RFC4180 writer");
+  ok(/d\.contactColumns/.test(page), "the columns come from the payload, not a second copy on the page");
+  ok(/contactColumns: CONTACT_COLS/.test(lib), "…and the payload carries the library's own definition");
+  ok(/data-opp-csv=/.test(page), "a render case can read how many contacts the button offers");
+  ok(/data-opp-segment=/.test(page), "…and what the segment advice says");
+  ok(/peopleTotal > f\.people\.length/.test(page), "a trimmed list says so on screen");
+
+  // ── The beacon, on both sides ─────────────────────────────────────────
+  const logRoute = server.slice(server.indexOf('app.post("/:org/opportunities/api/log"'),
+                                server.indexOf('app.post("/:org/facilities/api/log"'));
+  ok(/"opp-csv"/.test(logRoute), "opp-csv is on the log route's allowlist");
+  ok(/rows >= 0 && rows <= 1000000/.test(logRoute), "…and the row count is clamped server-side");
+  /* SCOPED TO THE STATEMENT, and the first draft was not: a +2000-char window
+     from `const SLACK_NOTIFY` runs on into SLACK_EVENT_META, whose own
+     "opp-csv" key satisfied the assertion while the Set had lost it. An
+     assertion satisfied by different code is not guarding what it names. */
+  const notifyAt = server.indexOf("const SLACK_NOTIFY");
+  const notifySet = server.slice(notifyAt, server.indexOf("]);", notifyAt));
+  ok(/"opp-csv"/.test(notifySet), "…and it actually posts to Slack");
+  /* Its own message branch: the shared line would print the report type twice
+     and the audience never — the defect already fixed four times in this file.
+     Scoped past the DEBOUNCE block, which carries the same `rec.event ===
+     "opp-csv"` test and satisfied this on its own. */
+  const msgBody = server.slice(server.indexOf('rec.event === "opp-drill"', server.indexOf("*DEAD LINK*")));
+  ok(/rec\.event === "opp-csv"/.test(msgBody), "opp-csv has its own Slack message branch");
+  ok(/downloaded \$\{what\}/.test(msgBody), "…naming WHICH list, not just that one was downloaded");
+  ok(/contact\$\{rec\.rows === 1/.test(msgBody), "…and how many people were in it");
+  ok(/opportunities\|opp-csv\|\$\{rec\.finding/.test(server), "…debounced per finding, not per org");
+  // The Rec uuid has to reach the page or every Rec link is dead.
+  const pageRoute2 = server.slice(server.indexOf('app.get("/:org/opportunities"'),
+                                  server.indexOf('app.get("/:org/opportunities/api/data"'));
+  ok(/orgId: org\.orgId/.test(pageRoute2), "the page is given the Rec org uuid");
+
+  /* THE AI HAS TO BE TOLD TOO. Every rule the adaptive family encodes lives in
+     copy the model is handed, so without an explicit instruction the most
+     likely insight it writes off the subsidy finding is "raise the prices" —
+     precisely the reading the whole family exists to prevent. */
+  const prompt = server.slice(server.indexOf("const OPPORTUNITIES_SYS_PROMPT"),
+                              server.indexOf("async function opportunitiesInsightsFor"));
+  ok(/adaptive/i.test(prompt), "the insights prompt knows about adaptive programming");
+  ok(/never suggest raising its prices/i.test(prompt),
+    "…and is told not to price it like everything else");
 }
 
 if (failures.length) {
