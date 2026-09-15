@@ -1,0 +1,140 @@
+/* ── Recess design tokens ──────────────────────────────────────────────
+   Read out of the rec-web Storybook's built bundle (iframe.css and the
+   chart chunks), not transcribed from its docs page — so these are the
+   values the Recess components actually render.
+
+     https://rec-web-storybook.vercel.app/?path=/docs/recess-components-charts--docs
+
+   WHY THIS FILE EXISTS. Counted across public/*.html before it did:
+   769 distinct hex colours, 19 border-radius values, 134 box-shadow
+   declarations and 14 different categorical chart palettes. Each report
+   page was styled on its own day and none of them agree.
+
+   HOW TO USE IT. Link it from a report page and read the tokens; do not
+   re-declare a value it already names. A page may add page-specific
+   tokens of its own on top (see programs.html), but a raw hex that
+   duplicates one of these is drift by another name.
+
+   THE ONE RULE THAT IS NOT COSMETIC: --rec-cat-* is for CATEGORICAL
+   series, which carry identity and no meaning. --rec-info / --rec-success
+   / --rec-warning / --rec-danger mean info, good, warning and bad, and
+   are RESERVED for data that is that thing — a delta, a status badge, a
+   threshold. Colouring a chart series blue or red is what stops those
+   four from being able to mean anything.
+   ────────────────────────────────────────────────────────────────────── */
+
+:root {
+  /* ── Surface & ink ── (the neutral ramp is stone, i.e. warm — NOT slate) */
+  --rec-bg-primary:      #ffffff;
+  --rec-bg-secondary:    #fafaf9;
+  --rec-bg-tertiary:     #e7e5e4;
+  --rec-bg-contrast:     #1c1917;
+  --rec-bg-disabled:     #f5f5f4;
+  --rec-bg-overlay:      #1c19174d;
+
+  --rec-text-primary:    #1c1917;
+  --rec-text-secondary:  #57534e;
+  --rec-text-tertiary:   #7c7570;
+  --rec-text-disabled:   #d6d3d1;
+  --rec-text-contrast:   #ffffff;
+
+  --rec-border-primary:  #d6d3d1;
+  --rec-border-secondary:#e7e5e4;
+  --rec-border-hover:    #78716c;
+  --rec-border-active:   #1c1917;
+  --rec-border-disabled: #e7e5e4;
+
+  /* ── Brand ── */
+  --rec-brand-grass:     #1b9849;
+  --rec-brand-pine:      #132219;
+  --rec-brand-sand:      #f4f2ef;
+  --rec-brand-seb:       #51909b;
+
+  /* ── Status. RESERVED — see the rule at the top of this file. ── */
+  --rec-success:         #16a34a;  --rec-success-bg: #e7fdef;  --rec-success-ink: #15803d;
+  --rec-warning:         #ea580c;  --rec-warning-bg: #fff3e2;  --rec-warning-ink: #9a3412;
+  --rec-danger:          #dc2626;  --rec-danger-bg:  #ffebeb;  --rec-danger-ink:  #b91c1c;
+  --rec-info:            #2563eb;  --rec-info-bg:    #e6f1ff;  --rec-info-ink:    #1d4ed8;
+  --rec-neutral:         #1c1917;  --rec-neutral-bg: #f8f8f8;
+
+  /* ── Categorical chart series ──────────────────────────────────────
+     The first FOUR are Recess's own order, character for character, and
+     are assigned by series index exactly as its chart components do:
+       ["category-purple", "category-sky", "category-lime", "category-pink"]
+     Steps 5-8 are the 700 step of the same four ramps, for the charts
+     here that legitimately carry more than four series (cohorts, fill
+     rate). Past eight it cycles — as Recess's own component does.
+
+     THE ORDER IS MEASURED, NOT AESTHETIC. Run through the colour-vision
+     validator, the worst ADJACENT pair is deutan ΔE 8.8, which passes;
+     several other orderings of the same eight do not (lime-700 beside
+     pink-700 lands at 6.8, and putting pink-700 beside pink-500 fails
+     the normal-vision floor outright at 13.6). Reorder only with the
+     validator, never by eye.
+
+     --rec-cat-sky and --rec-cat-lime sit below 3:1 against white, so a
+     chart using them needs a legend or direct labels — which is also
+     Recess's own accessibility line: "colour is reinforced by labels,
+     shape, or position". */
+  --rec-cat-1: #a855f7;   /* purple 500 */
+  --rec-cat-2: #0ea5e9;   /* sky 500    */
+  --rec-cat-3: #84cc16;   /* lime 500   */
+  --rec-cat-4: #ec4899;   /* pink 500   */
+  --rec-cat-5: #7e22ce;   /* purple 700 */
+  --rec-cat-6: #4d7c0f;   /* lime 700   */
+  --rec-cat-7: #0369a1;   /* sky 700    */
+  --rec-cat-8: #be185d;   /* pink 700   */
+
+  /* Tinted backgrounds for the same four, for chips and bands. */
+  --rec-cat-1-bg: #f3e8ff;  --rec-cat-1-ink: #7e22ce;
+  --rec-cat-2-bg: #e0f2fe;  --rec-cat-2-ink: #0369a1;
+  --rec-cat-3-bg: #ecfccb;  --rec-cat-3-ink: #4d7c0f;
+  --rec-cat-4-bg: #fce7f3;  --rec-cat-4-ink: #be185d;
+
+  /* ── Radius ── */
+  --rec-radius-none: 0px;
+  --rec-radius-sm:   .25rem;   /*  4px */
+  --rec-radius-md:   .5rem;    /*  8px */
+  --rec-radius-lg:   .75rem;   /* 12px */
+  --rec-radius-xl:   1rem;     /* 16px */
+  --rec-radius-2xl:  1.5rem;   /* 24px */
+  --rec-radius-full: 9999px;
+
+  /* ── Elevation. Two families: a surface sits on the page, a float sits
+     over it. Reach for surface-* on cards and float-* on menus. ── */
+  --rec-shadow-surface-sm: 0 2px 2px 0 #0b0b0b0a;
+  --rec-shadow-surface-md: 0 2px 2px 0 #0b0b0b0a, 0 8px 8px -8px #0000000a;
+  --rec-shadow-surface-lg: 0 2px 2px 0 #0b0b0b0a, 0 8px 16px -4px #0000000a;
+  --rec-shadow-float-sm:   0 2px 8px 0 #0000000f;
+  --rec-shadow-float-md:   0 4px 16px 0 #00000012, 0 2px 4px 0 #00000012;
+  --rec-shadow-float-lg:   0 12px 28px -2px #00000014, 0 4px 8px 0 #00000014;
+
+  /* ── Motion ── */
+  --rec-duration-instant:  0s;
+  --rec-duration-fast:     .15s;
+  --rec-duration-standard: .2s;
+  --rec-duration-slow:     .3s;
+  --rec-duration-extended: .5s;
+  --rec-ease-standard:   cubic-bezier(.25, .1, .25, 1);
+  --rec-ease-emphasized: cubic-bezier(.32, .72, 0, 1);
+  --rec-ease-out:        cubic-bezier(.23, 1, .32, 1);
+
+  /* ── Type. Recess is Inter throughout. The scale is px/px/weight, read
+     off its typography-scale chunk. Pages load Inter themselves. ── */
+  --rec-font-sans: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --rec-font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --rec-heading-xs: 14px;  --rec-heading-xs-lh: 20px;  /* 600 */
+  --rec-heading-sm: 16px;  --rec-heading-sm-lh: 22px;  /* 600 */
+  --rec-heading-md: 18px;  --rec-heading-md-lh: 24px;  /* 600 */
+  --rec-heading-lg: 24px;  --rec-heading-lg-lh: 32px;  /* 500 */
+  --rec-heading-xl: 40px;  --rec-heading-xl-lh: 56px;  /* 500 */
+
+  --rec-body-xs: 12px;  --rec-body-xs-lh: 18px;        /* 400 */
+  --rec-body-sm: 13px;  --rec-body-sm-lh: 20px;        /* 400 */
+  --rec-body-md: 14px;  --rec-body-md-lh: 20px;        /* 400 */
+  --rec-body-lg: 16px;  --rec-body-lg-lh: 24px;        /* 400 */
+
+  --rec-eyebrow:    10px; --rec-eyebrow-lh: 12px;      /* 500, .1em */
+  --rec-eyebrow-ls: .1em;
+}

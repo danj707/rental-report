@@ -207,6 +207,15 @@ jobs:
       - name: Programs summary — cancellations, seasons before the rows, pills, sticky toolbar
         run: node scripts/programs-summary.spec.js
 
+      # The Recess token layer. The load-bearing half is that the categorical
+      # palette exists TWICE — as --rec-cat-1..8 in the stylesheet and as
+      # RECESS_CAT in programs.html, because those charts set fill from script
+      # — so the two are asserted equal. Plus: the reserved semantic four stay
+      # out of the series order, every chart reads the one list, and
+      # .report-header renders only under isPrint so the page has ONE header.
+      - name: Recess tokens — one palette, reserved colours reserved, one header
+        run: node scripts/recess-palette.spec.js
+
       # Card 17295's only date filter was the [[ ]] pair at the very bottom, so
       # every CTE above it ran over the org's whole history and was then thrown
       # away. Watertown, Sep 2026: item_tx 14.0s over 9,194 order items, 0.08s

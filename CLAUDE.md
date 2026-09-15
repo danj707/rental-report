@@ -1,5 +1,136 @@
 # Project notes for Claude
 
+## THE RECESS TOKENS, ON ONE REPORT (2026-09-15)
+
+Dan, on the Recess storybook's new charts package: *"take a look at these and see
+if there are any things we can do to improve our look and feel"*, then *"build out
+a mockup of 1 first"*, then — on the strict-Recess version — **"its kinda bland
+isn't it"**, and finally *"build it and give me the preview link"*.
+
+`public/recess-tokens.css` is the layer; **`public/programs.html` is the only page
+on it**. Mockup (three skins, switchable):
+https://claude.ai/artifact/9rHLR3wp3ofN3HcXJFXN5b
+
+### THE TOKENS ARE READ OUT OF THE BUILT BUNDLE, NOT THE DOCS PAGE
+
+Storybook's `index.json` lists every story; `iframe.css` carries all 89
+`--recess-*` custom properties and the chart chunks carry the series logic. So
+the hex values in `recess-tokens.css` are the ones the components actually
+render, not values transcribed off a swatch. Worth knowing for next time: the
+docs page is a client-rendered SPA and **Chromium here cannot reach vercel**, so
+the way to *see* a story is a tiny local mirror that shells out to `curl` on a
+miss — `curl` honours the sandbox proxy and Chromium does not.
+
+### THE GAP IT CLOSES, COUNTED RATHER THAN ASSERTED
+
+Across `public/*.html` before this: **769 distinct hex colours, 19
+border-radius values, 134 box-shadow declarations, 14 categorical chart
+palettes and 5 typefaces.** 16 pages carry their own copy-pasted `.sum-card`.
+
+### THE ONE RULE THAT IS NOT COSMETIC
+
+Recess keeps **categorical** (identity, no meaning) strictly apart from
+**semantic** (`kind="info|success|warning|danger"`). Every one of our four
+palettes coloured series with blue, green, amber and red — **the same four our
+KPI values use for good, bad and warning**. A reader cannot tell whether red
+means "refunds" or "bad". `RECESS_CAT` is the one list now, and
+`recess-palette.spec.js` fails if a reserved colour lands in a series slot.
+
+### THE ORDER IS MEASURED. Do not reorder it by eye.
+
+Recess's own four are purple → sky → lime → pink, assigned by series index. Our
+cohort and fill-rate charts legitimately carry more, so the list extends to
+eight with the **700 step of the same four ramps** — and the ordering was chosen
+with the colour-vision validator, not by taste:
+
+| ordering of the same eight | worst adjacent pair |
+|---|---|
+| **p500 sky500 lime500 pink500 p700 lime700 sky700 pink700** | **deutan ΔE 8.8 — PASS** |
+| …p700 lime700 pink700 sky700 | 6.8 (lime-700 beside pink-700) |
+| …pink700 sky700 p700 lime700 | **FAIL** — pink-700 beside pink-500 is 13.6 on NORMAL vision |
+
+Recess's own four also pass on their own (8.8). **`--rec-cat-2` (sky) and
+`--rec-cat-3` (lime) sit below 3:1 against white**, so any chart using them
+needs a legend or direct labels — which is also Recess's own stated rule
+("colour is reinforced by labels, shape, or position").
+
+### THE PALETTE EXISTS TWICE AND THAT IS THE THING GUARDED
+
+`--rec-cat-1..8` in the stylesheet, `RECESS_CAT` in `programs.html`, because
+those charts set `fill` from script and reading a custom property per mark
+through `getComputedStyle` is not worth the cycle. Two copies of a list is the
+drift this repo keeps recording, so the spec asserts they are equal.
+
+### "ITS KINDA BLAND ISN'T IT" — and the fix was one token
+
+The first pass applied Recess's **admin-app chrome** to a report. A report is
+read, printed and handed to a council; it can carry more than a dense settings
+page. What actually made it flat was the ground: strict Recess puts white cards
+on `#fafaf9`, which is near-white on white, so nothing separates. The page ground
+is **`--rec-brand-sand` `#f4f2ef`** and the cards come forward on their own.
+
+The rest is hierarchy rather than more colour — the masthead on pine→grass, the
+type scale spent on one figure rather than spread evenly, section structure. The
+two rules survive intact: values stay black, and colour marks a delta or a
+status.
+
+*Generalise it: adopting a design system means adopting its tokens and its
+rules, not its chrome. A system built for one surface applied unchanged to
+another is how "on-brand" comes out lifeless.*
+
+### ONE HEADER — and the print header is why there were two
+
+Dan: *"we should get rid of the top town of shrewsbury programs and keep the
+second section. Include the org logo in the second section."*
+
+`.report-header` and `.pgm-banner` both said `<Org> · Programs` in the first
+200px. They exist because **the banner is `{!isPrint && …}`** — the plain header
+is the PRINTED one. So `.report-header` is now `{isPrint && …}`: exactly one of
+the two ever renders, and **the PDF is untouched**. The banner gained the logo
+and `dateRangeLabel`, which were the only two things the header carried that it
+did not.
+
+**AN ORG LOGO NEEDS A WHITE PLATE.** `logoUrl` is an arbitrary full-colour PNG
+with its own background — a municipal seal dropped straight onto a dark green
+band looks broken. The plate takes whatever an org uploads, and it is the kind
+of thing only a real logo would have shown.
+
+### The bunting is the chart palette
+
+The banner's twelve pennants were `#ffd166 / #ef767a / #8fd694 / #7fd1e3` — a
+fifth colour scheme on a page that now has one. They are the categorical four,
+so the decoration doubles as the legend.
+
+### WHAT IS DELIBERATELY NOT IN THIS PASS
+
+- **The dark toolbar stays.** Relighting it is ~40 rules with render coverage on
+  most of them, it is a control strip rather than the report, and Dan never
+  complained about it. High risk, low reward — and the dark bar reads fine
+  against a sand page.
+- **The gender split keeps blue/pink/purple**, on the chart AND on three table
+  columns. Changing the chart alone would make the two disagree, and which
+  colours that split should use is a conversation rather than a token swap.
+- **No headline figure in the masthead**, which the mockup had. It would need
+  `progRevTotals` lifted out of the Summary tab's IIFE to the banner's scope —
+  i.e. a second rollup, which is the one-reducer-N-readers rule. Worth doing on
+  its own.
+- **The other 44 pages.** This is one page on the layer so the treatment can be
+  judged before it is swept.
+
+### Guards
+
+`scripts/recess-palette.spec.js` (**37 assertions, in CI**): the two palette
+copies are equal, no reserved semantic colour sits in a series slot, all four
+charts read the one list, the `.sc-*` value colours resolve to
+`--rec-text-primary`, `.report-header` is gated on `isPrint`, the banner carries
+the window and the logo plate, and the ground is the sand token.
+
+All **66 `programs ·` render cases** pass on the restyled page. That is the
+assertion that matters most here: every one of them keys on `.sum-cards`,
+`.prog-table`, `.tab.active` or a `data-prog-*` attribute, so the class names and
+hooks were restyled **in place** rather than renamed — a restyle that moves a
+hook is indistinguishable from a regression.
+
 ## THE RENTAL CALENDAR IS A FULL-SCREEN MAP NOW (2026-09-14)
 
 Dan, after looking at **playrecreate.com** — a consumer app that aggregates SF

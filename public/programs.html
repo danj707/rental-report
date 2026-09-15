@@ -6,13 +6,20 @@
   <title>Program Revenue</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <!-- The Recess design tokens. Read that file before adding a colour, a
+       radius or a shadow here: a raw hex that duplicates one of its tokens
+       is how 45 report pages came to hold 769 of them. -->
+  <link rel="stylesheet" href="/recess-tokens.css" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       font-family: 'Inter', system-ui, -apple-system, sans-serif;
       font-size: 12px;
-      color: #1a1a1a;
-      background: #f5f4f1;
+      color: var(--rec-text-primary);
+      /* brand-sand, NOT near-white. A white card only reads as a card when
+         the page behind it is a shade down; this one token is most of the
+         difference between the report looking composed and looking flat. */
+      background: var(--rec-brand-sand);
       line-height: 1.35;
     }
 
@@ -127,7 +134,8 @@
     /* ── Page ── */
     .page {
       max-width: 1400px; margin: 16px auto; padding: 24px 28px;
-      background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,.08);
+      background: var(--rec-bg-primary); border-radius: var(--rec-radius-lg);
+      box-shadow: var(--rec-shadow-surface-md);
     }
     .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 
@@ -144,11 +152,25 @@
        overlay. Field-day park at golden hour — bunting, a ball arcing
        over the grass, drifting seeds. Everything is slow and looping;
        nothing here should pull the eye away from the numbers below. */
-    .pgm-banner { position: relative; width: 100%; height: 168px; border-radius: 12px; overflow: hidden;
-      margin: 0 0 16px; border: 1px solid #bfe3c9; box-shadow: 0 3px 14px rgba(6,78,59,.14);
-      background: linear-gradient(120deg, #12405c 0%, #1c6b74 48%, #2f9268 100%); }
+    .pgm-banner { position: relative; width: 100%; min-height: 176px; border-radius: var(--rec-radius-lg); overflow: hidden;
+      margin: 0 0 18px; border: 0; box-shadow: 0 12px 28px -14px rgba(19,34,25,.45);
+      background: linear-gradient(135deg, var(--rec-brand-pine) 0%, #17452b 52%, var(--rec-brand-grass) 128%); }
     .pgm-banner .pb-scene { position: absolute; inset: 0; z-index: 0; overflow: hidden; }
-    .pgm-banner .pb-overlay { position: absolute; inset: 0; padding: 20px 26px; display: flex; flex-direction: column; justify-content: center; z-index: 2; }
+    .pgm-banner .pb-overlay { position: absolute; inset: 0; padding: 20px 26px; display: flex; align-items: center; gap: 20px; z-index: 2; }
+    .pgm-banner .pb-copy { display: flex; align-items: center; gap: 16px; min-width: 0; flex: 1 1 auto; }
+    /* An org logo is an arbitrary full-colour PNG with its own background —
+       a municipal seal straight onto a dark green band looks broken. The
+       white plate takes whatever an org uploads. */
+    .pgm-banner .pb-plate { background: #fff; border-radius: 10px; padding: 8px 11px; flex-shrink: 0;
+      display: grid; place-items: center; box-shadow: 0 1px 3px rgba(0,0,0,.18); }
+    .pgm-banner .pb-plate img { height: 42px; max-width: 132px; object-fit: contain; display: block; }
+    .pgm-banner .pb-window { margin-left: auto; align-self: flex-start; text-align: right; flex-shrink: 0;
+      font-size: 12px; font-weight: 600; color: rgba(255,255,255,.92); font-variant-numeric: tabular-nums;
+      text-shadow: 0 1px 3px rgba(0,0,0,.4); white-space: nowrap; }
+    @media (max-width: 720px) {
+      .pgm-banner .pb-overlay { padding: 16px 18px; }
+      .pgm-banner .pb-plate { display: none; }
+    }
     .pgm-banner .pb-kicker { font-size: 10.5px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: rgba(255,255,255,.92); text-shadow: 0 1px 3px rgba(0,0,0,.4); }
     .pgm-banner .pb-title { font-size: 30px; font-weight: 800; color: #fff; text-shadow: 0 2px 7px rgba(0,0,0,.42); line-height: 1.04; margin-top: 3px; }
     .pgm-banner .pb-sub { font-size: 12.5px; color: rgba(255,255,255,.95); text-shadow: 0 1px 4px rgba(0,0,0,.45); margin-top: 6px; max-width: 560px; }
@@ -301,10 +323,10 @@
 
     /* Grand total row */
     .prog-table tfoot tr td {
-      background: #2c2c2c; color: #fff; padding: 7px 8px;
-      font-weight: 700; font-size: 11.5px; text-align: right;
+      background: var(--rec-brand-pine); color: var(--rec-text-contrast); padding: 8px;
+      font-weight: 600; font-size: 11.5px; text-align: right;
       font-variant-numeric: tabular-nums;
-      border-top: 3px solid #111;
+      border-top: 2px solid var(--rec-brand-pine);
     }
     .prog-table tfoot tr td.left { text-align: left; font-size: 10.5px; letter-spacing: 0.4px; text-transform: uppercase; }
 
@@ -329,12 +351,30 @@
     .prog-pill-n { font-variant-numeric: tabular-nums; opacity: .6; }
     .prog-pill-clear { font: inherit; font-size: 11px; padding: 3px 8px; border: none; background: none;
                        color: #6366f1; cursor: pointer; }
-    .sum-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin: 16px 0; }
-    .sum-card { background: #fff; border: 1px solid #e8e6e0; border-radius: 8px; padding: 14px 16px; }
-    .sum-card .sc-label { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: #888; font-weight: 700; margin-bottom: 4px; }
-    .sum-card .sc-val { font-size: 24px; font-weight: 800; line-height: 1.1; font-variant-numeric: tabular-nums; }
-    .sum-card .sc-sub { font-size: 11px; color: #999; margin-top: 3px; }
-    .sc-green { color: #16a34a; } .sc-blue { color: #2563eb; } .sc-amber { color: #d97706; } .sc-red { color: #dc2626; } .sc-purple { color: #7c3aed; }
+    /* ── The KPI row — Recess's SummaryMetricRow shape ─────────────────
+       ONE container with hairline dividers rather than a grid of bordered
+       cards, and the VALUES STAY BLACK. Nine figures in five colours all
+       shout equally; spending colour on the delta instead (which is the
+       only thing on the row with a direction) leaves the row scannable.
+       The gap-as-divider trick survives wrapping, where a per-cell left
+       border strands a rule at the start of the second row. */
+    .sum-cards { display: flex; flex-wrap: wrap; gap: 1px; margin: 16px 0;
+      background: var(--rec-border-secondary); border-radius: var(--rec-radius-lg);
+      box-shadow: var(--rec-shadow-surface-md), 0 0 0 1px var(--rec-border-secondary); overflow: hidden; }
+    /* The Summary tab shows NINE of these and the Check-Ins tab five, so the
+       basis has to make a ragged wrap look deliberate rather than broken: at
+       190px the nine land 5 + 4, both rows full, where a smaller basis leaves
+       one card stranded and stretched across a row of its own. Flex rather
+       than grid for the same reason — a grid's last row would show the
+       container's divider colour through the empty cells. */
+    .sum-card { background: var(--rec-bg-primary); padding: 15px 18px; flex: 1 1 190px; min-width: 0; }
+    .sum-card .sc-label { font-size: var(--rec-body-sm); color: var(--rec-text-secondary); font-weight: 500; margin-bottom: 4px; }
+    .sum-card .sc-val { font-size: var(--rec-heading-lg); font-weight: 500; line-height: 1.2; letter-spacing: -.02em;
+      font-variant-numeric: tabular-nums; color: var(--rec-text-primary); }
+    .sum-card .sc-sub { font-size: 11.5px; color: var(--rec-text-tertiary); margin-top: 3px; }
+    /* Kept so every call site still resolves, and deliberately inert: a
+       value colour here is what the delta pill is for. */
+    .sc-green, .sc-blue, .sc-amber, .sc-red, .sc-purple { color: var(--rec-text-primary); }
 
     /* ── Prior-period delta pill ── */
     .delta-pill { display:inline-flex; align-items:center; gap:3px; font-size:10.5px; font-weight:700; padding:2px 7px; border-radius:10px; margin-top:6px; font-variant-numeric:tabular-nums; white-space:nowrap; animation:pillIn .25s ease; }
@@ -374,10 +414,10 @@
     .sum-prog-table tr:hover { background: #fafaf7; }
     .sum-prog-table .row-cancel td { opacity: .5; }
 
-    .tabs { display:flex; gap:4px; border-bottom:2px solid #d1d5db; margin-bottom:16px; padding:0 4px; align-items:flex-end; }
-    .tab { padding:9px 18px 8px; font-size:13px; font-weight:600; color:#6b7280; cursor:pointer; transition:all .15s; display:flex; align-items:center; gap:6px; border-radius:8px 8px 0 0; border:1px solid transparent; border-bottom:none; margin-bottom:-2px; position:relative; background:transparent; }
+    .tabs { display:flex; gap:4px; border-bottom:1px solid var(--rec-border-secondary); margin-bottom:16px; padding:0 4px; align-items:flex-end; flex-wrap:wrap; }
+    .tab { padding:9px 16px 8px; font-size:13.5px; font-weight:500; color:var(--rec-text-secondary); cursor:pointer; transition:color var(--rec-duration-fast) var(--rec-ease-standard); display:flex; align-items:center; gap:6px; border:0; border-bottom:2px solid transparent; margin-bottom:-1px; position:relative; background:transparent; }
     .tab:hover { color:#111; background:#f3f4f6; }
-    .tab.active { color:#059669; background:#f0fdf4; border-color:#d1d5db; border-top:2px solid #059669; box-shadow:0 -2px 4px rgba(0,0,0,.04); z-index:1; }
+    .tab.active { color:var(--rec-text-primary); font-weight:600; border-bottom-color:var(--rec-brand-grass); }
     .tab .tab-badge { font-size:10px; padding:2px 7px; border-radius:10px; font-weight:600; }
     .tab .tab-lock { font-size:10px; padding:2px 7px; border-radius:10px; background:#f3f4f6; color:#9ca3af; }
     /* ── KPI cards ── */
@@ -533,11 +573,11 @@
     @media print {
       body { background: #fff; }
       .toolbar, .pgm-banner { display: none !important; }
-      .page { box-shadow: none; margin: 0; padding: 12px 16px; max-width: 100%; }
+      .page { box-shadow: none; border-radius: 0; margin: 0; padding: 12px 16px; max-width: 100%; }
     }
     body.print-mode .toolbar, body.print-mode .pgm-banner { display: none !important; }
     body.print-mode { background: #fff; }
-    body.print-mode .page { box-shadow: none; margin: 0; padding: 12px 16px; max-width: 100%; }
+    body.print-mode .page { box-shadow: none; border-radius: 0; margin: 0; padding: 12px 16px; max-width: 100%; }
     body.print-mode .table-scroll { overflow: visible; }
     /* Charts */
     .chart-section { margin: 20px 0; }
@@ -1516,7 +1556,24 @@ function FillRateChart({ sections, colors, selected }) {
 }
 
 // ── Re-engagement + Flow Components ──
-var COHORT_COLORS = ['#e34948','#eb6834','#eda100','#008300','#1baf7a','#2a78d6','#4a3aa7','#e87ba4','#1d9e75','#d85a30','#d4537e','#639922'];
+/* ── The categorical chart palette ─────────────────────────────────────────
+   Recess's own order, then the 700 step of the same four ramps for the
+   charts here that carry more than four series. Mirrors --rec-cat-1..8 in
+   public/recess-tokens.css; it is duplicated in JS because these charts set
+   `fill`/`background` from script, and reading a custom property per mark
+   through getComputedStyle on every render is not worth the cycle. If one
+   list moves, move the other — recess-palette.spec.js fails if they drift.
+
+   THE RULE: these carry IDENTITY and no meaning. Blue, green, amber and red
+   stay reserved for info / good / warning / bad — a delta, a status badge, a
+   fill-rate threshold. A series painted red is what stops red meaning bad.
+
+   THE ORDER IS MEASURED. Through the colour-vision validator the worst
+   ADJACENT pair is deutan ΔE 8.8, which passes; several other orderings of
+   the same eight do not. Reorder only with the validator, never by eye. */
+var RECESS_CAT = ['#a855f7','#0ea5e9','#84cc16','#ec4899','#7e22ce','#4d7c0f','#0369a1','#be185d'];
+
+var COHORT_COLORS = RECESS_CAT;
 
 function deriveActivity(progName) {
   var p = progName.toLowerCase();
@@ -3296,7 +3353,12 @@ function App() {
       {renderToolbar()}
       <div className="page" style={loading ? {opacity:0.5,pointerEvents:'none'} : {}}>
 
-        {/* Header */}
+        {/* Header — PRINT ONLY. On screen the banner below is the header: it
+            carries the same logo, org name, title and window, and rendering
+            both said "Town of Shrewsbury · Programs" twice in the first 200px
+            (Dan, 2026-09-15). The banner is gated on !isPrint, so exactly one
+            of the two renders and the PDF is untouched. */}
+        {isPrint && (
         <div className="report-header">
           <div className="report-header-left">
             {logoUrl && <img src={logoUrl} alt="" className="report-header-logo" onError={e => e.target.style.display='none'} />}
@@ -3309,6 +3371,7 @@ function App() {
             <div className="rh-meta" style={{fontWeight:600,marginBottom:2}}>{dateRangeLabel}</div>
           </div>
         </div>
+        )}
 
         {/* Animated header — park at golden hour, scene under the text. */}
         {!isPrint && (
@@ -3323,7 +3386,7 @@ function App() {
               <div className="pbx-hill h3"></div>
               <div className="pbx-bunting">
                 <div className="cord"></div>
-                {['#ffd166','#ef767a','#8fd694','#7fd1e3','#ffd166','#f4a261','#8fd694','#7fd1e3','#ef767a','#ffd166','#7fd1e3','#8fd694'].map((c,i)=>(
+                {['#a855f7','#0ea5e9','#84cc16','#ec4899','#a855f7','#0ea5e9','#84cc16','#ec4899','#a855f7','#0ea5e9','#84cc16','#ec4899'].map((c,i)=>(
                   <div key={i} className="pbx-flag"
                        style={{left:(4+i*8)+'%',borderTopColor:c,animationDelay:(-i*0.36)+'s'}}></div>
                 ))}
@@ -3335,18 +3398,28 @@ function App() {
               <div className="pbx-ball-x"><div className="pbx-ball"></div></div>
             </div>
             <div className="pb-overlay">
-              <div className="pb-kicker">{orgName}</div>
-              <div className="pb-title">🤸 Programs</div>
-              <div className="pb-sub">Classes, camps, leagues &amp; lessons.</div>
-              <div className="pb-pills">
-                {/* Keyed by the render check: the season and location filters are
-                    only real if a COUNT moves. "a checkbox rendered" passes on a
-                    filter that filters nothing. */}
-                <span className="pb-pill" data-prog-count={String(programCount)}><b>{programCount.toLocaleString()}</b> programs</span>
-                <span className="pb-pill" data-prog-sections={String(totals ? totals.sections : 0)}><b>{(totals ? totals.sections : 0).toLocaleString()}</b> sections</span>
-                <span className="pb-pill"><b>{(totals ? totals.enrollments : 0).toLocaleString()}</b> participants</span>
-                {bannerFill > 0 && <span className="pb-pill"><b>{bannerFill}%</b> avg fill</span>}
+              <div className="pb-copy">
+                {logoUrl && (
+                  <div className="pb-plate">
+                    <img src={logoUrl} alt="" onError={e => { e.target.parentNode.style.display='none'; }} />
+                  </div>
+                )}
+                <div style={{minWidth:0}}>
+                  <div className="pb-kicker">{orgName}</div>
+                  <div className="pb-title">🤸 Programs</div>
+                  <div className="pb-sub">Classes, camps, leagues &amp; lessons.</div>
+                  <div className="pb-pills">
+                    {/* Keyed by the render check: the season and location filters
+                        are only real if a COUNT moves. "a checkbox rendered"
+                        passes on a filter that filters nothing. */}
+                    <span className="pb-pill" data-prog-count={String(programCount)}><b>{programCount.toLocaleString()}</b> programs</span>
+                    <span className="pb-pill" data-prog-sections={String(totals ? totals.sections : 0)}><b>{(totals ? totals.sections : 0).toLocaleString()}</b> sections</span>
+                    <span className="pb-pill"><b>{(totals ? totals.enrollments : 0).toLocaleString()}</b> participants</span>
+                    {bannerFill > 0 && <span className="pb-pill"><b>{bannerFill}%</b> avg fill</span>}
+                  </div>
+                </div>
               </div>
+              <div className="pb-window">{dateRangeLabel}</div>
             </div>
           </div>
         )}
@@ -3783,10 +3856,10 @@ function App() {
                     var maxRev = top10.reduce(function(m,p){ return Math.max(m, p.netRevenue); }, 0) || 1;
                     return top10.map(function(p, i) {
                       var pct = Math.min(100, (p.netRevenue / maxRev * 100));
-                      var barColors = ['#d97706','#2563eb','#16a34a','#dc2626','#7c3aed','#0891b2','#ea580c','#64748b','#db2777','#059669'];
+                      var barColors = RECESS_CAT;
                       return <div key={p.name} style={{display:'flex',alignItems:'center',gap:6,marginBottom:5}}>
                         <span style={{fontSize:10,color:'#666',width:160,textAlign:'right',flexShrink:0,lineHeight:'1.3',wordBreak:'break-word'}} title={p.name}>{p.name}</span>
-                        <div style={{flex:1,height:18,background:'#f0eeea',borderRadius:3,overflow:'hidden'}}><div data-prog-toprev={String(Math.round(pct))} style={{width:pct+'%',height:'100%',background:barColors[i%barColors.length],borderRadius:3}} /></div>
+                        <div style={{flex:1,height:18,background:'var(--rec-brand-sand)',borderRadius:'var(--rec-radius-sm)',overflow:'hidden'}}><div data-prog-toprev={String(Math.round(pct))} style={{width:pct+'%',height:'100%',background:barColors[i%barColors.length],borderRadius:3}} /></div>
                         <span style={{fontSize:10,color:'#888',width:65,textAlign:'right',fontVariantNumeric:'tabular-nums'}}>{fmt$(p.netRevenue)}</span>
                       </div>;
                     });
@@ -3798,7 +3871,7 @@ function App() {
                     var top10p = progsSorted.filter(function(p){ return p.enrolled > 0 && p.status !== 'Canceled'; }).slice(0, 10);
                     var donutTotal = top10p.reduce(function(s,p){ return s + p.enrolled; }, 0);
                     var otherEnrolled = totalEnrolled - donutTotal;
-                    var donutColors = ['#d97706','#2563eb','#16a34a','#dc2626','#7c3aed','#0891b2','#ea580c','#64748b','#db2777','#059669'];
+                    var donutColors = RECESS_CAT;
                     // Build SVG donut
                     var slices = top10p.map(function(p,i){ return { label: p.name, val: p.enrolled, color: donutColors[i%donutColors.length] }; });
                     if (otherEnrolled > 0) slices.push({ label: 'Other', val: otherEnrolled, color: '#d1d5db' });
@@ -4739,7 +4812,7 @@ function App() {
             {!fillRateAnalytics && demoLoading && <ReportLoader />}
             {fillRateAnalytics && (() => {
               var fr = fillRateAnalytics;
-              var FILL_COLORS = ['#2563eb','#dc2626','#059669','#d97706','#7c3aed','#db2777','#0891b2','#4f46e5','#ea580c','#16a34a','#6d28d9','#e11d48'];
+              var FILL_COLORS = RECESS_CAT;
               var selected = fillSelected || fr.top.slice(0,5).map(s => s.section);
               var chartSections = fr.sections.filter(s => selected.indexOf(s.section) !== -1);
               return (
@@ -4790,7 +4863,7 @@ function App() {
                       feed with no Absent column — see hasAbsent. */}
                   {checkinSummary.hasAbsent && (
                     <div className="sum-card"><div className="sc-label">Marked Absent</div>
-                      <div className="sc-val" data-ci-absent-total={checkinSummary.totalAbsent} style={{color: checkinSummary.totalAbsent > 0 ? '#b45309' : undefined}}>{checkinSummary.totalAbsent.toLocaleString()}</div>
+                      <div className="sc-val" data-ci-absent-total={checkinSummary.totalAbsent} style={{color: checkinSummary.totalAbsent > 0 ? 'var(--rec-warning-ink)' : undefined}}>{checkinSummary.totalAbsent.toLocaleString()}</div>
                       <div className="sc-sub">{checkinSummary.totalAbsentees.toLocaleString()} {checkinSummary.totalAbsentees === 1 ? 'person' : 'people'} · undone marks excluded</div>
                     </div>
                   )}
