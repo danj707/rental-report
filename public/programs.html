@@ -234,18 +234,36 @@
     .report-blurb em { font-style: normal; font-weight: 600; }
     @media print { .report-blurb { background: #f5f5f5; -webkit-print-color-adjust: exact; } }
 
-    /* ── Summary cards ── */
-    .summary-cards { display: flex; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; }
-    .summary-card {
-      flex: 1; min-width: 120px; background: #f5f4f1;
-      border: 1px solid #ddd; border-radius: 6px; padding: 10px 14px;
-    }
-    .summary-card .card-label { font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.8px; color: #888; font-weight: 600; margin-bottom: 4px; }
-    .summary-card .card-value { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; color: #111; }
-    .summary-card .card-value.green { color: #15803d; }
-    .summary-card .card-value.red   { color: #b91c1c; }
-    .summary-card .card-value.blue  { color: #2563eb; }
-    .summary-card .card-sub { font-size: 10px; color: #999; margin-top: 2px; }
+    /* ── Summary cards ─────────────────────────────────────────────────
+       THE SECOND CARD FAMILY ON THIS PAGE, and the one Dan was looking at:
+       .sum-card is the Summary tab, .summary-card is Revenue, Participants
+       and Fill Rate. Restyling only the first left the Revenue tab in the old
+       treatment — bordered boxes, coloured left accents, green/blue/red
+       values — under a Recess masthead ("the metrics section still looks the
+       same", 2026-09-15). Same rules, same tokens, deliberately the same
+       arithmetic as .sum-cards above rather than a second set of numbers:
+       one strip, hairline dividers, VALUES STAY BLACK. Two copies of a
+       treatment is the drift this repo keeps recording, so if either moves,
+       both move. */
+    .summary-cards { display: flex; flex-wrap: wrap; gap: 1px; margin-bottom: 18px;
+      background: var(--rec-border-secondary); border-radius: var(--rec-radius-lg);
+      box-shadow: var(--rec-shadow-surface-md), 0 0 0 1px var(--rec-border-secondary); overflow: hidden; }
+    /* 170px, not the Summary tab's 190: this strip carries SEVEN cards and
+       that basis wrapped them 6 + 1 at 1280px — the lone card stretched across
+       a row of its own, which is the exact ragged wrap the Summary basis was
+       picked to avoid. The number is a function of the card COUNT, so the two
+       strips share every token and tune this one separately. */
+    .summary-card { background: var(--rec-bg-primary); padding: 15px 18px; flex: 1 1 170px; min-width: 0; }
+    .summary-card .card-label { font-size: var(--rec-body-sm); color: var(--rec-text-secondary); font-weight: 500; margin-bottom: 4px; text-transform: none; letter-spacing: 0; }
+    .summary-card .card-value { font-size: var(--rec-heading-lg); font-weight: 500; line-height: 1.2; letter-spacing: -.02em;
+      font-variant-numeric: tabular-nums; color: var(--rec-text-primary); }
+    /* Kept so every call site still resolves, and deliberately inert, for
+       the same reason the Summary tab's value classes are. Colour marks a
+       delta or a status; a figure is a figure. */
+    .summary-card .card-value.green,
+    .summary-card .card-value.red,
+    .summary-card .card-value.blue { color: var(--rec-text-primary); }
+    .summary-card .card-sub { font-size: 11.5px; color: var(--rec-text-tertiary); margin-top: 3px; }
     /* The Outstanding breakdown. Rows are label/value pairs on one line each,
        numbers right-aligned and never wrapped — the Fast Track lesson: a value
        clipped to "$3" is worse than a taller card. */
@@ -420,12 +438,6 @@
     .tab.active { color:var(--rec-text-primary); font-weight:600; border-bottom-color:var(--rec-brand-grass); }
     .tab .tab-badge { font-size:10px; padding:2px 7px; border-radius:10px; font-weight:600; }
     .tab .tab-lock { font-size:10px; padding:2px 7px; border-radius:10px; background:#f3f4f6; color:#9ca3af; }
-    /* ── KPI cards ── */
-    .kpi-row { display:flex; gap:12px; margin-bottom:16px; flex-wrap:wrap; }
-    .kpi { flex:1; min-width:140px; border:1px solid #e5e7eb; border-radius:8px; padding:14px 16px; background:#fff; }
-    .kpi-label { font-size:10px; text-transform:uppercase; letter-spacing:.5px; color:var(--accent,#6b7280); font-weight:600; margin-bottom:4px; }
-    .kpi-val { font-size:24px; font-weight:700; color:#111; font-variant-numeric:tabular-nums; line-height:1.1; }
-    .kpi-sub { font-size:11px; color:#9ca3af; margin-top:4px; }
     /* ── Observations ── */
     .obs { background:#f0fdf4; border:1px solid #bbf7d0; border-radius:8px; padding:16px; margin-bottom:16px; font-size:12.5px; line-height:1.6; color:#1a1a1a; }
     .obs-title { font-weight:700; font-size:11px; text-transform:uppercase; letter-spacing:.5px; color:#065f46; margin-bottom:10px; }
@@ -1197,6 +1209,64 @@ function ProgPanelCsv({ rows, name }) {
   return (
     <a href="#" className="panel-csv" onClick={go} data-panel-csv={name}
        title="Download this table as CSV">↓ CSV</a>
+  );
+}
+
+
+// ── The banner IS the on-screen header ──────────────────────────────
+// .report-header is print-only, so this is the only thing on screen that
+// names the org, the report and the window. It therefore has to render in
+// the LOADING and ERROR states as well: gated on rows, a failed query left a
+// bare card on the sand ground with nothing identifying it, which reads as a
+// broken PAGE rather than a report that could not load (Dan, 2026-09-15:
+// "hard to tell when the page is broken"). One component, three callers —
+// two banners would drift the first time the masthead changed.
+//
+// Below getParams on purpose: programs-season.spec.js slices module scope up
+// to that function and evaluates it with new Function, which cannot parse JSX.
+function ProgBanner({ orgName, logoUrl, dateRangeLabel, pills }) {
+  return (
+    <div className="pgm-banner">
+      <div className="pb-scene" aria-hidden="true">
+        <div className="pbx-cloud" style={{top:'27%',left:'8%',width:62,animationDuration:'38s'}}></div>
+        <div className="pbx-cloud" style={{top:'34%',left:0,width:42,animationDuration:'52s',animationDelay:'-14s'}}></div>
+        <div className="pbx-cloud" style={{top:'23%',left:'40%',width:34,animationDuration:'64s',animationDelay:'-30s'}}></div>
+        <div className="pbx-sun"></div>
+        <div className="pbx-hill h1"></div>
+        <div className="pbx-hill h2"></div>
+        <div className="pbx-hill h3"></div>
+        <div className="pbx-bunting">
+          <div className="cord"></div>
+          {['#a855f7','#0ea5e9','#84cc16','#ec4899','#a855f7','#0ea5e9','#84cc16','#ec4899','#a855f7','#0ea5e9','#84cc16','#ec4899'].map((c,i)=>(
+            <div key={i} className="pbx-flag"
+                 style={{left:(4+i*8)+'%',borderTopColor:c,animationDelay:(-i*0.36)+'s'}}></div>
+          ))}
+        </div>
+        {[0,1,2,3,4].map(i=>(
+          <div key={i} className="pbx-seed"
+               style={{left:(12+i*19)+'%',bottom:'18%',animationDuration:(11+i*3)+'s',animationDelay:(-i*4)+'s'}}></div>
+        ))}
+        <div className="pbx-ball-x"><div className="pbx-ball"></div></div>
+      </div>
+      <div className="pb-overlay">
+        <div className="pb-copy">
+          {logoUrl && (
+            <div className="pb-plate">
+              <img src={logoUrl} alt="" onError={e => { e.target.parentNode.style.display='none'; }} />
+            </div>
+          )}
+          <div style={{minWidth:0}}>
+            <div className="pb-kicker">{orgName}</div>
+            <div className="pb-title">🤸 Programs</div>
+            <div className="pb-sub">Classes, camps, leagues &amp; lessons.</div>
+            {/* No pills before the rows land — a count of zero beside a
+                spinner is a claim about the org, not about the load. */}
+            {pills && <div className="pb-pills">{pills}</div>}
+          </div>
+        </div>
+        <div className="pb-window">{dateRangeLabel}</div>
+      </div>
+    </div>
   );
 }
 
@@ -3314,29 +3384,45 @@ function App() {
     );
   }
 
+  // The masthead reads from meta, which the error and loading branches also
+  // have — derived once here, above the early returns, so the three callers of
+  // ProgBanner cannot disagree about what the page is called.
+  const orgName = meta.org_name || (meta.org_slug ? meta.org_slug.charAt(0).toUpperCase() + meta.org_slug.slice(1) : orgSlug);
+  const logoUrl = meta.logo_url || null;
+  // The LOADED window, never the toolbar's pending one: stamping the boxes on a
+  // page whose query failed claims a window that was never answered. Empty
+  // until something lands, so the banner simply omits it.
+  const windowLabel = [loadedStart && formatDisplayDate(loadedStart), loadedEnd && formatDisplayDate(loadedEnd)].filter(Boolean).join(' – ');
+
   // ── Error / Loading ────────────────────────────────────────────────
   if (error && !rows) return (
     <div>{renderToolbar()}
       <StaleCacheBanner meta={meta} />
-      <div className="page"><div className="error" style={{textAlign:'center',padding:'3rem 1rem'}}>
+      <div className="page">
+        {!isPrint && <ProgBanner orgName={orgName} logoUrl={logoUrl} dateRangeLabel={windowLabel} />}
+        <div className="error" style={{textAlign:'center',padding:'3rem 1rem'}}>
         <p style={{fontSize:'2.5rem',marginBottom:'0.5rem'}}>😔</p>
         <p style={{fontSize:'1.1rem',color:'#666'}}>Looks like reporting has encountered an issue — try loading this report again later.</p>
             <p style={{fontSize:'0.8rem',color:'#b91c1c',marginTop:'0.75rem',fontFamily:'monospace',background:'#fef2f2',padding:'8px 14px',borderRadius:6,display:'inline-block',maxWidth:500,wordBreak:'break-word'}}>{error}</p>
-      </div></div>
+        </div>
+      </div>
     </div>
   );
 
   if (!rows) return (
     <div>{renderToolbar()}
-      <div className="page"><ReportLoader /></div>
+      <div className="page">
+        {!isPrint && <ProgBanner orgName={orgName} logoUrl={logoUrl} dateRangeLabel={windowLabel} />}
+        <ReportLoader />
+      </div>
     </div>
   );
 
   const now = new Date();
   const runDate = `${String(now.getMonth()+1).padStart(2,'0')}/${String(now.getDate()).padStart(2,'0')}/${now.getFullYear()} @ ${now.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit',hour12:true}).toLowerCase()}`;
-  const orgName = meta.org_name || (meta.org_slug ? meta.org_slug.charAt(0).toUpperCase() + meta.org_slug.slice(1) : orgSlug);
-  const logoUrl = meta.logo_url || null;
-  const dateRangeLabel = [loadedStart && formatDisplayDate(loadedStart), loadedEnd && formatDisplayDate(loadedEnd)].filter(Boolean).join(' – ') || 'All Dates';
+  // Rows landed, so an empty window genuinely means all-time. Before they land
+  // it means nothing loaded, which is why windowLabel is bare above.
+  const dateRangeLabel = windowLabel || 'All Dates';
 
   // Column span helpers
   const totalCols  = 13 + (showRegModeCol ? 1 : 0) + (showWaitlist ? 1 : 0) + (showCancelsCol ? 2 : 0);
@@ -3375,53 +3461,16 @@ function App() {
 
         {/* Animated header — park at golden hour, scene under the text. */}
         {!isPrint && (
-          <div className="pgm-banner">
-            <div className="pb-scene" aria-hidden="true">
-              <div className="pbx-cloud" style={{top:'27%',left:'8%',width:62,animationDuration:'38s'}}></div>
-              <div className="pbx-cloud" style={{top:'34%',left:0,width:42,animationDuration:'52s',animationDelay:'-14s'}}></div>
-              <div className="pbx-cloud" style={{top:'23%',left:'40%',width:34,animationDuration:'64s',animationDelay:'-30s'}}></div>
-              <div className="pbx-sun"></div>
-              <div className="pbx-hill h1"></div>
-              <div className="pbx-hill h2"></div>
-              <div className="pbx-hill h3"></div>
-              <div className="pbx-bunting">
-                <div className="cord"></div>
-                {['#a855f7','#0ea5e9','#84cc16','#ec4899','#a855f7','#0ea5e9','#84cc16','#ec4899','#a855f7','#0ea5e9','#84cc16','#ec4899'].map((c,i)=>(
-                  <div key={i} className="pbx-flag"
-                       style={{left:(4+i*8)+'%',borderTopColor:c,animationDelay:(-i*0.36)+'s'}}></div>
-                ))}
-              </div>
-              {[0,1,2,3,4].map(i=>(
-                <div key={i} className="pbx-seed"
-                     style={{left:(12+i*19)+'%',bottom:'18%',animationDuration:(11+i*3)+'s',animationDelay:(-i*4)+'s'}}></div>
-              ))}
-              <div className="pbx-ball-x"><div className="pbx-ball"></div></div>
-            </div>
-            <div className="pb-overlay">
-              <div className="pb-copy">
-                {logoUrl && (
-                  <div className="pb-plate">
-                    <img src={logoUrl} alt="" onError={e => { e.target.parentNode.style.display='none'; }} />
-                  </div>
-                )}
-                <div style={{minWidth:0}}>
-                  <div className="pb-kicker">{orgName}</div>
-                  <div className="pb-title">🤸 Programs</div>
-                  <div className="pb-sub">Classes, camps, leagues &amp; lessons.</div>
-                  <div className="pb-pills">
-                    {/* Keyed by the render check: the season and location filters
-                        are only real if a COUNT moves. "a checkbox rendered"
-                        passes on a filter that filters nothing. */}
-                    <span className="pb-pill" data-prog-count={String(programCount)}><b>{programCount.toLocaleString()}</b> programs</span>
-                    <span className="pb-pill" data-prog-sections={String(totals ? totals.sections : 0)}><b>{(totals ? totals.sections : 0).toLocaleString()}</b> sections</span>
-                    <span className="pb-pill"><b>{(totals ? totals.enrollments : 0).toLocaleString()}</b> participants</span>
-                    {bannerFill > 0 && <span className="pb-pill"><b>{bannerFill}%</b> avg fill</span>}
-                  </div>
-                </div>
-              </div>
-              <div className="pb-window">{dateRangeLabel}</div>
-            </div>
-          </div>
+          <ProgBanner orgName={orgName} logoUrl={logoUrl} dateRangeLabel={dateRangeLabel}
+            pills={<React.Fragment>
+              {/* Keyed by the render check: the season and location filters
+                  are only real if a COUNT moves. "a checkbox rendered"
+                  passes on a filter that filters nothing. */}
+              <span className="pb-pill" data-prog-count={String(programCount)}><b>{programCount.toLocaleString()}</b> programs</span>
+              <span className="pb-pill" data-prog-sections={String(totals ? totals.sections : 0)}><b>{(totals ? totals.sections : 0).toLocaleString()}</b> sections</span>
+              <span className="pb-pill"><b>{(totals ? totals.enrollments : 0).toLocaleString()}</b> participants</span>
+              {bannerFill > 0 && <span className="pb-pill"><b>{bannerFill}%</b> avg fill</span>}
+            </React.Fragment>} />
         )}
 
         {/* Tabs */}
@@ -4010,12 +4059,12 @@ function App() {
                 tab's "Collected in Period" showed period_NET while this tab's
                 card of the same name shows period_RECEIVED — one label, two
                 different numbers, on one report. */}
-            <div className="summary-card" style={{borderLeft:'3px solid #16a34a'}}>
+            <div className="summary-card">
               <div className="card-label">Lifetime Net Revenue</div>
               <div className="card-value green">{fmtMoney(totals.netRevenue)}</div>
               <div className="card-sub">all-time for these programs, not just this period</div>
             </div>
-            <div className="summary-card" style={{borderLeft:'3px solid #2563eb'}}>
+            <div className="summary-card">
               <div className="card-label">Collected in Period</div>
               <div className="card-value blue">{fmtMoney(totals.periodReceived)}</div>
               <div className="card-sub">payments received in date range</div>
@@ -4025,7 +4074,7 @@ function App() {
               <div className="card-value red">{fmtMoney(totals.periodRefunds)}</div>
               <div className="card-sub">refunds processed in date range</div>
             </div>
-            <div className="summary-card" style={{borderLeft:'3px solid #16a34a'}}>
+            <div className="summary-card">
               <div className="card-label">Period Net</div>
               <div className={`card-value ${fmtNum(totals.periodNet) < 0 ? 'red' : 'green'}`}>{fmtMoney(totals.periodNet)}</div>
               <div className="card-sub">collected minus refunds for period</div>
@@ -4573,11 +4622,11 @@ function App() {
             {retError && <div style={{textAlign:'center',padding:40,color:'#dc2626'}}>Error: {retError}</div>}
             {retStats && (<React.Fragment>
               <div className="summary-cards">
-                <div className="summary-card"><div className="card-label">Org-Wide Retention</div>{(() => { var fp = activityFilter ? retStats.programs.filter(function(p){return getProgActivity(p.name)===activityFilter;}) : retStats.programs; var tp=fp.reduce(function(a,p){return a+p.total;},0); var tr=fp.reduce(function(a,p){return a+p.returners;},0); var pct=tp>0?Math.round(tr/tp*100):0; return <React.Fragment><div className="card-value" style={{color:pct>=30?'#16a34a':pct>=15?'#d97706':'#dc2626'}}>{pct}%</div><div className="card-sub">{tr.toLocaleString()} of {tp.toLocaleString()} came back{activityFilter ? ' in '+activityFilter : ''}</div></React.Fragment>; })()}</div>
+                <div className="summary-card"><div className="card-label">Org-Wide Retention</div>{(() => { var fp = activityFilter ? retStats.programs.filter(function(p){return getProgActivity(p.name)===activityFilter;}) : retStats.programs; var tp=fp.reduce(function(a,p){return a+p.total;},0); var tr=fp.reduce(function(a,p){return a+p.returners;},0); var pct=tp>0?Math.round(tr/tp*100):0; return <React.Fragment><div className="card-value" style={{color:pct>=30?'var(--rec-success-ink)':pct>=15?'var(--rec-warning-ink)':'var(--rec-danger-ink)'}}>{pct}%</div><div className="card-sub">{tr.toLocaleString()} of {tp.toLocaleString()} came back{activityFilter ? ' in '+activityFilter : ''}</div></React.Fragment>; })()}</div>
                 <div className="summary-card"><div className="card-label">Programs w/ Returners</div><div className="card-value">{retStats.progsWithReturners}</div><div className="card-sub">of {retStats.programs.length} total</div></div>
                 <div className="summary-card"><div className="card-label">Avg Sections/Person</div><div className="card-value">{retStats.avgSec}</div><div className="card-sub">weighted across all programs</div></div>
                 {retStats.topRetaining && <div className="summary-card"><div className="card-label">Top Retaining</div><div className="card-value" style={{fontSize:14}}>{retStats.topRetaining.name}</div><div className="card-sub">{retStats.topRetaining.retPct}% retention ({retStats.topRetaining.total} participants)</div></div>}
-                {retStats.topActivity && !activityFilter && <div className="summary-card" style={{borderLeft:'3px solid #6d28d9'}}><div className="card-label">Top Activity</div><div className="card-value" style={{color:'#6d28d9'}}>{retStats.topActivity.retPct}%</div><div className="card-sub">{retStats.topActivity.name} ({retStats.topActivity.returners} of {retStats.topActivity.total} returned)</div></div>}
+                {retStats.topActivity && !activityFilter && <div className="summary-card"><div className="card-label">Top Activity</div><div className="card-value">{retStats.topActivity.retPct}%</div><div className="card-sub">{retStats.topActivity.name} ({retStats.topActivity.returners} of {retStats.topActivity.total} returned)</div></div>}
               </div>
 
               {(() => {
@@ -4966,7 +5015,7 @@ function App() {
                     <div className="summary-card"><div className="card-label">Sessions in Range</div><div className="card-value">{sessInRange} / {totalSessions}</div><div className="card-sub">{totalSessions > 0 ? Math.round(sessInRange/totalSessions*100) + '% of program' : '—'}</div></div>
                     <div className="summary-card"><div className="card-label">Registrants</div><div className="card-value">{uniqueNames}</div><div className="card-sub">{activeCount} active{canceledCount > 0 ? ', ' + canceledCount + ' canceled' : ''}</div></div>
                     <div className="summary-card"><div className="card-label">Full Net Revenue</div><div className="card-value">{fmtMoney(sumNet)}</div><div className="card-sub">Entire registration period</div></div>
-                    <div className="summary-card" style={{borderLeft:'3px solid #6366f1'}}><div className="card-label">Prorated Net Revenue</div><div className="card-value" style={{color:'#6366f1'}}>{fmtMoney(sumProratedNet)}</div><div className="card-sub">{prorateLabel}</div></div>
+                    <div className="summary-card"><div className="card-label">Prorated Net Revenue</div><div className="card-value">{fmtMoney(sumProratedNet)}</div><div className="card-sub">{prorateLabel}</div></div>
                   </div>
                   <div className="table-scroll">
                   <table className="prog-table detail-table">

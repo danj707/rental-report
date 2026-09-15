@@ -1849,8 +1849,17 @@ const STUBS = [
   // The window matters here too: the Report Wizard reads `programs` as a source
   // and prints the range the feed covers, so a stub without one silently breaks
   // that case rather than this one.
-  { match: /\/programs\/api\/data/,   body: () => ({ rows: programRows(),
-      meta: { window: { start: "2026-08-19", end: "2026-08-26" } } }) },
+  /* `timeout504` here as well as on memberships, because .report-header is
+     PRINT-ONLY on this page — so the banner is the only thing on screen naming
+     the org and the report, and a failed feed used to leave a bare card with
+     nothing identifying it. Only a browser can tell that apart from a page that
+     failed to render at all. */
+  { match: /\/programs\/api\/data/,
+    status: () => (STUB_MODE === "timeout504" ? 504 : 200),
+    body: () => (STUB_MODE === "timeout504"
+      ? { error: "Metabase query timed out after 60s+120s retry — try a shorter date range or refresh" }
+      : { rows: programRows(),
+          meta: { window: { start: "2026-08-19", end: "2026-08-26" } } }) },
   { match: /\/directors-report\/api\/quarters/, body: () => ({ ok: true, quarters: [{ year: 2026, q: 2, key: "2026-Q2", label: "Q2 2026", stored: true }] }) },
   { match: /\/directors-report\/api\/quarter/,  body: () => directorsQuarter() },
   /* A `timeout504` mode, so the REMEDY can be shown to reach the screen. Dan
@@ -4915,6 +4924,29 @@ const CASES = [
         const t = document.body.innerText;
         const m = t.match(/Metabase query[^\n]*/);
         document.body.setAttribute('data-feed-err', m ? m[0].trim() : '');
+      });
+    } },
+  /* THE MASTHEAD SURVIVES A FAILED FEED. .report-header is gated on isPrint, so
+     the banner is the whole on-screen header — gated on rows it left a bare
+     card on the sand ground, and Dan could not tell that from a broken page
+     ("hard to tell when the page is broken", 2026-09-15). Keyed on the ORG NAME
+     being on screen beside the error, not on .pgm-banner existing: an empty
+     banner renders the same element. */
+  { name: "programs · a failed feed still says which report this is",
+    path: "/{org}/programs", stubMode: "timeout504", expectsConsoleError: true,
+    needs: "body[data-prog-errhdr='1'][data-prog-errmsg*='shorter date range']",
+    absent: ".pgm-banner .pb-pills",
+    act: async page => {
+      await page.waitForFunction(() => /shorter date range|Server returned/.test(document.body.innerText),
+                                 { timeout: 20000 });
+      await page.evaluate(() => {
+        const b = document.querySelector('.pgm-banner');
+        const k = b && b.querySelector('.pb-kicker');
+        const t = b && b.querySelector('.pb-title');
+        document.body.setAttribute('data-prog-errhdr',
+          (k && k.textContent.trim() && t && /Programs/.test(t.textContent)) ? '1' : '0');
+        const m = document.body.innerText.match(/Metabase query[^\n]*|Server returned \d+/);
+        document.body.setAttribute('data-prog-errmsg', m ? m[0].trim() : '');
       });
     } },
   /* CLICKING RETENTION MUST NOT MOVE THE DATE FILTER. Dan, twice: "switching

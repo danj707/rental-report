@@ -21,6 +21,76 @@ docs page is a client-rendered SPA and **Chromium here cannot reach vercel**, so
 the way to *see* a story is a tiny local mirror that shells out to `curl` on a
 miss — `curl` honours the sandbox proxy and Chromium does not.
 
+### TWO CARD FAMILIES ON ONE PAGE, AND THE FIRST PASS RESTYLED ONE
+
+Dan, on the deployed preview: **"the metrics section still looks the same."**
+
+`.sum-card` is the **Summary** tab. `.summary-card` is **Revenue, Participants,
+Retention and Fill Rate** — a second, copy-pasted family with its own label,
+value and sub classes. The first pass found the first, so Dan opened the
+Revenue tab to a Recess masthead over the old treatment: bordered boxes with
+gaps, **coloured left accent bars in `#16a34a` and `#2563eb`** (reserved
+semantic colours spent on decoration, and inline, so no stylesheet could take
+them back), and green/blue/red figures.
+
+Both strips now read the same tokens and the same two rules. **Asserted as a
+PAIR**, so neither can move alone — the guard is what stops the third pass
+finding a third family.
+
+- **THE BASIS IS DELIBERATELY NOT SHARED, and the spec says so.** It is a
+  function of the CARD COUNT: nine on Summary at 190px wraps 5+4 at 1280, and
+  seven on Revenue at that basis wrapped **6 + 1** — the lone stretched card
+  the Summary basis was picked to avoid, shipped on the other tab. Revenue is
+  **170px** and lands all seven on one row. What IS asserted shared is the
+  divider, the radius, the padding and the value colour.
+- **A STATUS KEEPS ITS COLOUR — that is the rule, not an exception.** Org-Wide
+  Retention is genuinely good/warning/bad, so it stays coloured, through
+  `--rec-success-ink` / `--rec-warning-ink` / `--rec-danger-ink` rather than a
+  raw hex. Top Activity and Prorated Net Revenue were violet **decoration** and
+  lost theirs; a violet figure says nothing a black one does not.
+- **A THIRD FAMILY WAS STYLED AND RENDERED NOWHERE.** `.kpi` / `.kpi-row` /
+  `.kpi-val` had no call site anywhere on the page — deleted, because a card
+  treatment with no caller makes this look like three things to keep in sync.
+
+**A COMMENT OF MINE TRIPPED ITS OWN GUARD, Nth instance.** I wrote *"the same
+reason .sc-green and friends are"* above the new override, and the existing
+assertion slices with `/\.sc-green[^{]*\{/` — so it matched the COMMENT and
+read the next rule down. A mutation that re-coloured the Revenue values was
+then caught by an assertion naming the Summary tab. Reworded rather than
+teaching the regex to skip comments.
+
+### THE ERROR PAGE STOPPED SAYING WHICH REPORT IT WAS
+
+Dan, on a 504 at `/norman/programs`: **"hard to tell when the page is broken."**
+
+**The 504 was load, not a break** — card 17295 is the parked Programs card and
+`reportFetchError` was doing its job, surfacing the route's own *"try a shorter
+date range"* rather than a bare status. What was wrong is that **gating
+`.report-header` on `isPrint` left the banner as the only on-screen masthead,
+and the banner rendered only in the data-loaded branch.** So a failed query
+produced a bare card on the sand ground naming no org, no report and no
+window — indistinguishable from a page that failed to render at all.
+
+`ProgBanner` is one component with **three callers** (loading, error, loaded).
+Two banners would drift the first time the masthead changed.
+
+- **NO PILLS before the rows land.** A count of zero beside a spinner is a
+  claim about the org rather than about the load.
+- **THE WINDOW IS THE LOADED ONE, AND BLANK WHEN NOTHING LOADED.** Stamping the
+  toolbar's pending boxes on a page whose query failed claims a window that was
+  never answered — the `recWindowLabel` rule. `'All Dates'` is applied only in
+  the loaded branch, where an empty window genuinely means all-time.
+- **It sits below `getParams`** on purpose: `programs-season.spec.js` slices
+  module scope up to that function and evaluates it with `new Function`, which
+  cannot parse JSX. Same reason `ProgPanelCsv` is there.
+
+**Only a browser can see any of this** — the component reads correctly either
+way, so `programs · a failed feed still says which report this is` drives the
+`timeout504` stub and keys on the **org name and title being on screen beside
+the error**, with the pills required ABSENT. Keying on `.pgm-banner` existing
+would pass on an empty banner. Verified to fail by name on the bug as it
+shipped while the other 79 cases kept passing.
+
 ### THE GAP IT CLOSES, COUNTED RATHER THAN ASSERTED
 
 Across `public/*.html` before this: **769 distinct hex colours, 19
@@ -119,7 +189,7 @@ so the decoration doubles as the legend.
 
 ### Guards
 
-`scripts/recess-palette.spec.js` (**37 assertions, in CI**): the two palette
+`scripts/recess-palette.spec.js` (**55 assertions, in CI**): the two palette
 copies are equal, no reserved semantic colour sits in a series slot, all four
 charts read the one list, the `.sc-*` value colours resolve to
 `--rec-text-primary`, `.report-header` is gated on `isPrint`, the banner carries
