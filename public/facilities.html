@@ -1311,7 +1311,11 @@
     // Bunting across the top of the shelter scene, and a few balloons rising off
     // the lawn. Random placement is fine here (decor, not data) — the same
     // treatment as fbxStars/fbxSnow above.
-    function fbxBunting() { const c = ['#fca5a5', '#fcd34d', '#a7f3d0', '#bfdbfe', '#fbcfe8']; let s = ''; for (let i = 0; i < 18; i++) s += '<i style="left:' + (3 + i * 5.3).toFixed(1) + '%;border-top-color:' + c[i % c.length] + ';animation-delay:-' + (i * 0.13).toFixed(2) + 's"></i>'; return s; }
+    // The pennants are the categorical four, as on the Programs banner, so the
+    // decoration doubles as the legend instead of being a fifth colour scheme on
+    // a page that now has one. (fbxBalloons below is the minigame and keeps its
+    // own colours — that is play, not data.)
+    function fbxBunting() { const c = (window.RECESS_CAT || []).slice(0, 4); let s = ''; for (let i = 0; i < 18; i++) s += '<i style="left:' + (3 + i * 5.3).toFixed(1) + '%;border-top-color:' + c[i % c.length] + ';animation-delay:-' + (i * 0.13).toFixed(2) + 's"></i>'; return s; }
     function fbxBalloons() { const c = ['#f87171', '#fbbf24', '#60a5fa', '#f472b6', '#34d399']; let s = ''; for (let i = 0; i < 5; i++) s += '<div class="fbx-balloon" style="left:' + (6 + i * 7).toFixed(1) + '%;background:' + c[i % c.length] + ';animation-duration:' + (7 + i * 1.4).toFixed(1) + 's;animation-delay:-' + (i * 2.1).toFixed(1) + 's"></div>'; return s; }
     // A picnic shelter: gable roof on four posts, table underneath. Drawn once as
     // static SVG — everything that moves in this scene moves in CSS.

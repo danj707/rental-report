@@ -2152,7 +2152,10 @@ function App() {
           // ── Fill Rate tab ──
           if (ct.key === 'fillrate' && fillRateAnalytics) {
             var fr = fillRateAnalytics;
-            var FILL_COLORS = ['#2563eb','#dc2626','#059669','#d97706','#7c3aed','#db2777','#0891b2','#4f46e5','#ea580c','#16a34a','#6d28d9','#e11d48'];
+            // Four of the twelve this replaced were the reserved four EXACTLY —
+            // #2563eb info, #dc2626 danger, #16a34a success, #d97706 warning — so a
+            // reader could not tell whether a red line meant a section or meant bad.
+            var FILL_COLORS = window.RECESS_CAT;
             // Section picker state: default to top 5
             var selected = fillSelected || fr.top.slice(0,5).map(function(s){return s.section;});
             var chartSections = fr.sections.filter(function(s){return selected.indexOf(s.section)!==-1;});

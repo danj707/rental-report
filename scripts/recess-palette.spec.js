@@ -37,6 +37,18 @@ const path = require("path");
 const ROOT = path.join(__dirname, "..");
 const css = fs.readFileSync(path.join(ROOT, "public/recess-tokens.css"), "utf8");
 const prog = fs.readFileSync(path.join(ROOT, "public/programs.html"), "utf8");
+const skin = fs.readFileSync(path.join(ROOT, "public/recess-report.css"), "utf8");
+const openpdf = fs.readFileSync(path.join(ROOT, "public/open-pdf.js"), "utf8");
+
+/* Every page on the layer. Listed rather than globbed, because the set is a
+   DECISION: the three public customer pages, the retired reports and the QBR
+   are deliberately off it, and a glob would quietly sweep them in. */
+const LAYER = ["court-utilization", "custom-report", "directors-report", "facilities",
+  "facility", "fasttrack", "gl", "historic", "instructor-payout", "lessons",
+  "memberships", "opportunities", "products", "programs-schedule", "programs",
+  "qoq", "roster", "users", "waitlist"];
+const pageSrc = Object.fromEntries(LAYER.map(n =>
+  [n, fs.readFileSync(path.join(ROOT, `public/${n}.html`), "utf8")]));
 
 let passed = 0;
 const failures = [];
@@ -78,12 +90,18 @@ ok(/<link[^>]+href="\/recess-tokens\.css"/.test(prog),
    "programs.html does not link /recess-tokens.css — the tokens resolve to nothing " +
    "and every var() silently falls back");
 
-const jsm = prog.match(/var RECESS_CAT = \[([^\]]+)\];/);
-ok(!!jsm, "programs.html has no RECESS_CAT array");
+/* The JS copy lives in open-pdf.js, which every report page already loads.
+   It was in programs.html while one page was on the layer; leaving it there
+   while sweeping the rest would have made it the SIXTH copy of this list. */
+const jsm = openpdf.match(/window\.RECESS_CAT = \[([^\]]+)\]/s);
+ok(!!jsm, "open-pdf.js no longer declares window.RECESS_CAT — every page that " +
+          "reads it now charts with `undefined` and every series goes blank");
 const jsCat = jsm ? jsm[1].split(",").map(x => x.trim().replace(/'/g, "").toLowerCase()) : [];
 ok(JSON.stringify(jsCat) === JSON.stringify(cssCat),
-   "RECESS_CAT in programs.html has DRIFTED from --rec-cat-1..8 in recess-tokens.css — " +
-   "js " + JSON.stringify(jsCat) + " vs css " + JSON.stringify(cssCat));
+   "window.RECESS_CAT in open-pdf.js has DRIFTED from --rec-cat-1..8 in " +
+   "recess-tokens.css — js " + JSON.stringify(jsCat) + " vs css " + JSON.stringify(cssCat));
+ok((openpdf.match(/window\.RECESS_CAT\s*=\s*\[/g) || []).length === 1,
+   "open-pdf.js declares window.RECESS_CAT more than once");
 
 // ── 3. the reserved four are not in the categorical order ──────────────
 jsCat.forEach((hex, i) => {
@@ -196,6 +214,141 @@ ok(!/\.kpi-val\s*\{/.test(prog),
    "the dead .kpi-* block is back. Nothing on this page renders it, and a card " +
    "treatment with no call site is what sends the next person looking for the " +
    "panel it belonged to — and makes this look like three families to keep in sync");
+
+// ── 11. THE LAYER: every report page is on it, and the link order is the
+//        whole mechanism ─────────────────────────────────────────────────
+// The skin only wins because it is linked AFTER the page's own <style>. Move
+// that link above, and on equal specificity every page silently reverts to
+// its old card treatment while still LOOKING linked — which is the most
+// expensive way for this to break, because nothing errors.
+LAYER.forEach(n => {
+  const src = pageSrc[n];
+  ok(/<link[^>]+href="\/recess-tokens\.css"/.test(src),
+     n + ".html does not link /recess-tokens.css — every var() on it silently " +
+     "falls back and the page renders unstyled rather than broken");
+  const skinAt  = src.indexOf('href="/recess-report.css"');
+  const styleAt = src.indexOf("</style>");
+  ok(skinAt > -1, n + ".html is not on the Recess layer — it links no recess-report.css");
+  ok(skinAt > styleAt,
+     n + ".html links recess-report.css BEFORE its own </style>. The skin then " +
+     "loses every tie to the page's own copy of the card treatment and the whole " +
+     "sweep reverts on that page, with nothing on screen or in a log to say so");
+});
+
+// ── 12. NO SIXTH FAMILY ───────────────────────────────────────────────────
+// The first Programs pass restyled `.sum-card`, shipped, and Dan opened the
+// Revenue tab to `.summary-card` still wearing the old treatment. So the
+// strips are ENUMERATED rather than listed by hand: a KPI card is a rule that
+// paints a background and pads itself AND has both a label-ish and a value-ish
+// child, which is what separates it from the buttons, chips and tooltips that
+// are card-shaped but are not cards. Anything found that the skin does not
+// name has to be added here with a reason, so a new family fails this spec
+// instead of shipping half-restyled.
+const NOT_A_STRIP = {
+  ".cal-hover-card": "facility — a hover card over the calendar, not a KPI strip",
+  ".res-bar-tip":    "facility — a tooltip on the residency bar",
+  ".flow-node":      "fasttrack — a node on the flow board; it is a diagram, not a strip",
+  ".contacts-sub-row": "roster — a table sub-row",
+  ".tot": "opportunities — its six family hues ARE the classification, each one " +
+          "the same hue its own findings wear, and opportunities.spec.js asserts " +
+          "the families stay tellable apart. Restyling them would delete a guarded " +
+          "design, not a decoration.",
+};
+const VALUEISH = /(^|-)(val|value|num|v)$/;
+const LABELISH = /(^|-)(lab|label|lbl|cat|k|l)$/;
+LAYER.forEach(n => {
+  const head = pageSrc[n].slice(0, pageSrc[n].indexOf("</style>"));
+  const seen = new Set();
+  const rule = /^[ \t]*(\.[a-z0-9-]+)[ \t]*\{([^{}]*)\}/gm;
+  let m;
+  while ((m = rule.exec(head))) {
+    const sel = m[1], body = m[2];
+    if (!/\bbackground/.test(body) || !/\bpadding/.test(body)) continue;
+    const kid = new RegExp(sel.replace(".", "\\.") + "\\s+\\.([a-z0-9-]+)", "g");
+    const kids = [];
+    let k; while ((k = kid.exec(head))) kids.push(k[1]);
+    if (!kids.some(x => VALUEISH.test(x)) || !kids.some(x => LABELISH.test(x))) continue;
+    if (seen.has(sel)) continue;
+    seen.add(sel);
+    ok(skin.includes(sel) || NOT_A_STRIP[sel],
+       n + ".html has a KPI card `" + sel + "` the skin does not style and that is " +
+       "not recorded as deliberate. That is the Revenue-tab miss: one page wearing " +
+       "two treatments, which reads as a half-finished restyle");
+  }
+});
+
+// ── 13. the accent bars cannot come back ──────────────────────────────────
+// Fifty-four of these were removed. Each spent a RESERVED colour on
+// decoration, and being on a compound selector each out-specified the skin,
+// so a single one reappearing is visible on screen and invisible in review.
+LAYER.forEach(n => {
+  const head = pageSrc[n].slice(0, pageSrc[n].indexOf("</style>"));
+  const bars = head.match(/\.[a-z-]*(?:card|kpi|hl)[a-z-]*\.[a-z-]+[^{]*\{[^}]*border-(?:left|top)-color\s*:\s*#/g) || [];
+  ok(bars.length === 0,
+     n + ".html has a coloured accent bar on a card again (" + bars.length + "): " +
+     (bars[0] || "").slice(0, 70) + " — a card is not a status, and on a compound " +
+     "selector it beats the skin");
+});
+
+// ── 14. one categorical list, read by every chart that needs one ──────────
+// facility carried eighteen colours, memberships and users twelve each, and
+// FOUR of users' twelve were the reserved four EXACTLY. A page declaring its
+// own is how this platform got to fourteen palettes.
+[["facility", "DEFAULT_PALETTE"], ["memberships", "RET_COLORS"],
+ ["users", "FILL_COLORS"], ["programs", "RECESS_CAT"]].forEach(([n, name]) => {
+  ok(new RegExp(name + "\\s*=\\s*window\\.RECESS_CAT\\b").test(pageSrc[n]),
+     n + ".html's " + name + " no longer reads window.RECESS_CAT — it has grown " +
+     "its own palette back");
+});
+// A scale that is ORDERED is neither categorical nor semantic, so Recess's
+// separation does not govern it: a heat ramp runs low-to-high and a medal runs
+// first-to-third, and recolouring either to purple/sky/lime would delete the
+// meaning rather than unify it. Named one by one, so the exemption cannot
+// quietly widen into "any list I did not want to change".
+const NOT_A_SERIES = {
+  "facilities:HM_COLORS":  "sequential — the hour-coverage heat map",
+  "facilities:CAMP_RAMP":  "sequential — campsite occupancy",
+  "facilities:RAMP6":      "sequential — six-step occupancy",
+  "facilities:RAMP":       "sequential — the court heat map",
+  "facilities:OE_RAMP":    "sequential — outdoor-event hour coverage",
+  "memberships:rankColors": "ordinal — gold/silver/bronze for rank 1-3 on Top Members. " +
+                            "A medal is a convention a reader already knows; it is not " +
+                            "an identity palette and not a status.",
+  // The hidden banner minigames. Their colours are ART, not a series: nothing
+  // on screen reads them as meaning anything, and painting a balloon --rec-cat-1
+  // would be applying a data rule to a toy. The banner BUNTING is the opposite
+  // case and was swapped, because it sits over the chart it decorates.
+  "facilities:c":    "decor — the balloon art in the banner scene",
+  "facilities:cols": "decor — the banner minigame's own sprites",
+  "facilities:BCOL": "decor — the Bounce House minigame's balloons",
+};
+LAYER.forEach(n => {
+  const lists = [...pageSrc[n].matchAll(
+    /(?:var|const|let)\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*\[\s*'#[0-9a-f]{3,6}'\s*,\s*'#[0-9a-f]{3,6}'\s*,\s*'#[0-9a-f]{3,6}'/gi)];
+  lists.forEach(m => {
+    ok(!!NOT_A_SERIES[n + ":" + m[1]],
+       n + ".html declares its own colour list `" + m[1] + "`. Identity colours come " +
+       "from window.RECESS_CAT — this platform reached FOURTEEN palettes by each page " +
+       "keeping its own. If it is an ordered scale rather than a categorical one, say " +
+       "so in NOT_A_SERIES with the reason — an ordered scale, or art");
+  });
+});
+
+// ── 15. the skin spends no reserved colour on decoration ──────────────────
+// The skin may name a reserved colour ONLY through a semantic token — an
+// insight's risk border, a delta's direction. A raw reserved hex in it would
+// put the thing this whole change removes into the shared layer, where it
+// would reach every page at once.
+Object.entries(RESERVED).forEach(([hex, meaning]) => {
+  ok(!skin.toLowerCase().includes(hex),
+     "recess-report.css hardcodes " + hex + ", the reserved " + meaning + " colour. " +
+     "A status in the shared skin reads --rec-" + (meaning === "info" ? "info" : meaning) +
+     "; a raw hex there is the accent bar back, on every page at once");
+});
+ok(/var\(--rec-success\)/.test(skin) && /var\(--rec-danger\)/.test(skin),
+   "recess-report.css no longer colours any status. A delta and an insight's " +
+   "risk border are genuine states and must keep their colour — the rule is that " +
+   "colour marks a status, not that colour is gone");
 
 if (failures.length) {
   console.error("\n" + failures.length + " FAILED:");

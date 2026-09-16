@@ -1,5 +1,159 @@
 # Project notes for Claude
 
+## THE RECESS SWEEP — ONE SKIN, NINETEEN REPORTS (2026-09-16)
+
+Dan, on the Programs page: *"looks good, nice clean consistent look. apply this
+to all the other reports and add to this pr. we'll merge everything at once."*
+
+`public/recess-report.css` is the report TREATMENT built from the tokens, and it
+exists because **the same KPI strip had been copy-pasted into eighteen pages
+under FIVE different class names** — `.summary-card`, `.sum-card`,
+`.cards > .card`, `.kpi`, `.delta-card` — each drifting its own way. One
+definition, N readers, the same rule already applied here to reducers, palettes
+and date resolvers.
+
+### THE LINK ORDER IS THE WHOLE MECHANISM, and it is the thing most worth guarding
+
+Every page keeps its own inline `<style>`; the skin is **linked AFTER it**, so on
+equal specificity the skin wins and the page's copy of the card treatment stops
+applying. That is what makes this a two-line change per page rather than twenty
+stylesheet rewrites — **a page joins the layer without having rules a render case
+may depend on surgically removed.**
+
+**Move that link above `</style>` and every page silently reverts while still
+looking linked.** Nothing errors, nothing logs, and the only symptom is the old
+look — which is the most expensive way for this to break. `recess-palette.spec.js`
+asserts the link index is greater than the `</style>` index on all nineteen
+pages, and the mutation fails by name.
+
+What the skin **cannot** beat is a MORE specific page rule — `.summary-card.green`
+(0,2,0) against `.summary-card` (0,1,0) — so those, and only those, were deleted.
+
+### 54 LINES OF RESERVED SEMANTIC COLOUR, ON FIVE MORE PAGES
+
+The accent bars Dan caught on the Revenue tab (`border-left: 3px solid #16a34a`,
+`#2563eb`) were not a Programs problem. gl, products, instructor-payout,
+court-utilization and qoq all carried them, in six different variants. Removed by
+a script that would only take a rule whose **entire body is colour** — anything
+else is layout a render case may depend on.
+
+### THE STRIPS WERE ENUMERATED, NOT EYEBALLED — the lesson from the pass before
+
+The first Programs pass found `.sum-card`, shipped, and Dan opened the Revenue tab
+to `.summary-card` still wearing the old treatment. So this time every container
+declaring a wrapping row of repeated cells was listed **mechanically**, and that
+found **six more**: `.ci-kpis`, `.ret-kpis` and `.ar-highlights` (**Memberships
+alone carries three, one per tab**), `.spotlight-cards`, `.residency-cards` and
+court-utilization's `.summary-row`. Eyeballing would have shipped the same
+half-fix again.
+
+**THE DETECTOR IS IN THE SPEC, so a sixth family fails CI rather than shipping.**
+A KPI card is defined as a rule that paints a background and pads itself **AND**
+has both a label-ish and a value-ish child — that last clause is what separates a
+card from the buttons, chips and tooltips that are card-shaped and are not cards.
+Without it the sweep flags **136** rules; with it, **13**, of which seven are the
+skin's and six are named exceptions with reasons.
+
+**AND THE DETECTOR FOUND TWO REAL MISSES I HAD ALREADY WALKED PAST** —
+`facility`'s `.res-card` and `court-utilization`'s `.kpi-card`. Both are now on
+the layer.
+
+### COURT-UTILIZATION'S STRIP WAS INLINE-STYLED, so no stylesheet could reach it
+
+`<div className="summary-row" style={{display:'flex', gap:10, …}}>` — an inline
+style beats any stylesheet, so that container could not be restyled from CSS at
+all. The inline style is gone and the class does the work. Its two KPI labels
+also carried **`color:'#2563eb'` and `'#f59e0b'` inline to mean "instant" and
+"managed"** — identity painted in the reserved info and warning colours, and
+inline, so nothing could take them back. They read `--rec-cat-1` / `--rec-cat-2`.
+
+*Generalise it: a sweep that only edits stylesheets cannot reach a page that
+styles inline, and an inline reserved colour is the hardest kind to find.*
+
+### THE PALETTE WAS ABOUT TO EXIST SIX TIMES
+
+It lived in `programs.html` while one page was on the layer. Sweeping the rest
+would have made it the sixth copy: **facility carried eighteen colours,
+memberships and users twelve each, and FOUR of users' twelve were the reserved
+four EXACTLY** (`#2563eb` info, `#dc2626` danger, `#16a34a` success, `#d97706`
+warning) — so a reader could not tell whether a red fill-rate line meant a
+section or meant bad.
+
+`window.RECESS_CAT` now lives in **`public/open-pdf.js`**, which every report page
+already loads, so it is exactly **two** copies — the CSS one, because these charts
+set `fill` from script and reading a custom property per mark is not worth the
+cycle — and the spec fails if they drift.
+
+**Eight is fewer than the twelve some of those charts want**, so a long series
+repeats a colour. That is the honest trade against twelve unvalidated colours
+including the reserved four, and `--rec-cat-2`/`--rec-cat-3` sit below 3:1 on
+white anyway, so those charts need a legend either way.
+
+### AN ORDERED SCALE IS NEITHER CATEGORICAL NOR SEMANTIC
+
+Recess's separation does not govern a scale that is **ordered**, and recolouring
+one would delete meaning rather than unify it. A heat ramp runs low-to-high;
+**memberships' `rankColors` is gold/silver/bronze for rank 1-3**, a convention a
+reader already knows. Nor does it govern **art**: the banner minigames' balloons
+and sprites are play, not data.
+
+Both are exempt, and `NOT_A_SERIES` **names each one with its reason** rather than
+matching a pattern — an exemption that is a regex quietly widens into "any list I
+did not want to change". **The banner BUNTING is the opposite case and WAS swapped**,
+because it sits over the chart it decorates, so the decoration doubles as the
+legend.
+
+### A SLICE REACHED PAST ITS OWN INPUTS, Nth instance
+
+`directors-facilities.spec.js` slices facilities.html's module scope and evals it
+in a `vm` context. The slice runs the banner scene, and the bunting now reads
+`window.RECESS_CAT` — so the spec **died with `ReferenceError: window is not
+defined`** on code the browser runs happily. The VM supplies a `window` now: a
+page has one, and withholding it makes the spec fail on correct code. The list it
+carries can be empty, because that spec is about the HOUR helpers and the palette
+has its own guard.
+
+### WHAT IS DELIBERATELY NOT ON THE LAYER, each for its own reason
+
+- **The three PUBLIC customer pages** — `campmap`, `rentalcalendar`, `calendar`.
+  Full-bleed map layouts on a resident-facing surface; a sand ground and a card
+  strip are a report treatment, and these are not reports.
+- **The retired reports** — `overview`, `annual-report`, `report-wizard`. Their
+  routes 404; styling a page nobody can open is waste.
+- **QBR.** It is the quarterly PDF handed to a council, with its own print-first
+  language (`--line`, `--faint`) and no `open-pdf.js`. Restyling a document that
+  goes to a council is a decision, not a drive-by. **Flagged to Dan rather than
+  assumed either way.**
+- **The dark toolbar**, unchanged from the first pass — ~40 rules with render
+  coverage on most of them, it is a control strip rather than the report, and it
+  reads fine against sand.
+- **The gender split** keeps blue/pink/purple, for the reason already recorded:
+  those colours live on a chart AND three table columns, and which colours that
+  split should use is a conversation.
+- **Sequential heat ramps**, per the rule above.
+
+### Guards
+
+`scripts/recess-palette.spec.js` 55 → **172 assertions**, in CI, and it guards the
+LAYER rather than one page: every page links both stylesheets with the skin
+**after** its own `</style>`, no accent bar returns, no page grows its own
+categorical list, the two palette copies are equal and there is exactly one JS
+copy, the skin spends no raw reserved hex while still colouring genuine statuses,
+and **no KPI card exists that the skin does not style or `NOT_A_STRIP` does not
+excuse**.
+
+Mutation-tested **ten ways, all ten failing by an assertion that NAMES the
+defect**: the skin linked before `</style>` (the silent revert), a page dropped
+off the layer, the tokens link dropped, an accent bar back on a card, a page
+growing its own palette, the JS list drifting from the CSS, `window.RECESS_CAT`
+declared twice, a new KPI family the skin does not style, the skin hardcoding a
+reserved hex, and the skin no longer colouring any status.
+
+**410 of 410 `ci-check-render` cases pass**, which is the assertion that matters
+most here: the sweep renames no class and moves no hook, so every existing case
+is a check that the restyle happened **in place** — a restyle that moves a hook is
+indistinguishable from a regression. All **78 CI specs** pass.
+
 ## THE RECESS TOKENS, ON ONE REPORT (2026-09-15)
 
 Dan, on the Recess storybook's new charts package: *"take a look at these and see

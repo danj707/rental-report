@@ -1467,14 +1467,14 @@ function App() {
           const pI = totA > 0 ? Math.round(totI / totA * 100) : 0;
           const pM = totA > 0 ? Math.round(totM / totA * 100) : 0;
           return (
-            <div className="summary-row" style={{display:'flex', gap:10, marginTop:8, flexWrap:'wrap'}}>
+            <div className="summary-row">
               <div className="kpi-card">
-                <div className="kpi-label" style={{color:'#2563eb'}}>Instant Bookings</div>
+                <div className="kpi-label" style={{color:'var(--rec-cat-1)'}}>Instant Bookings</div>
                 <div className="kpi-value">{cntI}</div>
                 <div className="kpi-sub">{Math.round(totI)} hrs ({pI}% of court time)</div>
               </div>
               <div className="kpi-card">
-                <div className="kpi-label" style={{color:'#f59e0b'}}>Leagues / Managed</div>
+                <div className="kpi-label" style={{color:'var(--rec-cat-2)'}}>Leagues / Managed</div>
                 <div className="kpi-value">{cntM}</div>
                 <div className="kpi-sub">{Math.round(totM)} hrs ({pM}% of court time)</div>
               </div>

@@ -1366,7 +1366,10 @@ function normalizeRow(raw) {
     }
 
     // ── Retention Chart Component ──
-    var RET_COLORS = ['#e34948','#eb6834','#eda100','#008300','#1baf7a','#2a78d6','#4a3aa7','#e87ba4','#1d9e75','#d85a30','#d4537e','#639922'];
+    // Retention cohorts are identity, not status — and the twelve colours this
+    // replaced included a green and a blue, so a cohort line was painted the
+    // same colour as this page's own good/info signals.
+    var RET_COLORS = window.RECESS_CAT;
 
     function RetentionChart({ cohorts }) {
       var canvasRef = useRef(null);
