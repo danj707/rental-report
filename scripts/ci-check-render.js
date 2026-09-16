@@ -997,6 +997,23 @@ function waitlistRows() {
     "Claim 1h": 0, "Claim 4h": claimed, "Claim 8h": 0,
     "Claim 24h": 0, "Claim 48h": 0, "Claim 48h Plus": 0,
   });
+  // An org that has not switched automation on for anything. The comparison
+  // panel must be ABSENT here, not rendered against an empty side.
+  if (STUB_MODE === "wlmanual") return [
+    row("man-1",  "Manual Yoga",     "manual", 20, 4, 9),
+    row("man-2",  "Manual Pilates",  "manual", 30, 9, 7),
+  ];
+  // Both sides past WL_CMP_MIN_OFFERS (50), so the GAP may be read. The two
+  // rates are deliberately far apart (50% vs 35%) — a panel that read the wrong
+  // side would render a plausible number rather than an obviously broken one.
+  if (STUB_MODE === "wlbig") return [
+    row("auto-1", "Automated Swim Lessons", "automated", 120, 60, 12),
+    row("man-1",  "Manual Yoga",            "manual",    200, 70,  9),
+  ];
+  // The DEFAULT fixture is the shape the platform is actually in (2026-09-16):
+  // automated 20 offers against manual 22 — both clear the 5-offer floor so both
+  // rates print, and NEITHER clears the 50-offer comparison floor, so the page
+  // may not say which is better. That is the live state, not an edge case.
   return [
     row("auto-1", "Automated Swim Lessons", "automated", 20, 15, 12),
     row("man-1",  "Manual Yoga",            "manual",    20,  4,  9),
@@ -5997,6 +6014,38 @@ const CASES = [
   // tag is absent rather than defaulting to manual.
   { name: "waitlist · no auto tag on a pre-v6 feed", path: "/{org}/waitlist",
     stubMode: "prev6", needs: "table tbody tr", absent: "[data-wl-auto]" },
+
+  // ── automated vs manual, and what a missed offer was worth ───────────────
+  // Automated waitlists went live 2026-08 and are measured in DOZENS of offers
+  // (44 platform-wide against manual's 8,774 on 2026-09-16), where 13 claims is
+  // 29.5% against manual's 42.5%. Printing that comparison would manufacture
+  // "automation converts worse" out of noise. These cases pin the three states.
+  { name: "waitlist · the automated/manual panel renders", path: "/{org}/waitlist",
+    needs: '[data-wl-cmp="1"]',
+    also: ['[data-wl-offers="automated"]', '[data-wl-offers="manual"]'] },
+  // Keyed on the per-side VALUE: automated 20 offers, manual 20+2+0 = 22. A
+  // panel reading the wrong bucket renders a perfectly plausible number.
+  { name: "waitlist · each side counts its own offers", path: "/{org}/waitlist",
+    needs: '[data-wl-cmp-offers="20/22"]' },
+  // THE HEADLINE GUARD. At the live shape both rates print and the VERDICT
+  // sentence must be absent — the page may not say which converts better.
+  { name: "waitlist · too few automated offers to read the gap", path: "/{org}/waitlist",
+    needs: '[data-wl-early="1"]', absent: '[data-wl-verdict="1"]' },
+  // ...and past the comparison floor it IS allowed to say so.
+  { name: "waitlist · past the floor the gap may be read", path: "/{org}/waitlist",
+    stubMode: "wlbig", needs: '[data-wl-verdict="1"]', absent: '[data-wl-early="1"]' },
+  // A comparison of one thing is a dead end: an org with no automated sections
+  // gets no panel at all, rather than a row of zeros against a real one.
+  { name: "waitlist · no comparison where there is nothing to compare", path: "/{org}/waitlist",
+    stubMode: "wlmanual", needs: "table tbody tr", absent: '[data-wl-cmp="1"]' },
+  // A pre-v6 feed reports no type on ANY row, so both sides are empty and the
+  // panel is absent — "we cannot tell" must not render as an all-manual org.
+  { name: "waitlist · no comparison on a pre-v6 feed", path: "/{org}/waitlist",
+    stubMode: "prev6", needs: "table tbody tr", absent: '[data-wl-cmp="1"]' },
+  // Missed-offer value, keyed on the computed figure: expired seats are
+  // 5 + 16 = 21, priced at 40 = $840. A page summing the wrong column moves it.
+  { name: "waitlist · missed offers are counted and priced", path: "/{org}/waitlist",
+    needs: '[data-wl-missed-seats="21"]', also: ['[data-wl-missed-value="840"]'] },
 
   // Dan, on the live page: "not seeing instructor names and info on the program
   // pages. filter works, but doesn't show the data we need." The names were on

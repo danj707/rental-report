@@ -1,5 +1,160 @@
 # Project notes for Claude
 
+## AUTOMATED WAITLISTS ARE LIVE, AND THE COMPARISON THEY INVITE IS NOISE (2026-09-16)
+
+Dan, after asking how many waitlist emails actually go out and what they convert
+at — the reason being SMS: *"can we build some metrics around this into the
+existing waitlist report? This will need to support automated waitlists now that
+those are live."*
+
+### THE REPORT'S 263 WAS RIGHT AND ANSWERED A NARROWER QUESTION
+
+Apex, measured 2026-09-16: the page read **263 offers sent**; the raw table holds
+**4,602**. Both correct — the report is filtered to **Active (In Progress +
+Upcoming)** sections, and reconciling it exactly is what proved that:
+
+| | offers | sections |
+|---|---|---|
+| on sections still running | **264** (the report's 263, one grant newer) | 47 |
+| on sections that have ended | 4,338 | 212 |
+
+So for an SMS business case the on-screen number understates volume **17x**.
+*A scoped figure is not a wrong figure, and the reconciliation is what tells the
+two apart.*
+
+**`temporary_grant` IS NOT A WAITLIST TABLE.** It is a generic grant store — apex
+carries one `viewCustomReport` row among 4,602 `addParticipant` ones. Every query
+here filters `claims->>'action'='addParticipant'`, and the resource is a SESSION
+on 4,074 of them and a SECTION on 528, so both have to be handled.
+
+### THE APEX FUNNEL, all-time
+
+4,602 offers to 1,167 people → **2,033 claimed (44.2%)**, 2,559 expired
+unclaimed, 10 open. Claimed seats are worth **$124,853** (avg $61.41, median
+$42). Claim latency: **median 2.2h, only 36% inside the first hour**, 84% within
+a day. 2,607 seat-opening events → **1.77 offers each** (62% are a single offer,
+max 10), so SMS volume tracks offers, not seats.
+
+### AUTOMATED IS LIVE AND TINY, WHICH IS THE WHOLE DESIGN CONSTRAINT
+
+Platform-wide on 2026-09-16: **27 sections / 168 sessions across 3 orgs** carry
+`waitlist_config->>'type' = 'automated'`, against 36,306 manual sections. In
+offers that is **44 automated against 8,774 manual** — and 13 of the 44 claimed
+is **29.5% against manual's 42.5%**.
+
+**SO THE OBVIOUS PANEL PRINTS "AUTOMATION CONVERTS WORSE" OFF THIRTEEN CLAIMS.**
+At n=44 the 95% interval on 29.5% is roughly ±14 points, wide enough to contain
+manual's 42.5%. That is a finding invented out of noise, on the feature the org
+just switched on.
+
+**HENCE TWO FLOORS, and the second one is the point.** `WL_CONV_MIN_OFFERS` (5)
+was already there and answers *may I state a rate at all*. `WL_CMP_MIN_OFFERS`
+(50) answers *may I say anything about the GAP between two rates* — a different
+claim needing far more evidence. Below it both rates still print; what is
+withheld is the sentence comparing them.
+
+**50 IS A JUDGEMENT AND IS LABELLED AS ONE**, like `OPP_FEED_CONCURRENCY`. No
+measurement chooses it and it is NOT a significance test — it is where a stated
+rate's interval is about ±14 points rather than ±30.
+
+### THREE BUCKETS, NEVER TWO
+
+A row whose `wlType` is null is a warm pre-v6 cache entry — *this feed cannot
+tell us*, which is not *a person does this by hand*. Folding it into manual loads
+whichever side the stale rows land on, and the panel reads as a finding. The
+unknown count is **stated on screen** rather than silently excluded. Same
+presence rule the per-section `auto` tag already follows.
+
+The rate goes through `wlConversion`, so the panel, the per-section column and
+the floor cannot drift apart.
+
+### THE MISSED-OFFER MONEY IS A CEILING AND SAYS SO
+
+Expired offers × the section's own price. It is not a debt: on a wave where
+several people are offered one seat only one can take it, and some had changed
+their mind. **A free section's missed seat is counted as a SEAT and contributes
+no dollars** — the page says how many carry no price, because rolling them in
+either direction would be wrong.
+
+### SMS: THE COST MODEL WAS HALF THE REAL NUMBER
+
+Dan budgeted $0.03/SMS. Billing is per **SEGMENT**: measured over the 17,847 SMS
+already sent (22 orgs, live since 2026-02-13), the rate is **3.05¢/segment** and
+only 20% of real messages fit one segment — **60% use two, 20% use three**, a
+blended **5.99¢**. The 523 waitlist-*related* SMS already on the platform average
+220 chars → **2.07 segments → 6.2¢**. A claim-link SMS is a 2–3 segment message.
+
+Even so the case is not close: 4,602 offers × $0.062 = **$285 for nine months**
+at apex against $124,853 of claimed seats — **break-even is 4.7 extra claims**,
+a 0.1-point lift.
+
+**APEX HAS SENT ZERO SMS.** SMS is live for 22 other orgs; apex is email-only.
+
+### WHAT THE REPORT STILL CANNOT SAY, and why it is not a gap to fix here
+
+**Channel.** CON-1587 has it right: the waitlist invite is sent by **Customer.io**,
+not Rec's pipeline, so it never lands in `message_delivery` (~95% of grants have
+no delivery row). The 17,847 SMS above are Rec's OTHER notifications. Email vs
+SMS attribution cannot be built report-side until that data is joinable.
+
+**Opens.** `first_viewed_at` is no longer dead — and the old spec header saying
+so was corrected rather than left, because a wrong statement in a comment closes
+the question:
+
+| | viewed | share | orgs |
+|---|---|---|---|
+| 2026-07 | 1 of 1,169 | 0.1% | 1 |
+| 2026-08 | 63 of 672 | 9.4% | 9 |
+| 2026-09 | 148 of 316 | **46.8%** | 18 |
+
+It is deliberately NOT on the card yet: an all-time open rate over that history
+renders **~2.4%** and reads as *"nobody opens our emails"* when the truth is
+*"we started recording opens in August"*. It needs a COVERAGE gate, not merely a
+presence gate — which is a different mechanism from every other column here.
+
+### Guards
+
+`waitlist-conversion.spec.js` 49 → **93 assertions**, LIFTING AND RUNNING
+`wlTypeSplit` and `wlMissedValue`, driven by the real platform shape (44 vs
+8,774) so the case the second floor exists for is the case under test.
+Mutation-tested **ten ways, all caught by name**: unknown folded into manual, the
+verdict back on the low floor, `gapReadable` computed with `WL_CONV_MIN_OFFERS`,
+the rate bypassing `wlConversion`, `bothPresent` ignored, within-1h measured
+against offers, claim hours as a mean of means, unpriced seats given a price, the
+split reading its own funnel, and the band rendered unconditionally.
+
+**THE LIFT REACHED PAST ITS OWN INPUTS ON THE FIRST RUN** — `wlConversion` reads
+`WL_CONV_MIN_OFFERS` and the slice carried neither floor, so the spec DIED with a
+bare `ReferenceError` naming nothing. Nth instance. Both floors are read from the
+SOURCE rather than restated, and a `guard()` wrapper makes a throw at CALL time
+fail by name instead of killing the run — the lift's try/catch only ever covered
+lift time.
+
+**Seven `ci-check-render.js` cases**, and the DEFAULT fixture is deliberately the
+live shape: automated 20 offers against manual 22, so both rates print and
+neither side clears the comparison floor. Two new stub modes — `wlmanual` (no
+automated at all; the panel must be ABSENT, not a row of zeros) and `wlbig`
+(both past 50, rates 50% vs 35% so a swapped read is visible rather than
+plausible). Browser-mutation-tested: the verdict back on `comparable` fails
+exactly the too-few-offers case, `bothPresent` forced true fails exactly the
+nothing-to-compare case, and the missed value reading `Offers Sent` fails exactly
+the missed-seat case.
+
+**My own act hook referenced `document` in NODE scope** and reported as an
+uncaught navigation error. Replaced with a computed `data-wl-cmp-offers="20/22"`
+attribute — a stamped value needs no hook and cannot go stale the way a scrape
+does.
+
+### NOT DONE
+
+- **No card push.** Everything here is page-side off columns card 19273 v6
+  already emits, so there is no tag flip and no outage. `Offers Viewed` is the
+  one column worth adding and it waits on the coverage question above.
+- **No waitlist-type FILTER.** The comparison panel and the per-section `auto`
+  tag answer the ask; a filter would pull in all four gates (getParams, the share
+  link, the exports, generatePdf's forward list) for a dimension with 27 sections
+  on it platform-wide.
+
 ## THE RENTAL CALENDAR IS A FULL-SCREEN MAP NOW (2026-09-14)
 
 Dan, after looking at **playrecreate.com** — a consumer app that aggregates SF
