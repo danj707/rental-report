@@ -639,6 +639,10 @@
       border-top-color: #888;
     }
   </style>
+  <!-- The skin, linked AFTER this page's own <style> so that on equal
+       specificity it wins. The tokens are linked above, where order does not
+       matter: nothing else on the page declares a --rec-* property. -->
+  <link rel="stylesheet" href="/recess-report.css">
   <script>
     // ── Token auth (injected) ────────────────────────────────────────
     const URL_TOKEN = new URLSearchParams(window.location.search).get('token') || '';

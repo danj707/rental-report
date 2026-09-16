@@ -239,6 +239,14 @@
   .map-toggle button.active { background:#6366f1; color:#fff; border-color:#6366f1; }
   .map-loading { display:flex; align-items:center; justify-content:center; height:420px; color:#6b7280; font-size:13px; }
 </style>
+  <!-- The Recess layer. recess-tokens.css carries the VALUES; recess-report.css
+       is the report treatment built from them. Linked AFTER this page's own
+       <style> on purpose: on equal specificity the skin then wins, so a page
+       joins the layer by adding these two lines rather than by having its own
+       copy of the card treatment surgically removed. Only page rules that are
+       MORE specific (an accent bar, a value colour) are deleted. -->
+  <link rel="stylesheet" href="/recess-tokens.css">
+  <link rel="stylesheet" href="/recess-report.css">
 <script src="/report-refresh.js" defer></script>
 <script src="/open-pdf.js" defer></script>
   <script src="/report-loader.js"></script>

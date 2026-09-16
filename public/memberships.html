@@ -492,8 +492,6 @@
     .ar-highlights { display:flex; flex-wrap:wrap; gap:10px; margin:0 0 16px; }
     .ar-hl { flex:1 1 240px; background:#fff; border:1px solid #e8e6e0; border-left:3px solid #6b7280;
       border-radius:6px; padding:11px 14px; }
-    .ar-hl.good { border-left-color:#15803d; }
-    .ar-hl.bad  { border-left-color:#b91c1c; }
     .ar-hl .hl-k { font-size:10px; text-transform:uppercase; letter-spacing:.06em; color:#9ca3af; font-weight:600; }
     .ar-hl .hl-v { font-size:14px; font-weight:700; color:#111; margin:3px 0 4px; line-height:1.25; }
     .ar-hl .hl-s { font-size:11.5px; color:#4b5563; line-height:1.5; }
@@ -575,6 +573,14 @@
     body.print-mode .report-tabs { display: none; }
     @media print { .report-tabs { display: none; } }
   </style>
+  <!-- The Recess layer. recess-tokens.css carries the VALUES; recess-report.css
+       is the report treatment built from them. Linked AFTER this page's own
+       <style> on purpose: on equal specificity the skin then wins, so a page
+       joins the layer by adding these two lines rather than by having its own
+       copy of the card treatment surgically removed. Only page rules that are
+       MORE specific (an accent bar, a value colour) are deleted. -->
+  <link rel="stylesheet" href="/recess-tokens.css">
+  <link rel="stylesheet" href="/recess-report.css">
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
