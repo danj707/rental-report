@@ -120,10 +120,16 @@ has its own guard.
   strip are a report treatment, and these are not reports.
 - **The retired reports** — `overview`, `annual-report`, `report-wizard`. Their
   routes 404; styling a page nobody can open is waste.
-- **QBR.** It is the quarterly PDF handed to a council, with its own print-first
-  language (`--line`, `--faint`) and no `open-pdf.js`. Restyling a document that
-  goes to a council is a decision, not a drive-by. **Flagged to Dan rather than
-  assumed either way.**
+- **QBR — Dan's call, 2026-09-16: *"leave qbr alone for now."*** It is the
+  quarterly PDF handed to a council, with its own print-first language
+  (`--line`, `--faint`) and no `open-pdf.js`, so restyling it changes a document
+  somebody presents rather than a page somebody reads. **DEFERRED, not closed**
+  — *"for now"* — so it may be raised again, unlike the courts-as-pool-lanes and
+  Listen-button decisions recorded below, which are shut. If it is ever swept:
+  it is the only report carrying its own `--line`/`--faint` variables, so it
+  needs those repointed at the tokens rather than the link-after-style trick,
+  and `.kpis`/`.kpi` on it collide by name with the users/fasttrack family while
+  using `.kpi-lab` for the label.
 - **The dark toolbar**, unchanged from the first pass — ~40 rules with render
   coverage on most of them, it is a control strip rather than the report, and it
   reads fine against sand.
