@@ -2044,6 +2044,77 @@ function parseAddOnItems(addonsStr) {
 
 const NO_ADDONS_KEY = '(No add-ons)';
 
+// ── THE URL IS THE ONLY CHANNEL IN PRINT MODE ─────────────────────
+//
+// The PDF is this page under ?_print=1, rendered by Puppeteer in a browser with
+// an empty localStorage that has never seen this reader. So every narrowing
+// travels in the query string, and the four LIST filters below reach the render
+// through React state that is reconciled ASYNCHRONOUSLY — seeded from the URL
+// when the feed lands, then merged into by anything that answers afterwards.
+// Whatever answers last wins, and the URL is not it.
+//
+// That is not hypothetical: the 3s "seed all locations/sites" fetch merged its
+// own 37-day window into the SELECTED sets and a reader who picked one site of
+// fifty got all fifty in the PDF (2026-09-17). It is gated on !print now, which
+// is the real fix — this function is the guard that stops the next one.
+//
+// A GUARD THAT NAMES ONE FILTER IS NOT A GUARD AGAINST THE CLASS. `grouped` had
+// exactly this re-filter for `locations` alone, which is why locations held in
+// that PDF and sites did not — the symptom was masked on one of four.
+//
+// It MIRRORS the seeding rules rather than inventing stricter ones:
+//   • a value naming nothing in this window is a STALE link, and blanking the
+//     report over it is the confusing way to say so — so it falls back to not
+//     filtering, exactly as setSelectedSites does.
+//   • `site_types` alone is read on PRESENCE: an EMPTY value is a real answer
+//     ("the reader ticked None") and must return no rows, where an ABSENT one
+//     means the URL is not speaking about site types.
+// Change one, change both.
+function printScopeRows(rows, params) {
+  if (!rows || !params || params._print !== '1') return rows;
+
+  // Intersect what the URL asked for with what this window can actually show.
+  // An empty intersection is a stale link, not an empty report.
+  const want = (raw, present) => {
+    if (!raw) return null;
+    const asked = raw.split(',').map(v => v.trim()).filter(Boolean);
+    const hit = asked.filter(v => present.has(v));
+    return hit.length ? new Set(hit) : null;
+  };
+  const valuesOf = get => {
+    const out = new Set();
+    rows.forEach(r => { const v = get(r); if (v) out.add(v); });
+    return out;
+  };
+
+  let out = rows;
+
+  const locs = want(params.locations, valuesOf(r => r.location));
+  if (locs) out = out.filter(r => locs.has(r.location));
+
+  const sites = want(params.sites, valuesOf(r => r.site));
+  if (sites) out = out.filter(r => sites.has(r.site));
+
+  // PRESENCE, not truthiness — see the header. '' is "ticked None".
+  if (params.site_types != null) {
+    if (params.site_types === '') {
+      out = [];
+    } else {
+      const types = want(params.site_types, valuesOf(siteTypeKey));
+      if (types) out = out.filter(r => types.has(siteTypeKey(r)));
+    }
+  }
+
+  const addonsPresent = new Set();
+  rows.forEach(r => parseAddOnItems(r.addons).forEach(a => addonsPresent.add(stripAddonPrice(a))));
+  const addons = want(params.addons, addonsPresent);
+  if (addons) {
+    out = out.filter(r => parseAddOnItems(r.addons).map(stripAddonPrice).some(a => addons.has(a)));
+  }
+
+  return out;
+}
+
 function getSiteTypeEmoji(type) {
   if (!type) return '';
   const t = type.toLowerCase();
@@ -3059,7 +3130,26 @@ function App() {
   useEffect(() => { fetchData(startDate, endDate); }, []);
 
   // ── Seed all locations/sites — delayed to avoid competing with main fetch ──
+  //
+  // NEVER IN PRINT MODE, AND THAT IS THE WHOLE OF THE SITE-FILTER BUG (2026-09-17).
+  // This exists to fill the filter DROPDOWNS with options the current window
+  // does not contain, so an interactive reader can tick a site they booked last
+  // month. The print page renders no toolbar at all (renderToolbar returns null
+  // under ?_print=1), so there is no dropdown for it to fill — and it does real
+  // damage: it merges every location and site from its own 37-day window into
+  // the SELECTED sets, which on the print page are the reader's filter, seeded
+  // from the URL and carrying nothing else.
+  //
+  // The timing is what made it certain rather than occasional. It fires at 3s;
+  // generatePdf waits for #report-ready, then waitForNetworkIdle(15s), then a
+  // hard 3s buffer — so the widening always lands before the capture. A reader
+  // who picked one site of fifty got all fifty.
+  //
+  // Locations survived only because `grouped` re-applied the URL filter as a
+  // "belt-and-suspenders" guard against exactly this, naming ONE filter. That
+  // guard is generalised now (printScopeRows); this gate is the actual fix.
   useEffect(() => {
+    if (params._print === '1') return;
     const timer = setTimeout(() => {
     const pathParts = window.location.pathname.replace(/\/$/, '').split('/');
     const apiBase = pathParts.length >= 3
@@ -3522,13 +3612,12 @@ function App() {
 
   const grouped = useMemo(() => {
     if (!filteredRows) return null;
-    // Belt-and-suspenders: in print mode, re-apply URL location filter directly
-    // to guard against React state timing issues
-    let finalRows = filteredRows;
-    if (params._print === '1' && params.locations) {
-      const allowed = new Set(params.locations.split(',').map(l => l.trim()));
-      finalRows = filteredRows.filter(r => allowed.has(r.location));
-    }
+    // Belt-and-suspenders in print mode: re-apply EVERY list filter from the
+    // URL, because there the URL is the only channel and the state that carries
+    // it is reconciled asynchronously. This used to name `locations` alone,
+    // which is why a PDF could honour the location picker and ignore the site
+    // picker in the same render. See printScopeRows.
+    const finalRows = printScopeRows(filteredRows, params);
     const byDate = {};
     finalRows.forEach(row => {
       const dk = row.date;
@@ -3543,7 +3632,7 @@ function App() {
       });
     });
     return byDate;
-  }, [filteredRows]);
+  }, [filteredRows, params]);
 
   const sortedDates = grouped ? Object.keys(grouped).sort() : [];
 
@@ -4559,7 +4648,12 @@ function App() {
               );
             })}
 
-            {filteredRows && filteredRows.length === 0 && (
+            {/* Keyed on what actually DREW, not on filteredRows: in print mode
+                printScopeRows narrows further (site_types='' is a real "the
+                reader ticked None"), and a page that renders no rows and no
+                message is a blank PDF that says nothing about why. In
+                interactive mode printScopeRows is a no-op, so the two agree. */}
+            {filteredRows && sortedDates.length === 0 && (
               <div style={{textAlign:'center',padding:'40px 0',color:'#888'}}>
                 {rows.length === 0
                   ? 'No rentals found for the selected date range.'

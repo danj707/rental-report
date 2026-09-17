@@ -3510,6 +3510,70 @@ const CASES = [
   //
   // Keyed on the row COUNT and on the add-on row's ABSENCE: "the page rendered
   // in print mode" passes just as happily on the version that ignored it.
+  // ── THE PDF CARRIES THE SITE FILTER ────────────────────────────────────
+  //
+  // Dan, 2026-09-17: the screen was narrowed to ONE site of fifty and the PDF
+  // came back carrying every site at that location. Only a browser can see this
+  // one, and only a browser that WAITS: the cause was the 3s "seed all
+  // locations/sites" fetch merging its own window into the selected sets, so a
+  // case that stamps as soon as #report-ready appears passes on the broken
+  // build. `act` therefore sits past the timer on purpose — see the comment on
+  // the wait below.
+  //
+  // Riverside Sports Complex is the fixture's Rotary Park: ONE location, FOUR
+  // sites, six rows. A page that honours the location filter and ignores the
+  // site filter renders six perfectly plausible rows, which is exactly what
+  // shipped — so the case keys on the DISTINCT SITE COUNT as well as the row
+  // count. Either number alone passes on half the bug.
+  { name: "facility · the print view honours ?sites=",
+    path: "/{org}/facility?_print=1&locations=Riverside%20Sports%20Complex&sites=Riverside%20Sports%20Complex%20-%20Diamond%201",
+    act: async page => {
+      // PAST THE 3s SEED TIMER. The widening it used to cause always landed
+      // before Puppeteer captured the PDF (waitForNetworkIdle + a 3s buffer),
+      // so a case that does not outlast it is testing the wrong instant.
+      await new Promise(r => setTimeout(r, 4500));
+      await page.evaluate(() => {
+        const sites = [...document.querySelectorAll('.data-row .cell.col-site')]
+          .map(e => e.textContent.replace(/\s+/g, ' ').trim());
+        document.body.setAttribute('data-sf-rows', String(sites.length));
+        document.body.setAttribute('data-sf-sites', String(new Set(sites).size));
+      });
+    },
+    needs: "body[data-sf-rows=\"3\"][data-sf-sites=\"1\"]" },
+
+  // AND THE SAME URL WITHOUT ?sites= prints all four sites at that location —
+  // so the case above is proving the parameter rather than something about
+  // print mode or about this location having one site.
+  { name: "facility · ...and without it the PDF carries the whole location",
+    path: "/{org}/facility?_print=1&locations=Riverside%20Sports%20Complex",
+    act: async page => {
+      await new Promise(r => setTimeout(r, 4500));
+      await page.evaluate(() => {
+        const sites = [...document.querySelectorAll('.data-row .cell.col-site')]
+          .map(e => e.textContent.replace(/\s+/g, ' ').trim());
+        document.body.setAttribute('data-sf-rows', String(sites.length));
+        document.body.setAttribute('data-sf-sites', String(new Set(sites).size));
+      });
+    },
+    needs: "body[data-sf-rows=\"6\"][data-sf-sites=\"4\"]" },
+
+  // The empty value that is a real answer. `site_types=` is "the reader ticked
+  // None", and a print page that renders no rows AND no message is a blank PDF
+  // that says nothing about why — which is why the empty state is keyed on what
+  // actually drew rather than on filteredRows.
+  { name: "facility · ?site_types= prints nothing, and says so",
+    path: "/{org}/facility?_print=1&site_types=",
+    act: async page => {
+      await new Promise(r => setTimeout(r, 4500));
+      await page.evaluate(() => {
+        document.body.setAttribute('data-sf-rows',
+          String(document.querySelectorAll('.data-row').length));
+        document.body.setAttribute('data-sf-said',
+          /No rentals match the current filters/.test(document.body.textContent) ? '1' : '0');
+      });
+    },
+    needs: "body[data-sf-rows=\"0\"][data-sf-said=\"1\"]" },
+
   { name: "facility · the print view honours ?musco=1", path: "/{org}/facility?_print=1&musco=1",
     act: async page => {
       await page.evaluate(() => {

@@ -1,5 +1,162 @@
 # Project notes for Claude
 
+## THE SITE FILTER DID NOT REACH THE PDF, AND A 3s TIMER IS WHY (2026-09-17)
+
+Dan, with the rental schedule narrowed to **one site of fifty** (Rotary Park —
+Rotary House, `3 rentals (63 total)`) and the PDF carrying every site at that
+location: *"fix the pdf generation on the facility rental report. site isn't
+making it into the pdf generation."* Then the general form: **"can you build
+this out as a future harness. Literally EVERY FILTER NEEDS TO MAKE IT INTO THE
+PDF WHEN YOU CLICK PDF."**
+
+**EVERY ONE OF THE FOUR GATES THIS FILE ALREADY RECORDS WAS PASSING.**
+`getParams` read `sites`, `downloadPdf` sent it, `generatePdf` forwarded it, and
+the print page seeded `selectedSites` from it. Nothing in `server.js` changed in
+this fix. **There is a FIFTH gate and it is the one that failed: the state that
+carries the filter is reconciled ASYNCHRONOUSLY, and something answered after
+the URL did.**
+
+### THE "SEED ALL LOCATIONS/SITES" EFFECT IS THE CAUSE
+
+A `setTimeout(…, 3000)` fetches a 37-day window to fill the filter DROPDOWNS
+with options the current window does not contain — so a reader can tick a site
+they booked last month. It then merges what it found into
+`setSelectedSites`/`setSelectedLocations`.
+
+**On the print page those SELECTED sets are the reader's filter**, seeded from
+the URL and carrying nothing else. So it widened one site back to fifty.
+
+**IT ALWAYS WON, which is why this was not intermittent.** `generatePdf` waits
+for `#report-ready`, then `waitForNetworkIdle({timeout: 15000})`, then a hard
+3s buffer — the widening lands long before the capture, every time.
+
+**And the print page has no dropdown for it to fill at all**: `renderToolbar()`
+returns null under `?_print=1`. So the effect does nothing useful there and real
+damage. It is gated on `!print` now, BEFORE the timer is armed.
+
+### WHY ONLY SITES WERE REPORTED, THOUGH FOUR FILTERS WERE EXPOSED
+
+`grouped` carried a *"belt-and-suspenders: in print mode, re-apply URL location
+filter directly to guard against React state timing issues"* — **naming
+`locations` alone**. So locations held in that same PDF and sites, site types
+and add-ons did not. The guard was masking the symptom on one of four, which is
+also why the bug reads as "sites specifically" rather than as a class.
+
+*Nth instance of a guard that names one spelling of a thing not being a guard
+against the thing.* It is `printScopeRows(rows, params)` now, covering all four,
+and it MIRRORS the seeding rules rather than inventing stricter ones:
+
+- **A stale value falls back to not filtering**, exactly as `setSelectedSites`
+  does. Blanking the report over a link naming a site this window does not
+  contain is the confusing way to say so — and getting that wrong turns every
+  shared PDF link into an empty page the first time the window moves.
+- **`site_types` alone is read on PRESENCE.** An EMPTY value is a real answer
+  ("the reader ticked None") and must yield no rows; an ABSENT one means the URL
+  is not speaking about site types.
+- **It is INERT outside print mode.** On the interactive page the URL is a seed,
+  not the authority, and re-applying it would pin the filters a reader is trying
+  to change.
+
+**The two halves are deliberately belt-and-braces**: the gate is the fix, and
+`printScopeRows` is what stops the NEXT async widener. Each alone repairs the
+other, so neither mutation fails the render case on its own — the spec catches
+each by name, and the render case catches the shipped combination.
+
+### THE EMPTY STATE HAD TO MOVE WITH IT
+
+`printScopeRows` can narrow to zero while `filteredRows` is non-empty
+(`site_types=''` is the live case), and a page that renders no rows AND no
+message is a blank PDF that says nothing about why. It is keyed on
+`sortedDates.length` — what actually drew — which agrees with `filteredRows` in
+interactive mode because the scoper is a no-op there.
+
+### THE HARNESS — derived, so it cannot be satisfied by forgetting
+
+`scripts/pdf-filter-coverage.spec.js` (**79 assertions, in CI**). This is the
+FOURTH filter to ship reaching the screen and not the PDF (`gl_codes`,
+`refunds`, `pii`, `sites`), and every one was written by somebody who had just
+read the comment about the last one. Each was fixed with a spec NAMING that
+filter — and each of those specs is satisfied by a fifth filter nobody adds to
+it. **A guard you have to remember to extend is the thing that failed here four
+times.**
+
+So the filter list is **DERIVED from the page's own `getParams()`**, by matching
+its `key: p.get('key')` lines. Add `?foo=` there and `foo` is in the harness on
+the next run, failing with a message telling the author what to do. Every key is
+either classified with its print-mode channel or explicitly declared not a
+filter:
+
+| channel | what it means | gate 4 checks |
+|---|---|---|
+| `print-scope` | an ASYNC-reconciled React set | `printScopeRows` reads `params.<k>` |
+| `sync` | `useState` seeds it straight from the URL, no feed reconciles it | the initializer is still there |
+| `server` | a LEGACY Metabase parameter that narrows the CARD | `buildMetabaseParams` reads it |
+| `window` / `mode` | not a filter | — |
+
+- **`empty: true` marks a filter whose EMPTY value is a real answer**, and gate 3
+  then requires presence-forwarding rather than truthiness. That is the half
+  `pii` failed twice and `site_types` once.
+- **`generatePdf`'s query builder is LIFTED AND RUN**, not grepped. A render case
+  at `?_print=1&sites=…` proves the PAGE reads the parameter and says nothing
+  about whether the SERVER sends it — which is the gate all four instances
+  failed.
+- **The classification of `sync` IS the assertion.** `book_type` and `musco` need
+  no print-mode guard because nothing can overwrite them; the day one grows a
+  reconcile effect it changes class and the spec says so.
+- **A vacuous-derivation assertion guards the harness itself** — if the regex
+  stops matching, the key set collapses and every assertion below it passes on
+  nothing.
+
+Mutation-tested **eleven ways, all caught**, and the load-bearing one is the
+first: a brand-new filter added to `getParams` and wired nowhere fails with
+*"`crew` is read by getParams and is NOT classified in this harness"*. Plus each
+gate dropped one at a time, both `empty` filters folded into the truthy loop, an
+absent parameter invented, `musco` losing its URL seeding, `printScopeRows`
+running on the interactive page, and the derivation regex broken.
+
+### Guards
+
+`scripts/facility-pdf-filters.spec.js` (**60 assertions, in CI**), which LIFTS
+AND RUNS `printScopeRows` — every defect here is a comparison (truthiness where
+presence was meant, an intersection read the wrong way round) and a regex passes
+on an inverted one. Mutation-tested **thirteen ways, all failing by name**: the
+seed effect ungated (the bug as it shipped), `grouped` back to locations-only
+(the guard that masked it), the sites branch dropped, `site_types` read as
+truthy, a stale value blanking the report, each of the three later branches
+reducing over `rows` instead of the running result, `printScopeRows` running
+outside print mode, `sites` dropped from either the page or the server, and the
+empty state back on `filteredRows`.
+
+**One mutation SURVIVED the first draft and the fixture is why.** The
+composition cases all narrowed in the same direction, so a branch re-reading
+`rows` gave the same answer. Griffin Park is the discriminator: it shares no
+site, type or add-on with the Rotary Park rows, so a later branch reading `rows`
+can only ever ADD rows back. *Plausible is not the same as discriminating.*
+
+**Three `ci-check-render.js` cases, and they had to WAIT.** The cause is a timing
+defect, so a case that stamps as soon as `#report-ready` appears passes on the
+broken build — `act` sits **4.5s** past the 3s timer on purpose. Riverside Sports
+Complex is the fixture's Rotary Park: ONE location, FOUR sites, six rows, so a
+page that honours the location filter and ignores the site filter renders six
+perfectly plausible rows. The cases key on the **distinct site count as well as
+the row count**; either number alone passes on half the bug.
+
+**VERIFIED TO FAIL ON THE REAL REGRESSION, with the numbers.** Mutated back to
+the shipped build (seed ungated + `grouped` locations-only), the case measures
+**`rows=6 sites=4`** where the reader asked for one site — Dan's screenshot,
+reproduced in a browser.
+
+### A PRE-EXISTING SPEC PINNED THE LINE I MOVED
+
+`facility-lighting.spec.js` sliced its empty-state block from the literal
+`filteredRows && filteredRows.length === 0 &&`, so re-keying that condition made
+`indexOf` return -1, the slice ran from the file's tail, and the spec failed
+with nothing about Musco having changed. It anchors on the MESSAGE now
+(`'No rentals found for the selected date range.'`) with a preceding assertion
+that the anchor was found, and was re-verified to still catch the regression it
+was written for. *Nth instance of a slice pinned to a neighbour's spelling.*
+
+
 ## THE RENTAL CALENDAR IS A FULL-SCREEN MAP NOW (2026-09-14)
 
 Dan, after looking at **playrecreate.com** — a consumer app that aggregates SF
@@ -12166,6 +12323,13 @@ right. It is finished when the PDF, the print view, Excel, CSV and the emailed
 copy all show the same thing the reader is looking at.** An export quietly
 carrying rows or columns somebody excluded is worse than one that fails, because
 it looks correct.
+
+**THERE IS A HARNESS FOR THIS NOW (2026-09-17)** —
+`scripts/pdf-filter-coverage.spec.js`, which derives the filter list from the
+page's own `getParams()` so a new filter joins it automatically. Read the
+section at the top of this file before adding one; the checklist below is what
+it enforces, plus a FIFTH gate that list does not name (async state overwriting
+the URL on the print page).
 
 ### A PARAMETER HAS FOUR GATES, AND PASSING THREE LOOKS EXACTLY LIKE WORKING
 
