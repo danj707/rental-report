@@ -307,6 +307,15 @@ jobs:
       - name: Rental schedule columns (they grow into spare width; the page and the server agree on the name)
         run: node scripts/facility-columns.spec.js
 
+      - name: Rental schedule PDF filters (the site filter reaches the PDF; the seed effect cannot widen it back)
+        run: node scripts/facility-pdf-filters.spec.js
+
+      - name: EVERY filter reaches the PDF (derived from the page's own params, so a new one joins this on its own)
+        run: node scripts/pdf-filter-coverage.spec.js
+
+      - name: Pulse pre-warm paces itself, backs off and runs on one replica (the 87-minute walk)
+        run: node scripts/pulse-prewarm-pacing.spec.js
+
       - name: Lessons acquisition + retention (the org resolves through the instructor; LTV does not move with the toolbar)
         run: node scripts/lessons-funnel.spec.js
 
