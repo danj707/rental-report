@@ -974,16 +974,24 @@ does.
 - **No SMS arm split on the report.** `wlTypeSplit` is keyed on waitlist TYPE,
   not on an experiment arm. Pointing it at a second dimension is a small change
   and is not worth making before the flag it would read exists.
-- **ARCHIVED SECTIONS ARE STILL EXCLUDED, and that is now a decision rather than
-  an unnoticed gap.** The card's `archived_at IS NULL` predates all of this and
+- **ARCHIVED SECTIONS STAY EXCLUDED — CLOSED, NOT DEFERRED (Dan, 2026-09-17:
+  *"leave it, don't show archived sections"*).** The waitlist report shows live
+  sections only. **Do not raise a status pill for archived ones as an obvious
+  next step, and do not widen the card's own join.**
+
+  The measurements stay because they are why the question was asked and should
+  not be re-derived: the card's `archived_at IS NULL` predates all of this and
   hides **93% of apex's waitlist history** (4,280 of 4,600 offers, 183 of 259
-  sections). Not changed here, because it cuts both ways and the call is Dan's:
-  an archived section is one the org has deliberately filed away, so surfacing it
-  would put retired programming back on a page about what to do next — but the
-  claim-rate history worth analysing is almost entirely in there, and an org
-  asking *"how well does our waitlist convert"* is today answered off a twentieth
-  of its own data. The cheapest honest middle is a status pill for it, off by
-  default, rather than widening the card's own join.
+  sections), so an org asking *"how well does our waitlist convert"* is answered
+  off a twentieth of its own data. That is the ACCEPTED COST — an archived
+  section is one the org has deliberately filed away, and a page about what to
+  do next is the wrong place to put retired programming back.
+
+  **The consequence recorded above is the half that carries forward:** the 965
+  dead waves and the $73,037 ceiling are computed over all 4,600 grants, which
+  is right for a claim about what actually happened, and **must not be
+  reconciled against the screen** — which can only ever see the 7% of offers
+  sitting on live sections.
 
 ## THE RENTAL CALENDAR IS A FULL-SCREEN MAP NOW (2026-09-14)
 
