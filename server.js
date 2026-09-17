@@ -1056,6 +1056,11 @@ function pulseSparkSVG(trail) {
   return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" style="display:block;margin:4px auto 0;opacity:0.85"><polyline points="${pts.join(' ')}" fill="none" stroke="${color}" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><circle cx="${lp[0]}" cy="${lp[1]}" r="1.5" fill="${color}"/></svg>`;
 }
 
+// A pulse fetch is one of the six-month sparkline queries. 60s is the same
+// budget the data route gives its FIRST try; nobody is waiting on the walk, but
+// a query still slower than that is one the whole cycle should stop waiting for.
+const PULSE_FETCH_TIMEOUT_MS = 60000;
+
 async function refreshOrgPulse(slug, force) {
   // Return cached if still fresh (unless force-refreshing)
   if (!force) { const cached = getCachedPulse(slug); if (cached) return cached; }
@@ -1086,7 +1091,27 @@ async function refreshOrgPulse(slug, force) {
       const orgId = useShared ? org.orgId : null;
       const params = buildMetabaseParams({ start_date: startDate, end_date: endDate }, reportType, orgId);
       const qs = params.length ? `?parameters=${encodeURIComponent(JSON.stringify(params))}` : '';
-      const resp = await fetch(`${METABASE_URL}/api/public/card/${mbUuid}/query/json${qs}`);
+      // TIMED AND RECORDED, and both halves are load-bearing.
+      //
+      // A bare fetch() here had no timeout at all, so one hung card stalled the
+      // whole pulse walk — which is how a 40-org cycle ran for 87 minutes on
+      // 2026-09-17 while the report pre-warm beside it was correctly backing off.
+      //
+      // And it never called recordMbSample, so the pulse's OWN queries were
+      // invisible to mbHealth(). That is what made pacing this walk pointless
+      // until now: it could only ever see load somebody else created, so on a
+      // quiet platform where the walk IS the load it would never register as
+      // degraded and would never back off from itself.
+      const t0 = Date.now();
+      let resp;
+      try {
+        resp = await fetch(`${METABASE_URL}/api/public/card/${mbUuid}/query/json${qs}`,
+          { signal: AbortSignal.timeout(PULSE_FETCH_TIMEOUT_MS) });
+        recordMbSample(Date.now() - t0, false);
+      } catch (e) {
+        recordMbSample(Date.now() - t0, e.name === "TimeoutError" || e.name === "AbortError");
+        throw e;
+      }
       if (!resp.ok) return null;
       return await resp.json();
     } catch(e) { console.warn(`[pulse] fetch failed ${slug}/${reportType}: ${e.message}`); return null; }
@@ -7145,21 +7170,58 @@ setTimeout(() => performBackup(false), 45000);
 
 // Also pre-warm on startup (after a short delay to let server settle)
 setTimeout(prewarmUsersCache, 15000);
-setTimeout(prewarmPulseCache, 30000); // pulse after users (needs users cache for households)
+// Leader-locked like its own 5:10am cron. Without this BOTH replicas walked
+// all 40 orgs on every deploy - the duplication is visible in the logs as
+// "[pulse] Warmed shrewsbury" twice, seconds apart, on 2026-09-17.
+setTimeout(leaderCron("prewarm-pulse-startup", prewarmPulseCache), 30000); // pulse after users (needs users cache for households)
 
+// THE OTHER FAN-OUT, and until 2026-09-17 it had none of the guards the report
+// pre-warm beside it has had for months.
+//
+// Each refreshOrgPulse() is 24 Metabase queries (4 report types x 6 trailing
+// months, fired in parallel), so a walk of 40 orgs is ~960 queries against the
+// production read replica. It ran unpaced, could not back off, and its startup
+// call was not leader-locked, so BOTH replicas walked every org on every deploy.
+//
+// Measured on 2026-09-17: four cold boots inside thirty minutes put the replica
+// into a state where `SELECT 1` took 52s and then timed out past 60s, and the
+// walk kept going for 87 minutes (01:51 -> 03:18, "Pre-warm complete: 40 orgs"
+// logged twice, once per replica). The report pre-warm was correctly standing
+// aside the whole time - "aborted — replica degraded (0 timeouts, avg 53946ms)",
+// i.e. nothing was FAILING, everything was queued behind this walk. Metabase
+// recovered within two minutes of it finishing.
+//
+// It now mirrors prewarmCache(): consult replica health before each org, gap
+// between orgs, and abandon the rest of the cycle when the replica is degraded.
+// This paces the OUTER loop only - the 24-query burst inside one org is
+// unchanged, because that same function serves the on-demand dashboard route
+// and throttling it would make a page somebody is waiting on slower. What makes
+// the outer pacing bite is that those 24 queries are recorded now (see
+// PULSE_FETCH_TIMEOUT_MS), so one org's burst is what the next org's health
+// check reads.
 async function prewarmPulseCache() {
   if (!getFlags().cachingEnabled) { console.log('[pulse] Pre-warm skipped — caching is OFF'); return; }
   console.log("[pulse] Pre-warming all orgs…");
   let warmed = 0;
+  let aborted = false;
+  let walked = 0;
   for (const slug of Object.keys(ORGS)) {
     if (!ORGS[slug].token) continue;
+    const pace = prewarmPace();
+    if (pace.abort) {
+      aborted = true;
+      console.warn(`[pulse] Pre-warm aborted — replica degraded (${pace.timeouts} timeouts, avg ${pace.avgMs}ms over last 10m); will retry next cycle`);
+      break;
+    }
+    if (walked > 0) await sleepMs(pace.delayMs);
+    walked++;
     try {
       await refreshOrgPulse(slug, true);
       warmed++;
       console.log(`[pulse] Warmed ${slug}`);
     } catch(e) { console.warn(`[pulse] Failed ${slug}: ${e.message}`); }
   }
-  console.log(`[pulse] Pre-warm complete: ${warmed} orgs`);
+  console.log(`[pulse] Pre-warm ${aborted ? 'aborted after' : 'complete:'} ${warmed} orgs`);
 }
 
 // ── Express setup ────────────────────────────────────────────────────

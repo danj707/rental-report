@@ -457,8 +457,19 @@ ok(!/hasLighting[\s\S]{0,120}muscoLit/.test(src),
 
 // The empty state has to say WHICH filter emptied the table, or showing the
 // button just moves the dead end one click later.
-const emptyBlock = src.slice(src.indexOf("filteredRows && filteredRows.length === 0 &&"),
-                             src.indexOf("filteredRows && filteredRows.length === 0 &&") + 1200);
+// ANCHORED ON THE COPY, NOT ON THE CONDITION. This used to slice from the
+// literal `filteredRows && filteredRows.length === 0 &&`, so when the empty
+// state was re-keyed on the rows that actually DREW (2026-09-17, so a
+// print-scoped empty result still says why) indexOf returned -1, the slice ran
+// from the file's tail, and this spec failed with nothing about Musco having
+// changed. Nth instance in this repo of a slice pinned to a neighbour's
+// spelling. What it is really about is the MESSAGE, so it anchors there.
+const emptyAt = src.indexOf("'No rentals found for the selected date range.'");
+ok(emptyAt > 0,
+   "the empty-state message block should be findable — without this the slice "
+   + "below runs from the tail of the file and every assertion about it passes "
+   + "or fails for the wrong reason");
+const emptyBlock = src.slice(emptyAt, emptyAt + 1200);
 ok(/filterLighting && !rows\.some\(muscoLit\)/.test(emptyBlock),
    "the empty state should detect the Musco-filtered-to-nothing case specifically");
 ok(/Musco lighting/.test(emptyBlock) && /add-on/.test(emptyBlock),
