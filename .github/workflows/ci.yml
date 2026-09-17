@@ -313,6 +313,9 @@ jobs:
       - name: EVERY filter reaches the PDF (derived from the page's own params, so a new one joins this on its own)
         run: node scripts/pdf-filter-coverage.spec.js
 
+      - name: Pulse pre-warm paces itself, backs off and runs on one replica (the 87-minute walk)
+        run: node scripts/pulse-prewarm-pacing.spec.js
+
       - name: Lessons acquisition + retention (the org resolves through the instructor; LTV does not move with the toolbar)
         run: node scripts/lessons-funnel.spec.js
 
