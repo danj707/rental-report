@@ -90,6 +90,115 @@ a 0.1-point lift.
 
 **APEX HAS SENT ZERO SMS.** SMS is live for 22 other orgs; apex is email-only.
 
+### THE HEADROOM IS 965 SEATS, NOT 2,559 OFFERS — and Dan's call is to ship SMS
+
+Dan, on the numbers below: *"sounds like it's def worth enabling SMS, the claim
+rate and rev will absolutely make up for the difference."* So **SMS on waitlist
+invites is a decision, not an open question** — what follows is the sizing, and
+the reason a later experiment must not be read as overturning it.
+
+**THE OBVIOUS DENOMINATOR IS WRONG AND IT IS WRONG IN THE FLATTERING
+DIRECTION.** 2,559 offers expired unclaimed, and most of them expired because
+somebody ELSE in the same wave took the seat — those are structurally
+unwinnable, at any notification speed. Grouping apex's 4,600 offers into their
+seat-opening waves (section + minute):
+
+| | |
+|---|---|
+| seat-opening waves | **2,323** |
+| waves where somebody claimed | 1,358 |
+| **waves where NOBODY claimed** | **965** — the entire recoverable pool |
+| offers sitting in those dead waves | 1,425 |
+| avg offers per wave | 1.98 |
+
+Those 965 seats are worth **$73,037** — 957 priced (avg $76.32, median $42),
+8 free, and **zero with no price on file**, so nothing is being guessed at.
+That is the ceiling on what SMS can ever recover at apex over nine months.
+
+**The cost does not shrink with the headroom**, which is the whole point: SMS is
+paid on every offer (4,600 × $0.062 = **$285**) while the return comes only from
+the 965.
+
+| recovery of the 965 | seats | claim rate | value | net of $285 |
+|---|---|---|---|---|
+| **break-even** | **4** | +0.1 pt | $285 | $0 |
+| 5% | 48 | 44.2 → 45.2% | $3,652 | **+$3,367** |
+| 10% | 97 | → 46.3% | $7,304 | **+$7,019** |
+| 15% | 145 | → 47.4% | $10,956 | **+$10,671** |
+| the ceiling | 965 | → 68.1% | $73,037 | +$72,752 |
+
+**5% IS DELIBERATELY PESSIMISTIC AND STILL RETURNS 12.8x.** Priced at the $42
+median instead of the $76.32 mean — i.e. assuming SMS only ever recovers the
+cheap impulse seats — 5% is still +$1,742.
+
+**WHY THE LOW END IS THE HONEST ONE.** The average invite window is ~105.8h
+(4.4 days) and median claim latency is 2.2h, so most of those 965 people had
+DAYS and did not act. That is changed-their-mind, not missed-the-email, and SMS
+only buys speed. The counterweight is real too: **only 36% claim inside the
+first hour**, so there is genuine latency to compress.
+
+**A CHEAPER SHAPE EXISTS AND IS WORTH KNOWING BEFORE ANYONE PRICES THE FULL
+ROLLOUT.** SMS as a FOLLOW-UP after ~24h of silence rather than on every offer
+costs **$159 instead of $285** and captures most of the same recovery, because
+the people who claim fast are already claiming off email.
+
+### AN A/B IS THE INSTRUMENT, NOT ATTRIBUTION — and two sections cannot read it
+
+Dan: *"Enable SMS on one waitlisted section, and disable it for another. Compare
+claim rates. Not causation but def correlation."* The instinct is right and the
+sample is not.
+
+**ATTRIBUTION ANSWERS THE WRONG QUESTION ANYWAY.** A URL param tells you which
+channel somebody CLICKED; it cannot tell you whether the SMS caused a claim that
+email would not have produced. With an email + SMS-nudge design it is last-touch
+by construction. A holdout measures the LIFT, which is the number the case turns
+on, and needs no tracking work at all. **And a URL param is necessary but not
+sufficient even for attribution** — something has to PERSIST the channel against
+the grant (or the waitlist row, or the booking) at claim time, or it lives in the
+browser and is gone the moment they register.
+
+**THE PER-SECTION RATES ALREADY EXIST**: card 19273 v6 is section-grain and
+emits offers sent / claimed / expired, avg and median claim hours, and the six
+claim-latency buckets. So the measurement surface is built. The problem is
+volume.
+
+| apex, sections that have ever had an offer | 259 |
+|---|---|
+| **median offers per section** | **2** |
+| sections ≥ 20 offers | 33 |
+| sections ≥ 50 offers | **18** |
+| biggest single section | 1,133 |
+
+**SO A TWO-SECTION TEST COMPARES 2 OFFERS AGAINST 2.** Picking the two biggest
+instead swaps a sample-size problem for a confound: a toddler swim waitlist and
+an adult fitness waitlist differ in urgency, price and audience, so the gap is
+program mix as much as channel.
+
+**ARMS, NOT A PAIR.** Randomly assign the 33 sections over 20 offers to two
+arms and pool each side. That is exactly the shape `wlTypeSplit` already has —
+two pools, pooled rates, and a floor gating the comparative sentence — so if an
+SMS flag ever lands on `waitlist_config`, the panel reads it almost for free.
+Randomising WITHIN the wave would be better still (it controls for program,
+price, season and urgency at once) and needs product work the section-level
+toggle does not.
+
+**THE POWER TABLE, 80% power off a 44.2% base:**
+
+| lift to detect | offers per arm | ≈ apex time |
+|---|---|---|
+| +15 pts | 175 | ~3 weeks |
+| +10 pts | 394 | ~2 months |
+| +5 pts | 1,577 | ~7 months |
+
+**AND THIS IS THE LINE THAT MATTERS: BREAK-EVEN IS +0.1 POINTS, WHICH NO
+EXPERIMENT AT THIS VOLUME CAN SEE.** Detecting even a 5-point lift takes most of
+a year of apex's ENTIRE waitlist volume, and every conservative scenario above
+(5% recovery is +1.0 point) sits far below the detection floor. So an A/B is
+worth running to catch a BIG win — and **a null result means "not a big effect",
+never "not worth doing"**. Writing down a null as a verdict against SMS would be
+reading the absence of evidence as evidence of absence, on a change whose
+economics clear at a fortieth of what the test can resolve.
+
 ### WHAT THE REPORT STILL CANNOT SAY, and why it is not a gap to fix here
 
 **Channel.** CON-1587 has it right: the waitlist invite is sent by **Customer.io**,
@@ -154,6 +263,14 @@ does.
   tag answer the ask; a filter would pull in all four gates (getParams, the share
   link, the exports, generatePdf's forward list) for a dimension with 27 sections
   on it platform-wide.
+- **NOTHING HERE SWITCHES SMS ON.** That is a product change (Customer.io's
+  template plus a flag on `waitlist_config`), and it is Dan's decision above
+  rather than an open question. What this report contributes is the sizing and,
+  the day an SMS flag exists anywhere on `waitlist_config`, a comparison panel
+  already shaped to read it.
+- **No SMS arm split on the report.** `wlTypeSplit` is keyed on waitlist TYPE,
+  not on an experiment arm. Pointing it at a second dimension is a small change
+  and is not worth making before the flag it would read exists.
 
 ## THE RENTAL CALENDAR IS A FULL-SCREEN MAP NOW (2026-09-14)
 
