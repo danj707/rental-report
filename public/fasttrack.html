@@ -382,6 +382,21 @@
     .insights-feedback .fb-send { background:#6366f1!important; color:#fff!important; border-color:#6366f1!important; font-weight:600; }
     .insights-feedback .fb-send:hover { background:#4f46e5!important; }
   </style>
+  <!-- The Recess layer. recess-tokens.css carries the VALUES; recess-report.css
+       is the report treatment built from them. Linked AFTER this page's own
+       <style> on purpose: on equal specificity the skin then wins, so a page
+       joins the layer by adding these two lines rather than by having its own
+       copy of the card treatment surgically removed. Only page rules that are
+       MORE specific (an accent bar, a value colour) are deleted. -->
+  <link rel="stylesheet" href="/recess-tokens.css">
+  <link rel="stylesheet" href="/recess-report.css">
+  <!-- This page's strip keeps the COLUMN COUNT it already had. The skin only
+       READS these, so declaring them here works whatever the link order. They
+       are each page's own original grid minmax()/min-width: the skin's 180px
+       default is WIDER than most of them, and a wider basis fits fewer cards
+       per row — which silently re-wrapped eleven pages (facilities Camping
+       went 7-across to 6+1, a lone stretched card on a second row). -->
+  <style>:root { --rec-kpi-basis: 130px; --rec-summary-basis: 130px; }</style>
 <script src="/report-refresh.js" defer></script>
 <script src="/open-pdf.js" defer></script>
 </head>
@@ -2556,10 +2571,10 @@ function App() {
 
                 /* Summary cards */
         React.createElement('div', { className: 'summary-cards' },
-          React.createElement(SummaryCard, { label: 'Total FT', value: fmtInt(totals.ftSignups), color: '#6366f1', tip: 'Total Fast Track wishlist entries — pre-registrations submitted before registration officially opens.' }),
-          React.createElement(SummaryCard, { label: 'Registered', value: fmtInt(totals.ftConverted), sub: overallConvPct != null ? overallConvPct + '% conversion' : null, color: '#22c55e', tip: 'FT signups that completed actual registration once it opened. Conversion rate = converted ÷ total signups.' }),
-          React.createElement(SummaryCard, { label: 'Pending', value: fmtInt(totals.ftPending), color: '#f59e0b', tip: 'FT signups still waiting — they expressed interest but haven’t completed registration yet.' }),
-          totals.capacity > 0 && React.createElement(SummaryCard, { label: 'Overall Demand', value: (totals.ftSignups > 0 && totals.capacity > 0 ? (totals.ftSignups / totals.capacity * 100).toFixed(1) + '%' : '—'), color: '#3b82f6', tip: 'FT Signups ÷ Total Capacity — how much FT interest exists relative to available spots.' })
+          React.createElement(SummaryCard, { label: 'Total FT', value: fmtInt(totals.ftSignups), tip: 'Total Fast Track wishlist entries — pre-registrations submitted before registration officially opens.' }),
+          React.createElement(SummaryCard, { label: 'Registered', value: fmtInt(totals.ftConverted), sub: overallConvPct != null ? overallConvPct + '% conversion' : null, tip: 'FT signups that completed actual registration once it opened. Conversion rate = converted ÷ total signups.' }),
+          React.createElement(SummaryCard, { label: 'Pending', value: fmtInt(totals.ftPending), tip: 'FT signups still waiting — they expressed interest but haven’t completed registration yet.' }),
+          totals.capacity > 0 && React.createElement(SummaryCard, { label: 'Overall Demand', value: (totals.ftSignups > 0 && totals.capacity > 0 ? (totals.ftSignups / totals.capacity * 100).toFixed(1) + '%' : '—'), tip: 'FT Signups ÷ Total Capacity — how much FT interest exists relative to available spots.' })
         ),
 
 
@@ -3330,8 +3345,17 @@ function App() {
   );
 }
 
+// NO INLINE COLOUR. This card used to paint its own accent bar and value with
+// an inline `props.color`, and AN INLINE STYLE BEATS ANY STYLESHEET — so the
+// Recess skin could not reach it and Fast Track kept the old treatment while
+// every other report moved. Same trap as court-utilization's summary-row.
+// All four call sites are IDENTITY (Total FT, Registered, Pending, Overall
+// Demand), not statuses, and three of them spent a reserved semantic colour on
+// it (#22c55e success, #f59e0b warning, #3b82f6 info) — so a reader could not
+// tell whether green meant "Registered" or meant "good". A status would keep
+// its colour; a label does not.
 function SummaryCard(props) {
-  return React.createElement('div', { className: 'summary-card', style: { borderTop: '3px solid ' + (props.color || '#888') } },
+  return React.createElement('div', { className: 'summary-card' },
     React.createElement('div', { className: 'sc-label' },
       props.tip
         ? React.createElement('span', { className: 'tip-wrap' },
@@ -3341,7 +3365,7 @@ function SummaryCard(props) {
           )
         : props.label
     ),
-    React.createElement('div', { className: 'sc-value', style: { color: props.color || '#111' } }, props.value),
+    React.createElement('div', { className: 'sc-value' }, props.value),
     props.sub && React.createElement('div', { className: 'sc-sub' }, props.sub)
   );
 }

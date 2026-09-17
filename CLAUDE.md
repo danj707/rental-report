@@ -1,5 +1,472 @@
 # Project notes for Claude
 
+## THE MASTHEAD MOVED WHEN YOU LEFT SUMMARY (2026-09-17)
+
+Dan, with Clarksville's Facilities report open on Camping mid-load, then on
+Fields: *"ur still flipping the banner header when you click off summary and
+into the tabs. look at the placement here."* And the rule, in one line:
+***"tabs should be BELOW the banner header."***
+
+| | Summary | every self-bannered tab |
+|---|---|---|
+| | report header | report header |
+| | **banner** | **tabs** |
+| | filters | **banner** |
+| | tabs | KPI cards |
+
+**IT IS PRE-EXISTING, NOT THE RECESS SWEEP, and that was checked before anything
+was changed** — `git diff main...HEAD -- public/facilities.html` touches no line
+of the banner/filters/tabs composition, and main's copy of that block is
+identical. The sweep is what made it VISIBLE: with every report suddenly wearing
+one treatment, a masthead that jumps a row down the page stops reading as "this
+tab is different" and starts reading as a bug. Worth saying because I had just
+told him the banner was byte-identical — which was true, and was about the
+banner's SIZE on Summary, not about where it sits on a tab he had not opened.
+
+### FOUR VERTICALS OWN THEIR OWN BANNER, and that is not the thing to undo
+
+`camping`, `aquatics`, `outdoor` and `fields` are suppressed from the shared
+`FacilitiesBanner` because each renders its own — `CampBanner`, `AquaBanner`,
+`OutdoorBanner`, `FieldsBanner` — whose **pills are that vertical's numbers**
+(camping: stays · nights booked · occupancy · charged · sites booked). Those
+numbers come from a feed **the view fetches itself**: all four read **card
+17294**, because only that card carries the wall-clock `Begin`/`End` the hour
+maths needs, where the hub's own feed is card 19570. So the banner lives inside
+the view, and the view renders below the tab strip.
+
+**THE TEMPTING FIX IS THE EXPENSIVE ONE.** Lifting the data into `App` so it
+could render all five banners itself means fetching card 17294 on **every**
+Facilities load, for every org, whether or not anyone opens one of those four
+tabs — a real per-load cost to buy a layout change. Swapping in the shared
+banner instead (it already themes per tab from `FBX_THEME`) would print
+**org-wide** pills under a *Camping* title, which is worse than the bug.
+
+### THE BANNER IS PORTALLED INTO ONE SLOT, so the view keeps owning it
+
+`App` renders a childless div above the tabs; each of the four views portals its
+banner into it through `bannerInSlot(slot, node)`. A portal renders wherever it
+sits in the React tree, so the view keeps the banner as the first child of its
+loaded branch and it still lands above the tabs. No data moves and no fetch is
+added.
+
+- **THE SLOT IS A SIBLING OF THE SHARED BANNER, NEVER ITS PARENT.** React
+  reconciles a node's children by position, so portalling into a node React is
+  also rendering children into is how a later update puts the banner in the
+  wrong place. Nothing is rendered into that div from `App`; on the tabs that do
+  not use it, it is empty and 0-high.
+- **A callback ref backed by STATE, not a `useRef`.** A portal needs its target
+  node to exist, and a ref object does not re-render the child when it fills.
+  The div is mounted on every tab and never unmounted, so `bannerSlot` is set
+  after the very first commit and a tab switch finds it ready — which is what
+  stops the banner flashing. `bannerInSlot` returns `null` for a null slot
+  rather than throwing, because there is exactly one commit where it is null.
+- **THE BANNER RENDERS IN EVERY BRANCH — loading, error and loaded.** Dan's
+  first screenshot is the LOADING state, where the page had a header, a tab
+  strip and a spinner and nothing naming the report. Same defect as `ProgBanner`
+  on the Programs page, whose write-up is three sections down in this file.
+- **NO PILLS BEFORE THE ROWS LAND.** `hero()` with no argument is `pending`: the
+  pills are not computed (every one of them reads a figure off a prop the view
+  has not got — `bookings.toLocaleString()` on `undefined` throws) and the
+  `.fcb-pills` row is **dropped rather than rendered empty**, or the masthead
+  changes height the moment the feed answers.
+
+### Guards
+
+`report-tabs.spec.js` 159 → **201 assertions**, in CI. The render case proves the
+ORDER, which is the only half a browser can see; the spec proves the two rules
+underneath it, which it cannot — that the slot is above the tabs in `App`'s own
+output, and that **every** branch of **every** self-bannered view puts its
+banner in that slot. *A case that waits for the banner passes on a view that
+renders one only once its rows land.*
+
+Mutation-tested six ways, all failing by name: a view's loaded branch rendering
+its banner inline again (the bug as it shipped), the slot moved below the whole
+tab strip, a view showing its masthead only once the rows land, a banner
+printing pills while pending, the pills row rendered empty instead of dropped,
+and the shared banner rendered INSIDE the portal target. Plus a **false-positive
+control** — correct code passes all 201.
+
+**AND THE FIRST "slot moved below the tabs" MUTATION SURVIVED**, because I moved
+it to the line directly *above* `e('div', { className: 'tabs' }`, which is still
+above the tabs. *A mutation that does not reproduce the bug has not tested the
+guard*, Nth instance. Moved past the whole tab block it fails by name — and the
+render case fails in a browser reading **`on the camping tab: the tabs are ABOVE
+the masthead`**, which is Dan's complaint in the assertion's own words.
+
+`facilities · the masthead stays above the tabs on every tab` clicks through all
+five tabs and keys on **`compareDocumentPosition`**, plus a requirement that
+there be exactly **ONE** `.fac-banner`: both layouts render a banner and a tab
+strip, so every presence assertion passes on the bug, and a slot that rendered
+its own banner beside the portalled one would read as fixed while stacking two
+mastheads.
+
+**A pre-existing spec pinned a literal my change legitimately moved**, for the
+Nth time: `fields-classify.spec.js` asserted `e(FieldsView, { start, end })`
+byte for byte, so adding `bannerSlot` failed a fields-CLASSIFICATION spec with
+nothing about fields having changed. Its claim is that the tab dispatch reaches
+the view, not what it hands it; it tests that now, and was re-verified to still
+catch the view being unwired.
+
+## THE RECESS SWEEP — ONE SKIN, NINETEEN REPORTS (2026-09-16)
+
+Dan, on the Programs page: *"looks good, nice clean consistent look. apply this
+to all the other reports and add to this pr. we'll merge everything at once."*
+
+`public/recess-report.css` is the report TREATMENT built from the tokens, and it
+exists because **the same KPI strip had been copy-pasted into eighteen pages
+under FIVE different class names** — `.summary-card`, `.sum-card`,
+`.cards > .card`, `.kpi`, `.delta-card` — each drifting its own way. One
+definition, N readers, the same rule already applied here to reducers, palettes
+and date resolvers.
+
+### THE LINK ORDER IS THE WHOLE MECHANISM, and it is the thing most worth guarding
+
+Every page keeps its own inline `<style>`; the skin is **linked AFTER it**, so on
+equal specificity the skin wins and the page's copy of the card treatment stops
+applying. That is what makes this a two-line change per page rather than twenty
+stylesheet rewrites — **a page joins the layer without having rules a render case
+may depend on surgically removed.**
+
+**Move that link above `</style>` and every page silently reverts while still
+looking linked.** Nothing errors, nothing logs, and the only symptom is the old
+look — which is the most expensive way for this to break. `recess-palette.spec.js`
+asserts the link index is greater than the `</style>` index on all nineteen
+pages, and the mutation fails by name.
+
+What the skin **cannot** beat is a MORE specific page rule — `.summary-card.green`
+(0,2,0) against `.summary-card` (0,1,0) — so those, and only those, were deleted.
+
+### 54 LINES OF RESERVED SEMANTIC COLOUR, ON FIVE MORE PAGES
+
+The accent bars Dan caught on the Revenue tab (`border-left: 3px solid #16a34a`,
+`#2563eb`) were not a Programs problem. gl, products, instructor-payout,
+court-utilization and qoq all carried them, in six different variants. Removed by
+a script that would only take a rule whose **entire body is colour** — anything
+else is layout a render case may depend on.
+
+### THE STRIPS WERE ENUMERATED, NOT EYEBALLED — the lesson from the pass before
+
+The first Programs pass found `.sum-card`, shipped, and Dan opened the Revenue tab
+to `.summary-card` still wearing the old treatment. So this time every container
+declaring a wrapping row of repeated cells was listed **mechanically**, and that
+found **six more**: `.ci-kpis`, `.ret-kpis` and `.ar-highlights` (**Memberships
+alone carries three, one per tab**), `.spotlight-cards`, `.residency-cards` and
+court-utilization's `.summary-row`. Eyeballing would have shipped the same
+half-fix again.
+
+**THE DETECTOR IS IN THE SPEC, so a sixth family fails CI rather than shipping.**
+A KPI card is defined as a rule that paints a background and pads itself **AND**
+has both a label-ish and a value-ish child — that last clause is what separates a
+card from the buttons, chips and tooltips that are card-shaped and are not cards.
+Without it the sweep flags **136** rules; with it, **13**, of which seven are the
+skin's and six are named exceptions with reasons.
+
+**AND THE DETECTOR FOUND TWO REAL MISSES I HAD ALREADY WALKED PAST** —
+`facility`'s `.res-card` and `court-utilization`'s `.kpi-card`. Both are now on
+the layer.
+
+### COURT-UTILIZATION'S STRIP WAS INLINE-STYLED, so no stylesheet could reach it
+
+`<div className="summary-row" style={{display:'flex', gap:10, …}}>` — an inline
+style beats any stylesheet, so that container could not be restyled from CSS at
+all. The inline style is gone and the class does the work. Its two KPI labels
+also carried **`color:'#2563eb'` and `'#f59e0b'` inline to mean "instant" and
+"managed"** — identity painted in the reserved info and warning colours, and
+inline, so nothing could take them back. They read `--rec-cat-1` / `--rec-cat-2`.
+
+*Generalise it: a sweep that only edits stylesheets cannot reach a page that
+styles inline, and an inline reserved colour is the hardest kind to find.*
+
+### THE PALETTE WAS ABOUT TO EXIST SIX TIMES
+
+It lived in `programs.html` while one page was on the layer. Sweeping the rest
+would have made it the sixth copy: **facility carried eighteen colours,
+memberships and users twelve each, and FOUR of users' twelve were the reserved
+four EXACTLY** (`#2563eb` info, `#dc2626` danger, `#16a34a` success, `#d97706`
+warning) — so a reader could not tell whether a red fill-rate line meant a
+section or meant bad.
+
+`window.RECESS_CAT` now lives in **`public/open-pdf.js`**, which every report page
+already loads, so it is exactly **two** copies — the CSS one, because these charts
+set `fill` from script and reading a custom property per mark is not worth the
+cycle — and the spec fails if they drift.
+
+**Eight is fewer than the twelve some of those charts want**, so a long series
+repeats a colour. That is the honest trade against twelve unvalidated colours
+including the reserved four, and `--rec-cat-2`/`--rec-cat-3` sit below 3:1 on
+white anyway, so those charts need a legend either way.
+
+### AN ORDERED SCALE IS NEITHER CATEGORICAL NOR SEMANTIC
+
+Recess's separation does not govern a scale that is **ordered**, and recolouring
+one would delete meaning rather than unify it. A heat ramp runs low-to-high;
+**memberships' `rankColors` is gold/silver/bronze for rank 1-3**, a convention a
+reader already knows. Nor does it govern **art**: the banner minigames' balloons
+and sprites are play, not data.
+
+Both are exempt, and `NOT_A_SERIES` **names each one with its reason** rather than
+matching a pattern — an exemption that is a regex quietly widens into "any list I
+did not want to change". **The banner BUNTING is the opposite case and WAS swapped**,
+because it sits over the chart it decorates, so the decoration doubles as the
+legend.
+
+### A SLICE REACHED PAST ITS OWN INPUTS, Nth instance
+
+`directors-facilities.spec.js` slices facilities.html's module scope and evals it
+in a `vm` context. The slice runs the banner scene, and the bunting now reads
+`window.RECESS_CAT` — so the spec **died with `ReferenceError: window is not
+defined`** on code the browser runs happily. The VM supplies a `window` now: a
+page has one, and withholding it makes the spec fail on correct code. The list it
+carries can be empty, because that spec is about the HOUR helpers and the palette
+has its own guard.
+
+### WHAT IS DELIBERATELY NOT ON THE LAYER, each for its own reason
+
+- **The three PUBLIC customer pages** — `campmap`, `rentalcalendar`, `calendar`.
+  Full-bleed map layouts on a resident-facing surface; a sand ground and a card
+  strip are a report treatment, and these are not reports.
+- **The retired reports** — `overview`, `annual-report`, `report-wizard`. Their
+  routes 404; styling a page nobody can open is waste.
+- **QBR — Dan's call, 2026-09-16: *"leave qbr alone for now."*** It is the
+  quarterly PDF handed to a council, with its own print-first language
+  (`--line`, `--faint`) and no `open-pdf.js`, so restyling it changes a document
+  somebody presents rather than a page somebody reads. **DEFERRED, not closed**
+  — *"for now"* — so it may be raised again, unlike the courts-as-pool-lanes and
+  Listen-button decisions recorded below, which are shut. If it is ever swept:
+  it is the only report carrying its own `--line`/`--faint` variables, so it
+  needs those repointed at the tokens rather than the link-after-style trick,
+  and `.kpis`/`.kpi` on it collide by name with the users/fasttrack family while
+  using `.kpi-lab` for the label.
+- **The dark toolbar**, unchanged from the first pass — ~40 rules with render
+  coverage on most of them, it is a control strip rather than the report, and it
+  reads fine against sand.
+- **The gender split** keeps blue/pink/purple, for the reason already recorded:
+  those colours live on a chart AND three table columns, and which colours that
+  split should use is a conversation.
+- **Sequential heat ramps**, per the rule above.
+
+### Guards
+
+`scripts/recess-palette.spec.js` 55 → **172 assertions**, in CI, and it guards the
+LAYER rather than one page: every page links both stylesheets with the skin
+**after** its own `</style>`, no accent bar returns, no page grows its own
+categorical list, the two palette copies are equal and there is exactly one JS
+copy, the skin spends no raw reserved hex while still colouring genuine statuses,
+and **no KPI card exists that the skin does not style or `NOT_A_STRIP` does not
+excuse**.
+
+Mutation-tested **ten ways, all ten failing by an assertion that NAMES the
+defect**: the skin linked before `</style>` (the silent revert), a page dropped
+off the layer, the tokens link dropped, an accent bar back on a card, a page
+growing its own palette, the JS list drifting from the CSS, `window.RECESS_CAT`
+declared twice, a new KPI family the skin does not style, the skin hardcoding a
+reserved hex, and the skin no longer colouring any status.
+
+**410 of 410 `ci-check-render` cases pass**, which is the assertion that matters
+most here: the sweep renames no class and moves no hook, so every existing case
+is a check that the restyle happened **in place** — a restyle that moves a hook is
+indistinguishable from a regression. All **78 CI specs** pass.
+
+## THE RECESS TOKENS, ON ONE REPORT (2026-09-15)
+
+Dan, on the Recess storybook's new charts package: *"take a look at these and see
+if there are any things we can do to improve our look and feel"*, then *"build out
+a mockup of 1 first"*, then — on the strict-Recess version — **"its kinda bland
+isn't it"**, and finally *"build it and give me the preview link"*.
+
+`public/recess-tokens.css` is the layer; **`public/programs.html` is the only page
+on it**. Mockup (three skins, switchable):
+https://claude.ai/artifact/9rHLR3wp3ofN3HcXJFXN5b
+
+### THE TOKENS ARE READ OUT OF THE BUILT BUNDLE, NOT THE DOCS PAGE
+
+Storybook's `index.json` lists every story; `iframe.css` carries all 89
+`--recess-*` custom properties and the chart chunks carry the series logic. So
+the hex values in `recess-tokens.css` are the ones the components actually
+render, not values transcribed off a swatch. Worth knowing for next time: the
+docs page is a client-rendered SPA and **Chromium here cannot reach vercel**, so
+the way to *see* a story is a tiny local mirror that shells out to `curl` on a
+miss — `curl` honours the sandbox proxy and Chromium does not.
+
+### TWO CARD FAMILIES ON ONE PAGE, AND THE FIRST PASS RESTYLED ONE
+
+Dan, on the deployed preview: **"the metrics section still looks the same."**
+
+`.sum-card` is the **Summary** tab. `.summary-card` is **Revenue, Participants,
+Retention and Fill Rate** — a second, copy-pasted family with its own label,
+value and sub classes. The first pass found the first, so Dan opened the
+Revenue tab to a Recess masthead over the old treatment: bordered boxes with
+gaps, **coloured left accent bars in `#16a34a` and `#2563eb`** (reserved
+semantic colours spent on decoration, and inline, so no stylesheet could take
+them back), and green/blue/red figures.
+
+Both strips now read the same tokens and the same two rules. **Asserted as a
+PAIR**, so neither can move alone — the guard is what stops the third pass
+finding a third family.
+
+- **THE BASIS IS DELIBERATELY NOT SHARED, and the spec says so.** It is a
+  function of the CARD COUNT: nine on Summary at 190px wraps 5+4 at 1280, and
+  seven on Revenue at that basis wrapped **6 + 1** — the lone stretched card
+  the Summary basis was picked to avoid, shipped on the other tab. Revenue is
+  **170px** and lands all seven on one row. What IS asserted shared is the
+  divider, the radius, the padding and the value colour.
+- **A STATUS KEEPS ITS COLOUR — that is the rule, not an exception.** Org-Wide
+  Retention is genuinely good/warning/bad, so it stays coloured, through
+  `--rec-success-ink` / `--rec-warning-ink` / `--rec-danger-ink` rather than a
+  raw hex. Top Activity and Prorated Net Revenue were violet **decoration** and
+  lost theirs; a violet figure says nothing a black one does not.
+- **A THIRD FAMILY WAS STYLED AND RENDERED NOWHERE.** `.kpi` / `.kpi-row` /
+  `.kpi-val` had no call site anywhere on the page — deleted, because a card
+  treatment with no caller makes this look like three things to keep in sync.
+
+**A COMMENT OF MINE TRIPPED ITS OWN GUARD, Nth instance.** I wrote *"the same
+reason .sc-green and friends are"* above the new override, and the existing
+assertion slices with `/\.sc-green[^{]*\{/` — so it matched the COMMENT and
+read the next rule down. A mutation that re-coloured the Revenue values was
+then caught by an assertion naming the Summary tab. Reworded rather than
+teaching the regex to skip comments.
+
+### THE ERROR PAGE STOPPED SAYING WHICH REPORT IT WAS
+
+Dan, on a 504 at `/norman/programs`: **"hard to tell when the page is broken."**
+
+**The 504 was load, not a break** — card 17295 is the parked Programs card and
+`reportFetchError` was doing its job, surfacing the route's own *"try a shorter
+date range"* rather than a bare status. What was wrong is that **gating
+`.report-header` on `isPrint` left the banner as the only on-screen masthead,
+and the banner rendered only in the data-loaded branch.** So a failed query
+produced a bare card on the sand ground naming no org, no report and no
+window — indistinguishable from a page that failed to render at all.
+
+`ProgBanner` is one component with **three callers** (loading, error, loaded).
+Two banners would drift the first time the masthead changed.
+
+- **NO PILLS before the rows land.** A count of zero beside a spinner is a
+  claim about the org rather than about the load.
+- **THE WINDOW IS THE LOADED ONE, AND BLANK WHEN NOTHING LOADED.** Stamping the
+  toolbar's pending boxes on a page whose query failed claims a window that was
+  never answered — the `recWindowLabel` rule. `'All Dates'` is applied only in
+  the loaded branch, where an empty window genuinely means all-time.
+- **It sits below `getParams`** on purpose: `programs-season.spec.js` slices
+  module scope up to that function and evaluates it with `new Function`, which
+  cannot parse JSX. Same reason `ProgPanelCsv` is there.
+
+**Only a browser can see any of this** — the component reads correctly either
+way, so `programs · a failed feed still says which report this is` drives the
+`timeout504` stub and keys on the **org name and title being on screen beside
+the error**, with the pills required ABSENT. Keying on `.pgm-banner` existing
+would pass on an empty banner. Verified to fail by name on the bug as it
+shipped while the other 79 cases kept passing.
+
+### THE GAP IT CLOSES, COUNTED RATHER THAN ASSERTED
+
+Across `public/*.html` before this: **769 distinct hex colours, 19
+border-radius values, 134 box-shadow declarations, 14 categorical chart
+palettes and 5 typefaces.** 16 pages carry their own copy-pasted `.sum-card`.
+
+### THE ONE RULE THAT IS NOT COSMETIC
+
+Recess keeps **categorical** (identity, no meaning) strictly apart from
+**semantic** (`kind="info|success|warning|danger"`). Every one of our four
+palettes coloured series with blue, green, amber and red — **the same four our
+KPI values use for good, bad and warning**. A reader cannot tell whether red
+means "refunds" or "bad". `RECESS_CAT` is the one list now, and
+`recess-palette.spec.js` fails if a reserved colour lands in a series slot.
+
+### THE ORDER IS MEASURED. Do not reorder it by eye.
+
+Recess's own four are purple → sky → lime → pink, assigned by series index. Our
+cohort and fill-rate charts legitimately carry more, so the list extends to
+eight with the **700 step of the same four ramps** — and the ordering was chosen
+with the colour-vision validator, not by taste:
+
+| ordering of the same eight | worst adjacent pair |
+|---|---|
+| **p500 sky500 lime500 pink500 p700 lime700 sky700 pink700** | **deutan ΔE 8.8 — PASS** |
+| …p700 lime700 pink700 sky700 | 6.8 (lime-700 beside pink-700) |
+| …pink700 sky700 p700 lime700 | **FAIL** — pink-700 beside pink-500 is 13.6 on NORMAL vision |
+
+Recess's own four also pass on their own (8.8). **`--rec-cat-2` (sky) and
+`--rec-cat-3` (lime) sit below 3:1 against white**, so any chart using them
+needs a legend or direct labels — which is also Recess's own stated rule
+("colour is reinforced by labels, shape, or position").
+
+### THE PALETTE EXISTS TWICE AND THAT IS THE THING GUARDED
+
+`--rec-cat-1..8` in the stylesheet, `RECESS_CAT` in `programs.html`, because
+those charts set `fill` from script and reading a custom property per mark
+through `getComputedStyle` is not worth the cycle. Two copies of a list is the
+drift this repo keeps recording, so the spec asserts they are equal.
+
+### "ITS KINDA BLAND ISN'T IT" — and the fix was one token
+
+The first pass applied Recess's **admin-app chrome** to a report. A report is
+read, printed and handed to a council; it can carry more than a dense settings
+page. What actually made it flat was the ground: strict Recess puts white cards
+on `#fafaf9`, which is near-white on white, so nothing separates. The page ground
+is **`--rec-brand-sand` `#f4f2ef`** and the cards come forward on their own.
+
+The rest is hierarchy rather than more colour — the masthead on pine→grass, the
+type scale spent on one figure rather than spread evenly, section structure. The
+two rules survive intact: values stay black, and colour marks a delta or a
+status.
+
+*Generalise it: adopting a design system means adopting its tokens and its
+rules, not its chrome. A system built for one surface applied unchanged to
+another is how "on-brand" comes out lifeless.*
+
+### ONE HEADER — and the print header is why there were two
+
+Dan: *"we should get rid of the top town of shrewsbury programs and keep the
+second section. Include the org logo in the second section."*
+
+`.report-header` and `.pgm-banner` both said `<Org> · Programs` in the first
+200px. They exist because **the banner is `{!isPrint && …}`** — the plain header
+is the PRINTED one. So `.report-header` is now `{isPrint && …}`: exactly one of
+the two ever renders, and **the PDF is untouched**. The banner gained the logo
+and `dateRangeLabel`, which were the only two things the header carried that it
+did not.
+
+**AN ORG LOGO NEEDS A WHITE PLATE.** `logoUrl` is an arbitrary full-colour PNG
+with its own background — a municipal seal dropped straight onto a dark green
+band looks broken. The plate takes whatever an org uploads, and it is the kind
+of thing only a real logo would have shown.
+
+### The bunting is the chart palette
+
+The banner's twelve pennants were `#ffd166 / #ef767a / #8fd694 / #7fd1e3` — a
+fifth colour scheme on a page that now has one. They are the categorical four,
+so the decoration doubles as the legend.
+
+### WHAT IS DELIBERATELY NOT IN THIS PASS
+
+- **The dark toolbar stays.** Relighting it is ~40 rules with render coverage on
+  most of them, it is a control strip rather than the report, and Dan never
+  complained about it. High risk, low reward — and the dark bar reads fine
+  against a sand page.
+- **The gender split keeps blue/pink/purple**, on the chart AND on three table
+  columns. Changing the chart alone would make the two disagree, and which
+  colours that split should use is a conversation rather than a token swap.
+- **No headline figure in the masthead**, which the mockup had. It would need
+  `progRevTotals` lifted out of the Summary tab's IIFE to the banner's scope —
+  i.e. a second rollup, which is the one-reducer-N-readers rule. Worth doing on
+  its own.
+- **The other 44 pages.** This is one page on the layer so the treatment can be
+  judged before it is swept.
+
+### Guards
+
+`scripts/recess-palette.spec.js` (**55 assertions, in CI**): the two palette
+copies are equal, no reserved semantic colour sits in a series slot, all four
+charts read the one list, the `.sc-*` value colours resolve to
+`--rec-text-primary`, `.report-header` is gated on `isPrint`, the banner carries
+the window and the logo plate, and the ground is the sand token.
+
+All **66 `programs ·` render cases** pass on the restyled page. That is the
+assertion that matters most here: every one of them keys on `.sum-cards`,
+`.prog-table`, `.tab.active` or a `data-prog-*` attribute, so the class names and
+hooks were restyled **in place** rather than renamed — a restyle that moves a
+hook is indistinguishable from a regression.
 ## THE SITE FILTER DID NOT REACH THE PDF, AND A 3s TIMER IS WHY (2026-09-17)
 
 Dan, with the rental schedule narrowed to **one site of fifty** (Rotary Park —

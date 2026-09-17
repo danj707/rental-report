@@ -347,4 +347,89 @@ for (const [report, tabs] of Object.entries(CARD_TABS)) {
      + "never asks for the Community Intel feed it renders from");
 }
 
+// ── The masthead's one slot (Dan, 2026-09-17) ─────────────────────────────────
+// "tabs should be BELOW the banner header." Four verticals render their own
+// banner because its pills are their own numbers, fetched by the view — and
+// rendering it inside the view put it BELOW the tab strip, so leaving Summary
+// moved the masthead down the page and a feed in flight removed it entirely.
+//
+// The render case proves the ORDER, which is the only thing a browser can see.
+// These prove the two rules underneath it, which it cannot: that the slot is
+// above the tabs in the source, and that EVERY branch of every self-bannered
+// view puts its banner in that slot. A case that waits for the banner passes on
+// a view that renders one only once its rows land.
+{
+  const SELF_BANNERED = [
+    ["AquaticsView",      "AquaBanner"],
+    ["CampingView",       "CampBanner"],
+    ["OutdoorEventsView", "OutdoorBanner"],
+    ["FieldsView",        "FieldsBanner"],
+  ];
+
+  // The slot must come BEFORE the tab strip in App's own output. This is the
+  // whole fix: everything else only decides what goes in it.
+  const slotAt = FACILITIES.indexOf("ref: setBannerSlot");
+  const tabsAt = FACILITIES.indexOf("e('div', { className: 'tabs' }");
+  src(slotAt > 0, "facilities App must render a banner slot (ref: setBannerSlot)");
+  src(tabsAt > 0, "facilities App must render the tab strip");
+  src(slotAt > 0 && tabsAt > 0 && slotAt < tabsAt,
+     "the banner slot must be rendered ABOVE the tab strip — that IS the fix; below it and "
+     + "every self-bannered tab puts its masthead under the tabs again");
+
+  // The slot is a portal target, so React must not also render children into
+  // it: React reconciles a node's children by position, and a portal appending
+  // to the same node is how a later update lands the banner in the wrong place.
+  src(/e\('div', \{ ref: setBannerSlot, 'data-fac-banner-slot': '' \}\),/.test(FACILITIES),
+     "the banner slot must be a CHILDLESS div — the shared banner is its sibling, never its "
+     + "child, or React's own reconciliation fights the portal");
+
+  for (const [view, banner] of SELF_BANNERED) {
+    const i = FACILITIES.indexOf("function " + view + "(");
+    src(i > 0, view + " must exist");
+    if (i < 0) continue;
+    const rest = FACILITIES.slice(i + 1);
+    const m = /\n    (?:function|const) /.exec(rest);
+    const body = rest.slice(0, m ? m.index : rest.length);
+
+    src(/\{[^)]*bannerSlot[^)]*\}\) \{/.test(FACILITIES.slice(i, i + 220)),
+       view + " must take bannerSlot, or it has nowhere to portal its masthead to");
+    src(body.includes("const hero = p => bannerInSlot(bannerSlot, e(" + banner + ", p || { pending: true }));"),
+       view + " must portal " + banner + " through the shared helper, defaulting to PENDING — "
+       + "its own copy of the portal is a second place for the slot to go stale");
+
+    // EVERY branch, not just the loaded one. A pending masthead with no pills is
+    // the point: a count beside a spinner is a claim about the org rather than
+    // about the load (the ProgBanner rule, one report over).
+    const branches = body.match(/return e\('div', \{ className: 'empty' \}[^\n]*/g) || [];
+    src(branches.length >= 2,
+       view + " should have a loading branch and an error branch to cover");
+    src(branches.every(b => b.includes("hero()")),
+       view + " renders a branch with NO masthead — a failed or in-flight feed must still say "
+       + "which report this is: " + (branches.find(b => !b.includes("hero()")) || "").slice(0, 90));
+    src(/hero\(\{/.test(body),
+       view + "'s loaded branch must call hero({…}) with its pills, or the masthead never gains "
+       + "its numbers");
+    src(!new RegExp("e\\(" + banner + ", \\{").test(body),
+       view + " must not render " + banner + " directly any more — that is what put it below "
+       + "the tabs");
+
+    // The pills are dropped, not rendered empty: an empty .fcb-pills row still
+    // takes its margin, so the masthead would change height when the rows land.
+    const bi = FACILITIES.indexOf("function " + banner + "(");
+    const brest = FACILITIES.slice(bi + 1);
+    const bm = /\n    (?:function|const) /.exec(brest);
+    const bbody = brest.slice(0, bm ? bm.index : brest.length);
+    src(/const pills = pending \? \[\] : \[/.test(bbody),
+       banner + " must compute NO pills while pending — every one of them reads a figure off a "
+       + "prop the view has not got yet");
+    src(/pills\.length \? e\('div', \{ className: 'fcb-pills' \}/.test(bbody),
+       banner + " must drop the pills ROW while pending, not render it empty, or the masthead "
+       + "changes height the moment the rows land");
+  }
+
+  src(/function bannerInSlot\(slot, node\) \{\n\s*return slot \? ReactDOM\.createPortal\(node, slot\) : null;\n\s*\}/.test(FACILITIES),
+     "bannerInSlot must tolerate a null slot — it is null for exactly one commit on first "
+     + "mount, and throwing there blanks the page");
+}
+
 console.log("✓ report-tabs.spec.js — " + n + " assertions");

@@ -169,6 +169,21 @@
     table.mini tr { break-inside: avoid; }
   }
 </style>
+  <!-- The Recess layer. recess-tokens.css carries the VALUES; recess-report.css
+       is the report treatment built from them. Linked AFTER this page's own
+       <style> on purpose: on equal specificity the skin then wins, so a page
+       joins the layer by adding these two lines rather than by having its own
+       copy of the card treatment surgically removed. Only page rules that are
+       MORE specific (an accent bar, a value colour) are deleted. -->
+  <link rel="stylesheet" href="/recess-tokens.css">
+  <link rel="stylesheet" href="/recess-report.css">
+  <!-- This page's strip keeps the COLUMN COUNT it already had. The skin only
+       READS these, so declaring them here works whatever the link order. They
+       are each page's own original grid minmax()/min-width: the skin's 180px
+       default is WIDER than most of them, and a wider basis fits fewer cards
+       per row — which silently re-wrapped eleven pages (facilities Camping
+       went 7-across to 6+1, a lone stretched card on a second row). -->
+  <style>:root { --rec-cards-basis: 168px; }</style>
 <script src="/open-pdf.js" defer></script>
 </head>
 <body>

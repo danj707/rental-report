@@ -192,12 +192,6 @@
     .delta-card .dc-badge.up   { background: #dcfce7; color: #15803d; }
     .delta-card .dc-badge.down { background: #fee2e2; color: #b91c1c; }
     .delta-card .dc-badge.flat { background: #f1f5f9; color: #64748b; }
-    .delta-card.period-a { border-left-color: #3b82f6; }
-    .delta-card.period-a .dc-value { color: #2563eb; }
-    .delta-card.period-b { border-left-color: #f59e0b; }
-    .delta-card.period-b .dc-value { color: #b45309; }
-    .delta-card.change   { border-left-color: #8b5cf6; }
-    .delta-card.change   .dc-value { color: #6d28d9; }
 
     /* ── Chart ── */
     .chart-wrap {
@@ -349,6 +343,14 @@
       .page { box-shadow: none; margin: 0; max-width: none; }
     }
   </style>
+  <!-- The Recess layer. recess-tokens.css carries the VALUES; recess-report.css
+       is the report treatment built from them. Linked AFTER this page's own
+       <style> on purpose: on equal specificity the skin then wins, so a page
+       joins the layer by adding these two lines rather than by having its own
+       copy of the card treatment surgically removed. Only page rules that are
+       MORE specific (an accent bar, a value colour) are deleted. -->
+  <link rel="stylesheet" href="/recess-tokens.css">
+  <link rel="stylesheet" href="/recess-report.css">
 
   <!-- CDN deps -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
@@ -495,7 +497,12 @@
 
     /* ── Compare two datasets ─────────────────────────────────────────── */
     /* Normalize GL code for matching: strip dots/dashes so "2204.347.11" matches "220434711" */
-    function glKey(code) { return (code || '').replace(/[^0-9a-zA-Z]/g, ''); }
+    // String(), because a GL CODE IS NOT ALWAYS A STRING. Norman's feed returns
+    // them as integers (1365), and `(1365 || '').replace` is a TypeError that
+    // takes the whole report down with "(code || "").replace is not a
+    // function" where the page should be. gl.html never hit this because it
+    // only ever prints the code; this is the one place that parses it.
+    function glKey(code) { return String(code == null ? '' : code).replace(/[^0-9a-zA-Z]/g, ''); }
 
     function buildComparison(dataA, dataB) {
       const mapA = new Map(dataA.map(r => [glKey(r.glCode), r]));

@@ -424,3 +424,37 @@ async function reportFetchError(r) {
   return new Error('Server returned ' + status);
 }
 if (typeof window !== 'undefined') window.reportFetchError = reportFetchError;
+
+/* ── The categorical chart palette ─────────────────────────────────────────
+   Recess's own four (purple -> sky -> lime -> pink, by series index), then
+   the 700 step of the same four ramps for the charts that legitimately carry
+   more than four series. Mirrors --rec-cat-1..8 in public/recess-tokens.css.
+
+   IT LIVES HERE because every report page already loads this file, and it was
+   about to exist a fifth and sixth time: Programs had it inline, and facility,
+   memberships and users each carried their own 12-to-18 colour list. Two
+   copies of a list is the drift this repo keeps recording; six is a guarantee
+   that one chart stops matching the one beside it. The CSS copy stays, because
+   these charts set `fill` from script and reading a custom property per mark
+   through getComputedStyle on every render is not worth the cycle — so it is
+   exactly TWO copies, and recess-palette.spec.js fails if they drift.
+
+   THE RULE: these carry IDENTITY and no meaning. Blue, green, amber and red
+   stay reserved for info / good / warning / bad — a delta, a status badge, a
+   fill-rate threshold. A series painted red is what stops red meaning bad, and
+   every list this replaced was painted with the reserved four.
+
+   THE ORDER IS MEASURED. Through the colour-vision validator the worst
+   ADJACENT pair is deutan ΔE 8.8, which passes; other orderings of the same
+   eight do not (lime-700 beside pink-700 is 6.8, and pink-700 beside pink-500
+   fails the NORMAL-vision floor at 13.6). Reorder only with the validator.
+
+   Callers cycle it with `% length`. Eight is fewer than the twelve some of
+   these charts want, so a long series repeats a colour — which is the honest
+   trade against twelve unvalidated colours including the reserved four, and
+   --rec-cat-2 and --rec-cat-3 sit below 3:1 on white anyway, so those charts
+   need a legend or direct labels regardless. */
+if (typeof window !== 'undefined') {
+  window.RECESS_CAT = ['#a855f7','#0ea5e9','#84cc16','#ec4899',
+                       '#7e22ce','#4d7c0f','#0369a1','#be185d'];
+}

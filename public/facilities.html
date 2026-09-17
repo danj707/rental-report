@@ -541,6 +541,21 @@
     .camp-mk-form .mk-row input.mk-c { width:26px; height:20px; padding:0; border:1px solid #d6d3cb; border-radius:4px; vertical-align:middle; margin-left:4px; cursor:pointer; }
     .camp-mk-form button.mk-del { font-size:10.5px; color:#dc2626; background:none; border:1px solid #fca5a5; border-radius:10px; padding:2px 8px; cursor:pointer; }
   </style>
+  <!-- The Recess layer. recess-tokens.css carries the VALUES; recess-report.css
+       is the report treatment built from them. Linked AFTER this page's own
+       <style> on purpose: on equal specificity the skin then wins, so a page
+       joins the layer by adding these two lines rather than by having its own
+       copy of the card treatment surgically removed. Only page rules that are
+       MORE specific (an accent bar, a value colour) are deleted. -->
+  <link rel="stylesheet" href="/recess-tokens.css">
+  <link rel="stylesheet" href="/recess-report.css">
+  <!-- This page's strip keeps the COLUMN COUNT it already had. The skin only
+       READS these, so declaring them here works whatever the link order. They
+       are each page's own original grid minmax()/min-width: the skin's 180px
+       default is WIDER than most of them, and a wider basis fits fewer cards
+       per row — which silently re-wrapped eleven pages (facilities Camping
+       went 7-across to 6+1, a lone stretched card on a second row). -->
+  <style>:root { --rec-sum-basis: 150px; }</style>
 <script src="/report-refresh.js" defer></script>
 <script src="/open-pdf.js" defer></script>
 <script src="/report-loader.js"></script>
@@ -1303,7 +1318,11 @@
     // Bunting across the top of the shelter scene, and a few balloons rising off
     // the lawn. Random placement is fine here (decor, not data) — the same
     // treatment as fbxStars/fbxSnow above.
-    function fbxBunting() { const c = ['#fca5a5', '#fcd34d', '#a7f3d0', '#bfdbfe', '#fbcfe8']; let s = ''; for (let i = 0; i < 18; i++) s += '<i style="left:' + (3 + i * 5.3).toFixed(1) + '%;border-top-color:' + c[i % c.length] + ';animation-delay:-' + (i * 0.13).toFixed(2) + 's"></i>'; return s; }
+    // The pennants are the categorical four, as on the Programs banner, so the
+    // decoration doubles as the legend instead of being a fifth colour scheme on
+    // a page that now has one. (fbxBalloons below is the minigame and keeps its
+    // own colours — that is play, not data.)
+    function fbxBunting() { const c = (window.RECESS_CAT || []).slice(0, 4); let s = ''; for (let i = 0; i < 18; i++) s += '<i style="left:' + (3 + i * 5.3).toFixed(1) + '%;border-top-color:' + c[i % c.length] + ';animation-delay:-' + (i * 0.13).toFixed(2) + 's"></i>'; return s; }
     function fbxBalloons() { const c = ['#f87171', '#fbbf24', '#60a5fa', '#f472b6', '#34d399']; let s = ''; for (let i = 0; i < 5; i++) s += '<div class="fbx-balloon" style="left:' + (6 + i * 7).toFixed(1) + '%;background:' + c[i % c.length] + ';animation-duration:' + (7 + i * 1.4).toFixed(1) + 's;animation-delay:-' + (i * 2.1).toFixed(1) + 's"></div>'; return s; }
     // A picnic shelter: gable roof on four posts, table underneath. Drawn once as
     // static SVG — everything that moves in this scene moves in CSS.
@@ -2420,6 +2439,26 @@
       );
     }
 
+    // ONE PLACE FOR THE MASTHEAD, ON EVERY TAB. The four self-bannered verticals
+    // (camping, aquatics, outdoor, fields) own their banner because its pills are
+    // THEIR numbers, fetched by the view itself — and rendering it inside the view
+    // put it BELOW the tab strip, so clicking off Summary moved the masthead down
+    // the page, and while the feed was in flight removed it altogether. Dan,
+    // 2026-09-17: "tabs should be BELOW the banner header."
+    //
+    // The view still owns it; it is PORTALLED into the one slot App renders above
+    // the tabs. Lifting the data instead would mean App fetching card 17294 (these
+    // four read a different card from the hub's own feed) on every load, for every
+    // org, whether or not anyone opens the tab — a real cost for a layout fix.
+    //
+    // A portal renders wherever it is in the React tree, so a view can keep the
+    // banner as the first child of its loaded branch and still have it land above
+    // the tabs; and `slot` is null for exactly one commit on first mount, which is
+    // why this returns null rather than throwing.
+    function bannerInSlot(slot, node) {
+      return slot ? ReactDOM.createPortal(node, slot) : null;
+    }
+
     function FacilitiesBanner({ a, tab }) {
       const theme = FBX_THEME[tab] || FBX_THEME.summary;
       const pills = a ? [
@@ -2841,8 +2880,8 @@
       '<rect x="0" y="0" width="1200" height="172" fill="url(#poScrim)"/>' +
       '</svg>';
 
-    function AquaBanner({ bookings, revenue, guests, avgParty, sites }) {
-      const pills = [
+    function AquaBanner({ bookings, revenue, guests, avgParty, sites, pending }) {
+      const pills = pending ? [] : [
         ['bookings', bookings.toLocaleString()],
         ['charged', money(revenue)],
         ['guests', guests.toLocaleString()],
@@ -2856,7 +2895,7 @@
           e('div', { className: 'fcb-kicker' }, CFG.displayName || 'Parks & Recreation'),
           e('div', { className: 'fcb-title' }, '🏊 Pool & Aquatics'),
           e('div', { className: 'fcb-sub' }, 'Lap lanes, rec swim, pool parties & aquatic rentals.'),
-          e('div', { className: 'fcb-pills' }, pills.map((p, i) => e('span', { className: 'fcb-pill', key: i }, e('b', null, p[1]), ' ' + p[0]))),
+          pills.length ? e('div', { className: 'fcb-pills' }, pills.map((p, i) => e('span', { className: 'fcb-pill', key: i }, e('b', null, p[1]), ' ' + p[0]))) : null,
         ),
       );
     }
@@ -3314,12 +3353,19 @@
                 : 'Save applies this to everyone, and reloads the page.')))))); 
     }
 
-    function AquaticsView({ rows, err, statusSel, vert, start, end }) {
-      if (err) return e('div', { className: 'empty' },
+    function AquaticsView({ rows, err, statusSel, vert, start, end, bannerSlot }) {
+      // The masthead is PORTALLED into App's slot above the tab strip, and it
+      // renders in EVERY branch — loading, error and loaded — so the header never
+      // moves and a feed in flight cannot leave the page with no masthead at all.
+      // Called with no argument it is PENDING: no pills, because a count beside a
+      // spinner is a claim about the org rather than about the load.
+      const hero = p => bannerInSlot(bannerSlot, e(AquaBanner, p || { pending: true }));
+
+      if (err) return e('div', { className: 'empty' }, hero(),
         e('div', { className: 'em-icon' }, '⚠️'),
         e('div', { className: 'em-title' }, 'Could not load facility data'),
         e('div', { className: 'em-sub' }, String(err)));
-      if (rows === null) return e('div', { className: 'empty' },
+      if (rows === null) return e('div', { className: 'empty' }, hero(),
         e('div', { className: 'em-title', style: { color: '#9ca3af' } }, 'Loading Pool / Aquatics data…'),
         e('div', { className: 'fac-spin' }));
 
@@ -3329,7 +3375,7 @@
       // has no pool bookings at all until it is configured, so mounting the
       // control only on the populated branch would make the empty state a dead
       // end: the one org that needs the setting could never reach it.
-      if (!scoped.length) return e('div', { className: 'empty' },
+      if (!scoped.length) return e('div', { className: 'empty' }, hero(),
         e('div', { className: 'em-icon' }, '🏊'),
         e('div', { className: 'em-title' }, 'No Pool / Aquatics bookings in this range'),
         e('div', { className: 'em-sub' }, 'This org may not run pool sites, or none were booked with the current status filter. Try a wider date range.'));
@@ -3426,7 +3472,7 @@
       ];
 
       return e('div', null,
-        e(AquaBanner, { bookings, revenue, guests, avgParty, sites }),
+        hero({ bookings, revenue, guests, avgParty, sites }),
         // WHAT THIS TAB COUNTS, AND THE CONTROL THAT CHANGES IT, BOTH GO ABOVE
         // THE NUMBERS. They were in a footnote under the last panel, which is
         // the dead end this repo keeps writing down: Dan looked for the gear on
@@ -3573,8 +3619,8 @@
       '<ellipse cx="470" cy="156" rx="9" ry="4" fill="#fbbf24" opacity=".85"/><path d="M466 152 Q470 140 474 152 Q477 156 470 156 Q463 156 466 152Z" fill="#f59e0b"/><path d="M468 150 Q470 143 472 150 Q473 153 470 153 Q467 153 468 150Z" fill="#fde68a"/>' +
       '</svg>';
 
-    function CampBanner({ stays, nights, occPct, revenue, sitesBooked, sitesTotal }) {
-      const pills = [
+    function CampBanner({ stays, nights, occPct, revenue, sitesBooked, sitesTotal, pending }) {
+      const pills = pending ? [] : [
         ['stays', stays.toLocaleString()],
         ['nights booked', nights.toLocaleString()],
         ['occupancy', occPct == null ? '—' : occPct.toFixed(occPct < 10 ? 1 : 0) + '%'],
@@ -3588,7 +3634,7 @@
           e('div', { className: 'fcb-kicker' }, CFG.displayName || 'Parks & Recreation'),
           e('div', { className: 'fcb-title' }, '🏕️ Camping'),
           e('div', { className: 'fcb-sub' }, 'Campsite stays, nightly occupancy & where the campground fills up.'),
-          e('div', { className: 'fcb-pills' }, pills.map((p, i) => e('span', { className: 'fcb-pill', key: i }, e('b', null, p[1]), ' ' + p[0]))),
+          pills.length ? e('div', { className: 'fcb-pills' }, pills.map((p, i) => e('span', { className: 'fcb-pill', key: i }, e('b', null, p[1]), ' ' + p[0]))) : null,
         ),
       );
     }
@@ -3890,7 +3936,14 @@
             copied === 'embed' ? '\u2713 Copied' : 'Copy embed')));
     }
 
-    function CampingView({ start, end }) {
+    function CampingView({ start, end, bannerSlot }) {
+      // The masthead is PORTALLED into App's slot above the tab strip, and it
+      // renders in EVERY branch — loading, error and loaded — so the header never
+      // moves and a feed in flight cannot leave the page with no masthead at all.
+      // Called with no argument it is PENDING: no pills, because a count beside a
+      // spinner is a claim about the org rather than about the load.
+      const hero = p => bannerInSlot(bannerSlot, e(CampBanner, p || { pending: true }));
+
       const [data, setData] = React.useState({ rows: null, err: null });
       const [geo, setGeo] = React.useState(null);
       const [allSites, setAllSites] = React.useState(false);
@@ -3916,11 +3969,11 @@
           .catch(() => setGeo({ locations: [] }));
       }, []);
 
-      if (data.err) return e('div', { className: 'empty' },
+      if (data.err) return e('div', { className: 'empty' }, hero(),
         e('div', { className: 'em-icon' }, '⚠️'),
         e('div', { className: 'em-title' }, 'Could not load camping data'),
         e('div', { className: 'em-sub' }, String(data.err)));
-      if (data.rows === null || geo === null) return e('div', { className: 'empty' },
+      if (data.rows === null || geo === null) return e('div', { className: 'empty' }, hero(),
         e('div', { className: 'em-title', style: { color: '#9ca3af' } }, 'Loading Camping data…'),
         e('div', { className: 'fac-spin' }));
 
@@ -4243,7 +4296,7 @@
 
 
       return e('div', null,
-        e(CampBanner, { stays, nights, occPct, revenue, sitesBooked, sitesTotal }),
+        hero({ stays, nights, occPct, revenue, sitesBooked, sitesTotal }),
         e('div', { className: 'sum-cards' },
           kpis.map((c, i) => e('div', { className: 'sum-card', key: i },
             e('div', { className: 'sc-label' }, c.label),
@@ -4459,8 +4512,8 @@
     // (timestamp WITHOUT time zone), so Begin/End are already local wall clock
     // and Metabase's Pacific report timezone has nothing to shift. That is the
     // opposite of the Fast Track card, where the column is a timestamptz.
-    function OutdoorBanner({ bookings, hours, fill, revenue, sitesBooked }) {
-      const pills = [
+    function OutdoorBanner({ bookings, hours, fill, revenue, sitesBooked, pending }) {
+      const pills = pending ? [] : [
         ['bookings', bookings.toLocaleString()],
         ['hours booked', Math.round(hours).toLocaleString()],
         ['days used', fill == null ? '—' : Math.round(fill) + '%'],
@@ -4474,12 +4527,19 @@
           e('div', { className: 'fcb-kicker' }, CFG.displayName || 'Parks & Recreation'),
           e('div', { className: 'fcb-title' }, '🎪 Outdoor Facilities'),
           e('div', { className: 'fcb-sub' }, 'Pavilions, shelters, picnic areas & bounce houses — who books them, when, and for how long.'),
-          e('div', { className: 'fcb-pills' }, pills.map((p, i) => e('span', { className: 'fcb-pill', key: i }, e('b', null, p[1]), ' ' + p[0]))),
+          pills.length ? e('div', { className: 'fcb-pills' }, pills.map((p, i) => e('span', { className: 'fcb-pill', key: i }, e('b', null, p[1]), ' ' + p[0]))) : null,
         ),
       );
     }
 
-    function OutdoorEventsView({ start, end }) {
+    function OutdoorEventsView({ start, end, bannerSlot }) {
+      // The masthead is PORTALLED into App's slot above the tab strip, and it
+      // renders in EVERY branch — loading, error and loaded — so the header never
+      // moves and a feed in flight cannot leave the page with no masthead at all.
+      // Called with no argument it is PENDING: no pills, because a count beside a
+      // spinner is a claim about the org rather than about the load.
+      const hero = p => bannerInSlot(bannerSlot, e(OutdoorBanner, p || { pending: true }));
+
       const [data, setData] = React.useState({ rows: null, err: null });
       const [locSel, setLocSel] = React.useState([]);      // [] = all locations
       const [allSites, setAllSites] = React.useState(false);
@@ -4512,11 +4572,11 @@
         } catch (er) { /* never let logging break the tab */ }
       }, [data.rows]);
 
-      if (data.err) return e('div', { className: 'empty' },
+      if (data.err) return e('div', { className: 'empty' }, hero(),
         e('div', { className: 'em-icon' }, '⚠️'),
         e('div', { className: 'em-title' }, 'Could not load Outdoor Facilities data'),
         e('div', { className: 'em-sub' }, String(data.err)));
-      if (data.rows === null) return e('div', { className: 'empty' },
+      if (data.rows === null) return e('div', { className: 'empty' }, hero(),
         e('div', { className: 'em-title', style: { color: '#9ca3af' } }, 'Loading Outdoor Facilities…'),
         e('div', { className: 'fac-spin' }));
 
@@ -4797,7 +4857,7 @@
       const perBooking = bookings ? revenue / bookings : null;
 
       return e('div', null,
-        e(OutdoorBanner, { bookings, hours: hoursTotal, fill: dayFill, revenue, sitesBooked }),
+        hero({ bookings, hours: hoursTotal, fill: dayFill, revenue, sitesBooked }),
         allLocations.length > 1 ? e('div', { className: 'filters', style: { marginTop: 12 } },
           e('div', { className: 'filter-group' },
             e('span', { className: 'filter-lbl' }, 'Location'),
@@ -5099,8 +5159,8 @@
       return 'other';
     }
 
-    function FieldsBanner({ bookings, hours, fill, revenue, fieldsBooked, managedPct }) {
-      const pills = [
+    function FieldsBanner({ bookings, hours, fill, revenue, fieldsBooked, managedPct, pending }) {
+      const pills = pending ? [] : [
         ['bookings', bookings.toLocaleString()],
         ['hours booked', Math.round(hours).toLocaleString()],
         ['days used', fill == null ? '—' : Math.round(fill) + '%'],
@@ -5115,12 +5175,19 @@
           e('div', { className: 'fcb-kicker' }, CFG.displayName || 'Parks & Recreation'),
           e('div', { className: 'fcb-title' }, '⚾ Fields'),
           e('div', { className: 'fcb-sub' }, 'Diamonds, pitches & multipurpose turf — who books them, when, for how long, and with what.'),
-          e('div', { className: 'fcb-pills' }, pills.map((p, i) => e('span', { className: 'fcb-pill', key: i }, e('b', null, p[1]), ' ' + p[0]))),
+          pills.length ? e('div', { className: 'fcb-pills' }, pills.map((p, i) => e('span', { className: 'fcb-pill', key: i }, e('b', null, p[1]), ' ' + p[0]))) : null,
         ),
       );
     }
 
-    function FieldsView({ start, end }) {
+    function FieldsView({ start, end, bannerSlot }) {
+      // The masthead is PORTALLED into App's slot above the tab strip, and it
+      // renders in EVERY branch — loading, error and loaded — so the header never
+      // moves and a feed in flight cannot leave the page with no masthead at all.
+      // Called with no argument it is PENDING: no pills, because a count beside a
+      // spinner is a claim about the org rather than about the load.
+      const hero = p => bannerInSlot(bannerSlot, e(FieldsBanner, p || { pending: true }));
+
       const [data, setData] = React.useState({ rows: null, err: null });
       const [locSel, setLocSel] = React.useState([]);
       const [allSites, setAllSites] = React.useState(false);
@@ -5150,11 +5217,11 @@
         } catch (er) { /* never let logging break the tab */ }
       }, [data.rows]);
 
-      if (data.err) return e('div', { className: 'empty' },
+      if (data.err) return e('div', { className: 'empty' }, hero(),
         e('div', { className: 'em-icon' }, '⚠️'),
         e('div', { className: 'em-title' }, 'Could not load field data'),
         e('div', { className: 'em-sub' }, String(data.err)));
-      if (data.rows === null) return e('div', { className: 'empty' },
+      if (data.rows === null) return e('div', { className: 'empty' }, hero(),
         e('div', { className: 'em-title', style: { color: '#9ca3af' } }, 'Loading Fields…'),
         e('div', { className: 'fac-spin' }));
 
@@ -5421,7 +5488,7 @@
       const perBooking = bookings ? revenue / bookings : null;
 
       return e('div', null,
-        e(FieldsBanner, { bookings, hours: hoursTotal, fill: dayFill, revenue, fieldsBooked, managedPct }),
+        hero({ bookings, hours: hoursTotal, fill: dayFill, revenue, fieldsBooked, managedPct }),
         allLocations.length > 1 ? e('div', { className: 'filters', style: { marginTop: 12 } },
           e('div', { className: 'filter-group' },
             e('span', { className: 'filter-lbl' }, 'Location'),
@@ -6603,6 +6670,12 @@
       const [start, setStart] = React.useState(PQS.get('start_date') || fmtDate(monthStart(now)));
       const [end, setEnd] = React.useState(PQS.get('end_date') || fmtDate(monthEnd(now)));
       const [tab, setTab] = React.useState(() => facEffectiveTab(PQS.get('tab')));
+      // THE MASTHEAD'S ONE SLOT. A callback ref rather than a plain useRef: the
+      // four self-bannered verticals portal into this node, and a portal needs the
+      // node to EXIST as state so the child re-renders once it does. The div is
+      // mounted on every tab and never unmounted, so switching tabs finds it ready
+      // and the banner does not flash.
+      const [bannerSlot, setBannerSlot] = React.useState(null);
       const [statusSel, setStatusSel] = React.useState(() =>
         PQS.get('status') ? PQS.get('status').split(',').filter(Boolean) : ['confirmed', 'in-progress', 'canceled']);
       const [typeSel, setTypeSel] = React.useState(() =>
@@ -6903,6 +6976,12 @@
           // empty. It used to render its own hero, which covered for that; now
           // that the duplicate hero is gone, suppressing the banner too would
           // leave the tab with no header at all over real data.
+          // THE SLOT IS A SIBLING OF THE SHARED BANNER, NOT ITS PARENT. React
+          // reconciles a node's children by position, so portalling into a node
+          // React is also rendering children into is how a later update puts the
+          // banner in the wrong place. Nothing is ever rendered into this div
+          // from here; it is empty (and 0-high) on the tabs that do not use it.
+          e('div', { ref: setBannerSlot, 'data-fac-banner-slot': '' }),
           (tab === 'aquatics' || tab === 'camping' || tab === 'outdoor' || tab === 'fields') ? null
             : ((tab === 'ice' || tab === 'golf') && vertCounts[tab] === 0) ? null
             : e(FacilitiesBanner, { a: bannerAgg, tab }),
@@ -6947,13 +7026,13 @@
             : tab === 'racket'
               ? e(RacketSportsView, { start, end, fallback: racketFallback })
               : tab === 'camping'
-                ? e(CampingView, { start, end })
+                ? e(CampingView, { start, end, bannerSlot })
                 : tab === 'outdoor'
-                  ? e(OutdoorEventsView, { start, end })
+                  ? e(OutdoorEventsView, { start, end, bannerSlot })
                 : tab === 'fields'
-                  ? e(FieldsView, { start, end })
+                  ? e(FieldsView, { start, end, bannerSlot })
                 : tab === 'aquatics'
-                  ? e(AquaticsView, { rows: viewRows, err, statusSel, vert: Object.assign({ key: tab }, VERT_CONFIG[tab]), start: start, end: end })
+                  ? e(AquaticsView, { rows: viewRows, err, statusSel, vert: Object.assign({ key: tab }, VERT_CONFIG[tab]), start: start, end: end, bannerSlot })
                   : VERT_CONFIG[tab]
                     ? e(VerticalView, { rows: viewRows, err, statusSel, vert: Object.assign({ key: tab }, VERT_CONFIG[tab]) })
                     : e(SummaryTab, { rows: viewRows, err, statusSel, typeSel, lessons, filtersActive: (locSel.length > 0 || typeSel.length > 0) }),

@@ -214,16 +214,6 @@
       white-space: normal;
       word-break: break-word;
     }
-    .summary-card.green  { border-left-color: #16a34a; }
-    .summary-card.green  .card-value { color: #15803d; }
-    .summary-card.blue   { border-left-color: #3b82f6; }
-    .summary-card.blue   .card-value { color: #2563eb; }
-    .summary-card.violet { border-left-color: #7c3aed; }
-    .summary-card.violet .card-value { color: #6d28d9; }
-    .summary-card.amber  { border-left-color: #d97706; }
-    .summary-card.amber  .card-value { color: #b45309; }
-    .summary-card.slate  { border-left-color: #475569; }
-    .summary-card.slate  .card-value { color: #334155; }
 
     /* ── Table ── */
     .table-wrapper { overflow-x: auto; }
@@ -438,6 +428,21 @@
     .ai-spinner { border:3px solid #e5e7eb; border-top:3px solid #6366f1; border-radius:50%; width:24px; height:24px; margin:0 auto; animation:ai-spin 1s linear infinite; }
     @keyframes ai-spin { to { transform:rotate(360deg); } }
   </style>
+  <!-- The Recess layer. recess-tokens.css carries the VALUES; recess-report.css
+       is the report treatment built from them. Linked AFTER this page's own
+       <style> on purpose: on equal specificity the skin then wins, so a page
+       joins the layer by adding these two lines rather than by having its own
+       copy of the card treatment surgically removed. Only page rules that are
+       MORE specific (an accent bar, a value colour) are deleted. -->
+  <link rel="stylesheet" href="/recess-tokens.css">
+  <link rel="stylesheet" href="/recess-report.css">
+  <!-- This page's strip keeps the COLUMN COUNT it already had. The skin only
+       READS these, so declaring them here works whatever the link order. They
+       are each page's own original grid minmax()/min-width: the skin's 180px
+       default is WIDER than most of them, and a wider basis fits fewer cards
+       per row — which silently re-wrapped eleven pages (facilities Camping
+       went 7-across to 6+1, a lone stretched card on a second row). -->
+  <style>:root { --rec-summary-basis: 110px; }</style>
   <script>
     // ── Token auth (injected) ────────────────────────────────────────
     const URL_TOKEN = new URLSearchParams(window.location.search).get('token') || '';

@@ -142,7 +142,6 @@
   .ls-scope b { color:#1c1917; }
   .ls-unwired { border:1px dashed #d6d3d1; border-radius:11px; padding:22px 20px; text-align:center; color:#57534e; font-size:12.5px; line-height:1.6; }
   .ls-unwired b { display:block; font-size:14px; color:#1c1917; margin-bottom:5px; }
-  .card.flag { border-color:#c2700a; background:#fdf6ec; }
   .card.flag .val, .card.flag .lbl, .card.flag .sub { color:#c2700a; }
   .fbar { display:flex; height:32px; border-radius:6px; overflow:hidden; gap:2px; }
   .fbar > div { display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; color:#fff;
@@ -180,6 +179,21 @@
     border-radius:6px; background:#fff; color:#1c1917; font-variant-numeric:tabular-nums; }
   .cacout { font-size:28px; font-weight:800; color:#0f766e; font-variant-numeric:tabular-nums; }
 </style>
+  <!-- The Recess layer. recess-tokens.css carries the VALUES; recess-report.css
+       is the report treatment built from them. Linked AFTER this page's own
+       <style> on purpose: on equal specificity the skin then wins, so a page
+       joins the layer by adding these two lines rather than by having its own
+       copy of the card treatment surgically removed. Only page rules that are
+       MORE specific (an accent bar, a value colour) are deleted. -->
+  <link rel="stylesheet" href="/recess-tokens.css">
+  <link rel="stylesheet" href="/recess-report.css">
+  <!-- This page's strip keeps the COLUMN COUNT it already had. The skin only
+       READS these, so declaring them here works whatever the link order. They
+       are each page's own original grid minmax()/min-width: the skin's 180px
+       default is WIDER than most of them, and a wider basis fits fewer cards
+       per row — which silently re-wrapped eleven pages (facilities Camping
+       went 7-across to 6+1, a lone stretched card on a second row). -->
+  <style>:root { --rec-cards-basis: 160px; }</style>
 <script src="/report-refresh.js" defer></script>
 <script src="/open-pdf.js" defer></script>
 </head>

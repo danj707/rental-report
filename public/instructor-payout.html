@@ -62,14 +62,6 @@
     .summary-card .card-label { font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.5px; color: #888; font-weight: 600; margin-bottom: 4px; }
     .summary-card .card-value { font-size: 15px; font-weight: 700; font-family: 'IBM Plex Mono', monospace; white-space: nowrap; }
     .summary-card .card-sub { font-size: 10px; color: #999; margin-top: 2px; }
-    .summary-card.green  { border-left-color: #16a34a; } .summary-card.green  .card-value { color: #15803d; }
-    .summary-card.blue   { border-left-color: #3b82f6; } .summary-card.blue   .card-value { color: #2563eb; }
-    .summary-card.red    { border-left-color: #ef4444; } .summary-card.red    .card-value { color: #dc2626; }
-    .summary-card.violet { border-left-color: #7c3aed; } .summary-card.violet .card-value { color: #6d28d9; }
-    .summary-card.indigo { border-left-color: #4f46e5; } .summary-card.indigo .card-value { color: #4338ca; }
-    .summary-card.amber  { border-left-color: #d97706; } .summary-card.amber  .card-value { color: #b45309; }
-    .summary-card.teal   { border-left-color: #0d9488; } .summary-card.teal   .card-value { color: #0f766e; }
-    .summary-card.slate  { border-left-color: #475569; } .summary-card.slate  .card-value { color: #334155; }
 
     /* ── Table ── */
     .table-wrapper { overflow-x: auto; }
@@ -106,12 +98,6 @@
     .spotlight-card .spot-name { font-size: 13px; font-weight: 700; color: #222; margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .spotlight-card .spot-value { font-size: 14px; font-weight: 700; font-family: 'IBM Plex Mono', monospace; }
     .spotlight-card .spot-sub { font-size: 10px; color: #999; margin-top: 1px; }
-    .spotlight-card.green  { border-left-color: #16a34a; } .spotlight-card.green  .spot-value { color: #15803d; }
-    .spotlight-card.blue   { border-left-color: #3b82f6; } .spotlight-card.blue   .spot-value { color: #2563eb; }
-    .spotlight-card.red    { border-left-color: #ef4444; } .spotlight-card.red    .spot-value { color: #dc2626; }
-    .spotlight-card.violet { border-left-color: #7c3aed; } .spotlight-card.violet .spot-value { color: #6d28d9; }
-    .spotlight-card.amber  { border-left-color: #d97706; } .spotlight-card.amber  .spot-value { color: #b45309; }
-    .spotlight-card.teal   { border-left-color: #0d9488; } .spotlight-card.teal   .spot-value { color: #0f766e; }
 
     /* ── Empty / loading ── */
     .loading { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 80px 20px; color: #888; font-size: 14px; }
@@ -248,6 +234,21 @@
     .ai-spinner { border:3px solid #e5e7eb; border-top:3px solid #6366f1; border-radius:50%; width:24px; height:24px; margin:0 auto; animation:ai-spin 1s linear infinite; }
     @keyframes ai-spin { to { transform:rotate(360deg); } }
   </style>
+  <!-- The Recess layer. recess-tokens.css carries the VALUES; recess-report.css
+       is the report treatment built from them. Linked AFTER this page's own
+       <style> on purpose: on equal specificity the skin then wins, so a page
+       joins the layer by adding these two lines rather than by having its own
+       copy of the card treatment surgically removed. Only page rules that are
+       MORE specific (an accent bar, a value colour) are deleted. -->
+  <link rel="stylesheet" href="/recess-tokens.css">
+  <link rel="stylesheet" href="/recess-report.css">
+  <!-- This page's strip keeps the COLUMN COUNT it already had. The skin only
+       READS these, so declaring them here works whatever the link order. They
+       are each page's own original grid minmax()/min-width: the skin's 180px
+       default is WIDER than most of them, and a wider basis fits fewer cards
+       per row — which silently re-wrapped eleven pages (facilities Camping
+       went 7-across to 6+1, a lone stretched card on a second row). -->
+  <style>:root { --rec-summary-basis: 120px; }</style>
   <script>
     const URL_TOKEN = new URLSearchParams(window.location.search).get('token') || '';
     const TOKEN_QS  = URL_TOKEN ? '?token=' + encodeURIComponent(URL_TOKEN) : '';

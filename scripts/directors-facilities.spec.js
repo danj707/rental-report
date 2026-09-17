@@ -66,7 +66,13 @@ vm.createContext(cli);
 // same shape as the `alertEnabled` reference that once made email-slack-notify
 // throw before asserting anything. This spec is about the HOUR helpers; the
 // aquatics scope has its own (aquatics-scope.spec.js).
-vm.runInContext("var AQ_SCOPE = [];\n" + pageSrc.slice(c0, c1) +
+// The slice also runs the banner scene, and its bunting now reads the ONE
+// categorical palette off `window` (open-pdf.js) rather than carrying a fifth
+// colour scheme of its own. A VM has no window, so one is supplied — a page
+// has one, and withholding it makes this spec fail on code the browser runs
+// happily. The list can be empty: this spec is about the HOUR helpers, and
+// the palette has its own guard in recess-palette.spec.js.
+vm.runInContext("var AQ_SCOPE = []; var window = { RECESS_CAT: [] };\n" + pageSrc.slice(c0, c1) +
   "\n;this.oeRowHours = oeRowHours; this.oeIsArrival = oeIsArrival; this.oeIsMulti = oeIsMulti;" +
   "this.oeClockMin = oeClockMin; this.OUTDOOR_TYPES = OUTDOOR_TYPES;", cli);
 

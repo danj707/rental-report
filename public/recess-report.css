@@ -1,0 +1,293 @@
+/* ── The Recess report skin ────────────────────────────────────────────────
+   recess-tokens.css carries the VALUES read out of the rec-web Storybook
+   bundle. This file is the report TREATMENT built from them, and it exists
+   because the same KPI strip was copy-pasted into eighteen pages under five
+   different class names — `.summary-card`, `.sum-card`, `.cards > .card`,
+   `.kpi`, `.delta-card` — each drifting its own way. Eighteen copies of a
+   look is eighteen chances for one report to stop matching the one beside
+   it, which is the drift this repo keeps recording for reducers, palettes
+   and date resolvers. One definition, N readers.
+
+   HOW IT WINS THE CASCADE, and why that is not a hack. Every report page
+   keeps its own inline <style> in <head>; this file is LINKED AFTER it, so
+   on equal specificity the skin wins and the page's own copy of the card
+   treatment simply stops applying. That is deliberate: it means a page can
+   be put on the layer by adding one line, WITHOUT deleting rules that a
+   render case may depend on for layout. What it cannot beat is a page rule
+   that is MORE specific — `.summary-card.green` (0,2,0) against the skin's
+   `.summary-card` (0,1,0) — so those, and only those, are deleted per page.
+   They are the accent bars and value colours, which is the thing being
+   removed anyway.
+
+   THE TWO RULES IT ENFORCES, both from Recess's own separation of
+   categorical colour from semantic:
+     1. A VALUE IS A FIGURE. $4,475 is neither good nor bad, so it is ink.
+        Colour on a KPI row belongs on the DELTA, which is the only figure
+        with a direction, or on a genuine STATUS.
+     2. A STATUS KEEPS ITS COLOUR, through the semantic tokens and never a
+        raw hex. An insight's opportunity/risk/signal border and a
+        good/warning/bad threshold are statuses; a violet figure is not.
+
+   THE BASIS IS PER PAGE AND IS READ, NOT DECLARED HERE. How many cards a
+   strip carries decides whether a given flex-basis wraps evenly — nine at
+   190px land 5 + 4, and seven at that basis wrap 6 + 1 with the lone card
+   stretched across a row of its own. So a page tunes it by declaring
+   `:root { --rec-card-basis: 170px }` in its own style block. A custom
+   property the skin only READS cannot conflict with a page that declares
+   it, whatever the link order — which is why it is a variable rather than
+   a rule the page would have to out-specify.
+   ────────────────────────────────────────────────────────────────────── */
+
+/* ── The ground ────────────────────────────────────────────────────────────
+   NOT near-white. Strict Recess puts white cards on #fafaf9, which is
+   near-white on white, so nothing separates and the whole page reads flat.
+   On sand the cards come forward on their own with no border needed. */
+body {
+  background: var(--rec-brand-sand);
+  color: var(--rec-text-primary);
+}
+
+/* The PDF is the copy somebody holds, and sand behind it is toner spent on
+   nothing. Both spellings, because a page that only sets one prints the
+   other. */
+body.print-mode { background: #fff; }
+@media print { body { background: #fff; } }
+
+/* ── The KPI strip, once, for all five names it was copy-pasted under ──────
+   A hairline gap over a coloured container IS the divider, and it is the one
+   form that survives wrapping: a per-cell left border strands a rule at the
+   start of the second row, and a grid shows the container colour through the
+   empty cells of an incomplete last row. Flex, so the last row fills. */
+.summary-cards,
+.sum-cards,
+.cards,
+.kpi-row,
+.kpis,
+.delta-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1px;
+  margin: 16px 0;
+  background: var(--rec-border-secondary);
+  border-radius: var(--rec-radius-lg);
+  box-shadow: var(--rec-shadow-surface-md), 0 0 0 1px var(--rec-border-secondary);
+  overflow: hidden;
+  /* grid-template-columns from the page's own copy would still apply under
+     display:flex on some engines' shorthand expansions; neutralised so the
+     strip cannot inherit a stale track list. */
+  grid-template-columns: none;
+}
+
+/* `.card` is a generic enough name that it is scoped to the strip, or the
+   skin would reach panels on pages that happen to use the word. */
+.summary-cards > .summary-card,
+.sum-cards > .sum-card,
+.cards > .card,
+.kpi-row > .kpi,
+.kpis > .kpi,
+.delta-cards > .delta-card {
+  background: var(--rec-bg-primary);
+  padding: 15px 18px;
+  min-width: 0;
+  /* Every one of the five copies drew its own box. The strip draws it now,
+     so the cell must not draw a second one inside it. */
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+/* The basis is per FAMILY as well as per page, because one page can carry two
+   strips with different card counts — Programs has nine on Summary and seven
+   on Revenue, and a single number cannot make both wrap evenly. Each falls
+   back to the page-wide variable, then to a sane default, so a page that
+   cares about neither declares nothing. */
+.summary-cards > .summary-card { flex: 1 1 var(--rec-summary-basis, var(--rec-card-basis, 180px)); }
+.sum-cards     > .sum-card     { flex: 1 1 var(--rec-sum-basis,     var(--rec-card-basis, 180px)); }
+.cards         > .card         { flex: 1 1 var(--rec-cards-basis,   var(--rec-card-basis, 180px)); }
+.kpi-row       > .kpi          { flex: 1 1 var(--rec-kpi-basis,     var(--rec-card-basis, 180px)); }
+.kpis          > .kpi          { flex: 1 1 var(--rec-kpi-basis,     var(--rec-card-basis, 180px)); }
+.delta-cards   > .delta-card   { flex: 1 1 var(--rec-delta-basis,   var(--rec-card-basis, 200px)); }
+
+/* The label. Five copies, five sets of uppercase tracking — Recess sets a
+   sentence-case secondary label, which is quieter beside a large figure. */
+.summary-card .card-label, .summary-card .sc-label,
+.sum-card .sc-label,
+.cards > .card .lbl,
+.kpi .kpi-label, .kpi .kpi-lab,
+.delta-card .dc-label {
+  font-size: var(--rec-body-sm);
+  color: var(--rec-text-secondary);
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  margin-bottom: 4px;
+}
+
+/* The figure. Ink, tabular, and the weight comes down from 800 — at this
+   size the scale is doing the work and the weight was shouting. */
+.summary-card .card-value, .summary-card .sc-value,
+.sum-card .sc-val,
+.cards > .card .val,
+.kpi .kpi-val,
+.delta-card .dc-value {
+  font-size: var(--rec-heading-lg);
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: -.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--rec-text-primary);
+}
+
+.summary-card .card-sub, .summary-card .sc-sub,
+.sum-card .sc-sub,
+.cards > .card .sub,
+.kpi .kpi-sub,
+.delta-card .dc-sub {
+  font-size: 11.5px;
+  color: var(--rec-text-tertiary);
+  margin-top: 3px;
+}
+
+/* ── A figure is a figure ──────────────────────────────────────────────────
+   Kept rather than deleted, because every call site still passes these
+   classes and they have to resolve to something. Listed one per line so a
+   grep for any single colour name finds it. */
+.summary-card .card-value.green,  .summary-card .card-value.red,
+.summary-card .card-value.blue,   .summary-card .card-value.purple,
+.summary-card .card-value.amber,  .summary-card .card-value.violet,
+.summary-card .card-value.indigo,
+.summary-card .sc-value.green,    .summary-card .sc-value.red,
+.summary-card .sc-value.blue,
+.cards > .card .val.amber,        .cards > .card .val.green,
+.cards > .card .val.red,          .cards > .card .val.blue,
+.sc-green, .sc-blue, .sc-amber, .sc-red, .sc-purple, .sc-muted {
+  color: var(--rec-text-primary);
+}
+
+/* ── A STATUS keeps its colour ─────────────────────────────────────────────
+   This is the rule, not an exception to it. An insight that is an
+   opportunity, a risk or a signal is genuinely one of three states, so the
+   border stays — through the semantic tokens, never a raw hex, or the page
+   grows a second vocabulary for good/warning/bad. */
+.insight-card {
+  border: 1px solid var(--rec-border-secondary);
+  border-left-width: 4px;
+  border-radius: var(--rec-radius-lg);
+  padding: 14px 16px;
+  background: var(--rec-bg-primary);
+  box-shadow: var(--rec-shadow-surface-sm);
+}
+.insight-opportunity { border-left-color: var(--rec-success); }
+.insight-opportunity .insight-type { color: var(--rec-success); }
+.insight-risk { border-left-color: var(--rec-danger); }
+.insight-risk .insight-type { color: var(--rec-danger); }
+.insight-signal { border-left-color: var(--rec-info); }
+.insight-signal .insight-type { color: var(--rec-info); }
+.insight-title { color: var(--rec-text-primary); }
+.insight-detail { color: var(--rec-text-secondary); }
+
+/* A delta has a direction, so it keeps its colour too. */
+.delta-up   { color: var(--rec-success); }
+.delta-down { color: var(--rec-danger); }
+
+/* ── Surfaces ──────────────────────────────────────────────────────────────
+   The page itself, and the panels on it, come forward off the sand on one
+   radius and one shadow rather than the nineteen radii and 134 shadows
+   counted across public/ before this. */
+.page, .chart-card, .tablecard, .panel, .section-card {
+  background: var(--rec-bg-primary);
+  border-radius: var(--rec-radius-lg);
+  box-shadow: var(--rec-shadow-surface-md);
+}
+.chart-card, .tablecard, .panel, .section-card { border: 0; }
+
+/* Print takes the shadow off — it is a screen affordance and a printer
+   renders it as a grey smear. */
+@media print {
+  .page, .chart-card, .tablecard, .panel, .section-card,
+  .summary-cards, .sum-cards, .cards, .kpi-row, .kpis, .delta-cards {
+    box-shadow: none;
+  }
+}
+
+/* ── The strips a first pass misses ───────────────────────────────────────
+   The Programs restyle found `.sum-card` and shipped, and Dan opened the
+   Revenue tab to `.summary-card` still wearing the old treatment. So these
+   were enumerated mechanically — every container declaring a wrapping row of
+   repeated cells — rather than by eye. Memberships alone carries three
+   beyond its main strip, one per tab. */
+.ci-kpis, .ret-kpis, .ar-highlights, .spotlight-cards,
+.residency-cards, .summary-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1px;
+  margin: 0 0 16px;
+  background: var(--rec-border-secondary);
+  border-radius: var(--rec-radius-lg);
+  box-shadow: var(--rec-shadow-surface-md), 0 0 0 1px var(--rec-border-secondary);
+  overflow: hidden;
+  grid-template-columns: none;
+}
+.ci-kpis > .ci-kpi,
+.ret-kpis > .ret-kpi,
+.ar-highlights > .ar-hl,
+.spotlight-cards > .spotlight-card,
+.residency-cards > .res-card,
+.summary-row > .kpi-card {
+  background: var(--rec-bg-primary);
+  padding: 15px 18px;
+  min-width: 0;
+  max-width: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+.ci-kpis  > .ci-kpi          { flex: 1 1 var(--rec-cikpi-basis, 170px); }
+.ret-kpis > .ret-kpi         { flex: 1 1 var(--rec-retkpi-basis, 150px); }
+.ar-highlights > .ar-hl      { flex: 1 1 var(--rec-arhl-basis, 240px); }
+.spotlight-cards > .spotlight-card { flex: 1 1 var(--rec-spot-basis, 180px); }
+.residency-cards > .res-card  { flex: 1 1 var(--rec-res-basis, 200px); }
+.summary-row    > .kpi-card   { flex: 1 1 var(--rec-kpicard-basis, 170px); }
+
+.ci-kpi .kl, .ret-kpi .rl, .ar-hl .hl-k, .spotlight-card .spot-cat,
+.res-card .rc-label, .kpi-card .kpi-label {
+  font-size: var(--rec-body-sm); color: var(--rec-text-secondary); font-weight: 500;
+  text-transform: none; letter-spacing: 0; margin-bottom: 4px;
+}
+.ci-kpi .kv, .ret-kpi .rv, .spotlight-card .spot-value,
+.res-card .rc-value, .kpi-card .kpi-value {
+  font-size: var(--rec-heading-lg); font-weight: 500; line-height: 1.2; letter-spacing: -.02em;
+  font-variant-numeric: tabular-nums; color: var(--rec-text-primary);
+}
+.ci-kpi .ks, .ret-kpi .rs, .spotlight-card .spot-sub,
+.res-card .rc-sub, .kpi-card .kpi-sub {
+  font-size: 11.5px; color: var(--rec-text-tertiary); margin-top: 3px;
+}
+/* A spotlight names a PERSON, so the name is the figure on that card and the
+   money underneath is the sub. Its shape is label/name/value rather than
+   label/value/sub, which is why it is not folded into the rule above. */
+.spotlight-card .spot-name {
+  font-size: var(--rec-heading-sm); font-weight: 500; color: var(--rec-text-primary);
+  margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* ── Statuses inside a seamless strip ─────────────────────────────────────
+   A hairline strip has no per-cell border left to colour, so a state that
+   used to be a coloured left edge becomes a tinted cell and coloured ink.
+   These are genuine states, not decoration: an auto-renew highlight is good
+   or bad, and a lesson inquiry nobody ever answered is a warning — it is the
+   finding that tab exists for. */
+.ar-highlights > .ar-hl.good .hl-v { color: var(--rec-success); }
+.ar-highlights > .ar-hl.bad  .hl-v { color: var(--rec-danger); }
+.cards > .card.flag { background: var(--rec-cat-4-bg, #fff7ed); }
+.cards > .card.flag .val { color: var(--rec-warning); }
+.cards > .card.flag .lbl,
+.cards > .card.flag .sub { color: var(--rec-text-secondary); }
+
+/* A badge already carries its own fill, so it keeps its direction — through
+   the tokens, and with the print-colour rules that stop a printer dropping
+   the one thing on the card that says which way the number moved. */
+.dc-badge.up   { background: var(--rec-cat-3-bg, #ecfccb); color: var(--rec-success); }
+.dc-badge.down { background: #fee2e2; color: var(--rec-danger); }
+.dc-badge.flat { background: var(--rec-bg-secondary); color: var(--rec-text-secondary); }
+.dc-badge { -webkit-print-color-adjust: exact; print-color-adjust: exact; }

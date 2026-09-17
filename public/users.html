@@ -239,6 +239,21 @@
   .map-toggle button.active { background:#6366f1; color:#fff; border-color:#6366f1; }
   .map-loading { display:flex; align-items:center; justify-content:center; height:420px; color:#6b7280; font-size:13px; }
 </style>
+  <!-- The Recess layer. recess-tokens.css carries the VALUES; recess-report.css
+       is the report treatment built from them. Linked AFTER this page's own
+       <style> on purpose: on equal specificity the skin then wins, so a page
+       joins the layer by adding these two lines rather than by having its own
+       copy of the card treatment surgically removed. Only page rules that are
+       MORE specific (an accent bar, a value colour) are deleted. -->
+  <link rel="stylesheet" href="/recess-tokens.css">
+  <link rel="stylesheet" href="/recess-report.css">
+  <!-- This page's strip keeps the COLUMN COUNT it already had. The skin only
+       READS these, so declaring them here works whatever the link order. They
+       are each page's own original grid minmax()/min-width: the skin's 180px
+       default is WIDER than most of them, and a wider basis fits fewer cards
+       per row — which silently re-wrapped eleven pages (facilities Camping
+       went 7-across to 6+1, a lone stretched card on a second row). -->
+  <style>:root { --rec-kpi-basis: 145px; }</style>
 <script src="/report-refresh.js" defer></script>
 <script src="/open-pdf.js" defer></script>
   <script src="/report-loader.js"></script>
@@ -2144,7 +2159,10 @@ function App() {
           // ── Fill Rate tab ──
           if (ct.key === 'fillrate' && fillRateAnalytics) {
             var fr = fillRateAnalytics;
-            var FILL_COLORS = ['#2563eb','#dc2626','#059669','#d97706','#7c3aed','#db2777','#0891b2','#4f46e5','#ea580c','#16a34a','#6d28d9','#e11d48'];
+            // Four of the twelve this replaced were the reserved four EXACTLY —
+            // #2563eb info, #dc2626 danger, #16a34a success, #d97706 warning — so a
+            // reader could not tell whether a red line meant a section or meant bad.
+            var FILL_COLORS = window.RECESS_CAT;
             // Section picker state: default to top 5
             var selected = fillSelected || fr.top.slice(0,5).map(function(s){return s.section;});
             var chartSections = fr.sections.filter(function(s){return selected.indexOf(s.section)!==-1;});

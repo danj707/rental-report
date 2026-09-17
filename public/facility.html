@@ -843,8 +843,6 @@
       color: #888;
       margin-top: 3px;
     }
-    .res-card.resident   { border-left: 3px solid #10b981; }
-    .res-card.nonresident { border-left: 3px solid #f59e0b; }
     .res-card.total-card  { border-left: 3px solid #3b82f6; }
     .res-card.pct-card    { border-left: 3px solid #8b5cf6; }
     .residency-breakdown {
@@ -1275,6 +1273,14 @@
     @media print { .view-wrap, .view-toast, .view-warn { display: none !important; } }
     body.print-mode .view-wrap, body.print-mode .view-toast, body.print-mode .view-warn { display: none !important; }
   </style>
+  <!-- The Recess layer. recess-tokens.css carries the VALUES; recess-report.css
+       is the report treatment built from them. Linked AFTER this page's own
+       <style> on purpose: on equal specificity the skin then wins, so a page
+       joins the layer by adding these two lines rather than by having its own
+       copy of the card treatment surgically removed. Only page rules that are
+       MORE specific (an accent bar, a value colour) are deleted. -->
+  <link rel="stylesheet" href="/recess-tokens.css">
+  <link rel="stylesheet" href="/recess-report.css">
   <script>
     // ── Token auth (injected) ────────────────────────────────────────
     const URL_TOKEN = new URLSearchParams(window.location.search).get('token') || '';
@@ -1302,11 +1308,11 @@
 const { useState, useEffect, useMemo, useCallback, useRef } = React;
 
 // ── Default location color palette ──────────────────────────────────
-const DEFAULT_PALETTE = [
-  '#e63946','#457b9d','#2a9d8f','#e9c46a','#f4a261','#a8dadc',
-  '#6a4c93','#f77f00','#4cc9f0','#80b918','#e07a5f','#3d405b',
-  '#81b29a','#9b5de5','#f15bb5','#00bbf9','#00f5d4','#fee440',
-];
+/* Location series carry IDENTITY, so they read the one categorical list
+   (window.RECESS_CAT, in open-pdf.js). The 18-colour list this replaced was
+   a fourteenth palette on the platform and nothing tied it to any other
+   chart a reader sees. Cycled with % length, as before. */
+const DEFAULT_PALETTE = window.RECESS_CAT;
 
 // ── Read query params ────────────────────────────────────────────────
 function getParams() {

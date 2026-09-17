@@ -168,8 +168,6 @@
       border: 1px solid #e4e4e0;
       border-left: 3px solid #2563eb;
     }
-    .summary-card.green   { border-left-color: #16a34a; }
-    .summary-card.gray    { border-left-color: #9ca3af; }
     .summary-card .card-label {
       font-size: 9.5px;
       text-transform: uppercase;
@@ -431,6 +429,21 @@
       border-top-color: #888;
     }
   </style>
+  <!-- The Recess layer. recess-tokens.css carries the VALUES; recess-report.css
+       is the report treatment built from them. Linked AFTER this page's own
+       <style> on purpose: on equal specificity the skin then wins, so a page
+       joins the layer by adding these two lines rather than by having its own
+       copy of the card treatment surgically removed. Only page rules that are
+       MORE specific (an accent bar, a value colour) are deleted. -->
+  <link rel="stylesheet" href="/recess-tokens.css">
+  <link rel="stylesheet" href="/recess-report.css">
+  <!-- This page's strip keeps the COLUMN COUNT it already had. The skin only
+       READS these, so declaring them here works whatever the link order. They
+       are each page's own original grid minmax()/min-width: the skin's 180px
+       default is WIDER than most of them, and a wider basis fits fewer cards
+       per row — which silently re-wrapped eleven pages (facilities Camping
+       went 7-across to 6+1, a lone stretched card on a second row). -->
+  <style>:root { --rec-summary-basis: 140px; }</style>
   <script>
     // ── Token auth (injected) ────────────────────────────────────────
     const URL_TOKEN = new URLSearchParams(window.location.search).get('token') || '';
@@ -1461,14 +1474,14 @@ function App() {
           const pI = totA > 0 ? Math.round(totI / totA * 100) : 0;
           const pM = totA > 0 ? Math.round(totM / totA * 100) : 0;
           return (
-            <div className="summary-row" style={{display:'flex', gap:10, marginTop:8, flexWrap:'wrap'}}>
+            <div className="summary-row">
               <div className="kpi-card">
-                <div className="kpi-label" style={{color:'#2563eb'}}>Instant Bookings</div>
+                <div className="kpi-label" style={{color:'var(--rec-cat-1)'}}>Instant Bookings</div>
                 <div className="kpi-value">{cntI}</div>
                 <div className="kpi-sub">{Math.round(totI)} hrs ({pI}% of court time)</div>
               </div>
               <div className="kpi-card">
-                <div className="kpi-label" style={{color:'#f59e0b'}}>Leagues / Managed</div>
+                <div className="kpi-label" style={{color:'var(--rec-cat-2)'}}>Leagues / Managed</div>
                 <div className="kpi-value">{cntM}</div>
                 <div className="kpi-sub">{Math.round(totM)} hrs ({pM}% of court time)</div>
               </div>
