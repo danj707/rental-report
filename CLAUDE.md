@@ -100,8 +100,14 @@ the reason a later experiment must not be read as overturning it.
 **THE OBVIOUS DENOMINATOR IS WRONG AND IT IS WRONG IN THE FLATTERING
 DIRECTION.** 2,559 offers expired unclaimed, and most of them expired because
 somebody ELSE in the same wave took the seat — those are structurally
-unwinnable, at any notification speed. Grouping apex's 4,600 offers into their
+unwinnable, at any notification speed. Grouping apex's offers into their
 seat-opening waves (section + minute):
+
+**4,600 here against the 4,602 above, and the two-row gap is the JOIN rather
+than a discrepancy**: the funnel counts `addParticipant` grants directly, while
+this reaches them the card's way, through `waitlist.temporary_grant_id`. Two
+grants have no surviving waitlist row. Worth stating so nobody reconciles it
+twice.
 
 | | |
 |---|---|
