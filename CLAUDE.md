@@ -156,6 +156,283 @@ with nothing about Musco having changed. It anchors on the MESSAGE now
 that the anchor was found, and was re-verified to still catch the regression it
 was written for. *Nth instance of a slice pinned to a neighbour's spelling.*
 
+## AUTOMATED WAITLISTS ARE LIVE, AND THE COMPARISON THEY INVITE IS NOISE (2026-09-16)
+
+Dan, after asking how many waitlist emails actually go out and what they convert
+at — the reason being SMS: *"can we build some metrics around this into the
+existing waitlist report? This will need to support automated waitlists now that
+those are live."*
+
+### THE REPORT'S 263 WAS RIGHT AND ANSWERED A NARROWER QUESTION
+
+Apex, measured 2026-09-16: the page read **263 offers sent**; the raw table holds
+**4,602**. Both correct — the report is filtered to **Active (In Progress +
+Upcoming)** sections, and reconciling it exactly is what proved that:
+
+| | offers | sections |
+|---|---|---|
+| on sections still running | **264** (the report's 263, one grant newer) | 47 |
+| on sections that have ended | 4,338 | 212 |
+
+So for an SMS business case the on-screen number understates volume **17x**.
+*A scoped figure is not a wrong figure, and the reconciliation is what tells the
+two apart.*
+
+**`temporary_grant` IS NOT A WAITLIST TABLE.** It is a generic grant store — apex
+carries one `viewCustomReport` row among 4,602 `addParticipant` ones. Every query
+here filters `claims->>'action'='addParticipant'`, and the resource is a SESSION
+on 4,074 of them and a SECTION on 528, so both have to be handled.
+
+### THE APEX FUNNEL, all-time
+
+4,602 offers to 1,167 people → **2,033 claimed (44.2%)**, 2,559 expired
+unclaimed, 10 open. Claimed seats are worth **$124,853** (avg $61.41, median
+$42). Claim latency: **median 2.2h, only 36% inside the first hour**, 84% within
+a day. 2,607 seat-opening events → **1.77 offers each** (62% are a single offer,
+max 10), so SMS volume tracks offers, not seats.
+
+### AUTOMATED IS LIVE AND TINY, WHICH IS THE WHOLE DESIGN CONSTRAINT
+
+Platform-wide on 2026-09-16: **27 sections / 168 sessions across 3 orgs** carry
+`waitlist_config->>'type' = 'automated'`, against 36,306 manual sections. In
+offers that is **44 automated against 8,774 manual** — and 13 of the 44 claimed
+is **29.5% against manual's 42.5%**.
+
+**SO THE OBVIOUS PANEL PRINTS "AUTOMATION CONVERTS WORSE" OFF THIRTEEN CLAIMS.**
+At n=44 the 95% interval on 29.5% is roughly ±14 points, wide enough to contain
+manual's 42.5%. That is a finding invented out of noise, on the feature the org
+just switched on.
+
+**HENCE TWO FLOORS, and the second one is the point.** `WL_CONV_MIN_OFFERS` (5)
+was already there and answers *may I state a rate at all*. `WL_CMP_MIN_OFFERS`
+(50) answers *may I say anything about the GAP between two rates* — a different
+claim needing far more evidence. Below it both rates still print; what is
+withheld is the sentence comparing them.
+
+**50 IS A JUDGEMENT AND IS LABELLED AS ONE**, like `OPP_FEED_CONCURRENCY`. No
+measurement chooses it and it is NOT a significance test — it is where a stated
+rate's interval is about ±14 points rather than ±30.
+
+### THREE BUCKETS, NEVER TWO
+
+A row whose `wlType` is null is a warm pre-v6 cache entry — *this feed cannot
+tell us*, which is not *a person does this by hand*. Folding it into manual loads
+whichever side the stale rows land on, and the panel reads as a finding. The
+unknown count is **stated on screen** rather than silently excluded. Same
+presence rule the per-section `auto` tag already follows.
+
+The rate goes through `wlConversion`, so the panel, the per-section column and
+the floor cannot drift apart.
+
+### THE MISSED-OFFER MONEY IS A CEILING AND SAYS SO
+
+Expired offers × the section's own price. It is not a debt: on a wave where
+several people are offered one seat only one can take it, and some had changed
+their mind. **A free section's missed seat is counted as a SEAT and contributes
+no dollars** — the page says how many carry no price, because rolling them in
+either direction would be wrong.
+
+### SMS: THE COST MODEL WAS HALF THE REAL NUMBER
+
+Dan budgeted $0.03/SMS. Billing is per **SEGMENT**: measured over the 17,847 SMS
+already sent (22 orgs, live since 2026-02-13), the rate is **3.05¢/segment** and
+only 20% of real messages fit one segment — **60% use two, 20% use three**, a
+blended **5.99¢**. The 523 waitlist-*related* SMS already on the platform average
+220 chars → **2.07 segments → 6.2¢**. A claim-link SMS is a 2–3 segment message.
+
+Even so the case is not close: 4,602 offers × $0.062 = **$285 for nine months**
+at apex against $124,853 of claimed seats — **break-even is 4.7 extra claims**,
+a 0.1-point lift.
+
+**APEX HAS SENT ZERO SMS.** SMS is live for 22 other orgs; apex is email-only.
+
+### THE HEADROOM IS 965 SEATS, NOT 2,559 OFFERS — and Dan's call is to ship SMS
+
+Dan, on the numbers below: *"sounds like it's def worth enabling SMS, the claim
+rate and rev will absolutely make up for the difference."* So **SMS on waitlist
+invites is a decision, not an open question** — what follows is the sizing, and
+the reason a later experiment must not be read as overturning it.
+
+**THE OBVIOUS DENOMINATOR IS WRONG AND IT IS WRONG IN THE FLATTERING
+DIRECTION.** 2,559 offers expired unclaimed, and most of them expired because
+somebody ELSE in the same wave took the seat — those are structurally
+unwinnable, at any notification speed. Grouping apex's offers into their
+seat-opening waves (section + minute):
+
+**4,600 here against the 4,602 above, and the two-row gap is the JOIN rather
+than a discrepancy**: the funnel counts `addParticipant` grants directly, while
+this reaches them the card's way, through `waitlist.temporary_grant_id`. Two
+grants have no surviving waitlist row. Worth stating so nobody reconciles it
+twice.
+
+| | |
+|---|---|
+| seat-opening waves | **2,323** |
+| waves where somebody claimed | 1,358 |
+| **waves where NOBODY claimed** | **965** — the entire recoverable pool |
+| offers sitting in those dead waves | 1,425 |
+| avg offers per wave | 1.98 |
+
+Those 965 seats are worth **$73,037** — 957 priced (avg $76.32, median $42),
+8 free, and **zero with no price on file**, so nothing is being guessed at.
+That is the ceiling on what SMS can ever recover at apex over nine months.
+
+**The cost does not shrink with the headroom**, which is the whole point: SMS is
+paid on every offer (4,600 × $0.062 = **$285**) while the return comes only from
+the 965.
+
+| recovery of the 965 | seats | claim rate | value | net of $285 |
+|---|---|---|---|---|
+| **break-even** | **4** | +0.1 pt | $285 | $0 |
+| 5% | 48 | 44.2 → 45.2% | $3,652 | **+$3,367** |
+| 10% | 97 | → 46.3% | $7,304 | **+$7,019** |
+| 15% | 145 | → 47.4% | $10,956 | **+$10,671** |
+| the ceiling | 965 | → 68.1% | $73,037 | +$72,752 |
+
+**5% IS DELIBERATELY PESSIMISTIC AND STILL RETURNS 12.8x.** Priced at the $42
+median instead of the $76.32 mean — i.e. assuming SMS only ever recovers the
+cheap impulse seats — 5% is still +$1,742.
+
+**WHY THE LOW END IS THE HONEST ONE.** The average invite window is ~105.8h
+(4.4 days) and median claim latency is 2.2h, so most of those 965 people had
+DAYS and did not act. That is changed-their-mind, not missed-the-email, and SMS
+only buys speed. The counterweight is real too: **only 36% claim inside the
+first hour**, so there is genuine latency to compress.
+
+**A CHEAPER SHAPE EXISTS AND IS WORTH KNOWING BEFORE ANYONE PRICES THE FULL
+ROLLOUT.** SMS as a FOLLOW-UP after ~24h of silence rather than on every offer
+costs **$159 instead of $285** and captures most of the same recovery, because
+the people who claim fast are already claiming off email.
+
+### AN A/B IS THE INSTRUMENT, NOT ATTRIBUTION — and two sections cannot read it
+
+Dan: *"Enable SMS on one waitlisted section, and disable it for another. Compare
+claim rates. Not causation but def correlation."* The instinct is right and the
+sample is not.
+
+**ATTRIBUTION ANSWERS THE WRONG QUESTION ANYWAY.** A URL param tells you which
+channel somebody CLICKED; it cannot tell you whether the SMS caused a claim that
+email would not have produced. With an email + SMS-nudge design it is last-touch
+by construction. A holdout measures the LIFT, which is the number the case turns
+on, and needs no tracking work at all. **And a URL param is necessary but not
+sufficient even for attribution** — something has to PERSIST the channel against
+the grant (or the waitlist row, or the booking) at claim time, or it lives in the
+browser and is gone the moment they register.
+
+**THE PER-SECTION RATES ALREADY EXIST**: card 19273 v6 is section-grain and
+emits offers sent / claimed / expired, avg and median claim hours, and the six
+claim-latency buckets. So the measurement surface is built. The problem is
+volume.
+
+| apex, sections that have ever had an offer | 259 |
+|---|---|
+| **median offers per section** | **2** |
+| sections ≥ 20 offers | 33 |
+| sections ≥ 50 offers | **18** |
+| biggest single section | 1,133 |
+
+**SO A TWO-SECTION TEST COMPARES 2 OFFERS AGAINST 2.** Picking the two biggest
+instead swaps a sample-size problem for a confound: a toddler swim waitlist and
+an adult fitness waitlist differ in urgency, price and audience, so the gap is
+program mix as much as channel.
+
+**ARMS, NOT A PAIR.** Randomly assign the 33 sections over 20 offers to two
+arms and pool each side. That is exactly the shape `wlTypeSplit` already has —
+two pools, pooled rates, and a floor gating the comparative sentence — so if an
+SMS flag ever lands on `waitlist_config`, the panel reads it almost for free.
+Randomising WITHIN the wave would be better still (it controls for program,
+price, season and urgency at once) and needs product work the section-level
+toggle does not.
+
+**THE POWER TABLE, 80% power off a 44.2% base:**
+
+| lift to detect | offers per arm | ≈ apex time |
+|---|---|---|
+| +15 pts | 175 | ~3 weeks |
+| +10 pts | 394 | ~2 months |
+| +5 pts | 1,577 | ~7 months |
+
+**AND THIS IS THE LINE THAT MATTERS: BREAK-EVEN IS +0.1 POINTS, WHICH NO
+EXPERIMENT AT THIS VOLUME CAN SEE.** Detecting even a 5-point lift takes most of
+a year of apex's ENTIRE waitlist volume, and every conservative scenario above
+(5% recovery is +1.0 point) sits far below the detection floor. So an A/B is
+worth running to catch a BIG win — and **a null result means "not a big effect",
+never "not worth doing"**. Writing down a null as a verdict against SMS would be
+reading the absence of evidence as evidence of absence, on a change whose
+economics clear at a fortieth of what the test can resolve.
+
+### WHAT THE REPORT STILL CANNOT SAY, and why it is not a gap to fix here
+
+**Channel.** CON-1587 has it right: the waitlist invite is sent by **Customer.io**,
+not Rec's pipeline, so it never lands in `message_delivery` (~95% of grants have
+no delivery row). The 17,847 SMS above are Rec's OTHER notifications. Email vs
+SMS attribution cannot be built report-side until that data is joinable.
+
+**Opens.** `first_viewed_at` is no longer dead — and the old spec header saying
+so was corrected rather than left, because a wrong statement in a comment closes
+the question:
+
+| | viewed | share | orgs |
+|---|---|---|---|
+| 2026-07 | 1 of 1,169 | 0.1% | 1 |
+| 2026-08 | 63 of 672 | 9.4% | 9 |
+| 2026-09 | 148 of 316 | **46.8%** | 18 |
+
+It is deliberately NOT on the card yet: an all-time open rate over that history
+renders **~2.4%** and reads as *"nobody opens our emails"* when the truth is
+*"we started recording opens in August"*. It needs a COVERAGE gate, not merely a
+presence gate — which is a different mechanism from every other column here.
+
+### Guards
+
+`waitlist-conversion.spec.js` 49 → **93 assertions**, LIFTING AND RUNNING
+`wlTypeSplit` and `wlMissedValue`, driven by the real platform shape (44 vs
+8,774) so the case the second floor exists for is the case under test.
+Mutation-tested **ten ways, all caught by name**: unknown folded into manual, the
+verdict back on the low floor, `gapReadable` computed with `WL_CONV_MIN_OFFERS`,
+the rate bypassing `wlConversion`, `bothPresent` ignored, within-1h measured
+against offers, claim hours as a mean of means, unpriced seats given a price, the
+split reading its own funnel, and the band rendered unconditionally.
+
+**THE LIFT REACHED PAST ITS OWN INPUTS ON THE FIRST RUN** — `wlConversion` reads
+`WL_CONV_MIN_OFFERS` and the slice carried neither floor, so the spec DIED with a
+bare `ReferenceError` naming nothing. Nth instance. Both floors are read from the
+SOURCE rather than restated, and a `guard()` wrapper makes a throw at CALL time
+fail by name instead of killing the run — the lift's try/catch only ever covered
+lift time.
+
+**Seven `ci-check-render.js` cases**, and the DEFAULT fixture is deliberately the
+live shape: automated 20 offers against manual 22, so both rates print and
+neither side clears the comparison floor. Two new stub modes — `wlmanual` (no
+automated at all; the panel must be ABSENT, not a row of zeros) and `wlbig`
+(both past 50, rates 50% vs 35% so a swapped read is visible rather than
+plausible). Browser-mutation-tested: the verdict back on `comparable` fails
+exactly the too-few-offers case, `bothPresent` forced true fails exactly the
+nothing-to-compare case, and the missed value reading `Offers Sent` fails exactly
+the missed-seat case.
+
+**My own act hook referenced `document` in NODE scope** and reported as an
+uncaught navigation error. Replaced with a computed `data-wl-cmp-offers="20/22"`
+attribute — a stamped value needs no hook and cannot go stale the way a scrape
+does.
+
+### NOT DONE
+
+- **No card push.** Everything here is page-side off columns card 19273 v6
+  already emits, so there is no tag flip and no outage. `Offers Viewed` is the
+  one column worth adding and it waits on the coverage question above.
+- **No waitlist-type FILTER.** The comparison panel and the per-section `auto`
+  tag answer the ask; a filter would pull in all four gates (getParams, the share
+  link, the exports, generatePdf's forward list) for a dimension with 27 sections
+  on it platform-wide.
+- **NOTHING HERE SWITCHES SMS ON.** That is a product change (Customer.io's
+  template plus a flag on `waitlist_config`), and it is Dan's decision above
+  rather than an open question. What this report contributes is the sizing and,
+  the day an SMS flag exists anywhere on `waitlist_config`, a comparison panel
+  already shaped to read it.
+- **No SMS arm split on the report.** `wlTypeSplit` is keyed on waitlist TYPE,
+  not on an experiment arm. Pointing it at a second dimension is a small change
+  and is not worth making before the flag it would read exists.
 
 ## THE RENTAL CALENDAR IS A FULL-SCREEN MAP NOW (2026-09-14)
 
