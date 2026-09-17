@@ -436,6 +436,13 @@
        MORE specific (an accent bar, a value colour) are deleted. -->
   <link rel="stylesheet" href="/recess-tokens.css">
   <link rel="stylesheet" href="/recess-report.css">
+  <!-- This page's strip keeps the COLUMN COUNT it already had. The skin only
+       READS these, so declaring them here works whatever the link order. They
+       are each page's own original grid minmax()/min-width: the skin's 180px
+       default is WIDER than most of them, and a wider basis fits fewer cards
+       per row — which silently re-wrapped eleven pages (facilities Camping
+       went 7-across to 6+1, a lone stretched card on a second row). -->
+  <style>:root { --rec-summary-basis: 110px; }</style>
   <script>
     // ── Token auth (injected) ────────────────────────────────────────
     const URL_TOKEN = new URLSearchParams(window.location.search).get('token') || '';

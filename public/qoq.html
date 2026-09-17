@@ -497,7 +497,12 @@
 
     /* ── Compare two datasets ─────────────────────────────────────────── */
     /* Normalize GL code for matching: strip dots/dashes so "2204.347.11" matches "220434711" */
-    function glKey(code) { return (code || '').replace(/[^0-9a-zA-Z]/g, ''); }
+    // String(), because a GL CODE IS NOT ALWAYS A STRING. Norman's feed returns
+    // them as integers (1365), and `(1365 || '').replace` is a TypeError that
+    // takes the whole report down with "(code || "").replace is not a
+    // function" where the page should be. gl.html never hit this because it
+    // only ever prints the code; this is the one place that parses it.
+    function glKey(code) { return String(code == null ? '' : code).replace(/[^0-9a-zA-Z]/g, ''); }
 
     function buildComparison(dataA, dataB) {
       const mapA = new Map(dataA.map(r => [glKey(r.glCode), r]));

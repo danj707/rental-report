@@ -350,6 +350,70 @@ ok(/var\(--rec-success\)/.test(skin) && /var\(--rec-danger\)/.test(skin),
    "risk border are genuine states and must keep their colour — the rule is that " +
    "colour marks a status, not that colour is gone");
 
+// ── 15. A PAGE KEEPS ITS OWN COLUMN COUNT ────────────────────────────────────
+// The skin sizes a card with `flex: 1 1 <basis>`, and a WIDER basis fits FEWER
+// cards per row. Every page's strip already had a minimum of its own — a grid
+// minmax() or the card's min-width — and most of them are narrower than the
+// skin's default, so adopting the default silently re-wrapped ELEVEN pages:
+// facilities' Camping tab went 7-across to 6 + 1, leaving Weekend Nights
+// stretched alone on a second row. Dan found one of the eleven by eye.
+// So: a page whose own minimum is narrower than the default must hand that
+// minimum back through the basis variable. Nothing about this is visible in a
+// screenshot of the page that happens to have few enough cards to still fit.
+const FAMILY_BASIS = {
+  "summary-cards": ["summary-card", "--rec-summary-basis", 180],
+  "sum-cards":     ["sum-card",     "--rec-sum-basis",     180],
+  "cards":         ["card",         "--rec-cards-basis",   180],
+  "kpi-row":       ["kpi",          "--rec-kpi-basis",     180],
+  "kpis":          ["kpi",          "--rec-kpi-basis",     180],
+  "delta-cards":   ["delta-card",   "--rec-delta-basis",   200],
+};
+LAYER.forEach(name => {
+  const src = fs.readFileSync(path.join(ROOT, "public", name + ".html"), "utf8");
+  Object.entries(FAMILY_BASIS).forEach(([cont, [item, cssVar, dflt]]) => {
+    const mm = new RegExp("\\." + cont + "\\s*\\{[^}]*minmax\\(\\s*(\\d+)px").exec(src);
+    const mw = new RegExp("\\." + item + "\\s*\\{[^}]*min-width:\\s*(\\d+)px").exec(src);
+    if (!mm && !mw) return;
+    const orig = parseInt((mm || mw)[1], 10);
+    if (orig >= dflt) return;
+    const decl = new RegExp(cssVar + "\\s*:\\s*(\\d+)px").exec(src);
+    ok(decl && parseInt(decl[1], 10) <= orig,
+       name + ".html declares ." + cont + " with a " + orig + "px minimum of its own, but "
+       + (decl ? "sets " + cssVar + " to " + decl[1] + "px" : "does not set " + cssVar)
+       + " — so the skin sizes those cards at " + dflt + "px and the strip wraps EARLIER "
+       + "than it did before the sweep, stranding a lone stretched card on a second row");
+  });
+});
+
+// ── 16. AN INLINE COLOUR IS BEYOND THE SKIN'S REACH ──────────────────────────
+// An inline style beats any stylesheet, so a card that paints its own accent
+// bar or value colour from JS cannot be restyled by the layer at all — it keeps
+// the old treatment while every other report moves, and no CSS assertion can
+// see it. That is how Fast Track's four headline cards stayed on coloured top
+// borders (three of them in RESERVED semantic colours spent on identity) after
+// all nineteen pages were swept, and it is the same trap as
+// court-utilization's inline-styled summary-row.
+LAYER.forEach(name => {
+  const src = fs.readFileSync(path.join(ROOT, "public", name + ".html"), "utf8");
+  // SCOPED TO A CARD IN A SWEPT STRIP, and that scoping is the whole guard.
+  // A bare "inline border" test fires on correct code: Fast Track's Cold
+  // Sections row is `urgent ? amber : blue`, which is a genuine STATUS and
+  // keeps its colour by the same rule. What is forbidden is a CARD painting its
+  // own accent, because that is the one the skin was supposed to take over.
+  // The interpolation sits after the CLOSING quote — '3px solid ' + colour — so
+  // the pattern has to consume that quote; a first draft did not and the
+  // mutation putting the bug back SURVIVED it.
+  const CARD_CLASS = "(?:summary-card|sum-card|delta-card|kpi|card)";
+  const INLINE_BAR = "border(?:Top|Left)\\s*:\\s*['\"`][^'\"`]*['\"`]\\s*\\+";
+  const bar =
+    new RegExp("className:\\s*['\"`]" + CARD_CLASS + "['\"`][^}]*" + INLINE_BAR).exec(src) ||
+    new RegExp(INLINE_BAR + "[^}]*className:\\s*['\"`]" + CARD_CLASS + "['\"`]").exec(src);
+  ok(!bar, name + ".html paints a STRIP CARD's accent bar with an INLINE style (" +
+     (bar ? bar[0].replace(/\s+/g, " ").slice(0, 70) : "") + "). Inline beats the " +
+     "stylesheet, so the skin cannot take it back and that page silently keeps the " +
+     "old treatment while every other report moves");
+});
+
 if (failures.length) {
   console.error("\n" + failures.length + " FAILED:");
   failures.forEach(f => console.error("  ✗ " + f));
