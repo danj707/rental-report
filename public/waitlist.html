@@ -196,6 +196,21 @@
   .expiry-rule { position: absolute; top: -4px; bottom: 16px; left: 49.6%; border-left: 2px dashed #b91c1c; opacity: .6; }
   .expiry-tag { position: absolute; top: -7px; left: calc(49.6% + 6px); font-size: 9.5px; color: #b91c1c; font-weight: 700; }
   .insight { margin-top: 12px; font-size: 11.5px; color: #57534e; border-top: 1px solid #e8e6e0; padding-top: 9px; }
+  /* Automated-vs-manual + missed-offer value. auto-fit rather than .twocol's
+     hard 1fr 1fr, because either panel can be absent on its own: an org with no
+     automated sections still gets the missed-value half. */
+  .panels { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+  .cmp { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; }
+  .cmp th { text-align: right; font-size: 10px; text-transform: uppercase; letter-spacing: .04em;
+            color: #a8a29e; font-weight: 700; padding: 0 0 5px; }
+  .cmp th:first-child { text-align: left; }
+  .cmp td { text-align: right; padding: 6px 0; border-top: 1px solid #f0efeb; font-variant-numeric: tabular-nums; }
+  .cmp td.nm { text-align: left; font-weight: 600; }
+  .cmp td b { color: #92400e; }
+  .cmp [data-wl-thin] { color: #78716c; border-bottom: 1px dotted #d6d3d1; cursor: help; }
+  .missed { display: flex; gap: 26px; flex-wrap: wrap; margin-top: 11px; }
+  .mv { font-size: 22px; font-weight: 700; color: #92400e; font-variant-numeric: tabular-nums; line-height: 1.15; }
+  .mv span { display: block; font-size: 11px; font-weight: 400; color: #78716c; margin-top: 2px; }
   .insight b { color: #92400e; }
 
   /* mode mix */
@@ -322,6 +337,97 @@ function wlConversion(sent, claimed) {
   if (n <= 0) return { pct: null, thin: false, sent: 0, claimed: 0 };
   return { pct: n >= WL_CONV_MIN_OFFERS ? Math.round((c / n) * 100) : null,
            thin: n < WL_CONV_MIN_OFFERS, sent: n, claimed: c };
+}
+
+// AUTOMATED vs MANUAL. Two different products, not two settings: an automated
+// section offers the seat the moment one opens, a manual one waits for a person
+// to send it. So the question worth asking is whether the people on the
+// receiving end behave differently - do they claim more often, and faster.
+//
+// THREE BUCKETS, NOT TWO. A row whose wlType is null is a warm pre-v6 cache
+// entry, i.e. "this feed cannot tell us" - which is NOT "a person does this by
+// hand". Folding it into manual would quietly load whichever side the stale rows
+// happen to land on, and the panel would read as a finding. Same presence rule
+// the per-section auto tag already follows.
+//
+// THE RATE GOES THROUGH wlConversion, so this panel, the per-section column and
+// the floor cannot drift apart - one definition of what a conversion rate is.
+// TWO FLOORS, because "state this rate" and "set these two rates against each
+// other" are different claims. WL_CONV_MIN_OFFERS (5) is enough to print a rate
+// at all. Reading a GAP between two rates needs far more: automated shipped
+// 2026-08 and platform-wide had sent 44 offers by 2026-09-16, where 13 claims
+// is 29.5% with a 95% interval of roughly +/-14 points - wide enough to contain
+// manual's 42.5%. Printing "automation converts worse" off that would be a
+// finding invented out of noise.
+//
+// 50 IS A JUDGEMENT AND IS LABELLED AS ONE. No measurement chooses it: it is
+// the point where a stated rate's interval is around +/-14 points rather than
+// +/-30, and it is NOT a significance test. It only decides whether the panel is
+// allowed a sentence about the DIFFERENCE; both rates still print below it.
+const WL_CMP_MIN_OFFERS = 50;
+const WL_TYPES = ['automated', 'manual', 'unknown'];
+function wlTypeSplit(rows) {
+  const out = {};
+  WL_TYPES.forEach(t => {
+    out[t] = { offers: 0, claimed: 0, expired: 0, within1h: 0, sections: 0, _hrsW: 0, _hrsN: 0 };
+  });
+  (rows || []).forEach(r => {
+    const t = r.wlType === 'automated' ? 'automated' : r.wlType === 'manual' ? 'manual' : 'unknown';
+    const b = out[t];
+    b.sections += 1;
+    b.offers   += Number(r.offersSent) || 0;
+    b.claimed  += Number(r.offersClaimed) || 0;
+    b.expired  += Number(r.offersExpired) || 0;
+    b.within1h += Number(r.c1h) || 0;
+    if (r.avgClaimH != null && r.offersClaimed > 0) {
+      b._hrsW += r.avgClaimH * r.offersClaimed;
+      b._hrsN += r.offersClaimed;
+    }
+  });
+  WL_TYPES.forEach(t => {
+    const b = out[t];
+    const cv = wlConversion(b.offers, b.claimed);
+    b.pct  = cv.pct;
+    b.thin = cv.thin;
+    // How many more offers this side needs before a rate may be stated at all.
+    b.needs = b.offers < WL_CONV_MIN_OFFERS ? WL_CONV_MIN_OFFERS - b.offers : 0;
+    b.avgClaimH = b._hrsN > 0 ? b._hrsW / b._hrsN : null;
+    // Share of this side's CLAIMS that landed inside the first hour.
+    b.fastPct = b.claimed > 0 ? Math.round(b.within1h / b.claimed * 100) : null;
+  });
+  // A side with no sections at all is not a side. Both must be present before
+  // the panel has anything to compare.
+  out.bothPresent = out.automated.sections > 0 && out.manual.sections > 0;
+  // ...and BOTH must clear the floor before the two rates may be set against
+  // each other. Automated shipped 2026-08 and is measured in dozens of offers,
+  // so this is the common case, not an edge case: 13 claims on 44 offers would
+  // otherwise render as "automation converts worse" and be read as a finding.
+  out.comparable = out.bothPresent &&
+    out.automated.offers >= WL_CONV_MIN_OFFERS && out.manual.offers >= WL_CONV_MIN_OFFERS;
+  // ...and only past the higher floor may the panel say anything about the GAP.
+  out.gapReadable = out.bothPresent &&
+    out.automated.offers >= WL_CMP_MIN_OFFERS && out.manual.offers >= WL_CMP_MIN_OFFERS;
+  return out;
+}
+
+// What the unclaimed offers were worth. A CEILING, never a debt: on a wave where
+// several people were offered the same seat only one of them could ever take it,
+// and some of the rest had changed their mind. It sizes the problem; it is not
+// money anybody lost.
+//
+// Seats with no price are counted as SEATS and contribute no dollars - a free
+// section's missed seat is a real missed seat and a $0 revenue miss, and rolling
+// it into the total either way would be wrong.
+function wlMissedValue(rows) {
+  let seats = 0, value = 0, pricedSeats = 0;
+  (rows || []).forEach(r => {
+    const e = Number(r.offersExpired) || 0;
+    if (e <= 0) return;
+    seats += e;
+    const p = Number(r.price) || 0;
+    if (p > 0) { value += e * p; pricedSeats += e; }
+  });
+  return { seats, value, pricedSeats, unpricedSeats: seats - pricedSeats };
 }
 
 function normalizeRow(raw) {
@@ -498,6 +604,12 @@ function App() {
     return a;
   }, [fRows]);
 
+  // Both read fRows - the same scoped set every other panel on this page reads.
+  // A panel on its own funnel is how the facility Summary ended up disagreeing
+  // with itself for a week.
+  const wlTypes  = useMemo(() => wlTypeSplit(fRows), [fRows]);
+  const wlMissed = useMemo(() => wlMissedValue(fRows), [fRows]);
+
   const tableRows = useMemo(() => {
     const withWl = fRows.filter(r => r.waitlisted > 0 || r.wlAllTime > 0);
     return withWl.sort(SORTS[sortKey] || SORTS.waitlisted);
@@ -527,6 +639,22 @@ function App() {
         claimWithin8hPct: agg.claimWithin8Pct,
         timeToClaimBuckets: { within1h: agg.c1h, h1to4: agg.c4h, h4to8: agg.c8h, h8to24: agg.c24h, h24to48: agg.c48h, over48h: agg.cMore },
         waitlistModeMix: agg.modes,
+        // Automated waitlists shipped 2026-08. The rate is deliberately NULL on
+        // either side that has not cleared WL_CONV_MIN_OFFERS, so the model is
+        // handed "cannot say yet" rather than a number it would compare anyway.
+        offerType: {
+          automated: { sections: wlTypes.automated.sections, offers: wlTypes.automated.offers,
+                       claimed: wlTypes.automated.claimed, claimRatePct: wlTypes.automated.pct,
+                       claimedWithin1hPct: wlTypes.automated.fastPct },
+          manual:    { sections: wlTypes.manual.sections, offers: wlTypes.manual.offers,
+                       claimed: wlTypes.manual.claimed, claimRatePct: wlTypes.manual.pct,
+                       claimedWithin1hPct: wlTypes.manual.fastPct },
+          notRecorded: { sections: wlTypes.unknown.sections },
+          ratesComparable: wlTypes.comparable,
+          minOffersToStateARate: WL_CONV_MIN_OFFERS,
+        },
+        missedOffers: { seats: wlMissed.seats, ceilingValueUsd: Math.round(wlMissed.value),
+                        seatsWithNoPrice: wlMissed.unpricedSeats },
       },
       sectionNames,
       topPressureSections: tableRows.slice(0, 30).map(r => ({
@@ -537,7 +665,7 @@ function App() {
         medianClaimHours: r.medClaimH, offersSent: r.offersSent, offersExpired: r.offersExpired,
       })),
     };
-  }, [tableRows, agg, season, status, search, startDate, endDate]);
+  }, [tableRows, agg, wlTypes, wlMissed, season, status, search, startDate, endDate]);
 
   const sendInsightsFeedback = useCallback((score) => {
     if (!insightsTraceId) return;
@@ -927,6 +1055,91 @@ function App() {
           )}
         </div>
       </div>
+
+      {(wlTypes.bothPresent || wlMissed.seats > 0) && (
+      <div className="band" data-wl-split="1">
+        <div className="band-h">
+          <span className="t">⚡ How the offer goes out, and what it costs to be slow</span>
+          <span className="d">automated sections offer a seat the moment one opens · manual ones wait for staff to send it</span>
+        </div>
+        <div className="panels">
+
+          {wlTypes.bothPresent && (
+          <div className="panel" data-wl-cmp="1"
+               data-wl-cmp-offers={wlTypes.automated.offers + '/' + wlTypes.manual.offers}>
+            <div className="panel-h">
+              <span className="t">Automated vs manual</span>
+              <span className="d">{fmtInt(wlTypes.automated.sections)} automated · {fmtInt(wlTypes.manual.sections)} manual sections in view</span>
+            </div>
+            <table className="cmp">
+              <thead><tr><th></th><th>Offers</th><th>Claimed</th><th>Rate</th><th>Within 1h</th></tr></thead>
+              <tbody>
+                {['automated', 'manual'].map(t => {
+                  const b = wlTypes[t];
+                  return (
+                    <tr key={t} data-wl-row={t}>
+                      <td className="nm">{t === 'automated' ? 'Automated' : 'Manual'}</td>
+                      <td data-wl-offers={t}>{fmtInt(b.offers)}</td>
+                      <td data-wl-claimed={t}>{fmtInt(b.claimed)}</td>
+                      <td>{b.pct != null
+                            ? <b data-wl-pct={t}>{b.pct}%</b>
+                            : <span data-wl-thin={t} title={'A rate over ' + fmtInt(b.offers) + ' offers is not a rate. ' + fmtInt(b.needs) + ' more needed before this can be stated.'}>{fmtInt(b.claimed)} of {fmtInt(b.offers)}</span>}</td>
+                      <td>{b.fastPct != null ? b.fastPct + '%' : '—'}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            {wlTypes.gapReadable ? (
+              <div className="insight" data-wl-verdict="1">
+                <b>Automated offers are claimed {wlTypes.automated.pct}% of the time against {wlTypes.manual.pct}% for manual.</b> Both
+                sides carry enough offers ({WL_CMP_MIN_OFFERS}+) for the difference between them to be worth reading.
+              </div>
+            ) : wlTypes.comparable ? (
+              <div className="insight" data-wl-early="1">
+                <b>Both rates are shown, but the gap between them is too early to read.</b> That
+                needs {fmtInt(WL_CMP_MIN_OFFERS)} offers on each side and automated
+                has {fmtInt(wlTypes.automated.offers)}. At this size the automated rate moves by tens of points on a
+                handful of claims, so a gap either way is as likely to be noise as a real difference.
+              </div>
+            ) : (
+              <div className="insight" data-wl-nocmp="1">
+                <b>Not enough automated offers yet to compare the two rates.</b> Automated
+                sections have sent {fmtInt(wlTypes.automated.offers)} offer{wlTypes.automated.offers === 1 ? '' : 's'} in
+                view{wlTypes.automated.needs > 0 ? ', ' + fmtInt(wlTypes.automated.needs) + ' short of the floor' : ''} — the counts
+                are shown instead. A conversion rate off a handful of offers is one or two people, not a verdict on automation.
+              </div>
+            )}
+            {wlTypes.unknown.sections > 0 && (
+              <div className="insight" data-wl-unknown={wlTypes.unknown.sections}>
+                {fmtInt(wlTypes.unknown.sections)} section{wlTypes.unknown.sections === 1 ? '' : 's'} in view {wlTypes.unknown.sections === 1 ? 'does' : 'do'} not
+                report which kind they are — counted on neither side rather than assumed manual.
+              </div>
+            )}
+          </div>
+          )}
+
+          {wlMissed.seats > 0 && (
+          <div className="panel" data-wl-missed="1">
+            <div className="panel-h">
+              <span className="t">What the missed offers were worth</span>
+              <span className="d">links that closed unused, priced at the section's own price</span>
+            </div>
+            <div className="missed">
+              <div className="mv" data-wl-missed-seats={wlMissed.seats}>{fmtInt(wlMissed.seats)}<span>seats offered and not taken</span></div>
+              <div className="mv" data-wl-missed-value={Math.round(wlMissed.value)}>{fmt$(wlMissed.value)}<span>at list price</span></div>
+            </div>
+            <div className="insight">
+              <b>A ceiling, not a loss.</b> Where several people are offered the same seat only one of them can take it,
+              and some had changed their mind — this sizes the problem rather than counting money anybody lost.
+              {wlMissed.unpricedSeats > 0 && ' ' + fmtInt(wlMissed.unpricedSeats) + ' of these seats carry no price and add nothing to the dollar figure.'}
+            </div>
+          </div>
+          )}
+
+        </div>
+      </div>
+      )}
 
       <div className="tablecard">
         <div className="cap">
