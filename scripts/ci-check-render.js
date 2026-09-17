@@ -4705,6 +4705,41 @@ const CASES = [
   { name: "facilities · a stale utilization link lands on Summary",
     path: "/{org}/facilities?tab=utilization",
     needs: '[data-fac-tab="summary"].active', absent: '[data-fac-tab="utilization"]' },
+
+  // THE MASTHEAD DOES NOT MOVE WHEN YOU LEAVE SUMMARY. Camping, Outdoor, Fields
+  // and Aquatics render their own banner, and it used to live INSIDE the view —
+  // i.e. BELOW the tab strip — so clicking off Summary dropped the header down
+  // the page, and while the feed was in flight removed it altogether. Dan,
+  // 2026-09-17: "tabs should be BELOW the banner header." It is portalled into
+  // App's one slot above the tabs now.
+  //
+  // KEYED ON DOCUMENT ORDER, and on there being exactly ONE banner. Both layouts
+  // render a .fac-banner and a .tabs, so every presence assertion passes on the
+  // bug; and a slot that rendered its own banner beside the portalled one would
+  // read as fixed while stacking two mastheads. Only a browser can see either.
+  { name: "facilities · the masthead stays above the tabs on every tab",
+    path: "/{org}/facilities?tab=summary", needs: ".fac-banner",
+    act: async page => {
+      for (const tab of ["summary", "camping", "outdoor", "fields", "aquatics"]) {
+        await page.click(`[data-fac-tab="${tab}"]`);
+        await page.waitForFunction(t => {
+          const el = document.querySelector(`[data-fac-tab="${t}"]`);
+          return el && el.classList.contains("active");
+        }, { timeout: 20000 }, tab);
+        // The pending banner is portalled in the same commit as the spinner, so
+        // this does not wait on the feed — which is the point.
+        await page.waitForFunction(() => !!document.querySelector(".fac-banner"), { timeout: 20000 });
+        const v = await page.evaluate(() => {
+          const all = document.querySelectorAll(".fac-banner");
+          const t = document.querySelector(".tabs");
+          if (!t) return "no tab strip";
+          if (all.length !== 1) return all.length + " mastheads";
+          // 4 === DOCUMENT_POSITION_FOLLOWING — the tabs come AFTER the banner.
+          return (all[0].compareDocumentPosition(t) & 4) ? "ok" : "the tabs are ABOVE the masthead";
+        });
+        if (v !== "ok") throw new Error(`on the ${tab} tab: ${v}`);
+      }
+    } },
   // Memberships → Check-Ins. Six things, none of which "the page rendered"
   // would cover: the time-of-day curve exists and peaks where the data does; the
   // daily chart carries weekday letters (Monday the 24th must read M — a UTC

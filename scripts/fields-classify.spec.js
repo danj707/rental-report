@@ -126,7 +126,13 @@ test("Lights is checked before the catch-all, and Other is last", () => {
 
 test("the tab is wired end to end", () => {
   assert.ok(/function FieldsView/.test(src), "the view exists");
-  assert.ok(/e\(FieldsView, \{ start, end \}\)/.test(src), "and is reachable from the tab dispatch");
+  // The CLAIM is that the tab dispatch reaches the view — not what it hands it.
+  // This pinned the argument list byte for byte, so adding `bannerSlot` (the
+  // masthead's portal slot) broke a fields-classification spec with nothing
+  // about fields having changed. Nth instance in this repo of a literal pin
+  // catching a legitimate change; it tests the wiring now.
+  assert.ok(/e\(FieldsView, \{[^}]*\bstart\b[^}]*\bend\b[^}]*\}\)/.test(src),
+    "and is reachable from the tab dispatch, carrying the window");
   assert.ok(/'Site Type'\] === 'field'/.test(src), "scoped to field-typed sites");
   assert.ok(/event=fields/.test(src), "opening the tab pings the Slack activity feed");
   assert.ok(/game: 'bases'/.test(src), "the banner carries its minigame");

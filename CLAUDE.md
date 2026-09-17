@@ -1,5 +1,112 @@
 # Project notes for Claude
 
+## THE MASTHEAD MOVED WHEN YOU LEFT SUMMARY (2026-09-17)
+
+Dan, with Clarksville's Facilities report open on Camping mid-load, then on
+Fields: *"ur still flipping the banner header when you click off summary and
+into the tabs. look at the placement here."* And the rule, in one line:
+***"tabs should be BELOW the banner header."***
+
+| | Summary | every self-bannered tab |
+|---|---|---|
+| | report header | report header |
+| | **banner** | **tabs** |
+| | filters | **banner** |
+| | tabs | KPI cards |
+
+**IT IS PRE-EXISTING, NOT THE RECESS SWEEP, and that was checked before anything
+was changed** — `git diff main...HEAD -- public/facilities.html` touches no line
+of the banner/filters/tabs composition, and main's copy of that block is
+identical. The sweep is what made it VISIBLE: with every report suddenly wearing
+one treatment, a masthead that jumps a row down the page stops reading as "this
+tab is different" and starts reading as a bug. Worth saying because I had just
+told him the banner was byte-identical — which was true, and was about the
+banner's SIZE on Summary, not about where it sits on a tab he had not opened.
+
+### FOUR VERTICALS OWN THEIR OWN BANNER, and that is not the thing to undo
+
+`camping`, `aquatics`, `outdoor` and `fields` are suppressed from the shared
+`FacilitiesBanner` because each renders its own — `CampBanner`, `AquaBanner`,
+`OutdoorBanner`, `FieldsBanner` — whose **pills are that vertical's numbers**
+(camping: stays · nights booked · occupancy · charged · sites booked). Those
+numbers come from a feed **the view fetches itself**: all four read **card
+17294**, because only that card carries the wall-clock `Begin`/`End` the hour
+maths needs, where the hub's own feed is card 19570. So the banner lives inside
+the view, and the view renders below the tab strip.
+
+**THE TEMPTING FIX IS THE EXPENSIVE ONE.** Lifting the data into `App` so it
+could render all five banners itself means fetching card 17294 on **every**
+Facilities load, for every org, whether or not anyone opens one of those four
+tabs — a real per-load cost to buy a layout change. Swapping in the shared
+banner instead (it already themes per tab from `FBX_THEME`) would print
+**org-wide** pills under a *Camping* title, which is worse than the bug.
+
+### THE BANNER IS PORTALLED INTO ONE SLOT, so the view keeps owning it
+
+`App` renders a childless div above the tabs; each of the four views portals its
+banner into it through `bannerInSlot(slot, node)`. A portal renders wherever it
+sits in the React tree, so the view keeps the banner as the first child of its
+loaded branch and it still lands above the tabs. No data moves and no fetch is
+added.
+
+- **THE SLOT IS A SIBLING OF THE SHARED BANNER, NEVER ITS PARENT.** React
+  reconciles a node's children by position, so portalling into a node React is
+  also rendering children into is how a later update puts the banner in the
+  wrong place. Nothing is rendered into that div from `App`; on the tabs that do
+  not use it, it is empty and 0-high.
+- **A callback ref backed by STATE, not a `useRef`.** A portal needs its target
+  node to exist, and a ref object does not re-render the child when it fills.
+  The div is mounted on every tab and never unmounted, so `bannerSlot` is set
+  after the very first commit and a tab switch finds it ready — which is what
+  stops the banner flashing. `bannerInSlot` returns `null` for a null slot
+  rather than throwing, because there is exactly one commit where it is null.
+- **THE BANNER RENDERS IN EVERY BRANCH — loading, error and loaded.** Dan's
+  first screenshot is the LOADING state, where the page had a header, a tab
+  strip and a spinner and nothing naming the report. Same defect as `ProgBanner`
+  on the Programs page, whose write-up is three sections down in this file.
+- **NO PILLS BEFORE THE ROWS LAND.** `hero()` with no argument is `pending`: the
+  pills are not computed (every one of them reads a figure off a prop the view
+  has not got — `bookings.toLocaleString()` on `undefined` throws) and the
+  `.fcb-pills` row is **dropped rather than rendered empty**, or the masthead
+  changes height the moment the feed answers.
+
+### Guards
+
+`report-tabs.spec.js` 159 → **201 assertions**, in CI. The render case proves the
+ORDER, which is the only half a browser can see; the spec proves the two rules
+underneath it, which it cannot — that the slot is above the tabs in `App`'s own
+output, and that **every** branch of **every** self-bannered view puts its
+banner in that slot. *A case that waits for the banner passes on a view that
+renders one only once its rows land.*
+
+Mutation-tested six ways, all failing by name: a view's loaded branch rendering
+its banner inline again (the bug as it shipped), the slot moved below the whole
+tab strip, a view showing its masthead only once the rows land, a banner
+printing pills while pending, the pills row rendered empty instead of dropped,
+and the shared banner rendered INSIDE the portal target. Plus a **false-positive
+control** — correct code passes all 201.
+
+**AND THE FIRST "slot moved below the tabs" MUTATION SURVIVED**, because I moved
+it to the line directly *above* `e('div', { className: 'tabs' }`, which is still
+above the tabs. *A mutation that does not reproduce the bug has not tested the
+guard*, Nth instance. Moved past the whole tab block it fails by name — and the
+render case fails in a browser reading **`on the camping tab: the tabs are ABOVE
+the masthead`**, which is Dan's complaint in the assertion's own words.
+
+`facilities · the masthead stays above the tabs on every tab` clicks through all
+five tabs and keys on **`compareDocumentPosition`**, plus a requirement that
+there be exactly **ONE** `.fac-banner`: both layouts render a banner and a tab
+strip, so every presence assertion passes on the bug, and a slot that rendered
+its own banner beside the portalled one would read as fixed while stacking two
+mastheads.
+
+**A pre-existing spec pinned a literal my change legitimately moved**, for the
+Nth time: `fields-classify.spec.js` asserted `e(FieldsView, { start, end })`
+byte for byte, so adding `bannerSlot` failed a fields-CLASSIFICATION spec with
+nothing about fields having changed. Its claim is that the tab dispatch reaches
+the view, not what it hands it; it tests that now, and was re-verified to still
+catch the view being unwired.
+
 ## THE RECESS SWEEP — ONE SKIN, NINETEEN REPORTS (2026-09-16)
 
 Dan, on the Programs page: *"looks good, nice clean consistent look. apply this
