@@ -166,8 +166,8 @@ those are live."*
 ### THE REPORT'S 263 WAS RIGHT AND ANSWERED A NARROWER QUESTION
 
 Apex, measured 2026-09-16: the page read **263 offers sent**; the raw table holds
-**4,602**. Both correct — the report is filtered to **Active (In Progress +
-Upcoming)** sections, and reconciling it exactly is what proved that:
+**4,602**. Both correct — and the reconciliation is what tells a scoped figure
+from a wrong one:
 
 | | offers | sections |
 |---|---|---|
@@ -175,13 +175,87 @@ Upcoming)** sections, and reconciling it exactly is what proved that:
 | on sections that have ended | 4,338 | 212 |
 
 So for an SMS business case the on-screen number understates volume **17x**.
-*A scoped figure is not a wrong figure, and the reconciliation is what tells the
-two apart.*
+
+**AND THE REASON IS NOT THE STATUS PILL — I attributed it to that and was wrong
+(corrected 2026-09-17).** The line above used to read *"the report is filtered to
+Active (In Progress + Upcoming) sections"*, which names the page's own default
+pill. That pill is the SMALLER of the two filters by a factor of forty. The
+dominant one is on the CARD, in its own section join:
+
+```sql
+JOIN section s ON s.organization_id = cfg.org_id AND s.deleted_at IS NULL
+             AND s.canceled_at IS NULL AND s.archived_at IS NULL
+```
+
+**Apex archives its past programming, so those sections never enter the feed at
+all.** Measured against the live card on 2026-09-17:
+
+| apex's 4,600 offers, by what the card can see | offers | sections |
+|---|---|---|
+| **on ARCHIVED sections — invisible to the report** | **4,280** | 183 |
+| on sections the card returns | **320** | 76 |
+
+**320 is exactly what the deployed report renders with the status pill set to
+all**, so the tie is complete: the CARD takes 4,600 → 320 (93% of the gap) and
+the PAGE's Active pill then takes 320 → 257. Nothing is lost between them.
+
+**THE CONSEQUENCE IS THE ONE THAT MATTERS FOR THE SMS CASE: the report
+structurally cannot show most of the volume the case is built on.** The 965
+dead waves and the $73,037 ceiling below are computed over all 4,600 grants,
+which is right for a claim about what actually happened — an offer sent on a
+section that has since been archived was still really sent. But **do not
+reconcile the sizing against the screen**; they are answering different
+questions, and the screen can only ever see the 7% of offers sitting on live
+sections. *A filter on the CARD and a filter on the PAGE look identical from the
+outside, and naming the wrong one makes the next person look in the wrong file.*
 
 **`temporary_grant` IS NOT A WAITLIST TABLE.** It is a generic grant store — apex
 carries one `viewCustomReport` row among 4,602 `addParticipant` ones. Every query
 here filters `claims->>'action'='addParticipant'`, and the resource is a SESSION
 on 4,074 of them and a SECTION on 528, so both have to be handled.
+
+### VERIFIED ON PRODUCTION AT APEX, and the second floor is doing real work
+
+2026-09-17, the morning after the merge. Chromium here cannot reach cdnjs, so a
+headless run against production renders blank — the stronger check is the one
+this file already records for the roster sign-off: fetch the LIVE feed, then
+**lift `wlConversion` / `wlTypeSplit` / `wlMissedValue` out of the bytes
+production is serving** and run them over those rows. That proves what the
+deployed code does with apex's real data, which reading the diff does not.
+
+Feed: **3,358 sections in 0.42s** (warm), `Waitlist Type` present on every row,
+so v6 is live. What apex actually renders on open:
+
+| default view (Active) | sections | offers | claimed | rate |
+|---|---|---|---|---|
+| **automated** | **11** | **0** | 0 | *withheld* |
+| manual | 1,107 | 254 | 133 | **52%** |
+| unknown | 401 | 3 | 1 | *withheld* |
+
+`bothPresent=true`, **`comparable=false`**, `gapReadable=false` — so the panel
+renders, prints both sides' counts, and withholds every rate and the comparative
+sentence. Missed-offer panel: **114 seats, $7,956, all 114 priced.**
+
+**APEX IS THE LIVE PROOF OF WHY THE FLOOR EXISTS, and it is a sharper case than
+the one it was designed for.** The write-up above justified `WL_CMP_MIN_OFFERS`
+against automation's 44 offers and 29.5%. Apex has **eleven automated sections
+that have sent ZERO offers** — all Upcoming, none has opened a seat yet — so
+without the floor the panel would print **"Automated 0%" beside "Manual 52%"**,
+a verdict on automation drawn from no evidence whatsoever. The two-tier design
+catches it at the FIRST floor rather than the second: `wlConversion(0, 0)`
+returns a null rate, the cell prints *"0 of 0"*, and the verdict line reads
+*"Not enough automated offers yet to compare the two rates."*
+
+**The 401 unknown sections are the three-bucket rule earning its keep too** —
+folded into manual they would have moved nothing here (3 offers), but they are
+27% of the sections in view and the panel says so on screen rather than
+silently assigning them a side.
+
+**257 today against the 263 recorded yesterday is the window moving, not a
+regression.** Sections age out of In Progress into Past, which is the same
+open-window rule this file records for the Clarksville backcheck. Never diff a
+live scoped figure against itself across two days and call the difference a
+change.
 
 ### THE APEX FUNNEL, all-time
 
@@ -433,6 +507,16 @@ does.
 - **No SMS arm split on the report.** `wlTypeSplit` is keyed on waitlist TYPE,
   not on an experiment arm. Pointing it at a second dimension is a small change
   and is not worth making before the flag it would read exists.
+- **ARCHIVED SECTIONS ARE STILL EXCLUDED, and that is now a decision rather than
+  an unnoticed gap.** The card's `archived_at IS NULL` predates all of this and
+  hides **93% of apex's waitlist history** (4,280 of 4,600 offers, 183 of 259
+  sections). Not changed here, because it cuts both ways and the call is Dan's:
+  an archived section is one the org has deliberately filed away, so surfacing it
+  would put retired programming back on a page about what to do next — but the
+  claim-rate history worth analysing is almost entirely in there, and an org
+  asking *"how well does our waitlist convert"* is today answered off a twentieth
+  of its own data. The cheapest honest middle is a status pill for it, off by
+  default, rather than widening the card's own join.
 
 ## THE RENTAL CALENDAR IS A FULL-SCREEN MAP NOW (2026-09-14)
 
