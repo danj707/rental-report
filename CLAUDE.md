@@ -6448,6 +6448,10 @@ fail.
 
 ## Working preferences (from Dan, dan@rec.us)
 
+- **Every finished task is reported in the TEMPLATE** — one or two sentences,
+  then **Changed** / **Guards** / **You:**, four to eight bullets total. It is
+  written out under *THE TEMPLATE FOR A FINISHED TASK* below. Dan picked that
+  shape on 2026-09-17 after the abstract version of this rule failed to stick.
 - **Always share the Railway PR-preview URL** whenever I open a PR for this repo,
   without being asked — Dan wants to click through the change before merging.
 - **Always hand over the direct Metabase card link** whenever a card needs Dan to
@@ -6501,9 +6505,46 @@ fail.
   context beats being literal.
 - **Readability over cleverness**, in code and in writing. Human-sounding.
 
-### Response style for code tasks (Dan, 2026-09-06)
+### THE TEMPLATE FOR A FINISHED TASK (Dan picked this shape, 2026-09-17)
 
-His own words, verbatim, because they are the standard this file keeps failing:
+Written as a TEMPLATE rather than as advice, because the advice below it has been
+in this file since 2026-09-06 and has not stuck. **Copy this shape.** Dan chose it
+from three samples.
+
+```
+<One or two sentences: what was wrong and what the cause was. No preamble.>
+
+**Changed**
+- <the actual fix, named as the fix>
+- <the second change, and what it prevents>
+- <the third>
+
+**Guards**
+- <spec name + what it covers>
+- <render cases, if any>
+
+**You**: <what Dan has to do — a card flip, a Railway toggle, a merge — or "nothing", with why>
+```
+
+Rules that go with it:
+
+- **Four to eight bullets TOTAL across both groups.** If a change needs more than
+  that in chat, it needs a PR body, not a longer message.
+- **One line per bullet.** No sub-bullets, no nested reasoning, no measurements
+  unless the number IS the finding.
+- **The `You:` line is never omitted**, and "nothing" is a real answer — it is the
+  line Dan reads first, and leaving it out makes him ask.
+- **Drop a group that is empty** rather than writing "Guards: none".
+- **A yes/no question gets the answer on line one**, then the template only if
+  something was changed.
+
+**This is about CHAT, not about the record.** The long-form reasoning still goes
+in this file, in the commit message and in the PR body — that is what they are
+for, and dropping it there to be brief in chat loses the thing that stops the
+next person re-deriving a measurement. Two different audiences, two different
+lengths.
+
+His own words, from 2026-09-06, which the template above is the concrete form of:
 
 - Be concise. No multi-page explanations or walls of text.
 - Lead with a 1-2 sentence summary of what the code does or what changed.
@@ -6515,12 +6556,6 @@ His own words, verbatim, because they are the standard this file keeps failing:
   (if anything) — as bullets.
 - When I ask a yes/no or quick question, answer it directly first. Expand only
   if I follow up.
-
-**This is about CHAT, not about the record.** The long-form reasoning still goes
-in this file, in the commit message and in the PR body — that is what they are
-for, and dropping it there to be brief in chat loses the thing that stops the
-next person re-deriving a measurement. Two different audiences, two different
-lengths.
 
 ## Lindsay's three questions on court utilization (2026-09-04)
 
