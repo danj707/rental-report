@@ -2867,6 +2867,61 @@ const CASES = [
 
   { name: "facilities · camping",  path: "/{org}/facilities?tab=camping", needs: ".camp-cal .cc-hd" },
 
+  /* The campground map painted OVER the sticky toolbar, hiding the date fields
+     (Dan, 2026-09-18, on Douglas County — who link this page from their own site).
+
+     ONLY A BROWSER CAN SEE THIS. The stylesheet reads plausibly either way and
+     "a map rendered" passes on the bug, so the assertion is a HIT TEST: scroll
+     until the map is under the toolbar and ask the browser what is actually on
+     top at the toolbar's own coordinates. A grid of points rather than one,
+     because Leaflet has three candidates at different z-indexes (tiles 200,
+     panes 400-700, controls 1000) and which one lands on the bar depends on
+     where the map got scrolled to — predicting it would make the case fragile
+     rather than strict. */
+  { name: "facilities · the campground map stays under the toolbar",
+    path: "/{org}/facilities?tab=camping", needs: ".camp-map",
+    act: async page => {
+      await page.waitForFunction(
+        () => !!document.querySelector(".camp-map .leaflet-control-zoom"), { timeout: 20000 });
+      const v = await page.evaluate(() => {
+        const map = document.querySelector(".camp-map");
+        const bar = document.querySelector(".toolbar");
+        if (!map || !bar) return "no map or no toolbar";
+        // Scroll the map's own top 10px under the toolbar's top. The bar is
+        // sticky so it stays put and the map slides beneath it — the real case.
+        // Only ~10px, so the zoom control (the map's top-left corner) lands
+        // INSIDE the bar rather than above the viewport.
+        window.scrollTo(0, window.scrollY + map.getBoundingClientRect().top - bar.getBoundingClientRect().top - 10);
+        const b = bar.getBoundingClientRect();
+        const over = r => r.top < b.bottom && r.bottom > b.top && r.left < b.right && r.right > b.left;
+        // TILES CANNOT BE USED HERE: with no network Leaflet never runs its
+        // fade-in, so every tile stays visibility:hidden and is not hit-tested
+        // at all — a grid of points over the map finds the toolbar whichever
+        // way the bug goes. The controls are real buttons and are painted.
+        const cand = [...map.querySelectorAll("*")].filter(n => {
+          const c = getComputedStyle(n);
+          if (c.visibility === "hidden" || parseFloat(c.opacity) < 0.05) return false;
+          const r = n.getBoundingClientRect();
+          return r.width > 2 && r.height > 2 && over(r);
+        });
+        if (!cand.length) return "nothing painted by the map overlaps the toolbar — this case cannot tell the two builds apart";
+        const hits = [];
+        for (const n of cand) {
+          const r = n.getBoundingClientRect();
+          const el = document.elementFromPoint(
+            Math.min(Math.max(r.left + r.width / 2, b.left + 1), b.right - 1),
+            Math.min(Math.max(r.top + r.height / 2, b.top + 1), b.bottom - 1));
+          if (el && el.closest(".camp-map")) hits.push((el.className + "" || el.tagName).slice(0, 30));
+        }
+        if (hits.length) return "the map paints OVER the toolbar: " + [...new Set(hits)].slice(0, 3).join(", ");
+        const cs = getComputedStyle(map);
+        if (cs.position === "static" || cs.zIndex === "auto")
+          return `the map is not a stacking context (position:${cs.position} z-index:${cs.zIndex})`;
+        return "ok";
+      });
+      if (v !== "ok") throw new Error(v);
+    } },
+
   /* ── The Session Schedule (card 17298) ───────────────────────────────────
      THIS PAGE HAD NO RENDER COVERAGE AT ALL, which is part of why it could sit
      on "Loading…" for three minutes without anything noticing. */

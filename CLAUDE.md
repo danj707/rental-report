@@ -1,5 +1,86 @@
 # Project notes for Claude
 
+## THE MAP PAINTED OVER THE TOOLBAR (2026-09-18)
+
+Dan, with Douglas County's Camping tab scrolled: *"small visual bug on the
+campground map page."* The campsite map's tiles and zoom buttons rendering
+across the dark toolbar, hiding the START/END date fields.
+
+**LEAFLET'S CONTAINER HAS NO STACKING CONTEXT, AND ITS INSIDES ARE NUMBERED
+HIGH.** Read out of the shipped bundle rather than remembered:
+`.leaflet-container { overflow:hidden }` — no `position`, no `z-index` — while
+`.leaflet-tile-pane` is **200**, `.leaflet-pane` **400**, `.leaflet-popup-pane`
+**700** and `.leaflet-top/.leaflet-bottom` (the zoom control) **1000**. Leaflet's
+JS sets `position:relative` inline when the container computes `static`, and
+**`position:relative` with `z-index:auto` is not a stacking context** — so all of
+those escape into the page's ROOT context, where the sticky `.toolbar`
+(`z-index:100`) cannot win against any of them.
+
+`position:relative; z-index:0` on the container is the whole fix: it contains
+every one of Leaflet's numbers under a single 0, below the bar.
+
+**`users.html` HAS CARRIED THIS FIX ALL ALONG** — `.map-wrap { …
+position:relative; z-index:1 }` — so somebody hit this once, fixed the page in
+front of them, and never generalised it. That is the copy-paste drift this file
+keeps recording, and it is the strongest corroboration the diagnosis had.
+
+### WHICH MAPS GOT IT, and why the other four did not
+
+Both Leaflet containers on `facilities.html`: `.camp-map` (the report) and
+`.court-native .cu-map-wrap` — **the same page, under the same toolbar**, which
+Racket Sports renders. Fixing one and leaving the other is the half-rename this
+file keeps writing down.
+
+- **`court-utilization.html`** carries the identical defect and is in
+  `RETIRED_REPORTS`, so the route 404s — styling a page nobody can open is waste.
+- **`rentalcalendar.html`**: its `.sticky-hdr` is **dead CSS** (the rule and one
+  `.embed` override, no element), so there is nothing to be painted over. Its
+  `.rc-map` overlays sit at **z-index 500** — deliberately between Leaflet's
+  panes (400) and its controls (1000) — so adding a stacking context there would
+  re-order a public page's legend against its popups to fix a bug it does not
+  have.
+- **`qbr.html`**: only a transient `.toast` (z-50) is above it, and the standing
+  call on that report is to leave it alone.
+- **`campmap.html`**: the map IS the page; nothing sticky sits over it.
+
+### THE HIT TEST WAS BLIND, AND THE FIRST RUN HID IT BEHIND A PASSING FALLBACK
+
+No source assertion can see this — the stylesheet reads plausibly either way and
+*"a map rendered"* passes on the bug — so the guard scrolls the map under the bar
+and asks `elementFromPoint` what is actually on top. **The first version reported
+the bug through its FALLBACK computed-style check while the hit test found
+nothing**, i.e. the assertion doing the naming was not the assertion doing the
+work. *A mutation caught by the wrong assertion has not shown that assertion
+works*, and a fallback that answers first is how that goes unnoticed.
+
+**THE CAUSE IS LEAFLET'S FADE-IN, and it is a standing limit on this harness.**
+Chromium here cannot fetch tiles, so `_tileReady` never runs and every tile stays
+**`visibility:hidden; opacity:0.01`** — measured, not guessed — which removes it
+from hit testing entirely. A grid of points over the map finds the toolbar on
+BOTH builds. **The controls are the only painted thing**, so the case scrolls the
+map's top just 10px under the bar (enough to put the zoom control inside it, not
+so far it goes off-screen above) and hit-tests every *visible* map descendant
+overlapping the bar. It **refuses to pass when it finds no candidate** rather
+than reporting green on a page it could not measure.
+
+Verified both ways: on the shipped bug it fails reading **`the map paints OVER
+the toolbar: SPAN, leaflet-control-zoom-out`** — Dan's screenshot, in words —
+and the fix passes, with all 32 `facilities ·` cases and all 84 specs green.
+
+### `pkill` SELF-MATCHED A FIFTH TIME, in a form the recorded rule did not cover
+
+The rule in this file says assemble the needle at runtime and keep it out of the
+command line. I did assemble it — and **wrote the sweeper with a heredoc and ran
+it in the same call**, so the heredoc BODY was that shell's own cmdline and the
+sweep killed its own shell. Write the script in one call, run it in another, and
+assemble **every** needle at runtime.
+
+**And my spec runner reported 37 of 84 specs FAILING when none were.** It matched
+on the words `assertions passed`, and three other output formats are in use
+(`11 passed, 0 failed`, `8/8 passing`, `✓ name — N assertions`). Judge a spec by
+its **exit code**; a runner that cannot tell pass from fail has not tested
+anything, which is the same lesson this file records for the mutation runner.
+
 ## THE MASTHEAD MOVED WHEN YOU LEFT SUMMARY (2026-09-17)
 
 Dan, with Clarksville's Facilities report open on Camping mid-load, then on
