@@ -6021,8 +6021,17 @@ the item log's own notion of a countable transaction — and zero diffs over
 32,661 groups is what confirms that reading.
 
 **That covers `tx_oi` only** — the precise arm, two orgs, one window. The
-fallback on base tables, the unwindowed shape prewarm sends, and an end-to-end
-comparison of the card's own rows are all still owed, as is the tag flip.
+fallback on base tables, the unwindowed shape prewarm sends, an end-to-end
+comparison of the card's own rows and the tag flip were all owed *when this was
+written*.
+
+**ALL FOUR SHIPPED AS v7.1 ON 2026-09-11 — read that section, not this
+paragraph, and do not treat any of it as outstanding.** Re-verified against the
+live card 2026-09-17: card 17301 serves v7.1 and registers exactly THREE
+parameters, `org_id` text with both dates typed `date`, so the flip is done too.
+*A note claiming outstanding work costs exactly as much as one claiming work is
+done* — third instance in this file, after the stale `FACILITIES_SUMMARY_UUID`
+note and the rollback paragraph a few lines below.
 
 ### WHERE IT STANDS
 
@@ -11194,13 +11203,22 @@ Two of the three biggest wins are El Segundo's to do, not ours:
 2. **Get a program-type mapping** — which rental names are Masters, High
    Schools, Youth Water Polo. One list turns the existing lane-hours panel into
    his report 1.
-3. **Confirm `aquaticsScope` has Wiseburn and Urho ticked.** Their lanes are
-   typed `court`, so without both the tab reports 21 hours instead of ~8,406.
-   **UNVERIFIED** — the org is dynamic and the setting could not be read here.
-4. **Check whether the lanes carry published open hours.** If they do,
-   available-vs-reserved (his report 3) is a matter of pointing the existing
-   `courtSchedulesFor` / `courtOpenHours` denominator at aquatics rather than
-   building anything. If they do not, the denominator is a conversation.
+3. **`aquaticsScope` HAS Wiseburn and Urho ticked — CONFIRMED, not
+   outstanding.** Their lanes are typed `court`, so without both the tab reports
+   21 hours instead of ~8,406. Dan ticked them on 2026-09-02 and the backcheck
+   that afternoon measured **67 active sites** — Wiseburn's 51 court-typed sites
+   plus Urho Saari's 16, a figure the tab cannot reach with either one missing.
+   (The setting still cannot be read from a sandbox, because the org is dynamic;
+   the site count is what settles it.)
+4. **The lanes DO carry published open hours — ANSWERED, and the cheap
+   version of the fix does not exist.** All 67 carry `court_slot` rows (4,207
+   open hours/week, interval-UNIONed). But **`config->bookingPolicies->slots` is
+   empty on all 67**, and that is the field `courtSchedulesFor` /
+   `courtOpenHours` actually read — so pointing the existing denominator at
+   aquatics returns nothing. Report 3 needs `court_slot`, and the two sources
+   disagree by ~20% on the denominator (13.58 against 10.85 avg hrs/court-day),
+   which is the conversation this item was hedging about rather than a wiring
+   job.
 5. **A store-item admission has no duration**, so lane hours for Lap Swim and
    Rec Swim store items can only come from the posted rec-swim window — a number
    El Segundo supplies, never one we measure. Presenting it as measured is the
