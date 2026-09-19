@@ -69,6 +69,7 @@ const crypto     = require("crypto");
 const munis      = require("./lib/munis");   // Tyler/Munis GL Account Detail export
 const permitLib  = require("./lib/permit");  // facility rental posting sheets
 const stateStore = require("./lib/store");   // durable state: the volume, or Postgres
+const weatherLib = require("./lib/weather"); // current conditions on the org dashboard
 // NOT `store` — server.js already has two locals by that name (the game-scores
 // blob), and a shadowed module reference is the kind of readability trap that
 // only shows up as a bug months later.
@@ -3960,6 +3961,12 @@ const DEFAULT_FLAGS = {
   schemaBreakAlerts: true,   // dropped table/column watchdog  → `schema-break`
   paramDriftAlerts: true,    // date tag reset to Text          → `param-drift`
   reportDownAlerts: true,    // a card that cannot answer       → `report-down`
+  // ── Weather on the org dashboard (2026-09-19) ──────────────────────────
+  // Dan asked for it and approved the design, so it ships ON — but it paints
+  // every org's front door, and the one thing that must not need a deploy is
+  // turning it off again. Flipping this off takes the sky, the card and the
+  // night treatment with it and leaves the page exactly as it was.
+  orgWeather: true,
   // ── Per-org report settings (2026-08-27) ───────────────────────────────
   // Dan: "let's hide the settings behind a feature flag just for super duper
   // admins (me) right now. This power is too much for an org user to handle."
@@ -16779,6 +16786,95 @@ app.put("/:org/api/goals", express.json(), (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+/* ── Current conditions for the org dashboard ──────────────────────────────
+   The arithmetic is in lib/weather.js so a spec can run it; what lives here
+   is the cache and the one rule that cannot: the org dashboard is the front
+   door, so it MUST NOT block on a third party. `orgWeatherFor` is therefore
+   synchronous — it answers from memory and kicks a refresh behind the reader.
+
+   The cost of that is one cold load per org per refresh window with no
+   weather at all, which is the right way round: a page that renders instantly
+   and gains a sky a moment later beats one that waits on api.open-meteo.com.
+   Nothing is pre-warmed and nothing is fanned out — an org nobody opens is an
+   org we never fetch, unlike the Metabase prewarm this file records a storm
+   for.
+   ───────────────────────────────────────────────────────────────────────── */
+const _wxCache = new Map();      // slug → { ts, data }
+const _wxInFlight = new Set();
+const WX_TIMEOUT_MS = 6000;
+
+// Representative code per sky, so a fixture's LABEL agrees with its sky.
+const WX_FIXTURE_CODE = { clear: 0, cloudy: 2, overcast: 3, fog: 45, drizzle: 53, rain: 61, snow: 73, storm: 95 };
+
+/* A test seam, and only a test seam. Without WEATHER_FIXTURE in the
+   environment the query parameter does not exist at all, so there is no
+   production path to it. ci-check-render needs it because the weather is
+   injected server-side from a cache the harness cannot reach, and because no
+   source assertion can tell a page that paints rain from one that paints
+   sunshine — only a browser can. */
+function weatherFixtureFor(req) {
+  if (!process.env.WEATHER_FIXTURE) return null;
+  const want = String((req && req.query && req.query._wx) || "").trim();
+  if (!weatherLib.WX_SKIES.includes(want)) return null;
+  const night = String((req.query && req.query._wxnight) || "") === "1";
+  const code = WX_FIXTURE_CODE[want];
+  return {
+    sky: want, night, code,
+    temp: night ? 51 : 54, feels: night ? 48 : 49,
+    label: weatherLib.labelFor(code),
+    hi: 64, lo: 51, wind: "7 mph",
+    sunLabel: night ? "Sunrise 6:30 AM" : "Sunset 6:47 PM",
+    ahead: "Rain arrives Sunday — 90%",
+    day: "Saturday", observedAt: "", fixture: true,
+  };
+}
+
+async function refreshOrgWeather(slug) {
+  if (_wxInFlight.has(slug)) return;
+  const coords = weatherLib.coordsOf(ORGS[slug]);
+  if (!coords) return;
+  _wxInFlight.add(slug);
+  try {
+    const resp = await fetch(weatherLib.requestUrlFor(coords), {
+      signal: AbortSignal.timeout(WX_TIMEOUT_MS),
+      headers: { "user-agent": "rec-reports (dan@rec.us)" },
+    });
+    if (!resp.ok) throw new Error("HTTP " + resp.status);
+    const readout = weatherLib.readoutFrom(await resp.json());
+    // A reading we could not parse must NOT overwrite one we could. The last
+    // good answer keeps serving and ages out on its own, where storing the
+    // unreadable one would blank the card until the next refresh lands.
+    if (readout) _wxCache.set(slug, { ts: Date.now(), data: readout });
+    else console.warn(`[weather] ${slug} returned a reading with no temperature`);
+  } catch (err) {
+    console.warn(`[weather] ${slug} feed failed: ${err.message}`);
+  } finally {
+    _wxInFlight.delete(slug);
+  }
+}
+
+function orgWeatherFor(slug, req) {
+  const fixture = weatherFixtureFor(req);
+  if (fixture) return fixture;
+  /* With the seam open we are inside a harness, so the real path is CLOSED:
+     no outbound call to a third party and no live reading. Without this the
+     render check reaches api.open-meteo.com on every org-landing case and its
+     no-weather case passes or fails depending on whether an earlier case had
+     time to warm the cache — a green baseline that turns red in a full run,
+     which is the least useful kind of guard. */
+  if (process.env.WEATHER_FIXTURE) return null;
+  if (!getFlags().orgWeather) return null;
+  // No coordinates, no weather — never a guess from the org's name. There are
+  // Watertowns in MA, NY, CT and WI, and the wrong city's sky is worse than
+  // none. 18 of the static orgs carry coords today; the rest simply render as
+  // they do now, which is also what every dynamic org does.
+  if (!weatherLib.coordsOf(ORGS[slug])) return null;
+  const entry = _wxCache.get(slug);
+  const state = weatherLib.ageStateOf(entry, Date.now());
+  if (state !== "fresh") refreshOrgWeather(slug);
+  return state === "expired" ? null : entry.data;
+}
+
 app.get("/:org", async (req, res, next) => {
   const slug = req.params.org;
   const org  = ORGS[slug];
@@ -16824,6 +16920,10 @@ app.get("/:org", async (req, res, next) => {
       icon: CUSTOM_REPORTS[k].chipIcon || CUSTOM_REPORTS[k].emoji,
     })),
     token: org.token || "",
+    // Current conditions, or null. Injected rather than fetched by the page so
+    // the sky is there on FIRST PAINT — a page that renders sand and then
+    // repaints itself blue a moment later reads as a glitch.
+    weather: orgWeatherFor(slug, req),
     chatVisible: !RETIRED_REPORTS.has("chat") && !orgHidden.has("chat"),
     // Both gates: RETIRED_REPORTS decides whether the card is drawn, wizardEnabled
     // whether the page behind it answers. Either alone leaves a card that 404s or
@@ -20821,6 +20921,22 @@ app.get("/", (req, res) => {
             </div>
           </div>
         </div>
+        <div style="display:flex;align-items:center;gap:12px;margin-top:12px">
+          <label style="position:relative;display:inline-block;width:44px;height:24px;cursor:pointer">
+            <input type="checkbox" id="flag-orgweather" onchange="toggleFlag('orgWeather',this.checked)"
+                   style="opacity:0;width:0;height:0" />
+            <span id="flag-orgweather-track" style="position:absolute;top:0;left:0;right:0;bottom:0;background:#cbd5e1;border-radius:12px;transition:background .2s"></span>
+            <span id="flag-orgweather-thumb" style="position:absolute;top:2px;left:2px;width:20px;height:20px;background:#fff;border-radius:50%;transition:transform .2s;box-shadow:0 1px 3px rgba(0,0,0,.2)"></span>
+          </label>
+          <div>
+            <div style="font-size:13px;font-weight:600;color:#111827">&#127780;&#65039; Dashboard Weather &mdash; live conditions behind the org page</div>
+            <div id="flag-orgweather-status" style="font-size:11px;color:#999">Loading...</div>
+            <div style="font-size:11px;color:#6b7280;margin-top:3px">
+              Only the 18 orgs that carry coordinates ever show it. Off leaves every
+              org page exactly as it was &mdash; no sky, no card, no night treatment.
+            </div>
+          </div>
+        </div>
       </div>
       <div style="padding:14px 18px;background:#f5f4f1;border-top:1px solid #e8e5df">
         <div style="font-size:12px;font-weight:700;color:#374151;margin-bottom:10px">&#128279; Metabase Links</div>
@@ -21964,6 +22080,7 @@ app.get("/", (req, res) => {
       updateFlagUI('paramdrift', flags.paramDriftAlerts);
       updateFlagUI('reportdown', flags.reportDownAlerts);
       updateFlagUI('reportsettings', flags.reportSettings);
+      updateFlagUI('orgweather', flags.orgWeather);
     }
     function updateFlagUI(name, on) {
       const cb = document.getElementById('flag-'+name);
@@ -21983,7 +22100,8 @@ app.get("/", (req, res) => {
           schemabreak: ['Watching — alerts if a table or column a live report depends on disappears', 'OFF — a dropped table will NOT be reported'],
           paramdrift: ['Watching — alerts if a Start/End Date tag is no longer type Date', 'OFF — a tag reset to Text will NOT be reported'],
           reportdown: ['Watching — alerts after 2 consecutive rounds where a card cannot answer', 'OFF — a broken report will NOT be reported'],
-          reportsettings: ['ON — a super-admin with the key can change per-org report defaults', 'OFF — the settings panel is closed to everyone, including you']
+          reportsettings: ['ON — a super-admin with the key can change per-org report defaults', 'OFF — the settings panel is closed to everyone, including you'],
+          orgweather: ['ON — org dashboards paint the local sky and go dark after sunset', 'OFF — every org page renders exactly as it did before']
         };
         var pair = labels[name] || ['Enabled', 'Disabled'];
         status.textContent = on ? pair[0] : pair[1];

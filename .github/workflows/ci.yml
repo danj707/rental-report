@@ -361,6 +361,14 @@ jobs:
       - name: Slack notification formatting + debounce keys
         run: node scripts/email-slack-notify.spec.js
 
+      # Lifts and runs lib/weather.js: every defect the org dashboard's weather
+      # can have is a comparison, and a regex passes on an inverted one. It
+      # re-execs itself under a zone BEHIND UTC, because a bare ISO date parses
+      # to UTC midnight and this runner is UTC, where the broken derivation
+      # looks correct.
+      - name: Org dashboard weather (an unknown code never paints sunshine)
+        run: node scripts/org-weather.spec.js
+
       - name: Admin dashboard JS (inline blocks parse; every on*= handler resolves)
         run: node scripts/ci-check-admin-js.js
 

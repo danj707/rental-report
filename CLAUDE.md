@@ -1,5 +1,152 @@
 # Project notes for Claude
 
+## THE ORG DASHBOARD PAINTS THE LOCAL SKY (2026-09-19)
+
+Dan: *"total vanity project. on the org report pages... add a 'current weather'
+card. show the current date/weather, then update background image of the admin
+card to reflect the current weather."* Then, on the mockup: *"i was actually
+thinking it should be on the full screen"*, and *"yes do the full dark mode at
+night, then merge it."*
+
+Mockup (Watertown, five conditions):
+https://claude.ai/artifact/H8u22uK9mvBPsYTWb5EG2g
+
+**THE COORDINATES WERE ALREADY THERE.** `ORGS.watertown` has carried
+`coords: { lat: 42.3709, lon: -71.1828 }` all along — **18 of the static orgs
+do** — and three routes already inject it. So the feature needed no new per-org
+data at all, which is most of why it was a day's work rather than a week's.
+
+**NO COORDS, NO WEATHER — never a guess from the name.** There are Watertowns in
+MA, NY, CT and WI, and the wrong city's sky is worse than none. The other orgs,
+every dynamic org included, render exactly as they did.
+
+### THE FRONT DOOR MUST NOT BLOCK ON A THIRD PARTY
+
+`orgWeatherFor` is **synchronous**, and that is the whole shape of the server
+half: it answers from memory and kicks a refresh behind the reader. An `await`
+there would put api.open-meteo.com in the critical path of the page every org
+lands on.
+
+The cost is one cold load per org per window with no weather, which is the right
+way round — a page that renders instantly and gains a sky a moment later beats
+one that waits. **Nothing is pre-warmed and nothing is fanned out:** an org
+nobody opens is an org we never fetch, unlike the Metabase prewarm this file
+records a storm for.
+
+| age | |
+|---|---|
+| under 20 min | serve it |
+| under 2 h | serve it, refresh behind the reader |
+| **over 2 h** | **DO NOT SERVE** — an org nobody opened for a week must not be shown last Tuesday's snow |
+
+A reading that cannot be parsed **does not overwrite one that could**: the last
+good answer keeps serving and ages out on its own.
+
+### `Number(null)` IS 0, AND IT PAINTED SUNSHINE — three bugs, all found by the spec
+
+The load-bearing rule is that **an unknown code is never CLEAR**, because a
+treatment that invents weather it cannot vouch for is the load-versus-empty
+mistake this file already records for `hasAbsent` and `POS_OK`. It was written
+down, and it was broken on the first run anyway, three times over, by one line:
+
+```js
+const c = Number(code);   // Number(null) === 0 === "clear"
+```
+
+* a **missing weather code** read as code 0 and painted a blue sky,
+* a **missing temperature** rounded to a confident **0°F**,
+* a **missing lat/lon** resolved to `{0, 0}` — the Gulf of Guinea.
+
+Same defect as the age band that filed 60 un-aged rows under the under-fives.
+Every number now goes through `strictNum`, which rejects `null`, `undefined`,
+`""` and booleans **by name** before coercing anything. *A rule written at the
+top of a file does not enforce itself; the spec is what enforced it.*
+
+### NIGHT IS A MODIFIER, NOT A SKY
+
+The mockup had `night` as one of the conditions, which silently drops the
+weather: rain at 9pm stopped raining. In production `wx-night` rides on top of
+whichever sky is current, so a wet night keeps its own particles. That is the
+one place the shipped thing is better than the thing Dan approved, and it is
+what `org landing · a wet night still rains` exists to hold.
+
+**Dan's call, on seeing the dark ground with light cards: *"yes do the full dark
+mode at night."*** So the ground, the cards, their ink, the section labels and
+the footer all go dark. The top bar and the early-access banner are chrome and
+are dark already.
+
+**A THEMEABLE PROPERTY CANNOT LIVE IN AN INLINE STYLE**, and the mockup had to
+be rebuilt to prove it: an inline style beats any stylesheet, so a card whose
+background sits in a `style=` attribute can never be re-themed. That is
+court-utilization's `summary-row` and Fast Track's `SummaryCard` for the third
+time. `org.html` was already class-based, which is the only reason the dark mode
+is CSS rather than a rewrite.
+
+### THE TEST SEAM CLOSES THE REAL PATH
+
+`WEATHER_FIXTURE` opens `?_wx=<sky>`; without it in the environment the
+parameter does not exist, so there is no production path to it. **With it set,
+the real path is CLOSED** — no outbound call, no live reading. Without that
+second half the render check reached api.open-meteo.com on every org-landing
+case and its no-weather case passed or failed depending on whether an earlier
+case had warmed the cache. **Found by the case failing in a full run after
+passing alone**, which is the least useful kind of guard and is already recorded
+here for the saved-views and custom-report cases.
+
+### It ships ON, behind a switch
+
+Dan approved the design and said merge, so `orgWeather` defaults **true** — the
+one carve-out from the ships-hidden rule, and he asked for it. What must not
+need a deploy is turning it **off**, so it is an admin Feature Flag with its own
+toggle. That block is written by hand per switch and one `applyFlags` never
+drives renders permanently off — the spec asserts the wiring.
+
+### Guards
+
+`scripts/org-weather.spec.js` (**184 assertions, in CI**), which LIFTS AND RUNS
+`lib/weather.js` — every defect here is a comparison and a regex passes on an
+inverted one. It **re-execs under `America/Los_Angeles`**, a zone BEHIND UTC,
+because a bare ISO date is UTC midnight and this sandbox and GitHub Actions are
+both UTC, where the broken weekday derivation passes everything. (The ePACT spec
+picks a zone AHEAD of UTC for the opposite reason — it parses `MM/DD/YYYY`,
+which is LOCAL midnight. Different string, other direction.)
+
+**Mutation-tested 21 ways, all 21 failing by an assertion that names the
+defect**: an unknown code painting sunshine, `strictNum` reverted, an expired
+reading served, a no-temperature card at 0°, the night sunrise reading today's,
+the look-ahead floor removed, snow called rain, `timezone=auto` dropped (which
+moves `is_day` and every daily boundary to UTC), `coordsOf` accepting a missing
+org, the flag gate removed, the coords gate removed, the front door awaiting the
+fetch, an unreadable reading overwriting a good one, the seam un-gated, the
+admin toggle undriven, the reading never injected, night stopping the rain, the
+sky un-whitelisted, and the sky layer eating every click.
+
+**Four `ci-check-render.js` cases, because none of this is visible in source** —
+the CSS reads plausibly whichever sky it paints and a class called `wx-night` is
+not a dark page. `night goes properly dark` reads the **computed** background
+and ink luminance of a real card; `a wet night still rains` reads the computed
+`background-image` and opacity of the particles. **Browser-mutation-tested five
+ways, each failing exactly the case that names it**: night leaving the cards
+white, night leaving the card text dark, night stopping the rain, the sky layer
+never mounted, and `has-wx` never added.
+
+All **85 CI specs** pass, `ci-check-admin-js` included — which matters because
+this touched the giant admin template literal, where one bad apostrophe
+discards a 201KB script and silently kills every button on the page.
+
+### NOT DONE
+
+- **The card says "Local conditions", not the city.** Open-Meteo returns no
+  place name and `displayName` is *"Watertown Parks &amp; Recreation"*; deriving a
+  city from it is a guess. A `city` on the 18 coord-carrying orgs would fix it.
+- **The mockup's skyline is a stand-in for the org's banner photo** and is not
+  in the shipped page. Production draws the sky and no silhouette, because a
+  generic skyline is wrong for a town that has none.
+- **No look-ahead against the reports.** Rain is the one forecast a parks
+  department acts on, and the reports know how many outdoor reservations sit on
+  that date. The card already knows it is coming.
+- **Imperial units, hardcoded.** Every org here is in the US.
+
 ## THE MAP PAINTED OVER THE TOOLBAR (2026-09-18)
 
 Dan, with Douglas County's Camping tab scrolled: *"small visual bug on the
