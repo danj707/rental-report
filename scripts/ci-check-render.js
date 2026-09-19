@@ -5238,6 +5238,72 @@ const CASES = [
   { name: "org landing · no opportunities card until it is turned on", path: "/{org}",
     needs: ".card", absent: 'a.card[href*="/opportunities"], .card-wrap a[href*="/opportunities"]' },
 
+  /* ── Live weather on the org dashboard ──────────────────────────────────
+     All four are browser-only by construction. The CSS reads plausibly
+     whichever sky it paints, the class list proves nothing about the paint,
+     and the reading is injected server-side — so every one of these keys on a
+     COMPUTED value or on an absence. */
+
+  /* The default case, and the one that matters most: with no reading the page
+     must be exactly what it was. `.wx-layer` absent AND `has-wx` absent —
+     either alone passes on half the bug. */
+  { name: "org landing · no reading, no weather", path: "/{org}",
+    needs: ".card", absent: ".wx-layer, body.has-wx, .wx-card[style*='flex']" },
+
+  { name: "org landing · rain paints the whole page", path: "/{org}?_wx=rain",
+    needs: "body.wx-rain .wx-layer .wx-fx",
+    also: [".wx-card .wx-c-temp", ".wx-card .wx-c-ahead", "body.has-wx"] },
+
+  /* A class called wx-night is not a dark page. This reads what the browser
+     actually painted: the card's own background has to be dark and its label
+     has to have lightened, or the "full dark mode" is a class name and a
+     navy sky over white cards. */
+  { name: "org landing · night goes properly dark", path: "/{org}?_wx=clear&_wxnight=1",
+    needs: "body.wx-night .card",
+    act: async page => {
+      await page.waitForSelector("body.wx-night .card", { timeout: 15000 });
+      const v = await page.evaluate(() => {
+        const lum = el => {
+          if (!el) return null;
+          const m = /rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)/.exec(getComputedStyle(el).backgroundColor || "");
+          return m ? 0.2126 * +m[1] + 0.7152 * +m[2] + 0.0722 * +m[3] : null;
+        };
+        const ink = el => {
+          if (!el) return null;
+          const m = /rgba?\(([\d.]+),\s*([\d.]+),\s*([\d.]+)/.exec(getComputedStyle(el).color || "");
+          return m ? 0.2126 * +m[1] + 0.7152 * +m[2] + 0.0722 * +m[3] : null;
+        };
+        const card = lum(document.querySelector(".card"));
+        const label = ink(document.querySelector(".card-label"));
+        const wxcard = lum(document.querySelector(".wx-card"));
+        document.body.setAttribute("data-rc-wxnight-seen",
+          `card bg ${card === null ? "?" : Math.round(card)} · label ink ${label === null ? "?" : Math.round(label)} · weather card bg ${wxcard === null ? "?" : Math.round(wxcard)}`);
+        return { card, label, wxcard };
+      });
+      if (v.card === null || v.card >= 80) throw new Error("the report cards did not go dark at night — background luminance " + v.card);
+      if (v.label === null || v.label <= 150) throw new Error("the card text did not lighten at night — label luminance " + v.label);
+      if (v.wxcard === null || v.wxcard >= 80) throw new Error("the weather card stayed light on a dark page — luminance " + v.wxcard);
+    } },
+
+  /* Night is a MODIFIER, not a sky. A single `night` treatment would silently
+     drop the condition, so a wet night has to keep both classes AND keep
+     painting its own particles. */
+  { name: "org landing · a wet night still rains", path: "/{org}?_wx=rain&_wxnight=1",
+    needs: "body.wx-rain.wx-night .wx-layer",
+    act: async page => {
+      await page.waitForSelector("body.wx-rain.wx-night .wx-fx", { timeout: 15000 });
+      const v = await page.evaluate(() => {
+        const fx = document.querySelector(".wx-fx");
+        const img = fx ? getComputedStyle(fx).backgroundImage : "none";
+        const op = fx ? parseFloat(getComputedStyle(fx).opacity) : 0;
+        document.body.setAttribute("data-rc-wxwet-seen",
+          `particles ${img === "none" ? "NONE" : "painting"} · opacity ${op}`);
+        return { painting: img !== "none" && img !== "", op };
+      });
+      if (!v.painting) throw new Error("night dropped the rain — the condition's own particles stopped painting");
+      if (!(v.op > 0.05)) throw new Error("the rain is there but invisible at opacity " + v.op);
+    } },
+
   { name: "org landing · the data reports are ONE card with a chip each",
     path: "/" + AQ_ORG, token: AQ_TOKEN,
     act: async page => {
@@ -7354,6 +7420,13 @@ const child = spawn(process.execPath, [path.join(__dirname, "..", "server.js")],
   env: { ...process.env, PORT: String(PORT), DATA_DIR: dataDir,
          METABASE_URL: "http://127.0.0.1:9", RESEND_API_KEY: "", SLACK_WEBHOOK_URL: "",
          DASHBOARD_PASSWORD: RENDER_ADMIN_PW,
+         /* The org dashboard's weather is injected SERVER-side from a cache
+            this harness cannot reach, and nothing about a sky is visible in
+            source — a page that paints rain and one that paints sunshine read
+            identically. WEATHER_FIXTURE opens the `?_wx=` seam, which does not
+            exist without it: the spec asserts that gate, so there is no
+            production path to it. */
+         WEATHER_FIXTURE: "1",
          /* Laurel's Coffee Chart is gated on SHARED_UUIDS.enrollments, which is
             omitted until somebody creates the public link for card 21286. Its
             render cases still have to run — the panel's whole risk is what it
