@@ -1,5 +1,95 @@
 # Project notes for Claude
 
+## THE CAMPMAP CANNOT BE TIED TO RESERVATIONS — CLOSED, NOT DEFERRED (2026-09-19)
+
+Dan, on Douglas County's campmap admin strip reading **151 map views / 109 sites
+opened / 42 book clicks** in 30 days: *"anything else we can do about this DC
+camping page, getting a lot of hits. no way to track this back to actual
+reservations?"* Then, on the shape it would have to take: *"I can't make anything
+happen on the rec side, it's more like 'inferring' that a booking happened within
+say, 15 minutes of that site being clicked on."* And after the spot check:
+**"lets skip it then, the juice not worth the squeeze here."**
+
+**NOTHING WAS BUILT. Do not raise this as an obvious next step.** The
+measurements are kept because they were real and because two of them are traps
+that would bite whoever touches this area next.
+
+### ATTRIBUTION IS STRUCTURALLY IMPOSSIBLE, and that half is not a judgement call
+
+All 55 columns on `facility_rental` + `reservation` were read: there is **no
+channel, source, referrer or UTM field anywhere**. `booking_type` is
+instant/managed — a Rec mechanism, not a marketing channel. And there is nowhere
+to put one even if the column existed: rec.us's `/sites/{id}` page reads no
+search params at all (already recorded above for the Book button), so a URL tag
+dies on arrival. This is the `message_delivery` situation the waitlist report
+already records, one surface over.
+
+### THE TIME-PROXIMITY INFERENCE WOULD HAVE WORKED — the maths is not why it was dropped
+
+Douglas campsites, 30 days to 2026-09-19:
+
+| | |
+|---|---|
+| instant rentals | **111** (3.7/day, on 26 of 30 days) |
+| booked between 7am and 10pm Pacific | **108 of 111 — 97.3%** |
+| 15-min buckets holding ANY instant booking, all 37 sites | **3.51%** |
+| bookings per site | **flat: 6, 6, 5, 5, 5, 5, 5, 5, 5, 4, 4, 4** |
+| **expected FALSE matches across all 42 clicks** | **0.045** |
+
+So a same-site booking within 15 minutes of a same-site click is a coincidence
+about once every two years. The method was sound; the payoff was not worth the
+card push plus the join.
+
+**AND PER-SITE ATTENTION DOES NOT PREDICT PER-SITE BOOKINGS**, which is the
+finding that killed the cheaper version of this. Site 29 was the most-opened site
+in Dan's screenshot and sits at **5 bookings — dead average**; Site 35 led the
+live feed with 9 opens and has **4**. There is no "hot sites" story to tell here,
+so the only thing the join could have produced is funnel completion.
+
+**The spot check that settled it:** on Sites 34 and 35 together, **9 rentals in
+30 days, only 4 of them instant**, and nothing at all since Tue 2026-09-15 13:30.
+The clicks in that Slack feed did not convert. Two sites is not a verdict on the
+map — but it was enough for the call.
+
+### TWO TRAPS MEASURED HERE, both of which cost a wrong answer first
+
+- **A DOUGLAS CAMPSITE STAY IS ONE RESERVATION ROW, NOT ONE PER NIGHT.** The
+  nights are `upper(reservation_timestamp_range) - lower(...)`, and
+  `COUNT(DISTINCT r.id)` returns **1** for a three-night stay. The campmap
+  beacon's own `nights` is `stayNights().length`, so comparing the two would have
+  matched almost nothing — silently. This is the opposite grain from card 19570,
+  which is per reservation DATE.
+- **POSTGRES REGEX HAS NO `\b`.** `court_number ~ 'Site (34|35)\b'` returns
+  **zero rows** on data that is very much there, because POSIX reads `\b` as a
+  backspace; the word boundary is `\y`. A confident empty result from a name
+  match is exactly why the join was specified on ids in the first place.
+
+### WHAT WOULD BE NEEDED IF IT IS EVER REVIVED
+
+- **The click side already resolves to a court id today, with no changes.** The
+  beacon sends `shortName(s)` = `'Site ' + pad(s.n)`, and `campmap-seeds.json`
+  carries 41 sites with 41 distinct `n`, so the lookup is seed → id, locally,
+  with **no name matching against the database**. Verified: three of the 41 seed
+  ids resolve to real `campsite` courts.
+- **The booking side needs `facility_rental.created_at`, which no card emits.**
+  Put it on a **new** card (`org_id` only, no date tags → no flip, no outage, the
+  lessons-report shape). **Do NOT add it to card 19570** — that is the most-used
+  card on the platform (~174 pulls/30d across 13 orgs) and the push→flip window
+  takes the Facilities hub down for all of them.
+- The 7 `group` clicks carry no single site and can never be matched; they would
+  need a looser "any site in the filtered set" rule or an honest exclusion.
+
+### THE ONE THING STILL ON THE TABLE, and it is not this
+
+`bookKinds` measured live: **dated 18 · group 7 · site-page 17**. So **40% of
+book clicks go to `/sites/{id}`, which cannot carry the dates** — the camper
+picks a site and two dates, lands on rec.us, and re-enters both. That is the
+*"site page, dates not carried"* line in the Slack feed, and it is the deliberate
+trade already recorded above under the campmap Book button. Flipping the primary
+to the dated org-list URL would close it at the cost of landing on a list rather
+than the site. **Not decided, and not raised as urgent** — recorded here only so
+the measurement is not taken again.
+
 ## THE ORG DASHBOARD PAINTS THE LOCAL SKY (2026-09-19)
 
 Dan: *"total vanity project. on the org report pages... add a 'current weather'
