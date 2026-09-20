@@ -1,5 +1,188 @@
 # Project notes for Claude
 
+## THE BACKUP HAD BEEN FAILING AND NOTHING SAID SO (2026-09-20)
+
+Dan, asked what was left on the list: *"anything we can do around stability or
+speed improvements?"* The speed half came back **there is no speed problem left**
+(below). The stability half found this, and it is the one that mattered.
+
+`/api/admin/backup-status` on production read
+
+```json
+{"ts":"2026-09-19T13:46:16Z","status":"error","size":0,"files":0,
+ "gistUrl":null,"error":"Gist create failed: 401"}
+```
+
+**Since the Postgres flip that gist is the platform's only off-platform copy**,
+so the answer to *"when did we last have a backup"* was: unknown, and not
+recently.
+
+### TWO INDEPENDENT BUGS, and the second is a third instance of a recorded lesson
+
+**1. A FAILED BACKUP LOGGED TO THE CONSOLE AND NOTHING ELSE.** `performBackup`'s
+`catch` set `_lastBackup.status = "error"` and called `console.error`.
+**`backup` was in no allowlist anywhere** — `SLACK_NOTIFY` carried 53 events and
+not that one. Every other watchdog here pages: `report-down`, `schema-break`,
+`param-drift`, `deadlink`. The one guarding against total data loss did not, so
+a dead `GITHUB_PAT` sat unreported for as long as it had been dead.
+
+*Generalise it: the thing that has no watcher is the watcher of last resort.*
+
+**2. THE SAVED GIST ID WAS READ AT MODULE SCOPE.** The tell was in the error
+string — `Gist create failed`, not `Gist update failed`, so `_backupGistId` was
+empty and the run took the CREATE path.
+
+```js
+let _backupGistId = "";
+try { const rec = readJSON(BACKUP_GIST_ID_KEY, null); ... } catch (_) {}
+```
+
+That is **top-level code at line ~7031, and `storeBoot()` is called at ~24230** —
+so in `db` mode the read happens ~17,000 lines before Postgres is connected, sees
+the CONTAINER'S OWN disk, and comes back empty. **Every boot would mint a fresh
+gist rather than appending to the existing one**, even with a working token.
+
+**Third instance of the recorded rule** (`loadDynamicOrgs`, the
+report-visibility seed): *a read at module scope is stale, and a write at module
+scope is discarded.* It is a lazy `backupGistId()` now, called from inside the
+run.
+
+### THE STALENESS CHECK EXISTS BECAUSE A FAILURE ALERT CANNOT SEE A CRON THAT NEVER FIRES
+
+A failure alert only fires when a run HAPPENS. Today's evidence is that the
+02:00 run did not record at all — `ts` was the previous day. A wedged leader
+lock or a container that never reaches that line looks identical to a healthy
+platform from outside.
+
+- `checkBackupFreshness()` runs **hourly at :15**, same shape as the
+  report-down watchdog, with the standard 6h alert debounce.
+- **The last SUCCESS is persisted** (`backup-last-ok.json`), because
+  `_lastBackup` is in memory: after a deploy it reads `never` on a platform that
+  is backing up fine, and reads fine on one that has not backed up in a week.
+- **`never` and `stale` are different statuses**, and neither is `error`. No
+  record on file is not the same fact as a run that tried and failed.
+- **An unset `GITHUB_PAT` alerts too.** An absent key is a configuration
+  elsewhere in this file (the ElevenLabs route 404s); here it means *no backups
+  at all*, which is the failure being fixed. `notifySlack` is already gated to
+  production, so a PR preview stays quiet.
+
+**IT IS DELIBERATELY ABSENT FROM `ALERT_FLAG_BY_EVENT`**, like `watchdog`
+itself — `watchdogEnabled(undefined)` returns true, so this alert cannot be
+switched off. The notice that the last line of defence is gone must not be
+silenceable by a toggle.
+
+### THE SPEED HALF: there is no speed problem left, and that is measured
+
+The standing *"index the materialized tables"* ask is **largely satisfied**, and
+the notes in this file had not caught up. `pg_indexes` over the `materialized`
+schema, 474ms on a quiet replica:
+
+| table | size | secondary index |
+|---|---|---|
+| **`enhanced_gl_report`** | **2593 MB** | **`(organization_id, datetime_at_primary_timezone)`** |
+| `item_log_report` | 1292 MB | **same, granted 2026-09-12** |
+| `booking_report` | 1561 MB | none |
+| `transaction_report` | 982 MB | none |
+| `membership_and_pass_purchases_report` | 234 MB | none |
+
+**THE GL INDEX WORKS, AND THE PROOF IS COLD-VS-WARM ON ONE PLAN.** Norman,
+August, card 17293's own sargable predicate:
+
+| | plan | time |
+|---|---|---|
+| cold | Bitmap Index Scan → Heap, `shared read=3986` | **2553 ms** |
+| warm | identical, `shared hit=3986` | **11.98 ms** |
+
+Same plan, same buffer count, `read` became `hit`. **The index scan itself is
+0.9 ms**; 95% of the cold number is heap I/O on a shared replica. So GL is 12ms
+of database work for the heaviest org over a month — *the card is not slow, and
+`enhanced_gl_report` would buy nothing on speed.*
+
+**AND IT COULD NOT SERVE CARD 17293 ANYWAY: it has no desk location.** Its 27
+columns carry `gl_entry_type`, `revenue_recognition` and `financial_transaction_id`
+— but nothing like `desk_location_name`, and 17293 GROUPS BY desk and computes
+its whole additive `Desk Distinct Payments` fix from it. Adding that column is
+the ask that would make a swap possible; until then it is not a candidate.
+
+**THE ONE TABLE STILL WORTH AN INDEX** is
+`membership_and_pass_purchases_report`, which is card 17301 v7.1's `win` CTE and
+therefore the FLOOR under every Memberships load. Same test, norman, 13 months:
+
+| | plan | time |
+|---|---|---|
+| cold | **Parallel Seq Scan**, `read=25931` | 1007 ms |
+| warm | same, `hit=25938` | 39.7 ms |
+
+It reads all **135,872 rows to return 20,694** — *"Rows Removed by Filter:
+38436"* per worker — and reads the whole 234 MB **every time**, where the indexed
+GL card reads only the 3,986 blocks it needs. That is the ask, precisely sized.
+
+**`transaction_report` is unindexed and comes OFF the ask**, which closes the
+*"whether THAT table got an index is unverified"* note: nothing in this repo
+reads it on a live path — **card 17920 has no caller at all**. Do not spend a
+paste making it sargable.
+
+**THE HONEST FRAMING, because it reverses what the notes imply:** both cards are
+fine warm and ~1-2.5s cold, so the database is no longer the bottleneck. This
+file already recorded the real remaining cost for 17301 — *"the database work is
+3.6 seconds and the rest of that wall clock is Metabase serialising 20,546 rows
+× 30 columns"*. **The lever is how many rows we ask Metabase to ship, not query
+time.** An index on the purchases view is still worth having; it is not what
+makes a slow page fast.
+
+### Two tables nobody here knows about
+
+`facilities_balance_due_report` (8,848 rows) and `membership_and_pass_plans_report`
+exist and **nothing in this repo reads either**. The first is exactly the Tier-1
+*"Facility rentals, balances due"* report the data-reports survey sized at 28,711
+rentals owing across 106 orgs — already materialized. Feature unlock, not speed.
+
+### Guards
+
+`scripts/backup-alerting.spec.js` (**35 assertions, in CI**), which LIFTS AND
+RUNS `hoursSinceBackup` and `checkBackupFreshness` — every defect in a freshness
+check is a comparison and a regex passes on an inverted one. Mutation-tested
+**ten ways, all failing by an assertion that names the defect**: the event
+dropped from `SLACK_NOTIFY` (the bug as it shipped), the catch no longer
+alerting (the bug as it shipped), an unset PAT no longer alerting, the gist id
+read at module scope again, `performBackup` never calling the lazy loader, the
+staleness comparison inverted, no-record reporting 0 instead of null,
+`backup-failed` made switchable off, the success no longer recorded durably, and
+its own message branch removed so it falls into the shared line.
+
+**Verified live rather than asserted**: a real boot with no `GITHUB_PAT` answers
+`stale: true, staleAfterHours: 36` on the status route and lands
+`{"event":"backup-failed","status":"skipped","hoursSinceOk":null}` in
+`events.jsonl`.
+
+**THREE DEFECTS IN MY OWN SPEC, each the recorded form.** The lift injected
+`readJSON` when `hoursSinceBackup` actually calls `backupLastOk`, so it **DIED
+with a bare ReferenceError naming nothing** — Nth instance; there is a `guard()`
+wrapper now so a throw at call time fails by name. `liftSrc` counted from
+`function`, which **drops the `async` keyword** and silently lifts a SYNC copy
+that then fails on `.then()` rather than on anything under test. And the
+"performBackup calls the loader" assertion was a bare regex over the slice, so
+**commenting the call out SURVIVED** — it is tested line by line with comments
+excluded now. *An assertion satisfied by dead code is not guarding the thing it
+names.*
+
+**`pkill` SELF-MATCHED A FIFTH TIME**, by putting `PORT=3991` in the command line
+that swept for it. The rule in this file is already the right one and I did not
+follow it: assemble the needle at runtime, in a script file, run it in its own
+call.
+
+**A spec failure that was not real:** `deadlink-alert.spec.js` failed inside a
+full-suite run and passes 10/10 alone — two sweeps overlapping, the recorded
+stray-server trap. Check that before reading a suite failure as a regression.
+
+### NOT DONE
+
+- **The PAT itself.** Only Dan can rotate it; the code is fixed either way and
+  will now say so loudly until it is.
+- **No alert when the backup SHRINKS.** A run that writes 3 files where it wrote
+  300 reports `ok`. Size is recorded now (`backup-last-ok.json`), so a
+  ratio check against the last good run is a few lines whenever it is wanted.
+
 ## THE ORG DASHBOARD PAINTS THE LOCAL SKY (2026-09-19)
 
 Dan: *"total vanity project. on the org report pages... add a 'current weather'

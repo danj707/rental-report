@@ -72,6 +72,9 @@ jobs:
       - name: Card-drift spec (probe the served card; catch a Date tag reset to Text)
         run: node scripts/card-drift.spec.js
 
+      - name: Backup alerting spec (a failed backup must page, and the gist id must not be read at module scope)
+        run: node scripts/backup-alerting.spec.js
+
       # Saving a card in Metabase regenerates its parameter ids, and the app
       # caches those for an hour — so for that hour every org's request carried
       # the pre-save id and a REQUIRED tag failed the query outright. It took the
