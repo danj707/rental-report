@@ -163,6 +163,31 @@ function runFresh(hours) {
   ok(/lastSuccess/.test(route),
      "...and the durable last success, which survives a deploy");
 
+  /* ── 10. the credential diagnostic ──────────────────────────────────────
+     A 401 says GitHub rejected the token; it cannot see the other failure
+     mode, a live token with no `gist` scope. Both have to be reported, and
+     neither may echo the value. */
+  const cred = SRC.slice(SRC.indexOf('app.get("/api/admin/backup-credential"'),
+                         SRC.indexOf('app.get("/api/admin/org/:slug"'));
+  ok(cred.length > 200, "the backup-credential route slice is non-empty");
+  ok(/adminPasswordOk\(req\)/.test(cred),
+     "the credential check is GATED \u2014 every other /api/admin GET is open, and this one spends a secret");
+  ok(/!DASHBOARD_PASSWORD/.test(SRC.slice(SRC.indexOf("function adminPasswordOk"), SRC.indexOf("function adminPasswordOk") + 200)),
+     "...and it FAILS CLOSED: no dashboard password means nobody");
+  ok(!/BACKUP_PAT\s*\}\)|token:\s*BACKUP_PAT|pat:\s*BACKUP_PAT/.test(cred),
+     "the route never returns the token itself");
+  ok(/x-oauth-scopes/.test(cred),
+     "it reads the scope header \u2014 a valid token with no gist scope fails differently and looks fine");
+  ok(/hasGistScope/.test(cred) && /401/.test(cred),
+     "it separates 'rejected' from 'valid but cannot write gists'");
+  ok(/ok: r\.ok && hasGist/.test(cred),
+     "ok means BOTH authenticated and able to write a gist, not merely authenticated");
+
+  /* The button is a dead end if nothing calls it; ci-check-admin-js proves the
+     handler resolves, this proves the button is actually on the page. */
+  ok(/onclick="checkBackupCred\(\)"/.test(SRC),
+     "the dashboard offers the check \u2014 a diagnostic nobody can find does not exist");
+
   console.log(`\n${passed} assertions passed${failed ? `, ${failed} FAILED` : ""}.`);
   process.exit(failed ? 1 : 0);
 })();

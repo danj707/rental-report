@@ -175,10 +175,40 @@ call.
 full-suite run and passes 10/10 alone — two sweeps overlapping, the recorded
 stray-server trap. Check that before reading a suite failure as a regression.
 
+### THE VERDICT IS ASKABLE NOW, because the value cannot be read
+
+Dan: *"do I do the new pat in GH or railway"* — and before that, whether the
+`curl` I suggested could just be run here. **It could not, and running it would
+have been worse than not running it**: `GITHUB_PAT` is unset in the sandbox, so
+the command would have sent an empty header, come back `401`, and looked exactly
+like confirmation of the production fault while proving nothing about it. *A
+credential test in the wrong environment is not a weak test, it is a misleading
+one.*
+
+`GET /api/admin/backup-credential` asks GitHub on the server's behalf and
+reports the verdict, with a **Check token** button beside Backup Now.
+
+- **IT READS `x-oauth-scopes`, WHICH IS THE HALF A 401 CANNOT SEE.** A live
+  token with no `gist` scope — or a fine-grained token, which cannot write
+  gists at all — authenticates perfectly and still fails every backup. So `ok`
+  is `r.ok && hasGist`, never merely authenticated.
+- **GATED, and it fails closed.** Every other `/api/admin` GET is open because
+  `dashboardAuth` only guards `/`; that is fine for authored copy and not for a
+  route that spends a secret on an outbound call. Same call as
+  `/api/admin/store`.
+- **Neither the token nor GitHub's body is echoed** — a 401 from them can quote
+  the credential back, and this response is exactly the sort of thing that gets
+  pasted into a chat.
+
+Verified live against a deliberately bad token: no password → **401**; with the
+password → *"GitHub rejected the token — expired, revoked, or malformed"*,
+status 401, scopes `[]`; and **zero occurrences** of the token in the response.
+
 ### NOT DONE
 
-- **The PAT itself.** Only Dan can rotate it; the code is fixed either way and
-  will now say so loudly until it is.
+- **The PAT itself.** Only Dan can rotate it (GitHub mints it, Railway stores
+  it; classic PAT, `gist` scope — a fine-grained one cannot write gists). The
+  code is fixed either way and will now say so loudly until it is.
 - **No alert when the backup SHRINKS.** A run that writes 3 files where it wrote
   300 reports `ok`. Size is recorded now (`backup-last-ok.json`), so a
   ratio check against the last good run is a few lines whenever it is wanted.

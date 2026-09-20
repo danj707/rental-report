@@ -7634,6 +7634,55 @@ app.get("/api/admin/backup-status", (req, res) => {
   }));
 });
 
+// ── GET /api/admin/backup-credential — is the stored PAT actually usable? ──
+// "Gist create failed: 401" says GitHub rejected the credential, but not which
+// way, and the value cannot be read from a session (Railway redacts it) — so
+// answering it meant pasting a token into a shell. This asks GitHub on the
+// server's behalf and reports the VERDICT only.
+//
+// GATED, and it fails closed. Every other /api/admin GET is open because
+// dashboardAuth only guards "/", which is fine for authored copy and not for a
+// route that spends a secret on an outbound call. Same call as /api/admin/store.
+app.get("/api/admin/backup-credential", async (req, res) => {
+  if (!adminPasswordOk(req)) return res.status(401).json({ error: "unauthorized" });
+  if (!BACKUP_PAT) {
+    return res.json({ configured: false, ok: false,
+      verdict: "GITHUB_PAT is not set, so no backup can run at all" });
+  }
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 10000);
+    const r = await fetch("https://api.github.com/user", {
+      headers: { Authorization: `token ${BACKUP_PAT}`, "User-Agent": "rec-backup" },
+      signal: ctrl.signal,
+    });
+    clearTimeout(t);
+    // Classic PATs report their scopes in a header. This is the OTHER failure
+    // mode and a 401 cannot see it: a live token with no `gist` scope, or a
+    // fine-grained token, authenticates fine and still cannot write a gist.
+    const scopes = (r.headers.get("x-oauth-scopes") || "").split(",").map(x => x.trim()).filter(Boolean);
+    const hasGist = scopes.includes("gist");
+    let login = null;
+    if (r.ok) { try { login = (await r.json()).login || null; } catch (_) {} }
+    const verdict = !r.ok
+      ? (r.status === 401
+          ? "GitHub rejected the token — expired, revoked, or malformed. Replace it."
+          : `GitHub answered ${r.status}`)
+      : hasGist
+        ? "Token is valid and carries the gist scope"
+        : scopes.length
+          ? "Token is VALID but has no `gist` scope — backups will keep failing"
+          : "Token is valid but reports no scopes — a fine-grained token cannot write gists";
+    // Never the token, never the response body: a 401 from GitHub can quote the
+    // credential back, and this response is exactly what gets pasted into chat.
+    res.json({ configured: true, ok: r.ok && hasGist, status: r.status,
+               login, scopes, hasGistScope: hasGist, verdict });
+  } catch (e) {
+    res.json({ configured: true, ok: false, status: null,
+               verdict: `Could not reach GitHub: ${String(e.message || e).slice(0, 120)}` });
+  }
+});
+
 // ── GET /api/admin/org/:slug — check if org exists (used by rec-dashboard before add) ──
 app.get("/api/admin/org/:slug", (req, res) => {
   const slug = req.params.slug;
@@ -21085,6 +21134,7 @@ app.get("/", (req, res) => {
           <div style="display:flex;gap:6px;align-items:center">
             <span id="backup-status" style="font-size:11px;color:#999">Loading...</span>
             <button onclick="triggerBackup()" id="backup-btn" style="padding:4px 12px;background:#16a34a;color:#fff;border:none;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer">Backup Now</button>
+            <button onclick="checkBackupCred()" id="backup-cred-btn" style="padding:4px 12px;background:#334155;color:#fff;border:none;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer">Check token</button>
           </div>
         </div>
         <div id="backup-detail" style="font-size:11px;color:#666">Backups run daily at 2am and on startup. Data files are saved to a private GitHub Gist.</div>
@@ -22331,6 +22381,30 @@ app.get("/", (req, res) => {
         el.innerHTML = '<span style="color:#dc2626">&#9679;</span> Failed: ' + e.message;
       }
       btn.disabled = false; btn.textContent = 'Backup Now';
+    }
+
+    // A 401 from the backup says GitHub rejected the token but not which way,
+    // and a live token missing the gist scope fails differently and looks fine.
+    // This reports the verdict; the value never leaves the server.
+    async function checkBackupCred() {
+      var btn = document.getElementById('backup-cred-btn');
+      var det = document.getElementById('backup-detail');
+      btn.disabled = true; btn.textContent = 'Checking\u2026';
+      try {
+        var resp = await fetch('/api/admin/backup-credential');
+        if (resp.status === 401) {
+          det.innerHTML = '<span style="color:#f59e0b">Needs the dashboard password \u2014 reload and sign in.</span>';
+        } else {
+          var c = await resp.json();
+          var color = c.ok ? '#16a34a' : '#dc2626';
+          var who = c.login ? ' &middot; ' + c.login : '';
+          var sc = (c.scopes && c.scopes.length) ? ' &middot; scopes: ' + c.scopes.join(', ') : '';
+          det.innerHTML = '<span style="color:' + color + '">&#9679;</span> ' + c.verdict + who + sc;
+        }
+      } catch(e) {
+        det.innerHTML = '<span style="color:#dc2626">Could not check: ' + e.message + '</span>';
+      }
+      btn.disabled = false; btn.textContent = 'Check token';
     }
 
     async function doRestart() {
