@@ -166,6 +166,23 @@ nobody can find.
 module scope lands on the container's own disk and takes its own applied-marker
 with it, silently, on every boot.
 
+**AND THE SLUG WAS VERIFIED AGAINST PRODUCTION, BY THE UUID, BEFORE IT WAS
+TRUSTED.** `seedReportSettings` does `if (!ORGS[slug]) { warn; continue; }`, so a
+slug that is merely plausible makes the seed **warn and skip** — the feature
+ships and does nothing for the one org it exists for, and the only symptom is a
+line in the boot log. Danvers is a DYNAMIC org: `town-of-danvers` appears
+nowhere in `server.js`, and `public/qbr.html`'s own hand-kept `ORG_OPTIONS`
+carries **`['danvers','Danvers']`**, which is a different list and reads as a
+contradiction. Resolved the way this file already prescribes — *reconcile on the
+`orgId`, never the slug* — through `GET /api/admin/org-by-id/<uuid>` on
+production: **`slug: "town-of-danvers"`, displayName "Town of Danvers"**. So the
+seed applies. (That route answers with the org's TOKEN beside the slug, so read
+the slug and do not print the response.)
+
+*Generalise it: a seed keyed on a slug is a link that can rot, and it rots
+silently. Check it against the identity both projects share before shipping — the
+`town-of-shrewsbury` link 404'd for five weeks for exactly this reason.*
+
 ### Guards
 
 `scripts/fee-allocation.spec.js` (**140 assertions, in CI**), which LIFTS AND
