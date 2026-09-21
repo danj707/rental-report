@@ -175,6 +175,56 @@ call.
 full-suite run and passes 10/10 alone — two sweeps overlapping, the recorded
 stray-server trap. Check that before reading a suite failure as a regression.
 
+### THE ALERT FIRED ON ITS FIRST NIGHT, AND IT WAS RIGHT — at a bug the fix itself created
+
+Dan, an hour after the merge: *"Sure the backup worked? I got a slack awhile ago
+that it failed."* He was right and my *"nothing broke"* was too quick. The event
+log:
+
+```
+00:22:38.610Z  backup ok       — gist PATCHed, 91 files, 1.9s
+00:22:39.512Z  backup-failed   — Gist update failed: 409
+```
+
+**One second apart: two replicas both ran the startup backup, one won the PATCH
+and the other got a 409 conflict.** The backup genuinely succeeded; the alert
+was still right to fire, because until it existed nobody could have known the
+platform was doing this.
+
+**THE 02:00 CRON IS `leaderCron("backup", …)`. THE STARTUP RUN NEVER WAS** —
+a bare `setTimeout(() => performBackup(false), 45000)`, so every replica ran it.
+
+**AND THE MODULE-SCOPE BUG HAD BEEN MASKING IT.** While the gist id was read
+before `storeBoot()`, each replica came back empty and **CREATED ITS OWN GIST**,
+so the two never collided — they just quietly made duplicates nobody looked at.
+Fixing the read is what turned a silent duplicate into a visible 409. *A fix
+that removes the thing hiding a second bug is doing its job; expect the second
+bug the same night.*
+
+Two changes, and the second is the load-bearing one:
+
+- **The startup run is leader-locked**, like the cron beside it.
+- **A 409 IS NOT A FAILURE AND MUST NOT PAGE.** It means another replica is
+  writing this same gist, i.e. the backup IS happening. `withLeaderLock` **fails
+  open by design**, so the race can still occur and has to stay benign —
+  otherwise the lock's own safety property reintroduces the noise. It gets its
+  own `concurrent` status, distinct from `ok` and from `error`.
+
+**What makes ignoring a 409 safe is the freshness check**, not optimism: if the
+backup genuinely stops, staleness catches it within `BACKUP_STALE_HOURS`
+whatever any individual attempt reported. *A per-attempt alert can afford to be
+forgiving only because a time-based one is watching underneath it.*
+
+`scripts/backup-alerting.spec.js` 43 → **48 assertions**, mutation-tested four
+more ways, all failing by name: the startup run unlocked again (the bug as it
+shipped), a 409 paging like any other failure, the 409 branch removed, and a 409
+reported as a plain `ok` so the race is hidden.
+
+**AND IT CONFIRMS numReplicas > 1**, which the seamless-deploys section leaves
+ambiguous: two containers ran the same boot task one second apart. Any boot task
+that WRITES needs the lock, and the startup backup was the one that did not have
+it.
+
 ### THE VERDICT IS ASKABLE NOW, because the value cannot be read
 
 Dan: *"do I do the new pat in GH or railway"* — and before that, whether the

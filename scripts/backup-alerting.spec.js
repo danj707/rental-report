@@ -188,6 +188,29 @@ function runFresh(hours) {
   ok(/onclick="checkBackupCred\(\)"/.test(SRC),
      "the dashboard offers the check \u2014 a diagnostic nobody can find does not exist");
 
+  /* ── 11. a lost race is not a failure ───────────────────────────────────
+     Two replicas both ran the startup backup 45s after boot. One PATCHed the
+     gist, the other got a 409 — and the alert shipped an hour earlier fired on
+     it, correctly. But 409 means the backup IS happening, and paging for it is
+     how a watchdog gets muted, which is the whole reason the real failure went
+     unnoticed. Invisible until the module-scope read was fixed: before that
+     each replica CREATED its own gist instead of colliding. */
+  ok(/resp\.status === 409/.test(perform),
+     "a 409 on the update is handled \u2014 another replica writing the same gist is not a failure");
+  const conflict = perform.slice(perform.indexOf("resp.status === 409"));
+  ok(!/alertBackupProblem/.test(conflict.slice(0, conflict.indexOf("} else {"))),
+     "...and it does NOT page \u2014 a watchdog that cries wolf gets muted");
+  ok(/status: "concurrent"/.test(perform),
+     "...and it is its own status, distinct from ok and from error");
+
+  /* The 02:00 cron was leader-locked and the startup run never was. */
+  const startup = SRC.slice(SRC.indexOf("setTimeout(() => stateStore.withLeaderLock") - 400,
+                            SRC.indexOf("setTimeout(() => stateStore.withLeaderLock") + 250);
+  ok(/withLeaderLock\("cron:backup-startup"/.test(SRC),
+     "the STARTUP backup is leader-locked, like the 02:00 cron beside it");
+  ok(!/setTimeout\(\(\) => performBackup\(false\), 45000\)/.test(SRC),
+     "...and the unlocked form cannot come back (the bug as it shipped)");
+
   console.log(`\n${passed} assertions passed${failed ? `, ${failed} FAILED` : ""}.`);
   process.exit(failed ? 1 : 0);
 })();
