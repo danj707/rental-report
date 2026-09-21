@@ -7181,6 +7181,22 @@ async function performBackup(manual = false) {
       } else if (resp.status === 404) {
         // Gist was deleted, create new
         _backupGistId = "";
+      } else if (resp.status === 409) {
+        // ANOTHER REPLICA IS WRITING THIS SAME GIST RIGHT NOW, so the backup IS
+        // happening — this process simply lost the race. Paging for that is how
+        // a watchdog gets muted, and a muted watchdog is the whole reason the
+        // real failure went unnoticed for weeks.
+        //
+        // The startup run is leader-locked below, but withLeaderLock FAILS OPEN
+        // by design, so the race can still happen and must stay benign. What
+        // still protects us is the freshness check: if the backup genuinely
+        // stops, staleness catches it within BACKUP_STALE_HOURS regardless of
+        // how any individual attempt ended.
+        console.log("[backup] Skipped — another replica is writing this gist");
+        _lastBackup = { ts: new Date().toISOString(), status: "concurrent",
+                        size: 0, files: 0,
+                        gistUrl: (backupLastOk() || {}).gistUrl || null, error: null };
+        return _lastBackup;
       } else {
         throw new Error(`Gist update failed: ${resp.status}`);
       }
@@ -7266,7 +7282,14 @@ cron.schedule("15 * * * *", leaderCron("backup-freshness", () => checkBackupFres
 // already had once, from PR previews sharing the production webhook.
 cron.schedule("5 0 * * *", leaderCron("daily-digest", () => postDailyActivitySummary()), { timezone: SLACK_SUMMARY_TZ });
 // Backup on startup (after 45s)
-setTimeout(() => performBackup(false), 45000);
+// LEADER-LOCKED, like the 02:00 cron beside it. This one never was, and with
+// more than one replica every container ran it 45s after boot — which was
+// invisible while the gist id was read at module scope, because each replica
+// then CREATED ITS OWN gist instead of colliding. Fixing that read turned a
+// silent duplicate into a 409 on the loser. Measured on the deploy that shipped
+// the fix: ok at 00:22:38.610Z, `Gist update failed: 409` at 00:22:39.512Z.
+setTimeout(() => stateStore.withLeaderLock("cron:backup-startup", () => performBackup(false))
+  .catch(e => console.warn("[backup] startup: " + e.message)), 45000);
 
 
 // Also pre-warm on startup (after a short delay to let server settle)
