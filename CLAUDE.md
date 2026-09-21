@@ -104,7 +104,46 @@ that against a Text tag.
 
 Pushed and **diffed back byte-identical** — the `~ '^[0-9]+$'` regex survived the
 JSON boundary, the six columns landed, and the trailing `ORDER BY` is intact.
-**THREE tags, no `string/=` duplicate set**, all three came back `text`.
+
+**THE CARD REGISTERS SIX PARAMETERS, AND THAT IS THE STATE THAT MATTERS.** Read
+live at 22:30 on the day of the push: the three original `org_id`/`start_date`/
+`end_date` **plus** a second `string/=` set for the same three slugs — the
+documented duplication this file already records for cards 17301, 17295 and
+18151. So the remedy is the documented one: open the card and **re-save until
+that list is three again**, with both dates typed Date.
+
+### A CAST MAKES THE SQL SURVIVE A TEXT TAG — AND BLINDS EVERY ROW-RETURNING CHECK
+
+The sharpest thing this push taught, and it was measured rather than reasoned,
+by running both shapes against the live card minutes apart:
+
+| what sent it | result |
+|---|---|
+| `verify-report-live.js` (the card's **OWN** registered types) | **200, 9 rows in 4.1s** |
+| the APP's shape (`date/single`, as `buildMetabaseParams` hardcodes) | **400 `"An error occurred."` in 0.3s** |
+
+Both true at the same instant, on the same card. The verifier merges values onto
+each parameter's own `type`, so with a Text tag it sends `string/=` — and the
+**cast** means the SQL then runs perfectly. The app cannot do that: it hardcodes
+`date/single`, Metabase refuses that against a Text-typed tag, and the GL report
+is down for every org while the check reports green.
+
+**So the cast is worth having and it moves the failure rather than removing it.**
+It kills the `invalid input syntax for type interval` half permanently; it also
+means **no row-returning check can see a missing flip any more** — not the
+manifest, not the health check, both of which send the card's own types.
+
+**`param-drift` IS THE GUARD, and it is the only one.** `diffCardParamTypes`
+walks **every** parameter and flags any `start_date`/`end_date` that is not
+`date/*` — verified against this exact six-parameter shape: **2 entries, both
+carrying the flip link**. The manifest row's own label used to claim it would
+catch the flip; it was corrected to say what it actually covers and to point
+here, because *a guard that names the wrong failure mode is a guard people learn
+to skim.*
+
+*Generalise it: when a card's bounds are cast, the only thing left that can see a
+Text tag is a check that reads the card's DEFINITION. A check that asks the card
+for rows will answer 200 on a report nobody can load.*
 
 ### THE GATE IS OPEN AND THE MODE SHIPS OFF
 
