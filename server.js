@@ -4194,10 +4194,27 @@ function seedReportSettings() {
   try {
     const seedFile = path.join(DATA_DIR, "report-seeds.json");
     const applied = readJSON(seedFile, {});
+    let changed = false;
     for (const [key, seed] of Object.entries(REPORT_SETTINGS_SEEDS)) {
-      if (applied[key]) continue;                      // already run: never again
+      if (applied[key]) continue;        // applied under the old per-key marker: never again
       for (const slug of seed.orgs) {
-        if (!ORGS[slug]) { console.warn("[seed] " + key + ": unknown org " + slug); continue; }
+        /* THE MARKER IS PER ORG, and that is the load-bearing half. Marked per
+           KEY, one org this server cannot see yet burns the whole seed for
+           good: the org loop skips it and the key is recorded applied anyway,
+           so the feature ships doing nothing and the only symptom is a line in
+           a boot log. Not hypothetical - a DYNAMIC org is absent from ORGS on
+           any boot where storeConnect() returns early (the configure timeout,
+           or a thrown connect), because loadDynamicOrgs runs inside it while
+           the seed runs in storeBoot's finally, past every one of those
+           returns. Per org, an unseen org simply stays unapplied and the next
+           boot retries, while an org that HAS been seeded is never re-seeded
+           over a toggle it has changed since. */
+        const mark = key + "|" + slug;
+        if (applied[mark]) continue;                   // this org: already run
+        if (!ORGS[slug]) {
+          console.warn("[seed] " + key + ": unknown org " + slug + " - not marked, retries next boot");
+          continue;
+        }
         // Through the SAME validator a settings PUT goes through, so a seed can
         // never write a value the panel would refuse - and an org that has since
         // set its own rates keeps them: the seed only fills what it names.
@@ -4207,11 +4224,12 @@ function seedReportSettings() {
         const org = Object.assign({}, all[slug]);
         org[seed.report] = Object.assign({}, org[seed.report], clean.settings);
         writeReportSettingsStore(Object.assign({}, all, { [slug]: org }));
+        applied[mark] = new Date().toISOString();
+        changed = true;
         console.log("[seed] " + key + " → " + seed.report + " settings for " + slug);
       }
-      applied[key] = new Date().toISOString();
-      writeJSON(seedFile, applied);
     }
+    if (changed) writeJSON(seedFile, applied);
   } catch (e) { console.warn("[seed] report settings:", e.message); }
 }
 

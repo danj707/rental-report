@@ -293,6 +293,75 @@ ok(/if \(applied\[key\]\) continue;/.test(seedFn), "a seed applies ONCE and neve
 ok(/normalizeReportSettings\(seed\.report, seed\.settings\)/.test(seedFn),
    "a seed goes through the same validator a settings PUT does");
 ok(/if \(!ORGS\[slug\]\)/.test(seedFn), "an org this server does not serve gets no phantom entry");
+
+/* THE MARKER IS PER ORG, AND ONLY RUNNING IT CAN SHOW THAT. A regex over the
+   marker line reads plausibly whichever key it writes, and the defect is
+   entirely about which one: marked per KEY, an org this server cannot see YET
+   is skipped by the org loop while the key is recorded applied anyway - so the
+   seed never runs again and the feature ships doing nothing for the one org it
+   exists for, the only symptom a line in a boot log. Danvers is a DYNAMIC org,
+   so it is absent from ORGS on any boot where storeConnect() returns early (the
+   configure timeout, or a thrown connect): loadDynamicOrgs runs inside it while
+   the seed runs in storeBoot's finally, past every one of those returns. */
+const SEED_FIXTURE = { "seed-key": {
+  report: "gl", orgs: ["town-of-danvers"],
+  settings: { feeAllocation: true, ccVariableBps: 350 },
+} };
+
+// `slice` stops BEFORE the closing brace, so the lift has to put it back or the
+// Function body is unbalanced and every assertion below dies on a syntax error.
+function bootSeed(orgs, files, store) {
+  new Function(
+    "path", "DATA_DIR", "readJSON", "writeJSON", "ORGS", "REPORT_SETTINGS_SEEDS",
+    "normalizeReportSettings", "readReportSettingsStore", "writeReportSettingsStore",
+    "console",
+    seedFn + "\n}\nreturn seedReportSettings;"
+  )(
+    { join: function () { return Array.prototype.join.call(arguments, "/"); } },
+    "/data",
+    function (f, d) { return f in files ? JSON.parse(JSON.stringify(files[f])) : d; },
+    function (f, v) { files[f] = JSON.parse(JSON.stringify(v)); },
+    orgs,
+    SEED_FIXTURE,
+    function (report, settings) { return { settings: settings }; },
+    function () { return JSON.parse(JSON.stringify(store.v)); },
+    function (v) { store.v = JSON.parse(JSON.stringify(v)); },
+    { log: function () {}, warn: function () {} }
+  )();
+  return { marks: files["/data/report-seeds.json"] || {}, settings: store.v };
+}
+
+// 1. An org this boot cannot see must leave the seed UNAPPLIED.
+const unseen = guard("an unknown org does not mark the seed applied",
+  function () { return bootSeed({}, {}, { v: {} }); });
+ok(unseen && Object.keys(unseen.marks).length === 0,
+   "an unknown org leaves NO marker, so the next boot retries");
+ok(unseen && !unseen.settings["town-of-danvers"],
+   "...and writes no settings for an org it does not serve");
+
+// 2. ...and the very next boot, once the dynamic orgs have loaded, applies it.
+const retried = guard("the next boot applies it once the org is there", function () {
+  const files = {}, store = { v: {} };
+  bootSeed({}, files, store);                                  // boot 1: store answered late
+  return bootSeed({ "town-of-danvers": {} }, files, store);    // boot 2: ORGS populated
+});
+ok(retried && retried.settings["town-of-danvers"] &&
+   retried.settings["town-of-danvers"].gl.feeAllocation === true,
+   "a retry after the org appears DOES seed it - the whole point of not marking");
+ok(retried && Object.keys(retried.marks).some(function (k) {
+     return k.indexOf("|town-of-danvers") > 0; }),
+   "the marker names the ORG, not the key alone");
+
+// 3. A seeded org is never re-seeded over a toggle it has changed since.
+const resettled = guard("an applied org is not seeded twice", function () {
+  const files = {}, orgs = { "town-of-danvers": {} }, store = { v: {} };
+  bootSeed(orgs, files, store);
+  // the org switches the mode back off, then the server reboots
+  store.v["town-of-danvers"].gl.feeAllocation = false;
+  return bootSeed(orgs, files, store).settings;
+});
+ok(resettled && resettled["town-of-danvers"].gl.feeAllocation === false,
+   "a seed applies ONCE per org - it never overwrites a toggle changed since");
 const bootBlock = slice(server, "async function storeBoot()", "async function storeConnect()");
 ok(/seedReportSettings\(\);/.test(bootBlock),
    "the seed is called from storeBoot, where the store has actually answered");
