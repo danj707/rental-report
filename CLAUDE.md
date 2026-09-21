@@ -262,6 +262,14 @@ status 401, scopes `[]`; and **zero occurrences** of the token in the response.
 - **No alert when the backup SHRINKS.** A run that writes 3 files where it wrote
   300 reports `ok`. Size is recorded now (`backup-last-ok.json`), so a
   ratio check against the last good run is a few lines whenever it is wanted.
+- **The gist carries CONFIG ONLY** — `exportAll()` returns `S.kv` and nothing
+  else, so the event log (survey verbatims, feedback, the usage record that
+  gates every watchdog) is not in it. **CORRECTED 2026-09-21, and the first
+  version of this line overstated it:** Railway runs **Postgres PITR at 30.2
+  GB**, so those rows are recoverable. What is missing is an OFF-PLATFORM copy
+  of them, which matters only for an incident at the Railway account level.
+  ~21 MB of events on top of today's 10.5 MB is a real question for a gist
+  rather than an obvious yes.
 
 ## THE ORG DASHBOARD PAINTS THE LOCAL SKY (2026-09-19)
 
@@ -15045,9 +15053,13 @@ silently gets a leaderboard.
 
 ### NOT DONE, and the sequencing is the point
 
-**Step 4 of the runbook — detaching the volume and raising `numReplicas` — is a
-Railway change, not a code one, and has not been made.** Until it is, this is all
-inert plumbing.
+**~~Step 4 of the runbook — detaching the volume and raising `numReplicas` — has
+not been made.~~ DONE, confirmed 2026-09-21** from the Railway service view:
+rental-report shows **2/2 replicas active** and carries no volume. This note
+claimed otherwise for two weeks, and the cost was real — it is why the backup
+409 was diagnosed as "consistent with 2 replicas" rather than simply read off
+the config. *A note claiming work is outstanding costs exactly as much as one
+claiming work is done.*
 
 **The API + semantic layer flip is deliberately AFTER this**, for two measured
 reasons rather than tidiness:
