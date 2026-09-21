@@ -5146,7 +5146,7 @@ setTimeout(() => { checkCardParamTypes().catch(() => {}); }, 150 * 1000).unref?.
 // Inert if the env var is unset. Fire-and-forget — never blocks or breaks logging.
 // To change what pings Slack, edit SLACK_NOTIFY. High-frequency events (view/fetch)
 // are debounced per org+report so Slack isn't a firehose.
-const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "campmap-filter", "campmap-amenity", "pdf", "excel", "print", "summary", "game", "map", "outdoor", "fields", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email", "checkin-loc", "checkin-member", "checkin-failed", "form-open", "epact", "settings-open", "settings-unlock", "settings-locked", "settings-save", "settings-reset", "deadlink", "generate", "wizard-save", "mb-autorenew", "mb-salesmix", "ft-export", "panel-csv", "intel-csv", "wizard-feedback", "roster-open", "report-csv", "survey-response", "insights-listen", "opp-drill", "opp-print", "opp-csv"]);
+const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "campmap-filter", "campmap-amenity", "pdf", "excel", "print", "summary", "game", "map", "outdoor", "fields", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email", "checkin-loc", "checkin-member", "checkin-failed", "form-open", "epact", "settings-open", "settings-unlock", "settings-locked", "settings-save", "settings-reset", "deadlink", "generate", "wizard-save", "mb-autorenew", "mb-salesmix", "ft-export", "panel-csv", "intel-csv", "wizard-feedback", "roster-open", "report-csv", "survey-response", "insights-listen", "opp-drill", "opp-print", "opp-csv", "backup-failed"]);
 const SLACK_DEBOUNCE_MS = { view: 30 * 60 * 1000, fetch: 30 * 60 * 1000,
   // A broken report stays broken. The health check only reports NEW failures,
   // but a flapping card would otherwise post every hour.
@@ -5154,7 +5154,9 @@ const SLACK_DEBOUNCE_MS = { view: 30 * 60 * 1000, fetch: 30 * 60 * 1000,
   "param-drift": 6 * 60 * 60 * 1000,
   // A dead link stays dead. Someone forwarding an old URL round a parks
   // department would otherwise post once per recipient.
-  deadlink: 6 * 60 * 60 * 1000 };
+  deadlink: 6 * 60 * 60 * 1000,
+  // The freshness check runs hourly and a broken backup stays broken.
+  "backup-failed": 6 * 60 * 60 * 1000 };
 const SLACK_DEFAULT_DEBOUNCE_MS = 60 * 1000; // dedup rapid double-fires of one-off events
 const slackLastSent = new Map();
 const SLACK_EVENT_META = {
@@ -5191,6 +5193,9 @@ const SLACK_EVENT_META = {
   "org-deleted": { emoji: "🗑️", verb: "DELETED from the reporting project" },
   deadlink: { emoji: "\uD83D\uDD17", verb: "dead link" },
   "schema-break": { emoji: "🧨", verb: "schema break" },
+  // Its own branch below — the shared line would print the report type twice
+  // and the reason never, which is the defect already fixed once in `feedback`.
+  "backup-failed": { emoji: "🗄️", verb: "backup failed" },
   "param-drift": { emoji: "\uD83D\uDCC5", verb: "date parameter reset to Text" },
   watchdog: { emoji: "\uD83D\uDD07", verb: "watchdog switched" },
   "campmap-share": { emoji: "\uD83C\uDFD5\uFE0F", verb: "copied the public campsite map link for" },
@@ -5526,6 +5531,20 @@ function notifySlack(rec) {
     text = `${meta.emoji} *DATE TAG RESET TO TEXT* — ${tags.slice(0, 6).join(", ")}`
          + (tags.length > 6 ? ` and ${tags.length - 6} more` : "") + who
          + fix + mention;
+  } else if (rec.event === "backup-failed") {
+    const mention = SLACK_MENTION_USER_ID ? ` <@${SLACK_MENTION_USER_ID}>` : "";
+    const why = rec.error ? ` — _${String(rec.error).slice(0, 200)}_` : "";
+    // The age is the half that says how bad this is: one missed run is a blip,
+    // "no good backup in 300h" is the platform running without a net.
+    const age = rec.hoursSinceOk == null
+      ? " · *no successful backup on record*"
+      : ` · last good backup ${rec.hoursSinceOk}h ago`;
+    const lead = rec.status === "skipped"
+      ? "*BACKUP NOT CONFIGURED*"
+      : rec.status === "stale"
+        ? "*BACKUP IS STALE*"
+        : "*BACKUP FAILED*";
+    text = `${meta.emoji} ${lead}${why}${age}${mention}`;
   } else if (rec.event === "report-down") {
     const mention = SLACK_MENTION_USER_ID ? ` <@${SLACK_MENTION_USER_ID}>` : "";
     const why = rec.error ? ` — _${String(rec.error).slice(0, 160)}_` : "";
@@ -7022,6 +7041,10 @@ cron.schedule("5 * * * *", leaderCron("health", () => runHealthCheck()));  // ev
 const BACKUP_PAT = process.env.GITHUB_PAT || "";
 const BACKUP_GIST_ID_FILE = path.join(DATA_DIR, "backup-gist-id.txt");   // legacy, read once
 const BACKUP_GIST_ID_KEY  = path.join(DATA_DIR, "backup-gist-id.json");
+const BACKUP_LAST_OK_KEY  = path.join(DATA_DIR, "backup-last-ok.json");
+// The cron is daily, so 36h is a missed run plus slack — long enough that one
+// late run is not an alert, short enough that two are.
+const BACKUP_STALE_HOURS = 36;
 let _lastBackup = { ts: null, status: "never", size: 0, files: 0, gistUrl: null, error: null };
 
 // Load saved gist ID if it exists
@@ -7029,21 +7052,66 @@ let _lastBackup = { ts: null, status: "never", size: 0, files: 0, gistUrl: null,
 // away. The old file is still read when the key is absent, so an existing gist
 // keeps being appended to rather than a second one appearing beside it.
 let _backupGistId = "";
-try {
-  const rec = readJSON(BACKUP_GIST_ID_KEY, null);
-  if (rec && rec.id) _backupGistId = String(rec.id).trim();
-  else if (fs.existsSync(BACKUP_GIST_ID_FILE)) _backupGistId = fs.readFileSync(BACKUP_GIST_ID_FILE, "utf8").trim();
-} catch (_) {}
+let _backupIdLoaded = false;
+
+// LAZY, NOT MODULE SCOPE, and that is the whole reason it is a function.
+// storeBoot() runs ~17,000 lines below this; in db mode a read up here sees the
+// CONTAINER'S OWN disk rather than Postgres, comes back empty, and sends every
+// backup down the CREATE path — minting a fresh gist per boot instead of
+// appending to the existing one. Same lesson as loadDynamicOrgs and the
+// report-visibility seed: a read at module scope is stale.
+function backupGistId() {
+  if (_backupIdLoaded) return _backupGistId;
+  try {
+    const rec = readJSON(BACKUP_GIST_ID_KEY, null);
+    if (rec && rec.id) _backupGistId = String(rec.id).trim();
+    else if (fs.existsSync(BACKUP_GIST_ID_FILE)) _backupGistId = fs.readFileSync(BACKUP_GIST_ID_FILE, "utf8").trim();
+  } catch (_) {}
+  _backupIdLoaded = true;
+  return _backupGistId;
+}
+
+// "When did a backup last SUCCEED" has to survive a restart, or the answer to
+// "how long has this been broken" is only ever "since this container booted" —
+// which is how a dead PAT went unnoticed. _lastBackup is this container's own
+// attempts; the store carries the last good one.
+function backupLastOk() { return readJSON(BACKUP_LAST_OK_KEY, null); }
+function hoursSinceBackup() {
+  const ok = backupLastOk();
+  const t = ok && ok.at ? Date.parse(ok.at) : NaN;
+  return Number.isFinite(t) ? (Date.now() - t) / 3600000 : null;
+}
+
+// A failed backup logged to the console and NOTHING ELSE, which is why a 401
+// from an expired GITHUB_PAT sat unreported. Every other watchdog here pages;
+// the one guarding against total data loss has to as well. Deliberately absent
+// from ALERT_FLAG_BY_EVENT, like `watchdog` itself — this alert is not
+// switchable off, because the thing it reports is unrecoverable.
+function alertBackupProblem(status, error) {
+  const h = hoursSinceBackup();
+  try {
+    logEvent("_platform", "backup", "backup-failed", null, {
+      status,
+      error: String(error || "").slice(0, 200),
+      hoursSinceOk: h == null ? null : Math.round(h),
+    });
+  } catch (e) { console.error("[backup] alert failed:", e.message); }
+}
 
 async function performBackup(manual = false) {
   if (!BACKUP_PAT) {
     console.log("[backup] Skipped — no GITHUB_PAT env var");
     _lastBackup = { ts: new Date().toISOString(), status: "skipped", size: 0, files: 0, gistUrl: null, error: "GITHUB_PAT not set" };
+    // An unset key is a configuration, not a failure — but a platform with NO
+    // off-platform copy is worth saying out loud either way, and notifySlack is
+    // already gated to production so a PR preview stays quiet.
+    alertBackupProblem("skipped", "GITHUB_PAT not set");
     return _lastBackup;
   }
 
   console.log(`[backup] Starting ${manual ? "manual" : "scheduled"} backup...`);
   const started = Date.now();
+  backupGistId();   // populates _backupGistId from the store — see that function
 
   try {
     const gistFiles = {};
@@ -7138,8 +7206,12 @@ async function performBackup(manual = false) {
     }
 
     const elapsed = ((Date.now() - started) / 1000).toFixed(1);
+    const finishedAt = new Date().toISOString();
+    // Durable, so the next container can still answer "when did one last work".
+    try { writeJSON(BACKUP_LAST_OK_KEY, { at: finishedAt, gistUrl, files: fileCount, size: totalSize }); }
+    catch (e) { console.warn("[backup] could not record last-ok:", e.message); }
     _lastBackup = {
-      ts: new Date().toISOString(),
+      ts: finishedAt,
       status: "ok",
       size: totalSize,
       files: fileCount,
@@ -7151,6 +7223,7 @@ async function performBackup(manual = false) {
     return _lastBackup;
   } catch (err) {
     console.error(`[backup] Failed:`, err.message);
+    alertBackupProblem("error", err.message);
     _lastBackup = {
       ts: new Date().toISOString(),
       status: "error",
@@ -7165,6 +7238,27 @@ async function performBackup(manual = false) {
 
 // Daily backup at 2am
 cron.schedule("0 2 * * *", leaderCron("backup", () => performBackup(false)));
+
+// A failure alert only fires when a run HAPPENS. A cron that silently stops
+// firing — a wedged leader lock, a container that never reaches this line —
+// looks identical to a healthy platform from the outside, so the age of the
+// last good backup is checked on its own schedule. Hourly with the standard 6h
+// alert debounce, the same shape as the report-down watchdog.
+async function checkBackupFreshness() {
+  const h = hoursSinceBackup();
+  if (h == null) {
+    // Never a successful backup on record. Real on a fresh volume, and exactly
+    // what a platform that has never once backed up also looks like.
+    alertBackupProblem("never", "no successful backup on record");
+    return { stale: true, hoursSinceOk: null };
+  }
+  if (h > BACKUP_STALE_HOURS) {
+    alertBackupProblem("stale", `last good backup was ${Math.round(h)}h ago`);
+    return { stale: true, hoursSinceOk: Math.round(h) };
+  }
+  return { stale: false, hoursSinceOk: Math.round(h) };
+}
+cron.schedule("15 * * * *", leaderCron("backup-freshness", () => checkBackupFreshness().catch(() => {})));
 
 // Daily activity digest — 12:05am local, summarising the day that just closed.
 // The digest reads the WHOLE platform's log, so two replicas posting it would
@@ -7527,7 +7621,66 @@ app.get("/api/admin/daily-summary", (req, res) => {
 });
 
 app.get("/api/admin/backup-status", (req, res) => {
-  res.json(_lastBackup);
+  // _lastBackup alone reports THIS container's attempts since boot, so after a
+  // deploy it reads "never" on a platform that is backing up fine — and reads
+  // fine on one that has not backed up in a week. The durable last-success is
+  // what actually answers the question.
+  const h = hoursSinceBackup();
+  res.json(Object.assign({}, _lastBackup, {
+    lastSuccess: backupLastOk(),
+    hoursSinceSuccess: h == null ? null : Math.round(h),
+    stale: h == null ? true : h > BACKUP_STALE_HOURS,
+    staleAfterHours: BACKUP_STALE_HOURS,
+  }));
+});
+
+// ── GET /api/admin/backup-credential — is the stored PAT actually usable? ──
+// "Gist create failed: 401" says GitHub rejected the credential, but not which
+// way, and the value cannot be read from a session (Railway redacts it) — so
+// answering it meant pasting a token into a shell. This asks GitHub on the
+// server's behalf and reports the VERDICT only.
+//
+// GATED, and it fails closed. Every other /api/admin GET is open because
+// dashboardAuth only guards "/", which is fine for authored copy and not for a
+// route that spends a secret on an outbound call. Same call as /api/admin/store.
+app.get("/api/admin/backup-credential", async (req, res) => {
+  if (!adminPasswordOk(req)) return res.status(401).json({ error: "unauthorized" });
+  if (!BACKUP_PAT) {
+    return res.json({ configured: false, ok: false,
+      verdict: "GITHUB_PAT is not set, so no backup can run at all" });
+  }
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 10000);
+    const r = await fetch("https://api.github.com/user", {
+      headers: { Authorization: `token ${BACKUP_PAT}`, "User-Agent": "rec-backup" },
+      signal: ctrl.signal,
+    });
+    clearTimeout(t);
+    // Classic PATs report their scopes in a header. This is the OTHER failure
+    // mode and a 401 cannot see it: a live token with no `gist` scope, or a
+    // fine-grained token, authenticates fine and still cannot write a gist.
+    const scopes = (r.headers.get("x-oauth-scopes") || "").split(",").map(x => x.trim()).filter(Boolean);
+    const hasGist = scopes.includes("gist");
+    let login = null;
+    if (r.ok) { try { login = (await r.json()).login || null; } catch (_) {} }
+    const verdict = !r.ok
+      ? (r.status === 401
+          ? "GitHub rejected the token — expired, revoked, or malformed. Replace it."
+          : `GitHub answered ${r.status}`)
+      : hasGist
+        ? "Token is valid and carries the gist scope"
+        : scopes.length
+          ? "Token is VALID but has no `gist` scope — backups will keep failing"
+          : "Token is valid but reports no scopes — a fine-grained token cannot write gists";
+    // Never the token, never the response body: a 401 from GitHub can quote the
+    // credential back, and this response is exactly what gets pasted into chat.
+    res.json({ configured: true, ok: r.ok && hasGist, status: r.status,
+               login, scopes, hasGistScope: hasGist, verdict });
+  } catch (e) {
+    res.json({ configured: true, ok: false, status: null,
+               verdict: `Could not reach GitHub: ${String(e.message || e).slice(0, 120)}` });
+  }
 });
 
 // ── GET /api/admin/org/:slug — check if org exists (used by rec-dashboard before add) ──
@@ -20981,6 +21134,7 @@ app.get("/", (req, res) => {
           <div style="display:flex;gap:6px;align-items:center">
             <span id="backup-status" style="font-size:11px;color:#999">Loading...</span>
             <button onclick="triggerBackup()" id="backup-btn" style="padding:4px 12px;background:#16a34a;color:#fff;border:none;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer">Backup Now</button>
+            <button onclick="checkBackupCred()" id="backup-cred-btn" style="padding:4px 12px;background:#334155;color:#fff;border:none;border-radius:4px;font-size:11px;font-weight:600;cursor:pointer">Check token</button>
           </div>
         </div>
         <div id="backup-detail" style="font-size:11px;color:#666">Backups run daily at 2am and on startup. Data files are saved to a private GitHub Gist.</div>
@@ -22227,6 +22381,30 @@ app.get("/", (req, res) => {
         el.innerHTML = '<span style="color:#dc2626">&#9679;</span> Failed: ' + e.message;
       }
       btn.disabled = false; btn.textContent = 'Backup Now';
+    }
+
+    // A 401 from the backup says GitHub rejected the token but not which way,
+    // and a live token missing the gist scope fails differently and looks fine.
+    // This reports the verdict; the value never leaves the server.
+    async function checkBackupCred() {
+      var btn = document.getElementById('backup-cred-btn');
+      var det = document.getElementById('backup-detail');
+      btn.disabled = true; btn.textContent = 'Checking\u2026';
+      try {
+        var resp = await fetch('/api/admin/backup-credential');
+        if (resp.status === 401) {
+          det.innerHTML = '<span style="color:#f59e0b">Needs the dashboard password \u2014 reload and sign in.</span>';
+        } else {
+          var c = await resp.json();
+          var color = c.ok ? '#16a34a' : '#dc2626';
+          var who = c.login ? ' &middot; ' + c.login : '';
+          var sc = (c.scopes && c.scopes.length) ? ' &middot; scopes: ' + c.scopes.join(', ') : '';
+          det.innerHTML = '<span style="color:' + color + '">&#9679;</span> ' + c.verdict + who + sc;
+        }
+      } catch(e) {
+        det.innerHTML = '<span style="color:#dc2626">Could not check: ' + e.message + '</span>';
+      }
+      btn.disabled = false; btn.textContent = 'Check token';
     }
 
     async function doRestart() {
