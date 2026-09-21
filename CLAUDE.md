@@ -184,6 +184,30 @@ keeps its intent with a report that really is unregistered;
 `report-settings-unlock.spec.js` now **DERIVES** one from the registry, because
 naming a fourth slug just queues the same failure up again.
 
+**AND A THIRD ONE PINNED A LITERAL MY CHANGE LEGITIMATELY MOVED** —
+`saved-views.spec.js` asserts `SAVED_VIEW_PARAMS.gl` **byte for byte**, because
+key ORDER is what makes the dirty check a valid string comparison. Appending
+`fees` is the correct change and it breaks that assertion by design. The fix is
+to update the literal and say **why** in the message — *a new key is APPENDED,
+never inserted*, or every view already saved reads as edited the instant it is
+applied. Re-verified by mutation: `fees` slid into the middle of the list fails
+it by name.
+
+### I REPORTED A GREEN SUITE THAT HAD NOT RUN THE SPEC THAT CAUGHT THIS
+
+**`saved-views.spec.js` and `facility-summary.spec.js` SKIP when
+`@babel/standalone` is absent** — they print `skipped — …` and **exit 0**. This
+sandbox does not carry it, so my suite runner counted both as passes, printed
+*"87 pass / 0 fail"*, and I put that number in front of Dan as verification. CI
+installs the pinned **7.23.9** and failed within 35 seconds of the push.
+
+*Nth instance of the recorded rule that a runner which cannot tell pass from fail
+has not tested anything* — and the new half is that **a SKIP is not a PASS**, so
+a runner must count the three states apart rather than reading an exit code.
+Install `@babel/standalone@7.23.9` (pinned, exactly as CI does) before a local
+suite run means anything; without it the number is over a smaller set than it
+claims. With it: **87 pass, 0 fail, 0 skipped.**
+
 ### NOT DONE
 
 - **No editing UI for the rates beyond the existing settings panel**, which is
