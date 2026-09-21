@@ -4053,6 +4053,25 @@ function getTylerConfig(slug) {
   const displayName = org.displayName || (slug.charAt(0).toUpperCase() + slug.slice(1) + " Parks & Recreation");
   return org.tyler || { entityName: displayName, department: "", shortCodes: {} };
 }
+// ── Fee Allocation (GL report) ────────────────────────────────────────
+// Whether the GL Code Rollup offers its Fee Allocation view, and at what rates.
+// Both come from the org's own report settings, so the gate and the contract
+// terms cannot drift apart - see REPORT_SETTINGS_SCHEMA.gl.
+//
+// Returns NULL when the org is not switched on, so every caller is a truthiness
+// test and no org can accidentally be priced with another town's rates. Reading
+// settings does NOT require the `reportSettings` feature flag - that flag gates
+// the EDITING panel - so an org seeded on works whether or not the flag is up.
+function feeAllocConfig(slug) {
+  if (!ORGS[slug]) return null;
+  const st = reportSettings(slug, "gl");
+  if (!st || !st.feeAllocation) return null;
+  return {
+    ccVariableBps: st.ccVariableBps, ccFixedCents: st.ccFixedCents,
+    cashBps: st.cashBps, checkBps: st.checkBps, techBps: st.techBps,
+  };
+}
+
 function setTylerOrg(slug, enabled) {
   const all = readJSON(TYLER_ORGS_FILE, {});
   all[slug] = !!enabled;
@@ -4151,6 +4170,50 @@ const REPORT_VISIBILITY_SEEDS = {
   // that looked like "show" was the one that hid it again. See the toggle route.
   "opportunities:2026-09-14-shrewsbury": { report: "opportunities", orgs: ["shrewsbury"] },
 };
+
+/* Report SETTINGS seeds - the same one-shot shape as REPORT_VISIBILITY_SEEDS
+   above and for the same reason: a seed is an INITIAL VALUE, never a second
+   source of truth. Each key applies once and the org's own settings own it
+   forever after, so an org switched back off does not come on again overnight.
+   Add a NEW key to turn something on; never edit an applied one. */
+const REPORT_SETTINGS_SEEDS = {
+  // Danvers' weekly remittance worksheet, at the rates their own sheet uses
+  // (3.5% + $0.30 card, 1% cash, 1% cheque, 1% technology).
+  "gl-fees:2026-09-21-danvers": {
+    report: "gl", orgs: ["town-of-danvers"],
+    settings: { feeAllocation: true, ccVariableBps: 350, ccFixedCents: 30,
+                cashBps: 100, checkBps: 100, techBps: 100 },
+  },
+};
+
+/* CALLED FROM storeBoot(), NOT AT MODULE SCOPE - see the note on
+   seedReportVisibility. A write at module scope lands on the container's own
+   disk and is thrown away, and it takes its own applied-marker with it, which
+   is what makes that failure silent rather than loud. */
+function seedReportSettings() {
+  try {
+    const seedFile = path.join(DATA_DIR, "report-seeds.json");
+    const applied = readJSON(seedFile, {});
+    for (const [key, seed] of Object.entries(REPORT_SETTINGS_SEEDS)) {
+      if (applied[key]) continue;                      // already run: never again
+      for (const slug of seed.orgs) {
+        if (!ORGS[slug]) { console.warn("[seed] " + key + ": unknown org " + slug); continue; }
+        // Through the SAME validator a settings PUT goes through, so a seed can
+        // never write a value the panel would refuse - and an org that has since
+        // set its own rates keeps them: the seed only fills what it names.
+        const clean = normalizeReportSettings(seed.report, seed.settings);
+        if (clean.error) { console.warn("[seed] " + key + ": " + clean.error); continue; }
+        const all = readReportSettingsStore();
+        const org = Object.assign({}, all[slug]);
+        org[seed.report] = Object.assign({}, org[seed.report], clean.settings);
+        writeReportSettingsStore(Object.assign({}, all, { [slug]: org }));
+        console.log("[seed] " + key + " → " + seed.report + " settings for " + slug);
+      }
+      applied[key] = new Date().toISOString();
+      writeJSON(seedFile, applied);
+    }
+  } catch (e) { console.warn("[seed] report settings:", e.message); }
+}
 
 /* CALLED FROM storeBoot(), NOT AT MODULE SCOPE, and that is the whole reason it
    works. At module scope readJSON/writeJSON see the CONTAINER'S OWN DISK - the
@@ -5146,7 +5209,7 @@ setTimeout(() => { checkCardParamTypes().catch(() => {}); }, 150 * 1000).unref?.
 // Inert if the env var is unset. Fire-and-forget — never blocks or breaks logging.
 // To change what pings Slack, edit SLACK_NOTIFY. High-frequency events (view/fetch)
 // are debounced per org+report so Slack isn't a firehose.
-const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "campmap-filter", "campmap-amenity", "pdf", "excel", "print", "summary", "game", "map", "outdoor", "fields", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email", "checkin-loc", "checkin-member", "checkin-failed", "form-open", "epact", "settings-open", "settings-unlock", "settings-locked", "settings-save", "settings-reset", "deadlink", "generate", "wizard-save", "mb-autorenew", "mb-salesmix", "ft-export", "panel-csv", "intel-csv", "wizard-feedback", "roster-open", "report-csv", "survey-response", "insights-listen", "opp-drill", "opp-print", "opp-csv", "backup-failed"]);
+const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "campmap-filter", "campmap-amenity", "pdf", "excel", "print", "summary", "game", "map", "outdoor", "fields", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email", "checkin-loc", "checkin-member", "checkin-failed", "form-open", "epact", "settings-open", "settings-unlock", "settings-locked", "settings-save", "settings-reset", "deadlink", "generate", "wizard-save", "mb-autorenew", "mb-salesmix", "ft-export", "panel-csv", "intel-csv", "wizard-feedback", "roster-open", "report-csv", "survey-response", "insights-listen", "opp-drill", "opp-print", "opp-csv", "backup-failed", "fee-alloc"]);
 const SLACK_DEBOUNCE_MS = { view: 30 * 60 * 1000, fetch: 30 * 60 * 1000,
   // A broken report stays broken. The health check only reports NEW failures,
   // but a flapping card would otherwise post every hour.
@@ -5230,6 +5293,10 @@ const SLACK_EVENT_META = {
   "settings-open":  { emoji: "\uD83D\uDD0D", verb: "opened the report settings for" },
   // Someone entered the admin password on an org report and got in.
   "settings-unlock": { emoji: "\uD83D\uDD13", verb: "unlocked the report settings for" },
+  // The remittance fee worksheet. The signal worth reading is whether a town is
+  // actually using it in place of the spreadsheet they rebuilt by hand, so the
+  // message carries the WEEK and the total it priced rather than just the click.
+  "fee-alloc": { emoji: "\uD83E\uDDFE", verb: "opened the fee allocation worksheet for" },
   // FIVE WRONG ATTEMPTS. Not a typo — this is the one worth reading as a
   // security event, which is why only the lockout posts and single misses do not.
   "settings-locked": { emoji: "\uD83D\uDEA8", verb: "was LOCKED OUT of the report settings for" },
@@ -5567,6 +5634,10 @@ function notifySlack(rec) {
     const skipped = (rec.rows || 0) - (rec.sheets || 0);
     text = `${meta.emoji} ${orgName} (\`${rec.org}\`) ${meta.verb} *${rec.report}* — ${rec.sheets || 0} sheet${rec.sheets === 1 ? "" : "s"}`
          + (skipped > 0 ? ` (${skipped} row${skipped === 1 ? "" : "s"} had no issued permit)` : "");
+  } else if (rec.event === "fee-alloc") {
+    const fees  = rec.fees  ? ` \u00B7 $${rec.fees} in fees` : "";
+    const txns  = rec.txns  ? ` over ${rec.txns} card transactions` : "";
+    text = `${meta.emoji} ${orgName} (\`${rec.org}\`) ${meta.verb} *${rec.report}*${fees}${txns}`;
   } else if (rec.event === "settings-open") {
     // Opening the panel is a LOOK, not a change — so the useful extra is whether
     // this org is already off the platform defaults. "Someone opened settings"
@@ -6485,7 +6556,7 @@ async function generatePdf(orgSlug, reportType, startDate, endDate, filters = {}
   // CLIENT gates (the page's getParams whitelist, its state, its export paths)
   // looks exactly like working — the screen and the browser's own Print are
   // both correct — and the SERVER-rendered PDF still carried the columns.
-  ["locations", "location", "sites", "location_name", "site_type", "desks", "methods", "by_desk", "by_item", "hide_zero", "chart_net", "metric", "programs", "closures", "hrs", "section_name", "section_id", "status", "questions", "cols", "search", "tab", "instructor", "split", "book_type", "addons", "musco", "participant", "view", "tyler", "glq", "gl_codes", "refunds", "quarter", "insights"].forEach(k => {
+  ["locations", "location", "sites", "location_name", "site_type", "desks", "methods", "by_desk", "by_item", "hide_zero", "chart_net", "metric", "programs", "closures", "hrs", "section_name", "section_id", "status", "questions", "cols", "search", "tab", "instructor", "split", "book_type", "addons", "musco", "participant", "view", "tyler", "glq", "gl_codes", "refunds", "fees", "quarter", "insights"].forEach(k => {
     if (filters[k]) qsObj[k] = filters[k];
   });
   // `pii` CANNOT RIDE THE LOOP ABOVE, and that is the whole bug this line fixes.
@@ -8889,7 +8960,7 @@ app.post("/:org/:report/api/log", resolveOrg, (req, res) => {
   const { event, game, location, view } = req.query;
   // view-apply is events.jsonl-only by design — it is not in SLACK_NOTIFY, so
   // logEvent records it without pinging the feed (see the saved-views block).
-  const ALLOWED = ["excel", "print", "summary", "game", "map", "view-apply", "checkin-loc", "checkin-member", "checkin-failed", "form-open", "epact", "settings-open", "mb-autorenew", "mb-salesmix", "ft-export", "panel-csv", "intel-csv", "roster-open", "insights-listen"];
+  const ALLOWED = ["excel", "print", "summary", "game", "map", "view-apply", "checkin-loc", "checkin-member", "checkin-failed", "form-open", "epact", "settings-open", "mb-autorenew", "mb-salesmix", "ft-export", "panel-csv", "intel-csv", "roster-open", "insights-listen", "fee-alloc"];
   if (!ALLOWED.includes(event)) return res.status(400).json({ ok: false, error: "Unknown event" });
   const ciN = Number(req.query.n);
   const extra = event === "game" && game ? { game: String(game).slice(0, 60) }
@@ -11570,7 +11641,11 @@ const SAVED_VIEW_PARAMS = {
   // different group headers — and Dan's own view is named "GL Code Rollup w
   // refund detail", so the mode IS the view. A view that could not carry it
   // could not reproduce itself, on screen or in the PDF.
-  gl: ["desks", "gl_codes", "methods", "glq", "tyler", "refunds"],
+  // `fees` is APPENDED, like every key added to a live allowlist: cleanViewParams
+  // emits in this order and the page builds currentFilterParams the same way, so
+  // inserting it anywhere else would make every stored view read as "edited" the
+  // instant it is applied.
+  gl: ["desks", "gl_codes", "methods", "glq", "tyler", "refunds", "fees"],
   // The Class Roster's FILTER state, and only that. Its column toggles and
   // question picker are display state, they live in localStorage per browser,
   // and a shared view that overwrote them would take a colleague's chosen
@@ -12009,6 +12084,28 @@ const REPORT_SETTINGS_SCHEMA = {
                      min: 1, max: 12, def: EPACT_VERIFIED_COLUMNS },
     epactLabel:    { kind: "enum", values: ["date-section", "section", "section-date"], def: "date-section" },
     epactBom:      { kind: "bool", def: true },
+  },
+
+  // The GL Code Rollup's Fee Allocation view. Danvers rebuilt this worksheet by
+  // hand every week; the gate and the rates live together here because enabling
+  // an org without looking at its rates is how a second town silently gets
+  // Danvers' contract terms.
+  gl: {
+    // SHIPS OFF. The mechanism is generic - any org is one toggle - but the
+    // rates are a contract, so a report that prices another town's money with
+    // Danvers' numbers is worse than no report. Turned on per org, either from
+    // the settings panel or with a dated seed in REPORT_SETTINGS_SEEDS.
+    feeAllocation: { kind: "bool", def: false },
+
+    // BASIS POINTS AND CENTS, never floats. These multiply every dollar on the
+    // page, and a stored 0.0349999 is a report that is a cent out for reasons
+    // nobody can find. 350 bps = 3.5%. Kept in step with DEFAULT_FEE_RATES in
+    // lib/fee-allocation.js, which the spec asserts.
+    ccVariableBps: { kind: "int", min: 0, max: 2000, def: 350 },
+    ccFixedCents:  { kind: "int", min: 0, max: 1000, def: 30 },
+    cashBps:       { kind: "int", min: 0, max: 2000, def: 100 },
+    checkBps:      { kind: "int", min: 0, max: 2000, def: 100 },
+    techBps:       { kind: "int", min: 0, max: 2000, def: 100 },
   },
 
   // The Facilities hub's Aquatics tab. Registered under `facility` because that
@@ -12930,6 +13027,9 @@ app.get("/:org/gl", (req, res) => {
   if (!ORGS[slug]) return res.status(404).send("Unknown org");
   logEvent(slug, "gl", "view", req);
   const orgConfig = { emailEnabled: EMAIL_ENABLED_ORGS.has(slug), tyler: getTylerConfig(slug), munis: munisExportEnabled(slug),
+                      // null unless this org is switched on; the page treats it
+                      // as the gate AND as the rates, so there is one answer.
+                      feeAlloc: feeAllocConfig(slug),
                       savedViewRanges: SAVED_VIEW_RELATIVE_OFFER.gl };
   const html = require("fs").readFileSync(path.join(__dirname, "public", "gl.html"), "utf8");
   res.send(html.replace("<head>", () => "<head>" + orgConfigInject(orgConfig, req)));
@@ -24334,6 +24434,7 @@ async function storeBoot() {
        the seed still has to run, it just runs against whichever backend is
        actually live. */
     seedReportVisibility();
+    seedReportSettings();
   }
 }
 

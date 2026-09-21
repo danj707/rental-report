@@ -307,6 +307,9 @@ jobs:
       - name: GL code multi-select (unmapped money is an option; None sticks; one menu)
         run: node scripts/gl-code-filter.spec.js
 
+      - name: Remittance fee allocation (the parts sum to the total; a pre-column feed withholds the flat fee)
+        run: node scripts/fee-allocation.spec.js
+
       - name: Report window (a half-open range is refused; every export states the window it loaded)
         run: node scripts/report-window.spec.js
 

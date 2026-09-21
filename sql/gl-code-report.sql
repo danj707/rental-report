@@ -18,6 +18,14 @@
    Fix: expose per-desk distinct counts. A transaction_event_id has exactly one
    desk, so per-desk distinct counts ARE additive across desks — the app sums
    them once per desk (dedup) for a correct grand/ filtered total.
+
+   CHANGE (2026-09): six columns for the Fee Allocation view (see
+   lib/fee-allocation.js). Four per-method distinct transaction counts, because
+   card processing is billed per transaction as well as per dollar and the fixed
+   half cannot be derived from the money columns; plus the per-DESK distinct card
+   counts, which are the TRUE number of card transactions the flat fee is charged
+   on. Additive across desks, unlike the per-GL four.
+   Also CAST both date bounds - see the note on the WHERE clause.
    ============================================================ */
 WITH base AS (
   SELECT
@@ -54,8 +62,16 @@ WITH base AS (
   FROM materialized.item_log_report ilr
   WHERE
     ilr.organization_id = {{org_id}}::uuid
-    [[AND ilr.datetime_at_primary_timezone >= {{start_date}}]]
-    [[AND ilr.datetime_at_primary_timezone <  {{end_date}} + INTERVAL '1 day']]
+    -- CAST BOTH BOUNDS. `{{end_date}} + INTERVAL '1 day'` only parses while the
+    -- tag is typed Date: an API save regenerates every tag as Text, and Postgres
+    -- then reads the bare string as an interval literal and the card dies with
+    -- `invalid input syntax for type interval`. Cast, and the SQL is valid under
+    -- either tag type - the same fix cards 18547/18151 already carry. It does
+    -- NOT remove the need to re-flip the tags after a push (the app sends
+    -- date/single, which Metabase refuses against a Text tag), but it removes
+    -- the other, sharper failure.
+    [[AND ilr.datetime_at_primary_timezone >= {{start_date}}::date]]
+    [[AND ilr.datetime_at_primary_timezone <  {{end_date}}::date + INTERVAL '1 day']]
 ),
 
 agg AS (
@@ -119,6 +135,50 @@ agg AS (
            AND base.transaction_method NOT ILIKE 'check%'
           THEN base.adjusted_amount_dollars ELSE 0
         END) AS other_payments,
+
+    -- ── Per-method distinct transaction counts ────────────────────────
+    -- (2026-09) For the Fee Allocation view: card processing is billed as a
+    -- percentage of volume PLUS a flat fee per transaction, so the fixed half
+    -- cannot be derived from the dollar columns. Cash/check counts feed no fee
+    -- (those are pure percentages of revenue) and are emitted because the
+    -- remittance worksheet prints them beside the money.
+    --
+    -- NOT ADDITIVE ACROSS GL CODES, exactly like `number_of_payments` above:
+    -- one card payment covering two GL codes is counted under each. The app
+    -- allocates $0.30 x the per-DESK distinct count (below) across these, so
+    -- the fixed fee ties to the remittance summary however carts are split.
+    -- Each count also excludes the $0 line items a real transaction can carry,
+    -- which would otherwise count a transaction that charged nothing. (Worded
+    -- without the predicate on purpose: the spec COUNTS occurrences of it, and
+    -- a comment quoting the thing an assertion counts is a guard tripping over
+    -- its own explanation - already recorded several times in CLAUDE.md.)
+    COUNT(DISTINCT CASE
+          WHEN base.transaction_method IN ('card-online', 'card-present')
+           AND base.transaction_type ILIKE 'payment%'
+           AND base.raw_amount_cents > 0
+          THEN base.transaction_event_id
+        END) AS card_payment_txns,
+
+    COUNT(DISTINCT CASE
+          WHEN base.transaction_method IN ('card-online', 'card-present')
+           AND base.transaction_type ILIKE 'refund%'
+           AND base.raw_amount_cents > 0
+          THEN base.transaction_event_id
+        END) AS card_refund_txns,
+
+    COUNT(DISTINCT CASE
+          WHEN base.transaction_method = 'cash'
+           AND base.transaction_type ILIKE 'payment%'
+           AND base.raw_amount_cents > 0
+          THEN base.transaction_event_id
+        END) AS cash_txns,
+
+    COUNT(DISTINCT CASE
+          WHEN base.transaction_method ILIKE 'check%'
+           AND base.transaction_type ILIKE 'payment%'
+           AND base.raw_amount_cents > 0
+          THEN base.transaction_event_id
+        END) AS check_txns,
 
     -- ── Refunds by method ─────────────────────────────────────────────
 
@@ -197,7 +257,17 @@ totals_by_desk AS (
     COUNT(DISTINCT CASE WHEN base.transaction_type ILIKE 'payment%'
           THEN base.transaction_event_id END) AS desk_distinct_payments,
     COUNT(DISTINCT CASE WHEN base.transaction_type ILIKE 'refund%'
-          THEN base.transaction_event_id END) AS desk_distinct_refunds
+          THEN base.transaction_event_id END) AS desk_distinct_refunds,
+    -- Same property, narrowed to card: the TRUE number of card transactions,
+    -- which is what the processor's flat fee is actually charged on.
+    COUNT(DISTINCT CASE WHEN base.transaction_method IN ('card-online', 'card-present')
+           AND base.transaction_type ILIKE 'payment%'
+           AND base.raw_amount_cents > 0
+          THEN base.transaction_event_id END) AS desk_distinct_card_payments,
+    COUNT(DISTINCT CASE WHEN base.transaction_method IN ('card-online', 'card-present')
+           AND base.transaction_type ILIKE 'refund%'
+           AND base.raw_amount_cents > 0
+          THEN base.transaction_event_id END) AS desk_distinct_card_refunds
   FROM base
   GROUP BY base.desk_location
 )
@@ -255,6 +325,16 @@ SELECT
   -- The app dedups by desk and sums for the correct TOTALS row / summary boxes.
   td.desk_distinct_payments                            AS "Desk Distinct Payments",
   td.desk_distinct_refunds                             AS "Desk Distinct Refunds",
+
+  -- NEW (2026-09): per-method distinct transaction counts for the Fee
+  -- Allocation view. The per-GL four are NOT additive (see agg); the per-desk
+  -- two are, and are what the fixed fee is billed on.
+  agg.card_payment_txns                                AS "Card Payment Txns",
+  agg.card_refund_txns                                 AS "Card Refund Txns",
+  agg.cash_txns                                        AS "Cash Txns",
+  agg.check_txns                                       AS "Check Txns",
+  td.desk_distinct_card_payments                       AS "Desk Distinct Card Payments",
+  td.desk_distinct_card_refunds                        AS "Desk Distinct Card Refunds",
 
   -- NEW: check numbers for this GL row's check receipts (comma separated), and
   -- how many distinct checks they represent. Empty for rows with no check

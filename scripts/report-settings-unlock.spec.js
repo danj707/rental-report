@@ -303,23 +303,35 @@ src(!/type="text"[^>]*username/i.test(PAGE) && !/autoComplete="username"/.test(P
          + "attempts without actually stopping the next one");
     }
 
-    // DRIVE A REFUSAL PATH, or the zero-deadlink assertion below is vacuous —
-    // with the password set and the flag on, none of the refuse404 branches ran.
-    // `gl` is not in REPORT_SETTINGS_SCHEMA, so this is the unregistered
-    // report case. It used to be `facility`, which stopped being unregistered
-    // the day the Facilities hub grew its aquatics scope — and the assertion
-    // then failed with 429 rather than 404, because it was hammering a route
-    // that really exists and tripping the throttle. Pick a report nobody is
-    // about to register.
-    // -report refusal, and it carries a perfectly valid org token: exactly
-    // noteDeadLink's trigger shape.
+    /* DRIVE A REFUSAL PATH, or the zero-deadlink assertion below is vacuous —
+       with the password set and the flag on, none of the refuse404 branches ran.
+       It carries a perfectly valid org token, which is exactly noteDeadLink's
+       trigger shape, so this also proves the refusal is marked deliberate.
+
+       THE REPORT IS DERIVED, NOT NAMED. It was `facility`, which stopped being
+       unregistered the day the Facilities hub grew its aquatics scope; then
+       `gl`, which stopped the day the fee-allocation view shipped. Both times
+       this assertion started hammering a route that really exists and failed
+       with a 429 or a 200 that said nothing about refusals. Naming a fourth
+       slug just queues up the same failure, so the spec asks the registry which
+       reports are genuinely unregistered TODAY. */
+    const UNREG = (() => {
+      const src = fs.readFileSync(path.join(ROOT, "server.js"), "utf8");
+      const a = src.indexOf("const REPORT_SETTINGS_SCHEMA = {");
+      const b = src.indexOf("function reportSettingsEnabled", a);
+      const block = a < 0 ? "" : src.slice(a, b);
+      const registered = new Set([...block.matchAll(/^  (\w+): \{/gm)].map(m => m[1]));
+      return ["programs", "waitlist", "memberships", "qoq", "users", "products"]
+        .find(r => !registered.has(r));
+    })();
+    ok(UNREG, "a genuinely unregistered report was found (or every assertion below is vacuous)");
     {
-      const r = await call("POST", `/${org}/gl/api/settings-unlock?token=${encodeURIComponent(token)}`,
+      const r = await call("POST", `/${org}/${UNREG}/api/settings-unlock?token=${encodeURIComponent(token)}`,
                            { password: "spec-password" });
-      is(r.status, 404, "an unregistered report refuses the unlock");
+      is(r.status, 404, "an unregistered report (" + UNREG + ") refuses the unlock");
     }
     {
-      const r = await call("GET", `/${org}/gl/api/settings?token=${encodeURIComponent(token)}`);
+      const r = await call("GET", `/${org}/${UNREG}/api/settings?token=${encodeURIComponent(token)}`);
       is(r.status, 404, "…and so does its settings route");
     }
 

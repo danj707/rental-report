@@ -65,6 +65,22 @@ const LS_TOKEN = (() => {
     return (O[LS_ORG] || {}).token || "";
   } catch (e) { return ""; }
 })();
+/* The org every {org} case resolves to: the first campmap-seeded org carrying a
+   token. Hoisted to module scope because SERVER-side fixtures (report settings)
+   have to be written BEFORE the spawn - readReportSettingsStore() memoises on
+   first read, so a file written afterwards is never seen. One definition, two
+   readers: the async main below calls this too rather than re-deriving it. */
+function resolveTestOrg() {
+  const src = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
+  const seeds = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "campmap-seeds.json"), "utf8"));
+  const i = src.indexOf("const ORGS = {");
+  const j = src.indexOf("\nconst REPORT_TYPES", i);
+  const ORGS = require("vm").runInNewContext("(" + src.slice(src.indexOf("{", i), j).trim().replace(/;$/, "") + ")");
+  const slug = Object.keys(seeds).find(s => ORGS[s] && ORGS[s].token) ||
+               Object.keys(ORGS).find(s => ORGS[s].token);
+  return { slug, token: ORGS[slug].token };
+}
+
 try {
   fs.writeFileSync(path.join(dataDir, "orgs.json"), JSON.stringify({
     [AQ_ORG]: { token: AQ_TOKEN, orgId: "8ae77057-6bce-4c20-b0f2-366ed5fa14dd",
@@ -942,19 +958,42 @@ function programRows() {
 // them UNMAPPED (no code) so that option is exercised rather than special-cased,
 // and deliberately DIFFERENT amounts so a filtered total is distinguishable
 // from an unfiltered one.
+/* stubMode "prefee" drops the six per-transaction columns, i.e. a feed cached
+   before card 17293 carried them. The flat card fee must then be WITHHELD (an
+   em dash) rather than priced at $0.00 - a 0 there understates every total
+   below it and looks entirely plausible.
+
+   THE FEE FIGURES ARE CHOSEN TO DISCRIMINATE. Card volume 15,700 over a per-GL
+   count of 20+10+3 = 33, against a TRUE distinct count of 32: one payment in
+   this window paid for two GL codes, so a build that prices the flat fee off
+   the summed per-GL counts bills $9.90 where the truth is $9.60, and the grand
+   total reads 722.40 instead of 722.10. Every fee family lands on its own
+   number (CC 559.10 · cash+check 3.00 · technology 160.00), so a panel reading
+   the wrong one cannot hit the right total by accident. */
 function glRows() {
-  const row = (code, name, cash) => ({
+  const FEE = STUB_MODE !== "prefee";
+  const row = (code, name, cash, card, check, nCardPay, nCash, nCheck) => ({
     "GL Code": code, "Account Name": name, "Account Number": code,
     "Desk Location": "Front Desk",
-    "Credit Card Payments": 0, "Cash Payments": cash, "Check Payments": 0,
+    "Credit Card Payments": card, "Cash Payments": cash, "Check Payments": check,
     "Free Payments": 0, "Organization Credit Payments": 0,
+    // The card emits this; without it every revenue-derived figure (the
+    // technology fee, the % of revenue column) prices at zero — which is what
+    // the first run of these cases actually caught.
+    "Total Payments": cash + card + check, "Total Refunds": 0,
     "Refunds": 0, "Number of Payments": 1, "Number of Refunds": 0,
+    ...(FEE ? {
+      "Card Payment Txns": nCardPay, "Card Refund Txns": 0,
+      "Cash Txns": nCash, "Check Txns": nCheck,
+      // One desk, so this IS the true total: 32 against a per-GL sum of 33.
+      "Desk Distinct Card Payments": 32, "Desk Distinct Card Refunds": 0,
+    } : {}),
   });
   return [
-    row("4100", "Program Revenue", 1000),
-    row("4200", "Facility Rentals", 200),
-    row("4300", "Memberships", 30),
-    row("", "Unmapped receipts", 7),
+    row("4100", "Program Revenue",  1000, 10000,   0, 20, 1, 0),
+    row("4200", "Facility Rentals",  200,  5000, 200, 10, 1, 1),
+    row("4300", "Memberships",        30,     0,   0,  0, 1, 0),
+    row("",     "Unmapped receipts",   7,   700,   0,  3, 1, 0),
   ];
 }
 
@@ -6214,6 +6253,61 @@ const CASES = [
     act: async p => { await openGlCodes(p); await p.click("[data-glcode-none]"); await p.click("[data-glcode-all]"); },
     needs: "[data-glcode-btn]", absent: "[data-glcode-badge]" },
 
+  /* ── GL: Fee Allocation, the weekly remittance worksheet ─────────────────
+     Danvers rebuilt this by hand every week. None of it is visible in source:
+     the component reads plausibly whichever column it prices, and "a worksheet
+     rendered" passes on every regression worth catching - so every case below
+     keys on a COMPUTED FIGURE or on an absence.
+
+     The fixture's grand total is 744.84. Priced off the summed per-GL counts
+     (33 x $0.30 instead of the true 32) it is 745.14, so the one number these
+     cases assert separates the shipped arithmetic from the manual method's. */
+  { name: "gl · the fee worksheet renders", path: "/{org}/gl?fees=1",
+    needs: '[data-fee-sheet="1"][data-fee-rows="4"]' },
+  { name: "gl · the fee total ties to the remittance summary", path: "/{org}/gl?fees=1",
+    needs: '[data-fee-total="744.84"]',
+    // The naive figure, named so a failure says which arithmetic ran.
+    absent: '[data-fee-total="745.14"]' },
+  { name: "gl · the flat fee is charged on the TRUE transaction count", path: "/{org}/gl?fees=1",
+    needs: '[data-fee-cardtxns="32"]', absent: '[data-fee-cardtxns="33"]' },
+  { name: "gl · a split cart is called out on screen", path: "/{org}/gl?fees=1",
+    needs: '[data-fee-split="1"]' },
+  { name: "gl · the rates are stated as inputs", path: "/{org}/gl?fees=1",
+    needs: "[data-fee-rates]" },
+  // The PDF is this page under ?_print=1 with an empty localStorage, so the URL
+  // is the only channel the mode has — the bug this repo has shipped four times.
+  { name: "gl · the PDF render honours the fee mode", path: "/{org}/gl?_print=1&fees=1",
+    needs: '[data-fee-total="744.84"]' },
+  { name: "gl · the toolbar toggle opens the worksheet", path: "/{org}/gl",
+    act: async p => {
+      await p.waitForSelector("[data-glcode-btn]", { timeout: 15000 });
+      const btns = await p.$$("button");
+      for (const b of btns) {
+        const t = await p.evaluate(e => e.textContent, b);
+        if (t && t.includes("Fee Allocation")) { await b.click(); return; }
+      }
+      throw new Error("no → Fee Allocation button");
+    },
+    needs: '[data-fee-total="744.84"]' },
+  // PRESENCE, not value. A feed cached before the card carried the counts must
+  // say so, not price the flat half at $0.00 and hand back a short total.
+  { name: "gl · a pre-column feed withholds the flat fee", path: "/{org}/gl?fees=1",
+    stubMode: "prefee",
+    needs: "[data-fee-nocounts]", absent: '[data-fee-total="744.84"]' },
+  // SHIPS OFF. render-check-aquatics is deliberately NOT in the settings
+  // fixture, so this proves the gate rather than the panel.
+  /* SHIPS OFF. render-check-aquatics is deliberately NOT in the settings
+     fixture, and this case asks for the mode EXPLICITLY - `?fees=1` - because
+     without it the sheet would not render for an enabled org either, so the
+     assertion would pass on a broken gate. That is exactly how the first
+     version of this case survived its own mutation. */
+  { name: "gl · no fee worksheet for an org that is not switched on",
+    path: `/${AQ_ORG}/gl?fees=1`, token: AQ_TOKEN,
+    needs: "[data-glcode-btn]", absent: "[data-fee-sheet]" },
+  { name: "gl · no fee button for an org that is not switched on",
+    path: `/${AQ_ORG}/gl`, token: AQ_TOKEN,
+    needs: "[data-glcode-btn]", absent: "[data-fee-btn]" },
+
   // ── GL: Refund Detail is a MODE the URL can set ──────────────────────────
   // Dan: "when I click to print the PDF, it prints the version without the
   // refund detail." The PDF is this page under ?_print=1, rendered by Puppeteer
@@ -7404,6 +7498,19 @@ try {
                    JSON.stringify({ reportSettings: true }));
 } catch (_) {}
 
+/* The Fee Allocation view SHIPS OFF, so the harness switches it on for the one
+   org its {org} cases use - and deliberately NOT for render-check-aquatics,
+   which is what the "absent where it is not switched on" case keys on. Written
+   before the spawn: readReportSettingsStore() memoises on first read, so a
+   record written from a `pre` hook can be too late to be seen. */
+try {
+  const feeOrg = resolveTestOrg().slug;
+  fs.writeFileSync(path.join(dataDir, "report-settings.json"), JSON.stringify({
+    [feeOrg]: { gl: { feeAllocation: true, ccVariableBps: 350, ccFixedCents: 30,
+                      cashBps: 100, checkBps: 100, techBps: 100 } },
+  }));
+} catch (_) {}
+
 /* DEFAULT-HIDDEN REPORTS ARE LEFT HIDDEN HERE, ON PURPOSE.
 
    An earlier version of this file opted every org into DEFAULT_HIDDEN_REPORTS,
@@ -7519,13 +7626,9 @@ function waitForServer(started) {
   // First org with a token, so the pages are reachable and campsite-seeded.
   let org = null;
   try {
-    const src = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
-    const seeds = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "campmap-seeds.json"), "utf8"));
-    const i = src.indexOf("const ORGS = {");
-    const j = src.indexOf("\nconst REPORT_TYPES", i);
-    const ORGS = require("vm").runInNewContext("(" + src.slice(src.indexOf("{", i), j).trim().replace(/;$/, "") + ")");
-    org = Object.keys(seeds).find(s => ORGS[s] && ORGS[s].token) || Object.keys(ORGS).find(s => ORGS[s].token);
-    var token = ORGS[org].token;
+    const resolved = resolveTestOrg();   // the same definition the fixtures used
+    org = resolved.slug;
+    var token = resolved.token;
   } catch (e) { return stop(false, "could not resolve a test org: " + e.message); }
 
   const browser = await puppeteer.launch({ headless: true, executablePath: chrome,
