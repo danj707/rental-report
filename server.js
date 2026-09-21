@@ -3371,6 +3371,7 @@ const ACTIVITY_TTL_MS = 60 * 60 * 1000;
 // the day it ships, without anyone having to remember this line.
 const NON_USAGE_EVENTS = new Set([
   "report-down", "schema-break", "param-drift", "created", "org-deleted",
+  "org-synced",
 ]);
 
 let _activity = null;   // { ts, combos:Set("slug|rt"), types:Set(rt), events }
@@ -5146,7 +5147,7 @@ setTimeout(() => { checkCardParamTypes().catch(() => {}); }, 150 * 1000).unref?.
 // Inert if the env var is unset. Fire-and-forget — never blocks or breaks logging.
 // To change what pings Slack, edit SLACK_NOTIFY. High-frequency events (view/fetch)
 // are debounced per org+report so Slack isn't a firehose.
-const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "campmap-filter", "campmap-amenity", "pdf", "excel", "print", "summary", "game", "map", "outdoor", "fields", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email", "checkin-loc", "checkin-member", "checkin-failed", "form-open", "epact", "settings-open", "settings-unlock", "settings-locked", "settings-save", "settings-reset", "deadlink", "generate", "wizard-save", "mb-autorenew", "mb-salesmix", "ft-export", "panel-csv", "intel-csv", "wizard-feedback", "roster-open", "report-csv", "survey-response", "insights-listen", "opp-drill", "opp-print", "opp-csv", "backup-failed"]);
+const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "campmap-filter", "campmap-amenity", "pdf", "excel", "print", "summary", "game", "map", "outdoor", "fields", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email", "checkin-loc", "checkin-member", "checkin-failed", "form-open", "epact", "settings-open", "settings-unlock", "settings-locked", "settings-save", "settings-reset", "deadlink", "generate", "wizard-save", "mb-autorenew", "mb-salesmix", "ft-export", "panel-csv", "intel-csv", "wizard-feedback", "roster-open", "report-csv", "survey-response", "insights-listen", "opp-drill", "opp-print", "opp-csv", "backup-failed", "org-synced"]);
 const SLACK_DEBOUNCE_MS = { view: 30 * 60 * 1000, fetch: 30 * 60 * 1000,
   // A broken report stays broken. The health check only reports NEW failures,
   // but a flapping card would otherwise post every hour.
@@ -5191,6 +5192,7 @@ const SLACK_EVENT_META = {
   "survey-response": { emoji: "\u{1F4DD}", verb: "answered a survey on" },
   created: { emoji: "🏢", verb: "New org created" },
   "org-deleted": { emoji: "🗑️", verb: "DELETED from the reporting project" },
+  "org-synced": { emoji: "🔗", verb: "created in rec-dashboard too" },
   deadlink: { emoji: "\uD83D\uDD17", verb: "dead link" },
   "schema-break": { emoji: "🧨", verb: "schema break" },
   // Its own branch below — the shared line would print the report type twice
@@ -7706,19 +7708,69 @@ app.get("/api/admin/backup-credential", async (req, res) => {
   }
 });
 
+// ── Cross-project org sync: the shared credential ───────────────────────────
+// This project and rec-dashboard each keep their own copy of every org, so an
+// org created in one has to be created in the other. The three routes below are
+// how that happens — and until 2026-09-21 all three were completely open.
+//
+// THAT WAS A LIVE CREDENTIAL LEAK, not a theoretical one. `/api/admin/org/:slug`
+// answers with the org's ACCESS TOKEN, and that token is the only thing standing
+// in front of every report the org has: rosters carrying children's names and
+// their parents' email addresses, GL revenue, resident contact lists. Slugs are
+// city names, so guessing one is not work. Confirmed against production on
+// 2026-09-21 — an unauthenticated GET returned a live 16-character token.
+//
+// TOKENS ARE GATED; EXISTENCE IS NOT. The lookups still answer `exists`, `slug`
+// and `orgId` to anyone, because that is what rec-dashboard's slug-drift repair
+// actually reads and none of it is a credential — the orgId is in rec.us's own
+// public URLs. Only the token is withheld. That split is the whole reason this
+// can ship on its own: the leak closes on deploy, with no environment variable
+// to set first and nothing over there breaking, and token adoption starts
+// working again the moment the secret is set on both sides.
+const ORG_SYNC_SECRET = process.env.ORG_SYNC_SECRET || "";
+const DASHBOARD_BASE_URL = process.env.DASHBOARD_BASE_URL || "https://rec-dashboard-production.up.railway.app";
+
+// Two credentials, because there are two callers: rec-dashboard holds the shared
+// secret, Dan holds the admin password. The password path is what makes a repair
+// by hand possible on the day the secret is unset, wrong, or being rotated.
+//
+// FAILS CLOSED. An unset secret authorises nothing — it does not fall open the
+// way `dashboardAuth` does for the root page, because what this guards is the
+// ability to mint an org carrying any rec.us orgId with a token of the caller's
+// own choosing, and then read that organisation's reports.
+function orgSyncAuthOk(req) {
+  if (adminPasswordOk(req)) return true;
+  if (!ORG_SYNC_SECRET) return false;
+  const got = Buffer.from(String(req.headers["x-org-sync-secret"] || ""));
+  const want = Buffer.from(ORG_SYNC_SECRET);
+  // timingSafeEqual THROWS on a length mismatch, so this length test is not an
+  // optimisation: without it a wrong-length secret is a 500 rather than a 401.
+  return got.length === want.length && crypto.timingSafeEqual(got, want);
+}
+
+// `tokenWithheld` rather than a missing key, so a caller can tell "this org has
+// no token" from "you were not allowed to see it" — the null-versus-[] rule this
+// file applies everywhere else. A caller that read an absent token as absent
+// would adopt an empty one and 404 every link it then built.
+function orgLookupPayload(slug, org, authed) {
+  const out = {
+    exists: true,
+    slug,
+    orgId: org.orgId,
+    logoUrl: org.logoUrl,
+    displayName: org.displayName || org.name || slug,
+  };
+  if (authed) out.token = org.token;
+  else out.tokenWithheld = true;
+  return out;
+}
+
 // ── GET /api/admin/org/:slug — check if org exists (used by rec-dashboard before add) ──
 app.get("/api/admin/org/:slug", (req, res) => {
   const slug = req.params.slug;
   const org = ORGS[slug];
   if (!org) return res.json({ exists: false });
-  res.json({
-    exists: true,
-    slug,
-    token: org.token,
-    orgId: org.orgId,
-    logoUrl: org.logoUrl,
-    displayName: org.displayName || org.name || slug,
-  });
+  res.json(orgLookupPayload(slug, org, orgSyncAuthOk(req)));
 });
 
 // ── GET /api/admin/org-by-id/:orgId — look an org up by the identity BOTH
@@ -7737,23 +7789,45 @@ app.get("/api/admin/org-by-id/:orgId", (req, res) => {
   const hit = Object.entries(ORGS).find(([, o]) => o && o.orgId === orgId);
   if (!hit) return res.json({ exists: false });
   const [slug, org] = hit;
-  res.json({
-    exists: true,
-    slug,
-    token: org.token,
-    orgId: org.orgId,
-    logoUrl: org.logoUrl,
-    displayName: org.displayName || org.name || slug,
-  });
+  res.json(orgLookupPayload(slug, org, orgSyncAuthOk(req)));
 });
 
-// ── POST /api/admin/add-org — add org (used by rec-dashboard to sync) ──
+// ── POST /api/admin/add-org — the INBOUND half of the sync (rec-dashboard calls it) ──
 app.post("/api/admin/add-org", express.json(), (req, res) => {
+  if (!orgSyncAuthOk(req)) {
+    // The two refusals are worded apart on purpose. "Not configured" is a task
+    // for Dan and "bad secret" is an incident, and one message for both is how a
+    // sync that quietly stopped gets read as a sync that was never set up.
+    return res.status(401).json({
+      error: ORG_SYNC_SECRET
+        ? "Bad x-org-sync-secret"
+        : "Cross-project org sync is not configured here: set ORG_SYNC_SECRET to the same value in both Railway projects",
+    });
+  }
   const { slug, token, orgId, logoUrl, displayName } = req.body;
   if (!slug || !token || !orgId) {
     return res.status(400).json({ error: "slug, token, and orgId are required" });
   }
   if (ORGS[slug]) {
+    // THE orgId IS THE IDENTITY, so it is the one field this route may not
+    // quietly change — and until 2026-09-21 it was the one field this branch
+    // silently DROPPED, which left a wrong orgId unrepairable: every shared card
+    // fails with `400 Missing org_id`, `new-org` refuses a slug that is taken,
+    // and nothing else can write it. Two cases, and only one is a repair:
+    //   - we hold none (an org added before this field travelled) → adopt it;
+    //   - we hold a DIFFERENT one → this slug is another organisation here, and
+    //     repointing it would serve that organisation's reports under this name.
+    // The second is refused rather than fixed. Delete-and-recreate is the
+    // deliberate path, and it is deliberately harder to fire.
+    if (ORGS[slug].orgId && ORGS[slug].orgId !== orgId) {
+      return res.status(409).json({
+        error: `"${slug}" is a different organisation here (${ORGS[slug].orgId}) — refusing to repoint it at ${orgId}`,
+      });
+    }
+    if (!ORGS[slug].orgId) {
+      ORGS[slug].orgId = orgId;
+      console.log(`[orgs] Adopted missing orgId for existing org: ${slug} (${orgId})`);
+    }
     // Already exists — update token if different (sync case)
     if (ORGS[slug].token !== token) {
       ORGS[slug].token = token;
@@ -7764,8 +7838,12 @@ app.post("/api/admin/add-org", express.json(), (req, res) => {
     if (displayName) ORGS[slug].displayName = displayName;
     try {
       const dynamic = readJSON(ORGS_FILE, null);
+      // Only a DYNAMIC org is written back. `loadDynamicOrgs` does
+      // `Object.assign(ORGS, dynamic)`, so a static org written here would be
+      // shadowed on the next boot by this partial copy — losing every per-report
+      // mbUuid the code entry carries.
       if (dynamic && dynamic[slug]) {
-        Object.assign(dynamic[slug], { token, ...(logoUrl && { logoUrl }), ...(displayName && { displayName }) });
+        Object.assign(dynamic[slug], { token, orgId, ...(logoUrl && { logoUrl }), ...(displayName && { displayName }) });
         writeJSON(ORGS_FILE, dynamic);
       }
     } catch {}
@@ -7789,6 +7867,119 @@ app.post("/api/admin/add-org", express.json(), (req, res) => {
   }
   console.log(`[orgs] Added org via API: ${slug} (${orgId})`);
   res.json({ ok: true, action: "created", slug });
+});
+
+// ── The OUTBOUND half: an org created HERE has to appear over there ─────────
+// rec-dashboard has pushed its new orgs to this project since Add Org was built.
+// Nothing ever went the other way, so an org created from THIS admin dashboard
+// existed in one place and Dan added it again by hand. That asymmetry is the
+// whole of the ask.
+//
+// RECONCILE ON THE orgId, NEVER THE SLUG. This is the rule the dashboard's own
+// reconcile already follows and the one Shrewsbury paid for: the two projects
+// name the same organisation differently, so a by-slug check answers "not there"
+// for an org that is very much there — and the push then mints a DUPLICATE,
+// which is exactly how the `town-of-shrewsbury` mess was made. The orgId is
+// stable in both.
+const DASHBOARD_SYNC_FILE = path.join(DATA_DIR, "dashboard-sync-pending.json");
+
+async function syncOrgToDashboard(slug, org) {
+  if (!DASHBOARD_BASE_URL) return { skipped: "no DASHBOARD_BASE_URL" };
+  if (!ORG_SYNC_SECRET) return { skipped: "no ORG_SYNC_SECRET" };
+  if (!org || !org.orgId) return { skipped: "no orgId" };
+  const headers = { "content-type": "application/json", "x-org-sync-secret": ORG_SYNC_SECRET };
+  // A create must not hang on the other project being slow or gone.
+  const t = () => AbortSignal.timeout(10000);
+
+  const probe = await fetch(
+    `${DASHBOARD_BASE_URL}/api/admin/org-by-id/${encodeURIComponent(org.orgId)}`,
+    { headers, signal: t() });
+  if (!probe.ok) throw new Error(`org-by-id ${probe.status}`);
+  const found = await probe.json().catch(() => ({}));
+  if (found && found.exists) return { action: "already-there", slug: found.slug };
+
+  const r = await fetch(`${DASHBOARD_BASE_URL}/api/admin/add-org`, {
+    method: "POST", headers, signal: t(),
+    body: JSON.stringify({
+      slug, token: org.token, orgId: org.orgId,
+      logoUrl: org.logoUrl || "", displayName: org.displayName || slug,
+    }),
+  });
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(body.error || `add-org ${r.status}`);
+  return { action: body.action || "created", slug: body.slug || slug };
+}
+
+// A FIRE-AND-FORGET PUSH IS NOT A SYNC. If the one call fails, the two projects
+// are out of step forever and silently — which is the bug this feature exists to
+// fix, arriving by a different door, and the same shape as the backup that wrote
+// its failure to the console and nowhere else. So a failure is RECORDED, and the
+// record is what the retry reads.
+function readDashboardSyncQueue() { try { return readJSON(DASHBOARD_SYNC_FILE, {}) || {}; } catch { return {}; } }
+function queueDashboardSync(slug, why) {
+  try {
+    const q = readDashboardSyncQueue();
+    q[slug] = { queuedAt: (q[slug] && q[slug].queuedAt) || Date.now(),
+                lastTriedAt: Date.now(), lastError: String(why || "").slice(0, 200) };
+    writeJSON(DASHBOARD_SYNC_FILE, q);
+  } catch (e) { console.warn(`[org-sync] could not queue ${slug}: ${e.message}`); }
+}
+function unqueueDashboardSync(slug) {
+  try {
+    const q = readDashboardSyncQueue();
+    if (!(slug in q)) return;
+    delete q[slug];
+    writeJSON(DASHBOARD_SYNC_FILE, q);
+  } catch {}
+}
+
+// Push, and NEVER let the push be the reason an org creation fails. The org
+// exists here whatever the other project says — the same line `new-org` already
+// takes with its own GitHub push, for the same reason.
+async function pushOrgToDashboard(slug, org, opts) {
+  try {
+    const out = await syncOrgToDashboard(slug, org);
+    if (out.skipped) { queueDashboardSync(slug, `skipped: ${out.skipped}`); return out; }
+    unqueueDashboardSync(slug);
+    console.log(`[org-sync] ${slug} → rec-dashboard: ${out.action}`);
+    if (!opts || !opts.quiet) {
+      logEvent(slug, "org", "org-synced", null, { target: "rec-dashboard", action: out.action });
+    }
+    return out;
+  } catch (e) {
+    queueDashboardSync(slug, e.message);
+    console.warn(`[org-sync] ${slug} → rec-dashboard FAILED: ${e.message} (queued for retry)`);
+    return { error: e.message };
+  }
+}
+
+// Leader-locked, like every other cron here: two replicas retrying the same
+// queue is two pushes of the same org. Quiet on the retry — a wedged sync must
+// not post to Slack every twenty minutes, and the queue is on
+// /api/admin/org-sync for anyone asking why an org is missing over there.
+cron.schedule("*/20 * * * *", leaderCron("dashboard-org-sync", async () => {
+  const q = readDashboardSyncQueue();
+  const slugs = Object.keys(q);
+  if (!slugs.length) return;
+  for (const slug of slugs) {
+    const org = ORGS[slug];
+    // Deleted here since it was queued. Drop it rather than pushing an org this
+    // project no longer serves.
+    if (!org) { unqueueDashboardSync(slug); continue; }
+    await pushOrgToDashboard(slug, org, { quiet: true });
+  }
+}));
+
+// First place to look when an org is missing from the dashboard. Open like the
+// other admin GETs beside it and carries no token — a slug, a timestamp and the
+// last error, which is what diagnosing this needs and nothing more.
+app.get("/api/admin/org-sync", (req, res) => {
+  const q = readDashboardSyncQueue();
+  res.json({
+    dashboardBaseUrl: DASHBOARD_BASE_URL || null,
+    configured: !!ORG_SYNC_SECRET,
+    pending: Object.entries(q).map(([slug, v]) => ({ slug, ...v })),
+  });
 });
 
 // ── Delete org ───────────────────────────────────────────────────────
@@ -18428,6 +18619,19 @@ function genToken() {
 }
 
 app.post("/api/admin/new-org", dashboardAuth, async (req, res) => {
+  /* `dashboardAuth` DOES NOT GUARD THIS, and passing it here reads as though it
+     does. Its first line is `if (req.path !== "/") return next()`, so every
+     non-root path walks straight through — the same trap already recorded for
+     /api/admin/store. That left creating an org unauthenticated, and this route
+     does not merely add a row: it pushes a commit to main, and a push to main is
+     a deploy to every org. So the check is made here, by hand, and FAILS CLOSED.
+     The admin page is itself behind dashboardAuth at "/", so the browser already
+     holds Basic credentials for this origin and attaches them to its own fetch. */
+  if (!adminPasswordOk(req)) {
+    return res.status(401).json({ error: DASHBOARD_PASSWORD
+      ? "Admin password required"
+      : "Set DASHBOARD_PASSWORD in Railway before an org can be created" });
+  }
   const { slug, displayName, orgId, logoUrl, reports } = req.body;
 
   // Validate slug
@@ -18477,7 +18681,16 @@ app.post("/api/admin/new-org", dashboardAuth, async (req, res) => {
   }
 
   console.log(`[new-org] Created org: ${slug} with reports: ${Object.keys(reports).join(", ")}`);
-  res.json({ ok: true, slug, reports: Object.keys(reports), github });
+
+  // Create it in rec-dashboard too — the half of the sync that never existed.
+  // AWAITED, not fired and forgotten: Dan is standing at the button he just
+  // pressed, and "did it land in both places" is the question he is asking. He
+  // is the watcher this needs; a console warning in Railway is not. It cannot
+  // fail the creation — the org exists here regardless, exactly as it does when
+  // the GitHub push above fails — and a failure is queued for the retry cron.
+  const dashboardSync = await pushOrgToDashboard(slug, orgEntry);
+
+  res.json({ ok: true, slug, reports: Object.keys(reports), github, dashboardSync });
 });
 
 // ── Showcase gallery API (server-persisted) ─────────────────────────

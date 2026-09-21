@@ -1,5 +1,210 @@
 # Project notes for Claude
 
+## AN ORG'S TOKEN WAS AVAILABLE TO ANYONE WHO ASKED (2026-09-21)
+
+Dan: *"lets do the 'create on one project adds it to both' issue."* The feature
+is built — see below — and the first thing building it found is more important
+than the feature.
+
+**`GET /api/admin/org/:slug` ANSWERED AN UNAUTHENTICATED CALLER WITH THE ORG'S
+ACCESS TOKEN.** Confirmed against production rather than inferred:
+
+```
+$ curl .../api/admin/org/shrewsbury        →  200
+keys: displayName exists logoUrl orgId slug token
+token present: True   length: 16
+```
+
+That token is the **only** thing standing in front of every report that org
+has — the class roster carrying children's names and their parents' email
+addresses, Community Intel's resident contact lists, GL revenue, memberships.
+The per-org middleware fails closed and 404s without it, which is exactly why
+handing it out defeats the whole gate. **Slugs are city names**, so enumerating
+them is not work, and `/api/admin/org-by-id/:orgId` leaked the same thing.
+
+**TWO MORE WRITE ROUTES WERE OPEN IN THE SAME NEIGHBOURHOOD.** `POST
+/api/admin/add-org` (proven reachable with an empty body — it answered its own
+`400 slug, token, and orgId are required`, so the handler ran) would mint an org
+carrying **any** rec.us orgId with a token of the caller's choosing, and reading
+that organisation's reports is then one request away. And `POST
+/api/admin/new-org` carries `dashboardAuth`, which **does not guard it**: its
+first line is `if (req.path !== "/") return next()`, so every non-root path walks
+straight through. That route pushes a commit to `main`, and **a push to main is a
+deploy**.
+
+*Generalise it — and this is the third instance in this file: passing
+`dashboardAuth` as route middleware reads exactly like protection and is
+decorative.* Already recorded for `/api/admin/store`, where the same line left an
+admin endpoint answering 200 with no credentials. Check what a shared auth helper
+actually guards before reusing it, and prefer `adminPasswordOk(req)`, which
+checks the thing its name says.
+
+### TOKENS ARE GATED; EXISTENCE IS NOT — and that split is what let this ship alone
+
+The tempting fix is to gate the lookups outright. **It would have broken
+rec-dashboard the moment it deployed**: its 6-hourly `reconcileWithReporting()`
+calls both lookups unauthenticated, and that reconcile is what repairs the
+slug drift this file records for Shrewsbury.
+
+So only the **token** is withheld. `exists`, `slug` and `orgId` stay open,
+because that is what the drift repair actually reads and none of it is a
+credential — the orgId is in rec.us's own public URLs. The leak therefore closes
+**on deploy, with no environment variable set first and nothing over there
+breaking**, and token adoption resumes the moment the secret exists on both
+sides. A gate-everything fix would have been more secure on paper and would have
+had to wait on Dan.
+
+**`tokenWithheld: true`, never a missing key.** *"This org has no token"* and
+*"you were not allowed to see it"* are different facts, and a caller reading the
+second as the first adopts an empty token and 404s every link it then builds.
+Same null-versus-`[]` rule as `hasAbsent` and `ciHasStatus`.
+
+### THE SHARED SECRET, and why it could not be derived
+
+The two projects do not share a password: rental-report reads
+`DASHBOARD_PASSWORD` and rec-dashboard reads `ADMIN_PASSWORD`, and **Railway
+redacts variable VALUES from an OAuth caller**, so whether they happen to hold
+the same string is unknowable from a session. `ORG_SYNC_SECRET` is therefore its
+own variable, set to the same value in **both** projects, sent as
+`x-org-sync-secret`.
+
+- **It FAILS CLOSED.** An unset secret authorises nothing. That is the opposite
+  of `adminAuth`/`dashboardAuth`, which fall open with no password — right for a
+  dev root page, wrong for a route that mints an org.
+- **The admin password is accepted too**, on both sides. Two callers, two
+  credentials: the other project holds the secret, Dan holds the password, and
+  the password path is what makes a repair possible on the day the secret is
+  unset, wrong, or being rotated.
+- **The length test before `timingSafeEqual` is not an optimisation** — that
+  function THROWS on a length mismatch, so without it a wrong-length secret is a
+  500 rather than a 401.
+- **The two refusals are worded apart.** *"Not configured"* is a task for Dan and
+  *"bad secret"* is an incident; one message for both is how a sync that quietly
+  stopped gets read as one that was never set up.
+
+### THE RECORDED GAP WAS REAL: add-org silently dropped `orgId`
+
+This file has warned since 2026-09-02 that `add-org`'s existing-org branch
+updates the token, the logo and the display name and **drops `orgId`**, leaving a
+wrong one unrepairable: every shared card then fails `400 Missing org_id`,
+`new-org` refuses a slug that is taken, and no other route can write it. Fixed —
+and the fix had to avoid becoming the opposite mistake:
+
+- **we hold none** (an org added before the field travelled) → adopt it;
+- **we hold a DIFFERENT one** → this slug is another organisation here, and
+  repointing it would serve that organisation's reports under this name. **409,
+  not a repair.** Delete-and-recreate is the deliberate path and is deliberately
+  harder to fire.
+
+**The persisted copy had to carry it too**, or the adoption is undone by the next
+restart — the `Object.assign(dynamic[slug], { token, … })` beside it dropped
+`orgId` for the same reason the in-memory branch did.
+
+**AND A STATIC ORG IS STILL NOT WRITTEN TO `orgs.json`.** `loadDynamicOrgs` does
+`Object.assign(ORGS, dynamic)`, so dynamic entries **override** static ones — a
+partial copy written here would shadow the code entry on the next boot and take
+every per-report `mbUuid` with it. The existing `if (dynamic && dynamic[slug])`
+guard is load-bearing and was kept.
+
+### THE MISSING DIRECTION, which is what Dan actually asked for
+
+rec-dashboard has pushed its new orgs to this project since Add Org was built
+(`POST /api/admin/add-org`, plus a 6h reconcile). **Nothing ever came back the
+other way**, so an org created from this admin dashboard existed in one place and
+was added to the other by hand. That asymmetry is the whole of the ask.
+
+`new-org` now calls `pushOrgToDashboard(slug, orgEntry)`, and rec-dashboard has
+the mirror routes to receive it.
+
+- **RECONCILE ON THE orgId, NEVER THE SLUG.** The push probes
+  `/api/admin/org-by-id/<orgId>` first and does nothing if the org is already
+  there. A by-slug probe answers *"not there"* for an org that is very much
+  there under another name — **and that is precisely how `town-of-shrewsbury`
+  was made**. The receiving side refuses it a second time for the same reason,
+  naming what it does call the org.
+- **IT IS AWAITED, NOT FIRED AND FORGOTTEN.** Dan is standing at the button he
+  just pressed and *"did it land in both places"* is the question he is asking;
+  the outcome comes back on the response as `dashboardSync`. **He is the watcher
+  this needs** — a console warning in Railway is the backup that logged its
+  failure to the console and nothing else.
+- **It can never fail the creation.** The org exists here whatever the other
+  project says, which is the line `new-org` already takes when its GitHub push
+  fails.
+- **A FAILED PUSH IS QUEUED AND RETRIED**, leader-locked, every 20 minutes, with
+  the queue readable on `/api/admin/org-sync`. Fire-and-forget would leave the
+  two projects out of step forever and silently — the bug this feature exists to
+  fix, arriving by a different door.
+- **THE DASHBOARD IS NOT BACKFILLED, deliberately.** A pull ("give me every org
+  you have that I lack") was considered and rejected: reporting has ~29 orgs to
+  the dashboard's 24, so the first reconcile would create five orgs nobody asked
+  for. The ask is *created in one → created in both*, which is a push. A backfill
+  is a separate decision.
+- **The receiving side records the reporting identity immediately**
+  (`REPORTING_IDENTITY[slug]`), because they told us their slug and token — not
+  storing it leaves every report link wrong until the next 6h reconcile.
+
+### Guards
+
+`scripts/org-sync.spec.js` here (**59 assertions, in CI**) and
+`scripts/org-sync.spec.js` in rec-dashboard (**27, in CI**). Both boot a REAL
+server and drive the real routes — the reporting one against a stand-in
+rec-dashboard — because a regex over our own patch is not evidence the server
+behaves. `SKIP_SOURCE=1` drops the source half, and **the live half alone was
+seen to catch all twelve behavioural mutations**, the leak reporting the actual
+token it handed over.
+
+Mutation-tested **18 ways here and 11 there, all 29 caught by an assertion that
+names the defect**: the token handed to anyone (the leak as it shipped),
+`tokenWithheld` dropped, each write gate removed, `orgSyncAuthOk` falling open on
+an unset secret, the length test dropped, `orgId` dropped again (the recorded
+gap), a conflicting `orgId` overwritten instead of refused, `orgId` lost from the
+persisted copy, a static org written to `orgs.json`, the push probing by slug
+(Shrewsbury), the already-there short-circuit removed, the push losing its token,
+a failed push not queued, `new-org` not pushing at all, the outcome never
+reaching the caller, `org-synced` dropped from `SLACK_NOTIFY`, the retry losing
+its leader lock, the identity not recorded, and a created org not persisted.
+
+**THREE DEFECTS IN MY OWN GUARDS, each found by mutation and each the recorded
+form:**
+
+- **A fixture that made a mutation unreachable.** The live server always had
+  `ORG_SYNC_SECRET` set, so `if (!ORG_SYNC_SECRET) return false` was never
+  executed and turning it into `return true` — the route falling OPEN on an
+  unconfigured deploy, which is **every PR preview** — SURVIVED. Both specs now
+  boot a SECOND server with no secret configured.
+- **A mutation caught by the wrong assertion.** The stand-in dashboard answered
+  only `org-by-id`, so the by-slug-probe mutation failed on a 404 rather than on
+  the duplicate it actually causes. It answers `/api/admin/org/:slug` now, and
+  the failure reads *"the org is already there under another slug — pushing it
+  again mints a duplicate"*.
+- **TWO ASSERTIONS SATISFIED BY DIFFERENT CODE.** `REPORTING_IDENTITY[slug] = …`
+  and `saveDynamicOrgs()` appear in BOTH the create and update branches of the
+  dashboard's `add-org`, so deleting the create branch's copy left the regex
+  passing. Both are behavioural now — one reads
+  `/admin/api/reporting-identity`, the other reads the file off disk — and the
+  source assertions were **deleted rather than tightened**, with a comment
+  saying why.
+
+**A sandbox note:** `rec-dashboard` had no `node_modules`, and the failure is
+`Cannot find module '@opentelemetry/sdk-node'` at `server.js:4` — which reads as
+a broken server rather than an uninstalled repo. `npm install` there first.
+
+### NOT DONE
+
+- **`ORG_SYNC_SECRET` IS NOT SET IN EITHER PROJECT**, confirmed against Railway.
+  Until Dan sets the same value in both, the leak is closed and the token stays
+  withheld, but **nothing syncs**: a push is queued rather than sent, and
+  rec-dashboard's token-drift repair goes quiet (slug-drift repair is unaffected
+  — it reads only the open fields). `/api/admin/org-sync` reports
+  `configured: false`, and both refusals name the variable.
+- **No backfill**, per the decision above.
+- **`new-org` now requires the admin password.** The admin page is itself behind
+  `dashboardAuth` at `/`, so the browser holds Basic credentials for the origin
+  and attaches them to its own `fetch` — but this is the one change here that a
+  browser, not a spec, has to confirm.
+- **The other open `/api/admin` routes were NOT audited.** `delete-org` was
+  checked and is properly gated; the rest were left alone rather than swept.
+
 ## THE BACKUP HAD BEEN FAILING AND NOTHING SAID SO (2026-09-20)
 
 Dan, asked what was left on the list: *"anything we can do around stability or
@@ -17543,14 +17748,23 @@ Already shipped (PR #75, live on `main`): name-based site-type recovery so
 filter, Ice sub-tab, court-name wrap. Display/scoping only — did not change the
 revenue math, so the gap above predates and survives it.
 
-## PINNED: creating an org should create it in BOTH projects (Dan, 2026-09-02)
+## ~~PINNED~~ BUILT: creating an org creates it in BOTH projects (2026-09-21)
 
 Dan: *"when we create a new org in the org-dashboard or reporting project, it
 should automatically create the same org in the alternate project. no more having
 to create an org in both spots."*
 
-Not built. Written down with what this session already established, because the
-plumbing is half there and the traps are known.
+**BUILT 2026-09-21 — read the section at the top of this file, not this one.**
+Both recorded gaps were real and are fixed: `add-org` silently dropped `orgId`,
+and it had no auth (nor did `new-org`, nor did the two lookups, which were
+handing out access tokens). The two open questions below were settled the way
+this section suggests — **the reporting project owns the token**, which is the
+rule rec-dashboard's own reconcile already followed, and a failed push is
+**queued and retried** rather than lost.
+
+The text below is kept because the measurements and the reasoning are what the
+build rests on, and because the `orgId`-not-slug rule it states is the one thing
+most likely to be got wrong again.
 
 **What exists today.** One direction is already sketched: `POST
 /api/admin/add-org` carries the comment *"used by rec-dashboard to sync"*, and
