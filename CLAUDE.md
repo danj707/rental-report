@@ -166,6 +166,29 @@ nobody can find.
 module scope lands on the container's own disk and takes its own applied-marker
 with it, silently, on every boot.
 
+**AND THE MARKER IS PER ORG, BECAUSE A PER-KEY ONE BURNS THE SEED ON A BOOT THAT
+CANNOT SEE THE ORG YET.** The PR preview found it: `[seed] gl-fees:...-danvers:
+unknown org town-of-danvers`, and the key recorded applied **anyway**, so the
+next boot would skip the seed entirely — the feature shipping doing nothing, the
+only symptom a line in a boot log. On the preview that is correct behaviour (a
+fresh environment has its own empty store and Danvers is DYNAMIC), and it is
+**not preview-only**: `seedReportSettings` runs in `storeBoot`'s `finally`, past
+every early return in `storeConnect()`, while **`loadDynamicOrgs` runs INSIDE
+`storeConnect`** — after the configure timeout and the thrown-connect returns.
+So on any boot where the store answers late, `ORGS` holds only the static map
+and a per-key marker burns the seed on production too.
+
+Keyed `key|slug`: an org this boot cannot see stays unapplied and retries, while
+an org already seeded is still never re-seeded over a toggle it changed since —
+which is the rule the marker exists for. The old per-key marker is still
+honoured, so anything applied under it stays applied.
+
+*Generalise it: an idempotency marker must be keyed on the thing that actually
+succeeded. Keyed one level up it records work that never happened, and the
+failure is silent by construction.* **`seedReportVisibility` has the same
+per-key shape** and is not changed here — its orgs are static, so nothing can be
+missing at boot; the day one of them becomes dynamic, it inherits this bug.
+
 **AND THE SLUG WAS VERIFIED AGAINST PRODUCTION, BY THE UUID, BEFORE IT WAS
 TRUSTED.** `seedReportSettings` does `if (!ORGS[slug]) { warn; continue; }`, so a
 slug that is merely plausible makes the seed **warn and skip** — the feature
