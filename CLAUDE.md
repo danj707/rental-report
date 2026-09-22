@@ -477,6 +477,21 @@ never inserted*, or every view already saved reads as edited the instant it is
 applied. Re-verified by mutation: `fees` slid into the middle of the list fails
 it by name.
 
+**AND MY OWN SPEC DID THE SAME THING TO ITSELF, one merge later.** Its beacon
+assertions read `/"backup-failed", "fee-alloc"\]\)/` — pinned to whichever event
+happened to sit beside ours — so main appending `org-synced` to `SLACK_NOTIFY`
+broke a fee-allocation assertion with nothing about fee allocation having
+changed. **The neighbour was there for a reason, which is why the fix is not a
+wider regex:** `SLACK_NOTIFY` and the log route's `ALLOWED` list share most of
+their names, so an unscoped `includes("fee-alloc")` is satisfied by the wrong
+one. SLICE the list, then test membership — and select the right list by a
+MEMBER (`roster-open`) rather than by position, because server.js declares five
+`ALLOWED` arrays, one per beacon route. Each slice carries a was-it-found
+assertion ahead of it, or the membership test passes on an empty string.
+
+*Generalise it: when scoping forces you to pin a neighbour, slice instead. A
+neighbour is somebody else's to change.*
+
 ### I REPORTED A GREEN SUITE THAT HAD NOT RUN THE SPEC THAT CAUGHT THIS
 
 **`saved-views.spec.js` and `facility-summary.spec.js` SKIP when
