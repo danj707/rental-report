@@ -802,6 +802,21 @@ function crEsc(s) {
   }
   window.__crSliceFor = sliceFor;   // test seam: the render check reads the numbers it drew
 
+  // WHICH PERIOD IS ON SCREEN, in one place. render(), patchRow() and the
+  // breakdown editor all need it, and three copies is how one of them starts
+  // drawing a different quarter from the other two.
+  function currentSlices() {
+    var list = periodList();
+    var per = list.filter(function (x) { return x.v === period; })[0] || list[0];
+    if (!per) return null;
+    var dB = null;
+    if (mode === "compare") {
+      var pb = list.filter(function (x) { return x.v === periodB; })[0];
+      if (pb && pb.v !== per.v) dB = sliceFor(pb);
+    }
+    return { list: list, per: per, d: sliceFor(per), dB: dB };
+  }
+
   // ── render ──────────────────────────────────────────────────────────
   function renderPeriods() {
     var list = periodList();
@@ -1030,20 +1045,20 @@ function crEsc(s) {
         + '<td class="r num">' + p.enrolled + "</td>"
         + '<td class="r num" data-cr-rev="' + Math.round(r.rev) + '">' + crMoney(r.rev)
         + (b ? '<div class="pmeta">' + deltaText(r.rev, b.rev, crMoney) + "</div>" : "") + "</td>"
-        + '<td class="r"><input class="costin num' + (r.whole === null ? " empty" : "") + '" type="number" min="0" step="5" '
+        + '<td class="r"><input class="costin num' + (r.whole === null ? " empty" : "") + '" type="number" min="0" step="any" '
         + 'data-k="' + crEsc(key) + '" placeholder="enter" value="' + (r.whole === null ? "" : r.whole) + '" '
         + 'aria-label="Total cost for ' + crEsc(p.name) + '"></td>'
-        + '<td class="r num">' + (r.cost === null ? "—" : crMoney(r.rev - r.cost)) + "</td>"
+        + '<td class="r num" data-cr-net>' + (r.cost === null ? "—" : crMoney(r.rev - r.cost)) + "</td>"
         + '<td class="r num" data-cr-rec="' + (rec === null || rec === Infinity ? "" : Math.round(rec)) + '">'
         + (rec === Infinity ? "—" : crPctText(rec)) + "</td>"
-        + "<td>" + chipHtml(r) + "</td></tr>";
+        + "<td data-cr-chip>" + chipHtml(r) + "</td></tr>";
 
       if (open[key]) {
         var cc = costs[key] || {};
         html += '<tr class="lines"><td colspan="9"><div class="linebox">'
           + CR_CATS.map(function (c) {
               return '<label class="lineitem"><span>' + c[1] + "</span>"
-                + '<input type="number" min="0" step="5" class="num" data-k="' + crEsc(key) + '" data-c="' + c[0] + '" '
+                + '<input type="number" min="0" step="any" class="num" data-k="' + crEsc(key) + '" data-c="' + c[0] + '" '
                 + 'value="' + ((+cc[c[0]] || 0) / 100 || "") + '" aria-label="' + c[1] + " cost for " + crEsc(p.name) + '"></label>';
             }).join("")
           + '<span class="linesum">These five add up to the total on the row.</span></div></td></tr>';
@@ -1051,6 +1066,22 @@ function crEsc(s) {
     });
 
     $("tbody").innerHTML = html || '<tr><td colspan="9" class="empty-state">No programs in this period.</td></tr>';
+    renderTableFoot(d, dB);
+  }
+
+  // The Total row and the "N still need a cost" count, apart from the table so
+  // that patchRow can refresh them without rebuilding a row somebody is typing
+  // into. The comparison figures are summed over the INTERSECTION with the rows
+  // on screen, which is what the table itself does — totals(dB) would sum every
+  // programme the other quarter had, including ones this one does not show.
+  function renderTableFoot(d, dB) {
+    var rev = 0, cost = 0, any = false, revB = 0, bBy = {};
+    if (dB) dB.rows.forEach(function (r) { bBy[r.p.key] = r; });
+    d.rows.forEach(function (r) {
+      rev += r.rev;
+      if (r.cost !== null) { cost += r.cost; any = true; }
+      var b = bBy[r.p.key]; if (b) revB += b.rev;
+    });
     $("tfoot").innerHTML = d.rows.length
       ? '<tr><td></td><td>Total · ' + d.rows.length + " programs</td><td></td><td></td>"
         + '<td class="r num" data-cr-total-rev="' + Math.round(rev) + '">' + crMoney(rev)
@@ -1063,6 +1094,67 @@ function crEsc(s) {
     var need = d.rows.filter(function (r) { return r.cost === null; }).length;
     $("rowCount").textContent = d.rows.length + " program" + (d.rows.length === 1 ? "" : "s")
       + " · " + need + " still need a cost";
+  }
+
+  /* ONE ROW'S DERIVED CELLS, IN PLACE — because render() rebuilds the table's
+     innerHTML, which DESTROYS the input being typed into. The replacement is
+     focused fresh, a number input's caret then sits at position 0, and every
+     further keystroke is inserted at the START: measured in a browser, typing
+     "3251" into a row entered it as "152803000", and "12.50" came out "50.21".
+
+     There is no repairing that afterwards, which is the part worth knowing.
+     The line that used to sit here called setSelectionRange to put the caret
+     back, and setSelectionRange THROWS on type="number" — the selection API is
+     defined for text, search, url, tel and password only. So the caret-restore
+     had never once run to completion; it threw an uncaught error on every
+     keystroke, on top of the reversal it was there to prevent.
+
+     The open-ended ledger beside this already had it right ("the row itself is
+     left alone so the caret stays put"); the programs table did not.
+
+     render() is still the authority and runs on `change`, i.e. on blur, so
+     anything this patch misses is reconciled the moment the field is left. */
+  function patchRow(k) {
+    var sl = currentSlices();
+    if (!sl) return;
+    var d = sl.d, r = null;
+    d.rows.forEach(function (x) { if (x.p.key === k) r = x; });
+    var tr = document.querySelector('tr.prog[data-cr-row="' + crCssEsc(k) + '"]');
+    if (tr) {
+      // BY ROLE, NOT BY POSITION. tr.children[6] is the trap this repo already
+      // records for sortUsage reading cells[col]: add a column and the figures
+      // land silently under the wrong headers.
+      var cNet = tr.querySelector("[data-cr-net]"), cRec = tr.querySelector("[data-cr-rec]"),
+          cChip = tr.querySelector("[data-cr-chip]"), box = tr.querySelector(".costin");
+      // r is NULL when the row no longer belongs to the slice — clearing a cost
+      // while "hide programs with no cost" is on is the live case. The row is
+      // still on screen until blur, so its figures are BLANKED rather than left
+      // showing the cost that was just deleted.
+      var rec = r ? crRecovery(r.rev, r.cost) : null;
+      if (cNet) cNet.innerHTML = !r || r.cost === null ? "—" : crMoney(r.rev - r.cost);
+      if (cRec) {
+        cRec.setAttribute("data-cr-rec", rec === null || rec === Infinity ? "" : Math.round(rec));
+        cRec.innerHTML = !r || rec === Infinity ? "—" : crPctText(rec);
+      }
+      if (cChip) cChip.innerHTML = chipHtml(r || { rev: 0, cost: null, tier: tiers[k] || 0 });
+      if (box) {
+        box.classList.toggle("empty", !r || r.whole === null);
+        // Never write over the field somebody is typing in — that is the bug.
+        if (box !== document.activeElement) box.value = !r || r.whole === null ? "" : r.whole;
+      }
+      // An open breakdown holds the split this total was just scaled across, so
+      // it goes stale otherwise. Same rule: skip whichever box has the caret.
+      var lines = tr.nextElementSibling;
+      if (lines && lines.classList && lines.classList.contains("lines")) {
+        var cc = costs[k] || {};
+        [].forEach.call(lines.querySelectorAll("input[data-c]"), function (inp) {
+          if (inp === document.activeElement) return;
+          inp.value = (+cc[inp.dataset.c] || 0) / 100 || "";
+        });
+      }
+    }
+    renderTableFoot(d, sl.dB);
+    renderKpis(d, sl.dB); renderTiers(d);
   }
 
   // ── the open-ended ledger editor ────────────────────────────────────
@@ -1143,7 +1235,7 @@ function crEsc(s) {
       + '<td class="r"><select class="tiersel lg" style="width:86px" data-id="' + crEsc(id) + '" data-f="kind" aria-label="In or out">'
       + '<option value="expense"' + (r.kind === "income" ? "" : " selected") + ">Expense</option>"
       + '<option value="income"' + (r.kind === "income" ? " selected" : "") + ">Income</option></select></td>"
-      + '<td class="r"><input class="costin lg num" type="number" min="0" step="5" data-id="' + crEsc(id) + '" '
+      + '<td class="r"><input class="costin lg num" type="number" min="0" step="any" data-id="' + crEsc(id) + '" '
       + 'data-f="amount" value="' + (r.amount ? r.amount / 100 : "") + '" placeholder="0" aria-label="Amount"></td>'
       + '<td class="r"><select class="tiersel lg" style="width:124px" data-id="' + crEsc(id) + '" data-f="season" aria-label="Season">'
       + seasonOpts + "</select></td>"
@@ -1286,15 +1378,9 @@ function crEsc(s) {
 
   function render() {
     renderPeriods();
-    var list = periodList();
-    var per = list.filter(function (x) { return x.v === period; })[0] || list[0];
-    if (!per) { $("basisNote").innerHTML = INFO + "<span>No periods to show for this window.</span>"; return; }
-    var d = sliceFor(per);
-    var dB = null;
-    if (mode === "compare") {
-      var pb = list.filter(function (x) { return x.v === periodB; })[0];
-      if (pb && pb.v !== per.v) dB = sliceFor(pb);
-    }
+    var sl = currentSlices();
+    if (!sl) { $("basisNote").innerHTML = INFO + "<span>No periods to show for this window.</span>"; return; }
+    var per = sl.per, d = sl.d, dB = sl.dB;
     // One period in the window is not a comparison. Say so, rather than drawing
     // a compare view with no second column and leaving the reader to work out
     // why every delta is missing.
@@ -1374,6 +1460,8 @@ function crEsc(s) {
   }
 
   function ensureCost(k) { if (!costs[k]) costs[k] = {}; return costs[k]; }
+  // A programme key goes into a selector, and it is the org's own text.
+  function crCssEsc(k) { return window.CSS && CSS.escape ? CSS.escape(k) : String(k).replace(/["\\]/g, "\\$&"); }
 
   // ── events ──────────────────────────────────────────────────────────
   $("modeSeg").addEventListener("click", function (e) {
@@ -1396,10 +1484,20 @@ function crEsc(s) {
 
   document.addEventListener("change", function (e) {
     var el = e.target;
-    if (!el.classList || !el.classList.contains("tiersel")) return;
-    var k = el.dataset.k, v = +el.value;
-    if (v >= 1 && v <= 4) tiers[k] = v; else delete tiers[k];
-    markDirty(k); render();
+    if (!el.classList) return;
+    if (el.classList.contains("tiersel")) {
+      var k = el.dataset.k, v = +el.value;
+      if (v >= 1 && v <= 4) tiers[k] = v; else delete tiers[k];
+      markDirty(k); render();
+      return;
+    }
+    // A cost field has been LEFT (change fires on blur), so nothing is being
+    // typed and a full rebuild is safe. This is what makes patchRow a display
+    // optimisation rather than a second source of truth: whatever it does not
+    // repaint — a row dropping out under "hide programs with no cost", the
+    // sort, the compare column — is reconciled here, one blur later.
+    if (el.dataset && el.dataset.k && (el.classList.contains("costin") || el.dataset.c)
+        && !el.classList.contains("lg")) render();
   });
 
   document.addEventListener("input", function (e) {
@@ -1426,10 +1524,7 @@ function crEsc(s) {
         } else if (cents > 0) { ensureCost(k).instructors = cents; }
         else { delete costs[k]; }
       }
-      markDirty(k); render();
-      // Keep the caret where it was — render() rebuilds the row.
-      var again = document.querySelector('.costin[data-k="' + (window.CSS && CSS.escape ? CSS.escape(k) : k) + '"]');
-      if (again) { again.focus(); again.setSelectionRange(again.value.length, again.value.length); }
+      markDirty(k); patchRow(k);
       return;
     }
 
@@ -1439,11 +1534,11 @@ function crEsc(s) {
       if (cents2 > 0) c2[el.dataset.c] = cents2; else delete c2[el.dataset.c];
       if (!Object.keys(c2).length) delete costs[kk];
       markDirty(kk);
-      var d = sliceFor(periodList().filter(function (x) { return x.v === period; })[0] || periodList()[0]);
-      renderKpis(d, null); renderTiers(d);
-      var box = document.querySelector('.costin[data-k="' + (window.CSS && CSS.escape ? CSS.escape(kk) : kk) + '"]');
-      var whole = crCostDollars(costs[kk]);
-      if (box) { box.value = whole === null ? "" : whole; box.classList.toggle("empty", whole === null); }
+      // Same patch the row total uses. It carries the row's own Net, Recovery,
+      // status chip and the Total row, which this branch used to leave stale —
+      // typing a line item moved the KPIs above the table and nothing in the
+      // row it belonged to.
+      patchRow(kk);
     }
   });
 

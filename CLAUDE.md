@@ -8189,6 +8189,97 @@ it says so rather than rendering a comparison with nothing in it.
   and in Slack with the program named, but the platform has no user identity
   behind an org token, so it cannot say which staffer typed it.
 
+### THE COST FIELD TYPED BACKWARDS (2026-09-22)
+
+Dan, on the preview he had just been handed: *"the cost button doesn't quite
+work correctly, can't enter numbers right."*
+
+**MEASURED IN A BROWSER RATHER THAN READ: typing `3251` entered `152803000`,
+and `12.50` came out `50.21`.** Digits went in RIGHT TO LEFT.
+
+`render()` rebuilds the table's `innerHTML`, and the `input` handler called it
+on **every keystroke** — so the box being typed into was destroyed and replaced
+mid-word. The replacement was focused fresh, a number input's caret then sits at
+**position 0**, and each further digit was inserted at the START.
+
+**AND THE LINE THAT WAS MEANT TO PREVENT IT COULD NEVER HAVE RUN.** It called
+`setSelectionRange` to put the caret back, and **`setSelectionRange` THROWS on
+`type="number"`** — the selection API is defined for text, search, url, tel and
+password only. So the caret restore threw an uncaught error on every keystroke,
+on top of the reversal it existed to fix. Its comment read *"Keep the caret
+where it was"*, which is the kind of comment that stops the next person looking.
+
+**THE LEDGER TWELVE HUNDRED LINES AWAY ALREADY HAD IT RIGHT**, in its own
+words: `renderLedgerTotalsOnly()`, *"the row itself is left alone so the caret
+stays put."* Same file, same session, opposite answer. *A rule written once in
+one function does not generalise itself to the next one.*
+
+**`step="5"` was the third defect**, and it is what Dan's screenshot shows the
+spinner for: a cost of `3251` is not a multiple of five, so the field was
+`:invalid`, and the arrows and the spinner moved money **five dollars** at a
+time. `step="any"` on all three money inputs.
+
+### THE FIX, and the property that makes it safe
+
+`patchRow(k)` updates one row's derived cells in place — Net, Recovery, the
+status chip, the Total row, the KPI strip and the tier ladder — and touches no
+`<input>` that has the caret. **`render()` is still the authority and now runs
+on `change`, i.e. on blur**, so anything the patch misses is reconciled the
+moment the field is left. That is what keeps the in-place patch an optimisation
+rather than a second source of truth.
+
+- **BY ROLE, NOT BY POSITION.** The first draft read `tr.children[6]` — the
+  `cells[col]` trap this file already records for `sortUsage`, where adding a
+  column lands every figure under the wrong header. The three cells carry
+  `data-cr-net` / `data-cr-rec` / `data-cr-chip` and are queried by those.
+- **A ROW CAN LEAVE THE SLICE MID-EDIT.** Clear a cost with *hide programs with
+  no cost* on and `sliceFor` drops that row, so `r` is null while the row is
+  still on screen until blur. Its figures are **blanked** rather than left
+  showing the cost that was just deleted.
+- **The breakdown editor had the mirror defect** — typing a line item moved the
+  KPI strip and left its own row showing the old Net, Recovery and status. It
+  shares `patchRow` now, so the two cannot drift apart again.
+- `currentSlices()` is the one place that decides which period is on screen;
+  three copies of that derivation is how one surface starts drawing a different
+  quarter from the other two.
+
+### Guards
+
+**Three `ci-check-render.js` cases, and the reason they did not exist is the
+lesson.** All ten cost-recovery cases passed on the shipped build, because every
+one of them keys on a figure the page computed from a cost **already in the
+fixture** — no case had ever put a KEYSTROKE into the field. The bug lives
+between keystrokes, so only typing can see it. *A control with ten green cases
+and no case that operates it is an untested control.*
+
+Mutation-tested **nine ways, all nine caught by a case that names the defect**
+while its neighbours keep passing: the bug exactly as it shipped (`render()` on
+every keystroke), each of Net / Recovery / the Total row left stale, `step="5"`
+restored, cells looked up by position again, a row leaving the slice keeping the
+deleted cost, the breakdown editor no longer patching its row, and the blur
+`render()` removed so `patchRow` becomes the only truth.
+
+**THREE SURVIVED A FIRST PASS, and every one was my assertions rather than the
+mutations.** The case read `data-cr-rec` — **the ATTRIBUTE a test reads, not the
+TEXT Dan reads** — so a build that stopped repainting the cell passed it;
+nothing asserted `checkValidity()`, so `step="5"` sailed through; and nothing
+left the field, so removing the blur `render()` changed nothing observable.
+*An assertion that reads the hook instead of the rendered value is checking that
+the page still has a handle, not that it drew the right number* — and a case
+that never blurs cannot see the reconciliation the whole design rests on.
+
+**The failure messages are the bug in the reader's own terms**, which is what
+makes them worth keeping: the clearing case fails reading
+`after value="" net=−$10,000 rec="88"` — the deleted cost still on screen — and
+the typing case reproduces Dan's report as `typed="152803000"`.
+
+**AND I TRIED TO EDIT THE FILE WHILE THE MUTATION RUNNER HELD IT** — the trap
+recorded twice in this file, walked into a third time. The edit aborted only
+because its anchor assertion failed on the runner's own `/* stale */`. The
+runner restores from the bytes it saved, so a successful write would have been
+silently reverted. *Check nothing is holding a file before editing it, and keep
+the anchor assertions strict enough to notice.*
+
 ## Working preferences (from Dan, dan@rec.us)
 
 - **Every finished task is reported in the TEMPLATE** — one or two sentences,

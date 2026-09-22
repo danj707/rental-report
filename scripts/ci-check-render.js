@@ -3112,6 +3112,168 @@ const CASES = [
     // every program.
     needs: 'body[data-cr-seen*="mode=season"][data-cr-seen*="rows=1 rev=70000"]' },
 
+  /* TYPING A COST. No case had ever put a keystroke into this field, which is
+     why it shipped unusable: render() rebuilt the table's innerHTML on every
+     `input`, so the box was DESTROYED and replaced mid-word, the replacement
+     was focused fresh with a number input's caret at position 0, and each
+     further digit went in at the START. Measured on the shipped build: "3251"
+     was entered as "152803000" and "12.50" as "50.21". The caret-restore that
+     was meant to prevent it called setSelectionRange, which THROWS on
+     type="number", so it had never once completed.
+
+     Every existing cost-recovery case keys on a figure the page computed from
+     a cost already in the fixture — all ten passed on this. The bug is in what
+     happens between keystrokes, so only typing can see it.
+
+     Three claims, because each alone passes on part of it:
+       - the field holds what was typed, digits and a decimal point;
+       - the row's own Recovery RECOMPUTED, so not rebuilding the table did not
+         cost the reader a stale number (the whole risk of the fix);
+       - the element was never replaced, which is the mechanism itself. */
+  { name: "cost-recovery · typing a cost enters the digits in order",
+    path: "/{org}/cost-recovery",
+    needs: 'body[data-rc-costin-seen^="ok=1 "]',
+    act: async (page) => {
+      await page.waitForSelector(".costin", { timeout: 20000 });
+      const sel = ".costin";
+      const val = () => page.$eval(sel, e => e.value);
+      const clear = () => page.$eval(sel, e => {
+        e.value = ""; e.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+      // Mark the element so a rebuild is detectable: innerHTML cannot carry an
+      // expando, so a surviving mark IS proof the node was never replaced.
+      await page.$eval(sel, e => { e.__kept = 1; });
+      await clear(); await page.click(sel);
+      for (const ch of "3251") await page.keyboard.type(ch);
+      const typed = await val();
+      await clear(); await page.click(sel);
+      for (const ch of "12.50") await page.keyboard.type(ch);
+      const dec = await val();
+      // Back to a whole number, then read what the row now says about it.
+      await clear(); await page.click(sel);
+      for (const ch of "3251") await page.keyboard.type(ch);
+      const row = await page.evaluate(() => {
+        const box = document.querySelector(".costin");
+        const tr = box.closest("tr");
+        const foot = document.querySelector("tfoot [data-cr-total-rec]");
+        const rev = +tr.querySelector("[data-cr-rev]").getAttribute("data-cr-rev");
+        const txt = el => (el.textContent || "").replace(/\s+/g, "");
+        return { kept: box.__kept === 1, focused: document.activeElement === box, rev: rev,
+                 // The ATTRIBUTE is what a test reads; the TEXT is what Dan reads.
+                 // Asserting only the first let a build that stopped repainting
+                 // the cell survive, because the attribute was still being set.
+                 recAttr: +tr.children[7].getAttribute("data-cr-rec"),
+                 recText: txt(tr.children[7]), netText: txt(tr.children[6]),
+                 // step="5" made every cost that is not a multiple of five
+                 // :invalid, and moved the spinner and the arrow keys by $5.
+                 valid: box.checkValidity(), step: box.step,
+                 // The Total row reads the same costs. Leaving it out let a
+                 // build that never refreshed it survive this case.
+                 foot: foot ? +foot.getAttribute("data-cr-total-rec") : -1,
+                 wantRec: Math.round(rev / 3251 * 100) };
+      });
+      const wantNet = "$" + (row.rev - 3251).toLocaleString("en-US");
+      // This row is the only costed one in the fixture's default period, so the
+      // Total row's recovery is this row's. That is what makes the footer
+      // checkable without pinning a second fixture number.
+      const ok = typed === "3251" && dec === "12.50" && row.kept && row.focused && row.rev > 0
+        && row.recAttr === row.wantRec && row.recText === row.wantRec + "%"
+        && row.netText === wantNet && row.valid && row.foot === row.wantRec;
+      await page.evaluate(t => document.body.setAttribute("data-rc-costin-seen", t),
+        (ok ? "ok=1 " : "ok=0 ") + "typed=" + JSON.stringify(typed)
+        + " decimal=" + JSON.stringify(dec) + " elementKept=" + row.kept
+        + " stillFocused=" + row.focused + " rev=" + row.rev
+        + " recovery=" + row.recText + "/" + row.recAttr + " (want " + row.wantRec + "%)"
+        + " net=" + row.netText + " (want " + wantNet + ")"
+        + " step=" + row.step + " valid=" + row.valid + " totalRow=" + row.foot);
+    } },
+
+  /* THE BREAKDOWN EDITOR, which had the same defect one level down and in the
+     other direction: typing a line item moved the KPI strip above the table and
+     left the row it belonged to showing the old Net, Recovery and status. It
+     shares patchRow now, so this case is what stops the two drifting apart
+     again. Types into the FIRST line box and requires the row's own Net to
+     follow it — a build that only repaints the KPIs renders a perfectly
+     plausible row. */
+  { name: "cost-recovery · a line item updates the row it belongs to",
+    path: "/{org}/cost-recovery",
+    needs: 'body[data-rc-lineitem-seen^="ok=1 "]',
+    act: async (page) => {
+      await page.waitForSelector(".costin", { timeout: 20000 });
+      await page.$eval(".costin", e => { e.value = ""; e.dispatchEvent(new Event("input", { bubbles: true })); });
+      await page.click("tr.prog .exp");                       // open the breakdown
+      await page.waitForSelector("tr.lines input[data-c]", { timeout: 20000 });
+      const line = "tr.lines input[data-c]";
+      await page.click(line);
+      for (const ch of "1250") await page.keyboard.type(ch);
+      const out = await page.evaluate(() => {
+        const inp = document.querySelector("tr.lines input[data-c]");
+        const tr = document.querySelector("tr.prog");
+        const rev = +tr.querySelector("[data-cr-rev]").getAttribute("data-cr-rev");
+        const txt = el => (el.textContent || "").replace(/\s+/g, "");
+        return { lineValue: inp.value, rowTotal: tr.querySelector(".costin").value,
+                 net: txt(tr.querySelector("[data-cr-net]")),
+                 rec: +tr.querySelector("[data-cr-rec]").getAttribute("data-cr-rec"),
+                 wantNet: "$" + (rev - 1250).toLocaleString("en-US"),
+                 wantRec: Math.round(rev / 1250 * 100) };
+      });
+      const ok = out.lineValue === "1250" && out.rowTotal === "1250"
+        && out.net === out.wantNet && out.rec === out.wantRec;
+      await page.evaluate(t => document.body.setAttribute("data-rc-lineitem-seen", t),
+        (ok ? "ok=1 " : "ok=0 ") + "lineBox=" + JSON.stringify(out.lineValue)
+        + " rowTotal=" + JSON.stringify(out.rowTotal)
+        + " net=" + out.net + " (want " + out.wantNet + ")"
+        + " recovery=" + out.rec + " (want " + out.wantRec + ")");
+    } },
+
+  /* CLEARING A COST WHILE "only programs with a cost" IS ON. sliceFor drops
+     that row, so patchRow has no row object to price it from — while the row
+     is still ON SCREEN, because the table is not rebuilt until blur. The
+     figures are blanked rather than left showing the cost that was just
+     deleted, which is the one way this fix could have put a stale number in
+     front of a reader. */
+  { name: "cost-recovery · clearing a cost does not leave the old figures behind",
+    path: "/{org}/cost-recovery",
+    needs: 'body[data-rc-clear-seen^="ok=1 "]',
+    act: async (page) => {
+      await page.waitForSelector(".costin", { timeout: 20000 });
+      await page.click("#hideBlank");
+      await page.waitForFunction(() => document.querySelectorAll("tr.prog").length > 0,
+        { timeout: 20000 });
+      const before = await page.evaluate(() => {
+        const tr = document.querySelector("tr.prog");
+        return { net: (tr.querySelector("[data-cr-net]").textContent || "").trim(),
+                 rec: tr.querySelector("[data-cr-rec]").getAttribute("data-cr-rec") };
+      });
+      // Select the whole value and delete it, the way a reader clears a field.
+      await page.click(".costin");
+      await page.keyboard.down("Control"); await page.keyboard.press("KeyA"); await page.keyboard.up("Control");
+      await page.keyboard.press("Backspace");
+      const after = await page.evaluate(() => {
+        const tr = document.querySelector("tr.prog");
+        return { onScreen: !!tr, value: tr.querySelector(".costin").value,
+                 net: (tr.querySelector("[data-cr-net]").textContent || "").trim(),
+                 rec: tr.querySelector("[data-cr-rec]").getAttribute("data-cr-rec"),
+                 empty: tr.querySelector(".costin").classList.contains("empty") };
+      });
+      // AND THEN LEAVE THE FIELD. render() runs on `change`, and it is the
+      // authority the whole in-place patch rests on: the row no longer belongs
+      // in this view, so it goes. Without this the case cannot tell a design
+      // with a reconciling blur from one where patchRow is the only truth.
+      await page.evaluate(() => document.querySelector(".costin").blur());
+      await page.waitForFunction(() => document.querySelectorAll("tr.prog").length === 0
+        || !document.querySelector("tr.prog .costin.empty"), { timeout: 20000 }).catch(() => {});
+      const gone = await page.evaluate(() => !document.querySelector("tr.prog .costin.empty"));
+      const ok = before.net !== "—" && before.rec !== ""      // it really had figures to lose
+        && after.onScreen && after.value === "" && after.empty
+        && after.net === "—" && after.rec === "" && gone;
+      await page.evaluate(t => document.body.setAttribute("data-rc-clear-seen", t),
+        (ok ? "ok=1 " : "ok=0 ") + "before net=" + before.net + " rec=" + before.rec
+        + " · after value=" + JSON.stringify(after.value) + " net=" + after.net
+        + " rec=" + JSON.stringify(after.rec) + " emptyClass=" + after.empty
+        + " rowStillOnScreen=" + after.onScreen + " · droppedOnBlur=" + gone);
+    } },
+
   { name: "cost-recovery · a quarter pro-rates each program across its run",
     path: "/{org}/cost-recovery",
     needs: 'body[data-cr-seen*="mode=quarter"][data-cr-seen*="rows=4 rev=60908"]',
