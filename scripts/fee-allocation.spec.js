@@ -414,9 +414,21 @@ ok(/\{feeEnabled && !isTylerActive && \(/.test(gl),
 
 /* ── The Slack beacon ───────────────────────────────────────────────────── */
 console.log("\nThe beacon");
-ok(/"roster-open", "insights-listen", "fee-alloc"\]/.test(server),
+// Each list is SLICED and then tested for membership, never pinned to whichever
+// event happens to sit beside `fee-alloc`: the two lists share most of their
+// names, so an unscoped match is satisfied by the wrong one - and a neighbour
+// is somebody else's to change (main inserting `org-synced` broke exactly this).
+// server.js declares five ALLOWED lists (one per beacon route); the generic log
+// route's is the one carrying `roster-open`, so it is SELECTED by a member rather
+// than by position.
+const allowedList = (server.match(/const ALLOWED = \[[^\]]*\]/g) || [])
+  .find(l => l.includes('"roster-open"')) || "";
+ok(allowedList.length > 50, "the generic log route's ALLOWED list was found (or the next assertion is vacuous)");
+ok(allowedList.includes('"fee-alloc"'),
    "`fee-alloc` is on the generic log route's ALLOWED list");
-ok(/"backup-failed", "fee-alloc"\]\)/.test(server), "...and in SLACK_NOTIFY, or it posts nothing");
+const notifySet = (server.match(/const SLACK_NOTIFY = new Set\(\[[^\]]*\]\)/) || [""])[0];
+ok(notifySet.length > 50, "SLACK_NOTIFY was found (or the next assertion is vacuous)");
+ok(notifySet.includes('"fee-alloc"'), "...and in SLACK_NOTIFY, or it posts nothing");
 ok(/"fee-alloc": \{ emoji:/.test(server), "...and has an emoji and a verb");
 // Its OWN message branch. The shared line prints the report type twice and the
 // figure never - the defect already fixed once in the feedback branch.
