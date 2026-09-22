@@ -8049,6 +8049,11 @@ something has to look.*
   not English and appears in no copy here. **Verified by reintroducing the bug:
   all ten cases fail, each quoting the leaked rule, where before all ten
   passed.**
+  **And clean across the whole harness: 454 of 454 cases pass with it and ZERO
+  false positives**, so no page's legitimate copy trips the CSS-declaration
+  regex. That closes the caveat `2b34e46` carries in its own commit message,
+  which was written while the sweep was still running — recorded here rather
+  than left in a message nobody re-reads.
 
 **AND THE SPEC-COVERAGE GUARD BELOW EARNED ITSELF ON ITS FIRST NEW SPEC** —
 `markup-blocks.spec.js` was written, and the very next run named it as having no
