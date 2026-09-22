@@ -1,5 +1,109 @@
 # Project notes for Claude
 
+## INVENTORY — the first report whose numbers we own (2026-09-22)
+
+Dan: *"how much work to vibecode an inventory management system for Rec?"* —
+ingest an org's store items, set quantities, every sale counts one down,
+reorder thresholds email the admin, items carry a scannable UPC. Then the
+rules: *"a job/cron every hour, don't go crazy, and check against that org's
+item log for sales. confirmed that refunds and voids add a unit back"*, and
+*"I care about candy bars, not passes."* Product will not have this until 11/30
+and will not have UPC scanning at all. Mockup:
+https://claude.ai/artifact/1eP6m6GMukyYDU9u7gXj5s
+
+`/:org/inventory`, **hidden by default** (`DEFAULT_HIDDEN_REPORTS`), toggled
+per org from the admin grid like Opportunities. Card
+[22144](https://rec.metabaseapp.com/question/22144) "Inventory Feed", mirror
+`sql/report-cards/inventory-feed.sql`. Logic in `lib/inventory.js` (pure).
+
+### THE ITEM LOG HAS NO PRODUCT AND NO QUANTITY
+
+`item_log_report.order_item_id → order_item.product_purchase_id →
+product_purchase.product_id + quantity`. Measured at city-of-madison, July
+2026: **23,243 merch rows, every one resolving to a product, every quantity
+exactly 1**. Madison is the natural pilot — Snickers, Gatorade, goggles, sour
+punch straws across two stands.
+
+**`product.type` IS THE MERCH TEST.** Platform-wide: `product` 2,589 · `fee`
+1,957 · `membership` 1,186 · `pass` 478 · `giftCard` 49. Only `product` is
+tracked by default and only `product` produces movements; the rest are ingested
+switched off so an org can see them and choose. No name matching.
+
+### THE MODEL IS A LEDGER, and two rules follow from it
+
+On-hand is replayed from events (`count` sets, `sale`/`refund`/`void`/
+`receive` move) — never a number edited in place, so "why does it say 12?"
+always has an answer.
+
+1. **ON-HAND IS NULL UNTIL SOMEBODY COUNTS.** "0" would say sold out about a
+   shelf nobody has looked at. The page says *Needs a count*, and receiving
+   into an uncounted item is refused (409).
+2. **ONLY WHAT HAPPENS AFTER THE LAST COUNT MOVES THE NUMBER.** A sale at 9am
+   and a count at 10am: the bar was already gone when they counted.
+
+**IDEMPOTENT PER ORDER ITEM.** Each sync re-reads the last 3 days; `sold` /
+`refunded` remember order items already applied (forgotten after 5 days), so an
+overlapping read, two replicas, or a manual sync after the hourly one never
+subtracts twice. **A void is a payment that vanished** from a later read of the
+window — put back once, and reversed if the sale reappears (a late read).
+**A read with zero movements while we remember sales in its window skips void
+detection** — a broken read must not put a day's sales back on the shelf.
+
+**One ledger line per product per sync**, not per candy bar. Ledger capped at
+400 per item, never trimming the last count.
+
+### Operational shape
+
+- **Hourly, at :07, leader-locked**, orgs walked one at a time, and **only orgs
+  with a tracked, counted item** — an org that never opened the report costs
+  nothing. First open ingests the catalogue; "Sync now" is throttled to one
+  real read a minute.
+- **The card's `since` is a TEXT tag on purpose**; the server echoes the card's
+  own registered types (the permits/Munis pattern), so an API save never needs
+  a Date flip. Window filter on the bare `datetime_at_primary_timezone` column,
+  sargable on the (org, datetime) index: Madison's 3-day read is 0.4s.
+- **State lives in the store** (`inventory/<slug>.json` via readJSON/
+  writeJSON → Postgres). The sync **re-reads state AFTER the slow fetch**, so a
+  count typed on the other replica meanwhile is not overwritten. The residual
+  cross-replica race is the kv poll interval, and the per-order-item memory is
+  what makes a lost write repair itself on the next hour.
+- **Reorder email: one per crossing**, listing every item at or below its point
+  (a complete shopping list), with order-to-par. Clears when stock is back above.
+  No reorder point set ⇒ never emails. `Number(null)` is 0, which read "no
+  point set" as "reorder at zero" — **the spec caught it on the first run**, the
+  weather card's sunshine bug again; `num()` rejects null/''.
+- **UPC**: one barcode, one item (409 on a clash). A handheld scanner is a
+  keyboard; a phone camera works where the browser ships `BarcodeDetector`
+  (Chrome/Android, Edge) and the button is absent elsewhere — iPhones would need
+  a library, not added.
+- **The page does no stock arithmetic.** On-hand, status, days-left and
+  order-to-par come from `INVENTORY.view()` so the table, the email and the job
+  cannot disagree.
+- Slack: `inv-count` (with the variance and reason), `inv-receive`, `inv-link`,
+  `inv-track`, `inv-reorder`, keyed per item.
+
+### Guards
+
+`scripts/inventory.spec.js` (**73 assertions, in CI**): the unit half RUNS
+`lib/inventory.js`; the live half boots the real server against a stand-in
+Metabase and drives count → item → sync → re-sync. Mutation-tested seven ways,
+all caught by name: double-counting on a re-read, passes tracked by default, the
+void guard removed, `Number(null)` back, pre-count sales subtracted, an alert
+every hour, refunds ignored.
+
+### NOT DONE
+
+- **Card 22144 has no public link yet.** Until `MB_INVENTORY_UUID` is set the
+  page says the feed is not wired and nothing syncs.
+- **Free merch never counts down** — a $0 item has no transaction in the item
+  log. A comped candy bar needs a count or an adjustment.
+- **A void older than the 3-day window is not seen.** Voids are same-day in
+  practice; a physical count is the repair.
+- **Stock is per ORG, not per stand.** Madison sells `Snickers-CB` and
+  `Snickers RSC` as separate products, which is how two stands stay separate
+  today. Per-location stock of ONE product would need the desk on the feed.
+- No render-check case yet; verified in a real browser against a stand-in feed.
+
 ## AN ORG'S TOKEN WAS AVAILABLE TO ANYONE WHO ASKED (2026-09-21)
 
 Dan: *"lets do the 'create on one project adds it to both' issue."* The feature
