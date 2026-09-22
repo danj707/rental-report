@@ -64,8 +64,12 @@ const basic = "Basic " + Buffer.from("admin:" + PASSWORD).toString("base64");
 // resolve an org, and a credential in a spec is a credential in git.
 const ORG  = "store-spec-org";
 const TOKEN = "storeSpecToken123";
+// The password is not decoration: add-org creates an org carrying any rec.us
+// orgId with a token of the caller's choosing, so it is gated (2026-09-21) and
+// an unauthenticated call is a 401 that writes nothing.
 const addOrg = (port) => req(port, "POST", "/api/admin/add-org", {},
-  { slug: ORG, token: TOKEN, orgId: "00000000-0000-0000-0000-000000000000", displayName: "Store Spec Org" });
+  { slug: ORG, token: TOKEN, orgId: "00000000-0000-0000-0000-000000000000",
+    displayName: "Store Spec Org", password: PASSWORD });
 const beacon = (port) => req(port, "POST", "/" + ORG + "/gl/api/log?event=print&token=" + TOKEN);
 
 async function boot(port, dataDir, extraEnv) {

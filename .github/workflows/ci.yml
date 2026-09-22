@@ -375,6 +375,17 @@ jobs:
       - name: Org dashboard weather (an unknown code never paints sunshine)
         run: node scripts/org-weather.spec.js
 
+      # Cross-project org sync, and the credential leak found building it: all
+      # three sync routes were open, and /api/admin/org/:slug handed an org's
+      # ACCESS TOKEN to anyone who asked — the only thing in front of every
+      # roster, GL rollup and resident contact list that org has. Slugs are city
+      # names. Confirmed against production 2026-09-21. The live half boots a
+      # real server against a stand-in rec-dashboard, because a regex over our
+      # own patch is not evidence the server behaves; SKIP_SOURCE=1 drops the
+      # source half and the live half alone was seen to catch all twelve.
+      - name: Org sync (no token to an unauthenticated caller; the push reconciles on orgId)
+        run: node scripts/org-sync.spec.js
+
       - name: Admin dashboard JS (inline blocks parse; every on*= handler resolves)
         run: node scripts/ci-check-admin-js.js
 
