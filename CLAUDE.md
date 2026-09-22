@@ -7996,20 +7996,63 @@ mutation testing behind them guarded nothing on any later push. **Judge "is it i
 CI" by reading the workflow, not by reading the claim** — the claim is written by
 whoever also forgot the step.
 
-**A SWEEP OVER `scripts/*.spec.js` AGAINST THE WORKFLOW FOUND THREE MORE.**
-`report-visibility.spec.js` is the one that matters and it is wired now, on this
-PR, because it is the guard for the rule this report depends on: the
-`MAY_BE_VISIBLE` **whitelist** that freezes every-new-report-ships-hidden. **This
-file has claimed twice that it was in CI. It never was**, so the diff that would
-have failed a guard — `new Set([])`, invisible in review, shipping to 29
-dashboards on merge — would have sailed through. `adaptive-cache.spec.js` and
-`cache-filename.spec.js` are also unwired and both pass; left alone rather than
-swept into a cost-recovery PR, and named here so they are not lost.
+**A SWEEP OVER `scripts/*.spec.js` AGAINST THE WORKFLOW FOUND THREE MORE**, and
+all four are wired now. `report-visibility.spec.js` is the one that mattered: it
+is the guard for the rule this report depends on — the `MAY_BE_VISIBLE`
+**whitelist** that freezes every-new-report-ships-hidden. **This file had claimed
+twice that it was in CI. It never was**, so the diff that would have failed a
+guard — `new Set([])`, invisible in review, shipping to 29 dashboards on merge —
+would have sailed through. `adaptive-cache.spec.js` and `cache-filename.spec.js`
+were unwired too, and both passed all along.
 
-*Generalise it: the real fix is a guard that fails when a `scripts/*.spec.js`
-exists with no step naming it — the recorded rule that a guard you have to
-remember to extend is the thing that already failed here four times. Not built,
-because it would have widened this PR; it is the cheapest thing on the list.*
+### THE GUARD OVER THE GUARDS — `scripts/spec-coverage.spec.js`
+
+Dan: *"yeah sweep in that spec-coverage guard and the two cache specs"*. **8
+assertions, in CI, last in the validate job**, and it is the fix that makes the
+rest of this section unable to recur.
+
+**THE LIST IS DERIVED FROM THE DIRECTORY, NEVER TYPED.** That is the whole
+point, and it is the fourth time this file has had to write it down: `gl_codes`,
+`refunds`, `pii` and `sites` each reached the screen and not the PDF, each was
+fixed with a spec NAMING that one filter, and each of those specs was then
+satisfied by the next filter nobody added to it. *A guard you have to remember
+to extend is the thing that failed.* Add `scripts/foo.spec.js` with no step and
+the next run fails naming `foo` **and printing the YAML to write**.
+
+- **A SPEC NAMED ONLY IN A COMMENT DOES NOT COUNT**, and that is proven on a
+  synthetic workflow rather than asserted about the parse. `ci.yml` is thick
+  with comments that quote the things they describe, and this file already
+  records assertions tripped by a comment quoting the string they forbade —
+  so the parse reads `run:` lines and nothing else. A **commented-out** step
+  does not count either: that is a step somebody switched off.
+- **IT IS NOT js-yaml.** That parser resolves here only as a TRANSITIVE
+  dependency, so an unrelated `npm` change would make this **die with a module
+  error rather than fail by name** — the recorded rule that a guard which dies
+  has not told anyone what broke.
+- **A VACUOUS-DERIVATION ASSERTION RUNS FIRST**, because every claim below it
+  compares two derived sets: if the glob or the parse silently stops matching,
+  both collapse to empty and the whole file passes on nothing.
+- **`NOT_IN_CI` names each exemption WITH ITS REASON**, never a pattern — an
+  exemption that is a regex quietly widens into *"any spec I did not want to
+  wire"*, which is the hand-kept list this replaces. It is **empty today**. A
+  key naming a spec that no longer exists fails, or the next file to take that
+  name inherits a pass it never earned; so does a key for a spec that IS wired.
+- **It covers ITSELF**, or the guard is one rename away from being the thing it
+  guards against.
+
+**Mutation-tested eleven ways, all eleven caught by an assertion that names the
+defect**: a brand-new spec with no step (the bug itself), an existing step
+deleted, a step commented out, a step replaced by a comment mentioning it, the
+glob broken, the parse broken, a stale `NOT_IN_CI` key, a `NOT_IN_CI` entry with
+no reason, `NOT_IN_CI` used to excuse a spec that is wired, this guard's own step
+deleted, and a `run:` naming a spec that does not exist.
+
+**91 specs run from `ci.yml`, 91 pass, 0 fail, 0 skipped.** And my own suite
+runner reported **three skips that were not skips** — it matched the word
+*"skipped"* inside passing assertion labels (*"malformed rows are skipped without
+throwing"*). Nth instance of the recorded rule in a new costume: a runner that
+cannot tell the three states apart has not measured them. The number above is
+after reading what those three actually printed.
 
 **Mutation-tested 18 ways, 17 caught by an assertion that NAMES the defect**:
 the season share ignoring the season, pro-rata no longer dividing by the run

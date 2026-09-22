@@ -136,6 +136,15 @@ jobs:
       - name: Cache memory budget spec (the cap is BYTES, and boot obeys it while it loads)
         run: node scripts/cache-memory-budget.spec.js
 
+      # Which entries are worth holding resident, and the key they are held
+      # under. Both were unwired until 2026-09-22 and both pass; they are the
+      # residency and filename halves of the same cache the budget above bounds.
+      - name: Adaptive cache spec (residency follows what people actually open)
+        run: node scripts/adaptive-cache.spec.js
+
+      - name: Cache filename spec (one key builder; a parameter shift cannot split write from read)
+        run: node scripts/cache-filename.spec.js
+
 
       # One loading state across every report, and a progress bar whose estimate
       # is measured rather than invented. Lifts and RUNS both the curve and the
@@ -412,6 +421,17 @@ jobs:
 
       - name: Admin dashboard JS (inline blocks parse; every on*= handler resolves)
         run: node scripts/ci-check-admin-js.js
+
+      # THE GUARD OVER THE GUARDS, and it is here because this file is the one
+      # place a new spec has to be remembered. Cost Recovery shipped a
+      # 126-assertion spec, mutation-tested 18 ways, with no step naming it: it
+      # ran once on the author's machine and guarded nothing. The list is
+      # DERIVED from scripts/ rather than typed, because a hand-kept list is
+      # satisfied by forgetting to add to it — which is how this fails. Last in
+      # the job on purpose: it costs a second, and a full run has by then proved
+      # the steps it is counting actually work.
+      - name: Every spec is in CI (derived from scripts/, so a new one joins this on its own)
+        run: node scripts/spec-coverage.spec.js
 
   # The browser half. Split out on 2026-09-01: 223 render cases at ~2.8s each is
   # over ten minutes on its own, and it must never be the reason the spec suite
