@@ -151,6 +151,10 @@
   table.pl td.r, table.pl th.r { text-align: right; }
   table.pl tbody tr:hover { background: var(--rec-bg-secondary, #faf9f7); }
   table.pl tfoot td { padding: 8px; border-top: 2px solid var(--rec-border, #d9d5cf); font-weight: 700; background: var(--rec-bg-secondary, #faf9f7); }
+  /* The costed sub-total reads as a qualification of the row above it, not as
+     a second Total — lighter ink and a hairline rather than the 2px rule. */
+  table.pl tfoot tr.costed td { border-top: 1px solid var(--rec-border-subtle, #eceae6);
+    font-weight: 600; color: var(--rec-text-secondary, #6b6660); }
   .pname { font-weight: 600; }
   .pmeta { font-size: 10.5px; color: var(--rec-text-secondary, #6a6a6a); margin-top: 1px; }
 
@@ -498,6 +502,31 @@ function crRecovery(rev, cost) {
   return rev / cost * 100;
 }
 
+/* A RECOVERY RATE MAY ONLY BE TAKEN OVER PROGRAMMES THAT CARRY A COST, and
+   this is the one helper that enforces it.
+
+   Shrewsbury opened the report with 82 programmes and a cost typed on two of
+   them, and every rolled-up figure on the page was summing REVENUE over all 82
+   and COST over the two: the Total row read $202,024 against $7,378 and
+   printed a recovery of 2738%, the KPI strip said the same, and each tier's
+   bar was drawn the same way. Two different populations in one ratio — the
+   fee worksheet's own bug, one report over.
+
+   So the revenue in the numerator is the revenue of the programmes in the
+   denominator, the count travels with the figure, and the uncosted ones are
+   NAMED on screen rather than quietly inflating a rate.
+
+   It is NOT the column total and must not replace it: the Revenue column still
+   sums every row, because that is what the column holds. */
+function crCostedSum(rows) {
+  var s = { rev: 0, cost: 0, n: 0 };
+  (rows || []).forEach(function (r) {
+    if (!r || r.cost === null || r.cost === undefined) return;
+    s.rev += r.rev; s.cost += r.cost; s.n++;
+  });
+  return s;
+}
+
 /* ON TARGET IS INSIDE THE BAND. Comparing against `tgt` alone marks a tier-1
    program at 34% as under-performing when 34% sits squarely inside 25–50%,
    which is what tier 1 exists to do. ONE definition, read by the row chip, the
@@ -791,8 +820,15 @@ function crEsc(s) {
       if (r.p.revenue === 0) t.free++;
       if (!r.tier) t.untiered++;
     });
-    t.net = t.rev - t.cost;
-    t.recovery = t.cost > 0 ? t.rev / t.cost * 100 : null;
+    // t.rev is the REVENUE COLUMN's total, every row. Net and recovery are the
+    // COSTED programmes' — see crCostedSum — so that the figure a reader
+    // divides is the one it was divided by. crRecovery rather than the
+    // arithmetic inline, or the portfolio and the row cells can disagree about
+    // a zero cost.
+    var c = crCostedSum(d.rows);
+    t.costedRev = c.rev;
+    t.net = c.rev - t.cost;
+    t.recovery = crRecovery(c.rev, t.cost);
     // The blended target is COST-WEIGHTED, not a mean of the four tier targets:
     // a portfolio that is mostly tier 1 by spend should be judged mostly by
     // tier 1's band, and an unweighted mean would grade it against a mix it
@@ -904,8 +940,17 @@ function crEsc(s) {
     return '<span class="delta ' + (d >= 0 ? "up" : "down") + '">' + (d >= 0 ? "+" : "−") + fmt(Math.abs(d)) + "</span>";
   }
 
+  /* WHICH PROGRAMMES THE NET AND THE RECOVERY ARE OVER. The strip prints
+     all-programme revenue in the tile beside them, so leaving the population
+     unsaid is exactly how a rate taken over two costed programmes gets read as
+     the whole portfolio's. Empty once everything is costed — there is then
+     only one population and saying so is noise. */
+  function costedNote(t, n) {
+    return t.blank ? t.costed + " of " + n + " costed so far" : "";
+  }
+
   function renderKpis(d, dB) {
-    var t = totals(d);
+    var t = totals(d), note = costedNote(t, d.rows.length);
     if (dB) {
       var tb = totals(dB);
       $("kpis").innerHTML =
@@ -914,10 +959,13 @@ function crEsc(s) {
         + tile("Direct costs", t.cost > 0 ? crMoney(t.cost) : "—",
                tb.cost > 0 || t.cost > 0 ? deltaText(t.cost, tb.cost, crMoney) + " vs " + crEsc(dB.per.t) : "no costs entered yet")
         + tile(t.net >= 0 ? "Surplus" : "Shortfall", t.cost > 0 ? crMoney(t.net) : "—",
-               t.cost > 0 && tb.cost > 0 ? deltaText(t.net, tb.net, crMoney) + " vs " + crEsc(dB.per.t) : "enter a cost to compare")
+               t.cost > 0 && tb.cost > 0
+                 ? (note ? note + " · " : "") + deltaText(t.net, tb.net, crMoney) + " vs " + crEsc(dB.per.t)
+                 : "enter a cost to compare")
         + tile("Cost recovery", crPctText(t.recovery),
                t.recovery !== null && tb.recovery !== null
-                 ? deltaText(t.recovery, tb.recovery, function (n) { return Math.round(n) + " pts"; }) + " vs " + crEsc(dB.per.t)
+                 ? (note ? note + " · " : "")
+                   + deltaText(t.recovery, tb.recovery, function (n) { return Math.round(n) + " pts"; }) + " vs " + crEsc(dB.per.t)
                  : "needs a cost in both periods");
       return;
     }
@@ -928,7 +976,12 @@ function crEsc(s) {
       // what tells the department whether it broke even. Collapsing them into
       // one number loses the question each answers.
       var fullCost = t.cost + L.expense, fullRev = t.rev + L.income;
-      var full = fullCost > 0 ? fullRev / fullCost * 100 : null;
+      // The RATIO takes the costed programmes' revenue, for the reason
+      // crCostedSum exists; the Revenue TILE keeps every programme, because
+      // that is the money the department actually took. They are the same
+      // number once nothing is left to cost.
+      var fullRevOwn = t.costedRev + L.income;
+      var full = crRecovery(fullRevOwn, fullCost);
       $("kpis").innerHTML =
           tile("Revenue", crMoney(fullRev), L.income
                  ? crMoney(t.rev) + " from programs · " + crMoney(L.income) + " other income"
@@ -936,16 +989,17 @@ function crEsc(s) {
         + tile("Direct costs", t.cost > 0 ? crMoney(t.cost) : "—",
                t.blank ? t.blank + " of " + d.rows.length + " not costed yet" : "programs only")
         + tile("Overhead", crMoney(L.expense), L.placed + " line" + (L.placed === 1 ? "" : "s") + " in this period")
-        + tile(fullRev - fullCost >= 0 ? "Surplus" : "Shortfall", crMoney(fullRev - fullCost),
-               "after overhead · direct alone " + crMoney(t.net))
-        + tile("Cost recovery", crPctText(t.recovery), "direct · full cost " + crPctText(full));
+        + tile(fullRevOwn - fullCost >= 0 ? "Surplus" : "Shortfall", crMoney(fullRevOwn - fullCost),
+               "after overhead · direct alone " + crMoney(t.net) + (note ? " · " + note : ""))
+        + tile("Cost recovery", crPctText(t.recovery),
+               "direct · full cost " + crPctText(full) + (note ? " · " + note : ""));
       // The FIGURES, stamped. A render case keyed on the words "Overhead" and
       // "full cost" passes on a build that folds the overhead into the direct
       // cost tile — the numbers are the only thing that can tell those apart,
       // and the direct/full separation is what the tier bands depend on.
       $("kpis").setAttribute("data-cr-money",
         "direct=" + Math.round(t.cost) + " overhead=" + Math.round(L.expense)
-        + " fullrev=" + Math.round(fullRev) + " fullcost=" + Math.round(fullCost));
+        + " fullrev=" + Math.round(fullRevOwn) + " fullcost=" + Math.round(fullCost));
       return;
     }
     $("kpis").innerHTML =
@@ -953,28 +1007,33 @@ function crEsc(s) {
       + tile("Direct costs", t.cost > 0 ? crMoney(t.cost) : "—",
              t.blank ? t.blank + " of " + d.rows.length + " not costed yet" : "every program costed")
       + tile(t.net >= 0 ? "Surplus" : "Shortfall", t.cost > 0 ? crMoney(t.net) : "—",
-             t.cost > 0 ? "revenue less the costs entered" : "enter a cost to see this")
+             t.cost > 0 ? (note || "revenue less every cost entered") : "enter a cost to see this")
       + tile("Cost recovery", crPctText(t.recovery),
              t.recovery === null ? "needs at least one cost"
-               : t.target === null ? (t.untiered ? t.untiered + " untiered — no target yet" : "")
-               : "target " + crPctText(t.target) + " · "
-                 + (t.recovery >= t.target ? "ahead" : "behind") + " by " + Math.round(Math.abs(t.recovery - t.target)) + " pts");
+               : (note ? note + " · " : "")
+                 + (t.target === null ? (t.untiered ? t.untiered + " untiered — no target yet" : "")
+                    : "target " + crPctText(t.target) + " · "
+                      + (t.recovery >= t.target ? "ahead" : "behind") + " by " + Math.round(Math.abs(t.recovery - t.target)) + " pts"));
   }
 
   function renderTiers(d) {
     var agg = {};
     d.rows.forEach(function (r) {
       if (!CR_TIERS[r.tier]) return;
-      var a = agg[r.tier] = agg[r.tier] || { rev: 0, cost: 0, n: 0 };
-      a.rev += r.rev; a.n++;
-      if (r.cost !== null) a.cost += r.cost;
+      var a = agg[r.tier] = agg[r.tier] || { rev: 0, cost: 0, n: 0, costed: 0 };
+      a.n++;
+      // Revenue enters the bar only with its own cost beside it. A tier of
+      // twenty programmes with one costed would otherwise draw a bar out of
+      // that one's cost and all twenty's revenue — which is the bar the whole
+      // report is read against.
+      if (r.cost !== null) { a.rev += r.rev; a.cost += r.cost; a.costed++; }
     });
     var any = false;
     var html = [1, 2, 3, 4].map(function (t) {
       var T = CR_TIERS[t], a = agg[t];
       if (!a || !a.n) return "";
       any = true;
-      var rec = a.cost > 0 ? a.rev / a.cost * 100 : null;
+      var rec = crRecovery(a.rev, a.cost);
       var cap = Math.max(T.hi, rec || 0, 125);
       var w = rec === null ? 0 : Math.min(100, rec / cap * 100);
       var tick = Math.min(100, T.tgt / cap * 100);
@@ -982,7 +1041,8 @@ function crEsc(s) {
       var under = rec !== null && rec < T.lo;
       return '<div class="tier" data-cr-tier="' + t + '" data-cr-tier-rec="' + (rec === null ? "" : Math.round(rec)) + '">'
         + '<div class="nm"><b>Tier ' + t + " · " + crEsc(T.name) + "</b><br><i>" + crEsc(T.eg)
-        + " — " + a.n + " program" + (a.n === 1 ? "" : "s") + "</i></div>"
+        + " — " + a.n + " program" + (a.n === 1 ? "" : "s")
+        + (a.costed < a.n ? " · " + a.costed + " costed" : "") + "</i></div>"
         + '<div class="track"><div class="fillbar' + (under ? " under" : "") + '" style="width:' + w + '%"></div>'
         + '<div class="tick" style="left:' + tick + '%" title="target ' + T.tgt + '%"></div></div>'
         + '<div class="fig">' + (rec === null ? "<b>—</b> <span>not costed</span>"
@@ -1075,22 +1135,44 @@ function crEsc(s) {
   // on screen, which is what the table itself does — totals(dB) would sum every
   // programme the other quarter had, including ones this one does not show.
   function renderTableFoot(d, dB) {
-    var rev = 0, cost = 0, any = false, revB = 0, bBy = {};
-    if (dB) dB.rows.forEach(function (r) { bBy[r.p.key] = r; });
-    d.rows.forEach(function (r) {
-      rev += r.rev;
-      if (r.cost !== null) { cost += r.cost; any = true; }
-      var b = bBy[r.p.key]; if (b) revB += b.rev;
-    });
-    $("tfoot").innerHTML = d.rows.length
-      ? '<tr><td></td><td>Total · ' + d.rows.length + " programs</td><td></td><td></td>"
-        + '<td class="r num" data-cr-total-rev="' + Math.round(rev) + '">' + crMoney(rev)
-        + (dB ? '<div class="pmeta">' + deltaText(rev, revB, crMoney) + "</div>" : "") + "</td>"
-        + '<td class="r num">' + (any ? crMoney(cost) : "—") + "</td>"
-        + '<td class="r num">' + (any ? crMoney(rev - cost) : "—") + "</td>"
-        + '<td class="r num" data-cr-total-rec="' + (any && cost > 0 ? Math.round(rev / cost * 100) : "") + '">'
-        + (any && cost > 0 ? crPctText(rev / cost * 100) : "—") + "</td><td></td></tr>"
-      : "";
+    var t = totals(d), revB = 0, bBy = {};
+    if (dB) {
+      dB.rows.forEach(function (r) { bBy[r.p.key] = r; });
+      d.rows.forEach(function (r) { var b = bBy[r.p.key]; if (b) revB += b.rev; });
+    }
+    /* TWO POPULATIONS, TWO ROWS, rather than one row whose figures cannot be
+       checked against each other. The Total row totals each COLUMN: revenue
+       over every programme, cost over the ones that have one. On a portfolio
+       still being costed those two cannot make a net or a rate between them,
+       so Net and Recovery sit on a second row that names the programmes they
+       ARE computed over and whose own arithmetic ties.
+
+       Once every programme is costed the two populations are the same one and
+       the second row is not rendered at all. */
+    var pct = function (n) {
+      return '<td class="r num" data-cr-total-rec="'
+        + (n === null || !Number.isFinite(n) ? "" : Math.round(n)) + '">' + crPctText(n) + "</td>";
+    };
+    var money = function (v) { return '<td class="r num">' + (v === null ? "—" : crMoney(v)) + "</td>"; };
+    var split = t.blank > 0 && t.costed > 0;
+    var html = "";
+    if (d.rows.length) {
+      html = '<tr><td></td><td>Total · ' + d.rows.length + " program" + (d.rows.length === 1 ? "" : "s")
+        + "</td><td></td><td></td>"
+        + '<td class="r num" data-cr-total-rev="' + Math.round(t.rev) + '">' + crMoney(t.rev)
+        + (dB ? '<div class="pmeta">' + deltaText(t.rev, revB, crMoney) + "</div>" : "") + "</td>"
+        + money(t.costed ? t.cost : null)
+        + (split ? '<td class="r num">—</td><td class="r num">—</td>'
+                 : money(t.costed ? t.net : null) + pct(t.costed ? t.recovery : null))
+        + "<td></td></tr>";
+      if (split) {
+        html += '<tr class="costed"><td></td><td>Costed · ' + t.costed + " of " + d.rows.length
+          + '</td><td></td><td></td>'
+          + '<td class="r num" data-cr-costed-rev="' + Math.round(t.costedRev) + '">' + crMoney(t.costedRev) + "</td>"
+          + money(t.cost) + money(t.net) + pct(t.recovery) + "<td></td></tr>";
+      }
+    }
+    $("tfoot").innerHTML = html;
     var need = d.rows.filter(function (r) { return r.cost === null; }).length;
     $("rowCount").textContent = d.rows.length + " program" + (d.rows.length === 1 ? "" : "s")
       + " · " + need + " still need a cost";

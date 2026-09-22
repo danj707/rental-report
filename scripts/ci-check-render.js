@@ -3274,6 +3274,95 @@ const CASES = [
         + " rowStillOnScreen=" + after.onScreen + " · droppedOnBlur=" + gone);
     } },
 
+  /* A RATE OVER TWO POPULATIONS. Dan opened Shrewsbury's report with 82
+     programmes and a cost typed on two, and the Total row read $202,024
+     against $7,378 with a recovery of 2738% — revenue summed over all 82,
+     cost over the two, and a net and a rate made out of the pair. The KPI
+     strip said the same and every tier bar was drawn the same way.
+
+     The quarter view is the fixture's own version of that state: 4 programmes,
+     3 costed. ONE NUMBER SEPARATES THE TWO BUILDS — the shipped one makes
+     $60,908 / $91,895 into −$30,987 and 66%, the fixed one withholds both from
+     the Total row and puts −$40,987 and 55% on a row that names the three
+     programmes they are computed over. A case keyed on "a Total row rendered",
+     or on the revenue alone, passes on the bug.
+
+     Three claims, because each alone passes on part of it:
+       - the Total row totals its COLUMNS and withholds what it cannot make;
+       - the Costed row's own arithmetic ties (50,908 − 91,895 = −40,987);
+       - the KPI recovery is the costed one, and says so. */
+  { name: "cost-recovery · a rate is taken over the programs that carry a cost",
+    path: "/{org}/cost-recovery",
+    needs: 'body[data-rc-costedrate-seen^="ok=1 "]',
+    act: async (page) => {
+      await page.waitForSelector('body[data-cr-seen*="mode=season"]', { timeout: 20000 });
+      await page.click('#modeSeg button[data-mode="quarter"]');
+      await page.waitForFunction(
+        () => /mode=quarter/.test(document.body.getAttribute("data-cr-seen") || ""),
+        { timeout: 20000 });
+      const r = await page.evaluate(() => {
+        const txt = (el) => (el ? (el.textContent || "").replace(/\s+/g, "") : "");
+        const rows = [...document.querySelectorAll("#tfoot tr")];
+        const cells = (tr) => [...tr.children].map(txt);
+        const costed = document.querySelector("#tfoot tr.costed");
+        return {
+          footRows: rows.length,
+          total: rows[0] ? cells(rows[0]) : [],
+          costed: costed ? cells(costed) : [],
+          costedRev: costed ? +costed.querySelector("[data-cr-costed-rev]").getAttribute("data-cr-costed-rev") : -1,
+          rec: costed ? +costed.querySelector("[data-cr-total-rec]").getAttribute("data-cr-total-rec") : -1,
+          kpis: [...document.querySelectorAll("#kpis > *")].map(e => (e.textContent || "").replace(/\s+/g, " ").trim()),
+        };
+      });
+      const kpiRec = r.kpis.find(t => /^Cost recovery/.test(t)) || "";
+      const kpiNet = r.kpis.find(t => /^(Surplus|Shortfall)/.test(t)) || "";
+      const ok = r.footRows === 2
+        // The Total row totals each column and makes nothing out of the pair.
+        && r.total[4] === "$60,908" && r.total[5] === "$91,895"
+        && r.total[6] === "\u2014" && r.total[7] === "\u2014"
+        // ...and the row that carries a net and a rate names its own population
+        // and ties: 50,908 - 91,895 = -40,987.
+        && /Costed\u00b73of4/.test(r.costed[1]) && r.costed[4] === "$50,908"
+        && r.costed[5] === "$91,895" && r.costed[6] === "\u2212$40,987" && r.costed[7] === "55%"
+        && r.costedRev === 50908 && r.rec === 55
+        // 66% is the shipped build's figure. The strip must not carry it either.
+        && /55%/.test(kpiRec) && !/66%/.test(kpiRec) && /3 of 4 costed/.test(kpiRec)
+        && /\u2212\$40,987/.test(kpiNet) && /3 of 4 costed/.test(kpiNet);
+      await page.evaluate((v) => document.body.setAttribute("data-rc-costedrate-seen", v),
+        (ok ? "ok=1 " : "ok=0 ") + "footRows=" + r.footRows
+        + " total=" + JSON.stringify(r.total.slice(4, 8))
+        + " costed=" + JSON.stringify(r.costed.slice(1, 8))
+        + " costedRevAttr=" + r.costedRev + " recAttr=" + r.rec
+        + " kpiRecovery=" + JSON.stringify(kpiRec) + " kpiNet=" + JSON.stringify(kpiNet));
+    } },
+
+  /* ...and with nothing left to cost there is ONE population, so the second
+     row must NOT be there. Without this a build that always renders it passes
+     the case above while telling an org that has costed everything that only
+     some of it is costed. Spring/Summer 26 is 2 programmes, both costed. */
+  { name: "cost-recovery · a fully costed period gets one total row, not two",
+    path: "/{org}/cost-recovery",
+    needs: 'body[data-rc-onetotal-seen^="ok=1 "]',
+    act: async (page) => {
+      await page.waitForSelector('body[data-cr-seen*="mode=season"]', { timeout: 20000 });
+      await page.select("#periodSel", "Spring/Summer 26");
+      await page.waitForFunction(
+        () => /period=Spring/.test(document.body.getAttribute("data-cr-seen") || ""),
+        { timeout: 20000 });
+      const r = await page.evaluate(() => {
+        const txt = (el) => (el ? (el.textContent || "").replace(/\s+/g, "") : "");
+        const rows = [...document.querySelectorAll("#tfoot tr")];
+        return { footRows: rows.length, costedRows: document.querySelectorAll("#tfoot tr.costed").length,
+                 total: rows[0] ? [...rows[0].children].map(txt) : [] };
+      });
+      const ok = r.footRows === 1 && r.costedRows === 0
+        && r.total[4] === "$23,000" && r.total[5] === "$60,000"
+        && r.total[6] === "\u2212$37,000" && r.total[7] === "38%";
+      await page.evaluate((v) => document.body.setAttribute("data-rc-onetotal-seen", v),
+        (ok ? "ok=1 " : "ok=0 ") + "footRows=" + r.footRows + " costedRows=" + r.costedRows
+        + " total=" + JSON.stringify(r.total.slice(4, 8)));
+    } },
+
   { name: "cost-recovery · a quarter pro-rates each program across its run",
     path: "/{org}/cost-recovery",
     needs: 'body[data-cr-seen*="mode=quarter"][data-cr-seen*="rows=4 rev=60908"]',

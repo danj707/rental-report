@@ -49,6 +49,7 @@ guard("lifting the helper block", () => {
   new Function(lifted + `
     ;this.crFyOf=crFyOf;this.crPeriods=crPeriods;this.crShare=crShare;this.crDays=crDays;
     this.crRecovery=crRecovery;this.crChipState=crChipState;this.crRollup=crRollup;
+    this.crCostedSum=crCostedSum;
     this.crCostDollars=crCostDollars;this.crLedgerSlice=crLedgerSlice;this.crMoney=crMoney;this.crPctText=crPctText;
     this.CR_TIERS=CR_TIERS;this.CR_CATS=CR_CATS;`).call(H);
 });
@@ -123,6 +124,89 @@ eq(H.crRecovery(1000, null), null, "no cost yields no percentage, not 0%");
 eq(H.crRecovery(1000, 0), Infinity, "revenue against a zero cost is not a percentage");
 eq(H.crRecovery(0, 0), null, "no money either way yields nothing to state");
 eq(H.crRecovery(700, 800), 87.5, "700 against 800 is 87.5%");
+
+/* ── A RATE IS TAKEN OVER THE PROGRAMMES THAT CARRY A COST ──────────────
+   Dan opened Shrewsbury's report with 82 programmes and a cost typed on two:
+   the Total row read $202,024 against $7,378 and printed a recovery of 2738%,
+   the KPI strip said the same, and every tier bar was drawn the same way.
+   Revenue summed over all 82, cost over the two — two populations in one
+   ratio, the fee worksheet's own bug one report over.
+
+   Three reducers had their own copy of that sum, which is why it shipped.
+   crCostedSum is the one predicate now, and these run it rather than reading
+   it: every defect here is a comparison, and a regex passes on an inverted
+   one. */
+const cs = guard("crCostedSum over a part-costed portfolio", () => H.crCostedSum([
+  { rev: 20000, cost: 50000 },   // costed
+  { rev: 10000, cost: null },    // not costed — the one the bug counted
+  { rev: 3000,  cost: 10000 },   // costed
+])) || {};
+eq(cs.rev, 23000, "only the costed programmes' revenue enters the numerator");
+eq(cs.cost, 60000, "the denominator is those same programmes' cost");
+eq(cs.n, 2, "and the count travels with them, so the page can name the population");
+eq(guard("crCostedSum recovery", () => H.crRecovery(cs.rev, cs.cost)), 38.333333333333336,
+   "23,000 against 60,000 is 38% — the shipped build divided 33,000 by 60,000 and said 55%");
+
+const csNone = guard("crCostedSum with nothing costed", () => H.crCostedSum([
+  { rev: 10000, cost: null }, { rev: 5000, cost: undefined },
+])) || {};
+eq(csNone.rev, 0, "nothing costed contributes no revenue");
+eq(csNone.n, 0, "...and no programmes");
+eq(guard("crCostedSum recovery with nothing costed", () => H.crRecovery(csNone.rev, csNone.cost)), null,
+   "which yields no percentage rather than 0%");
+eq(guard("crCostedSum on an empty period", () => (H.crCostedSum([]) || {}).n), 0,
+   "an empty period is zero, not a throw");
+eq(guard("crCostedSum on a malformed row", () => (H.crCostedSum([null, undefined, { rev: 1, cost: 2 }]) || {}).n), 1,
+   "a malformed row is skipped rather than throwing");
+
+/* The three readers, each SCOPED to its own function — a file-wide test is
+   satisfied by whichever one still happens to call the helper. */
+function slice(src, from, to, label) {
+  const i = src.indexOf(from);
+  ok(i > -1, label + ": the slice's start was found, or every assertion over it is vacuous");
+  if (i < 0) return "";
+  const j = src.indexOf(to, i + from.length);
+  ok(j > -1, label + ": the slice's end was found");
+  return j < 0 ? src.slice(i) : src.slice(i, j);
+}
+
+const totalsFn = slice(PAGE, "function totals(d) {", "window.__crSliceFor", "totals");
+ok(/crCostedSum\(d\.rows\)/.test(totalsFn),
+   "totals takes its net and its rate over the costed programmes");
+ok(/t\.net = c\.rev - t\.cost/.test(totalsFn) && !/t\.net = t\.rev - t\.cost/.test(totalsFn),
+   "...so the portfolio net is not all-programme revenue less a partial cost");
+ok(/t\.recovery = crRecovery\(c\.rev, t\.cost\)/.test(totalsFn),
+   "...and the rate goes through crRecovery, so it cannot disagree with a row cell about a zero cost");
+ok(/t\.rev \+= r\.rev/.test(totalsFn),
+   "the REVENUE COLUMN's own total is still every row — the fix must not shrink the column");
+
+const footFn = slice(PAGE, "function renderTableFoot(d, dB) {", "function patchRow", "renderTableFoot");
+ok(/var t = totals\(d\)/.test(footFn),
+   "the Total row reads the one reducer rather than summing the rows a second way");
+ok(/var split = t\.blank > 0 && t\.costed > 0/.test(footFn),
+   "the second row appears only while some programmes are costed and some are not");
+ok(/split \?[\s\S]{0,120}\\u2014<\/td>/.test(footFn) || /split \?[\s\S]{0,120}—<\/td>/.test(footFn),
+   "the Total row withholds the net and the rate it cannot make from two populations");
+ok(/Costed \\u00b7|Costed ·/.test(footFn),
+   "...and the row that carries them names how many programmes they are over");
+
+const tiersFn = slice(PAGE, "function renderTiers(d) {", "var CHIP", "renderTiers");
+ok(/if \(r\.cost !== null\) \{ a\.rev \+= r\.rev/.test(tiersFn),
+   "a tier's bar counts revenue only with its own cost beside it");
+ok(!/a\.rev \+= r\.rev; a\.n\+\+/.test(tiersFn),
+   "...so a tier of twenty programmes with one costed cannot draw a bar out of all twenty's revenue");
+ok(/crRecovery\(a\.rev, a\.cost\)/.test(tiersFn),
+   "and the tier rate goes through the same helper as everything else");
+
+const kpiFn = slice(PAGE, "function renderKpis(d, dB) {", "function renderTiers", "renderKpis");
+ok(/costedNote\(t, d\.rows\.length\)/.test(kpiFn),
+   "the strip works out which programmes its net and rate are over");
+eq((kpiFn.match(/note \? note/g) || []).length >= 3, true,
+   "...and says so on the surplus and the recovery tiles rather than leaving it to be inferred");
+ok(/fullRevOwn = t\.costedRev \+ L\.income/.test(kpiFn),
+   "full-cost recovery takes the same population as direct recovery");
+ok(/tile\("Revenue", crMoney\(fullRev\)/.test(kpiFn),
+   "...while the Revenue tile still shows every programme's money, which is what the department took");
 
 // ── ON TARGET IS INSIDE THE BAND, not above its midpoint ───────────────
 // This is the defect a visual review caught in the mockup: tier 1 at 34% was

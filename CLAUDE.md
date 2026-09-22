@@ -8280,6 +8280,118 @@ runner restores from the bytes it saved, so a successful write would have been
 silently reverted. *Check nothing is holding a file before editing it, and keep
 the anchor assertions strict enough to notice.*
 
+### A RATE OVER TWO POPULATIONS — the Total row read 2738% (2026-09-22)
+
+Dan, with the bottom of the Programs table on screen: *"alignment issues on the
+bottom. these should all be dollars"* — over a Total row reading
+`Total · 82 programs · $202,024 · $7,378 · $194,646 · 2738%`, above a footnote
+saying **80 still need a cost**.
+
+**THE COLUMNS ARE NOT MISALIGNED, AND THAT WAS MEASURED BEFORE ANYTHING WAS
+CHANGED.** A browser was driven at the real page and the bounding boxes of the
+header, the Total row and a body row read back: **9 cells each, identical left
+and right edges to the pixel**, in three different states (everything costed,
+nothing costed, and a fattened 82-row fixture at 1600px). So there is no
+`colspan` off-by-one here — which is worth saying plainly, because that IS the
+recorded failure for this symptom (*"adding a column is the change that shifts
+a footer"*) and it is the first place anybody would look.
+
+**WHAT IS WRONG IS THE ARITHMETIC: revenue was summed over all 82 programmes
+and cost over the two that had one.**
+
+```js
+d.rows.forEach(function (r) {
+  rev += r.rev;                                   // every programme
+  if (r.cost !== null) { cost += r.cost; }        // the two that are costed
+});
+…rev / cost * 100                                 // 2738%
+```
+
+Two different populations in one ratio — **the fee worksheet's own bug, one
+report over**, where the fixed fee stayed org-wide while every other fee shrank.
+`$194,646` is not a net of anything and `2738%` is not a recovery rate.
+
+### THREE REDUCERS HAD THEIR OWN COPY, which is why it shipped
+
+`totals()` (the KPI strip), `renderTableFoot()`'s own loop (the Total row) and
+`renderTiers()`'s `agg` (the ladder) each summed the rows separately and each
+made the same mistake. **The tier ladder is the one that matters most: it is
+the surface the whole report is drawn against**, and a tier holding twenty
+programmes with one costed was drawing its bar out of that one's cost and all
+twenty's revenue.
+
+`crCostedSum(rows)` is the one predicate now, at module scope beside
+`crRecovery` so a spec can RUN it. **The revenue in the numerator is the revenue
+of the programmes in the denominator**, and the count travels with the figure so
+the page can name the population.
+
+- **IT IS NOT THE COLUMN TOTAL AND MUST NOT REPLACE IT.** The Revenue column
+  still sums every row, because that is what the column holds. `t.rev` is
+  unchanged; `t.costedRev` is new.
+- **The rate goes through `crRecovery`**, not the arithmetic inline, or the
+  portfolio and the row cells can disagree about a zero cost.
+
+### TWO POPULATIONS, TWO ROWS — and the second one disappears
+
+A single row whose Revenue, Cost and Net cannot be checked against each other is
+its own contradiction, so the footer splits:
+
+| | Revenue | Cost | Net | Recovery |
+|---|---|---|---|---|
+| `Total · 82 programs` | all 82 | the costed | **—** | **—** |
+| `Costed · 2 of 82` | the costed | the costed | ties | a real rate |
+
+**Once every programme is costed the two populations are the same one and the
+second row is not rendered at all**, which is the state the fixture's
+Spring/Summer 26 period is in — so a build that always renders it fails a case
+by name rather than telling an org that has costed everything that only some of
+it is costed.
+
+**The KPI strip names the population too** (`costedNote`), on the surplus and
+the recovery tiles. It prints all-programme revenue in the tile beside them, so
+leaving it unsaid is exactly how a rate over two programmes gets read as the
+whole portfolio's — the recorded lesson from the Programs summary, where *the
+arithmetic was fine and the labels were the defect*. **Full-cost recovery takes
+the same population**; the Revenue tile does not, because that is the money the
+department actually took.
+
+### Guards
+
+`scripts/cost-recovery.spec.js` 126 → **158 assertions**, in CI, which LIFTS AND
+RUNS `crCostedSum` — every defect here is a comparison and a regex passes on an
+inverted one — plus assertions **scoped to each of the four readers**, since a
+file-wide test is satisfied by whichever one still happens to call the helper.
+Each slice carries a was-it-found assertion ahead of it.
+
+**Two `ci-check-render` cases, and ONE NUMBER separates the two builds.** The
+fixture's quarter view is 4 programmes with 3 costed: the shipped build makes
+`$60,908 / $91,895` into **−$30,987 and 66%**, the fixed one withholds both from
+the Total row and puts **−$40,987 and 55%** on a row naming the three
+programmes they are over. A case keyed on *"a Total row rendered"*, or on the
+revenue alone, passes on the bug — which is why all thirteen existing cases did.
+
+**Mutation-tested six ways, all six caught by an assertion that names the
+defect**: the bug exactly as it shipped, `crCostedSum` counting the uncosted
+rows' revenue, the Total row printing a net and a rate it cannot make, the
+costed row rendered when nothing is left to cost, the KPI strip no longer naming
+the population, and full-cost recovery reverting to all-programme revenue.
+
+**THE TIER LADDER'S GUARD IS A SOURCE ASSERTION, and it is named as such rather
+than implied.** No fixture period has a tier holding both a costed and an
+uncosted programme — a tier comes from the cost record, so an uncosted
+programme is usually untiered — and giving one a tier-only record would break
+the existing *"an uncosted program says so"* case, which asserts the untiered
+note. So that mutation SURVIVES all fifteen render cases and is caught by the
+spec's scoped slice of `renderTiers`.
+
+### NOT DONE
+
+- **The alignment complaint is answered with a measurement, not a change.** If
+  Dan was pointing at something else on that screen, the geometry numbers above
+  are what to re-read first.
+- **No second footer row on the Ledger tab.** Its roll-ups are over rows that
+  all carry an amount, so there is one population there and nothing to split.
+
 ## Working preferences (from Dan, dan@rec.us)
 
 - **Every finished task is reported in the TEMPLATE** — one or two sentences,
