@@ -354,6 +354,202 @@ tests membership now, with a was-it-found assertion ahead of it.
 - **The rollup's own filters are untouched.** This changes nothing outside the
   fee mode.
 
+## ONE SUBSCRIPTION COULD ONLY CARRY ONE OF THE THREE DOCUMENTS (2026-09-22)
+
+Dan, with the subscribe modal open on the GL report: *"need to be able to
+support signing up for emails for the gl code report and/or turnover and/or fee
+allocation breakdown. Goal is I'm a danvers admin and I select to receive all 3,
+or 2, or just 1 report on a specific cadence. 1 works now, but we need to
+support up to all three."*
+
+**AND "1 WORKS NOW" WAS GENEROUS — the one it sent was always the ROLLUP.**
+`buildFilterParams` carried desks, GL codes, tenders and `refunds`, and it has
+never carried `tyler` or `fees`. So a Danvers admin who clicked 📧 Email while
+reading the fee worksheet subscribed to the plain table, silently, and found out
+on the following Monday. **Fifth instance of the four-gate pattern already
+recorded here for `gl_codes`, `refunds`, `pii` and `sites`** — `generatePdf` has
+forwarded both mode parameters since the day each shipped, and every one of
+those gates passed; the subscription is a FIFTH surface, and it was the one that
+never asked.
+
+### THE MODEL COULD NOT EXPRESS IT — `reportParams` is one string per REPORT
+
+A subscription stores `reports: ["gl"]` and `reportParams.gl: "<query string>"`.
+The three documents are the same report TYPE with a mode parameter, so that
+field can hold exactly one of them. There is no place to put "and also the
+worksheet".
+
+**The tempting fix is three subscriptions**, and it is wrong for one reason that
+only shows up later: the admin panel would list three rows with the same
+address, the same cadence and the same filters, distinguishable only by an
+obscure query string — and unsubscribing, or moving from weekly to monthly,
+becomes three clicks that a reader has no way to know belong together. Dan asked
+to *select* two or three, which is one decision.
+
+So a subscription carries **variant KEYS**, `reportVariants: { gl: [...] }`, and
+the server owns the vocabulary (`REPORT_EMAIL_VARIANTS`). Keys rather than param
+strings, for three reasons the strings could not give:
+
+- the server can **label** each email, so three GL emails do not arrive under
+  one subject line;
+- it can **refuse** a key for an org that is not switched on for that mode —
+  stored as a string, `tyler=1` would arrive as the rollup wearing another name;
+- the page is **handed** the list rather than growing its own copy, which is the
+  rule that exists because `gl.html` hardcoded its saved-view range list and
+  offered *"Today"*, which the server had always refused, for months.
+
+### `[null]` IS THE ANSWER FOR EVERY SUBSCRIPTION THAT PREDATES THIS
+
+`resolveEmailVariants` returns `[null]` — one send, params exactly as saved —
+for an absent list, an empty list, an unknown key, and every report with no
+registry. **The two ways to get that wrong are not symmetric and both are
+silent**: returning the whole registry starts mailing three documents to
+everybody already subscribed to one, and returning `[]` stops mailing anything
+at all. The spec drives both.
+
+### THE FEE VARIANT DROPS THE FILTERS IT CANNOT HONOUR
+
+`drops: ["gl_codes", "methods", "glq", "refunds"]`. The worksheet is priced from
+the desk-scoped rows and those three controls are **absent from that mode on
+screen** — the fix one section up. Carrying them into the subscription would
+file a narrowing the document does not apply: the same contradiction arriving by
+the other door, and invisible, because the email would look filtered and the
+numbers would not be. **The desk filter stays**, for the reason it stayed on
+screen: a `transaction_event_id` has exactly one desk, so a desk-scoped
+worksheet genuinely reconciles to that desk's own bill.
+
+**AND EVERY VARIANT STRIPS THE OTHER MODES FIRST.** A saved string can already
+carry `fees=1`, and without the strip every variant would inherit it — three
+emails, one document, three names. The rollup, whose own params are empty, is
+exactly the case that needs it.
+
+### THREE EMAILS, NOT ONE WITH THREE ATTACHMENTS
+
+Each already has its own subject, its own PDF filename and its own "view online"
+link, and the scheduler already sends one email per report for a two-report
+subscription, so this is the shape the system had. The load-bearing reason is
+failure: **a PDF that does not build must not take the other two down with it**,
+and a per-document send log is what says which one it was.
+
+- **`reportVariants` is DELIBERATELY not part of the dedup key.** Same address,
+  same cadence, same filters IS the same subscription — coming back and ticking
+  a third document updates that row. Which means it has to be written
+  **explicitly** in the update branch: the `{ ...subs[idx] }` spread would
+  otherwise carry the old set straight past a save that meant to change it, and
+  the mutation that deletes it fails by name.
+- **A mode parameter is not a filter.** The subject's `(N filters)` counter read
+  the URL, so an unfiltered fee worksheet announced itself as *"(1 filter)"* —
+  a narrowing that is not there.
+- **The modal opens on the document you are looking at.** Seeded on every open
+  rather than once at mount, or clicking Email from the worksheet subscribes you
+  to the rollup.
+- **Nothing ticked disables both buttons.** An empty list resolves to a single
+  as-saved send on the server, so a live button would mail the rollup to
+  somebody who had just said they did not want it.
+- **No picker where there is one shape.** Absent, not a lone ticked checkbox
+  over the only document the org can receive.
+- **Send Test sends one email PER ticked shape.** Ticking three and previewing
+  one is the same failure the `reportParams` override exists to prevent, one
+  dimension over.
+- **Slack keys by DOCUMENT and names it.** The email debounce key already
+  carried the recipient, *"so a daily run to several subscribers posts each
+  send, instead of collapsing them into one line"* — three documents to one
+  address in one minute is the same argument, and without the variant in that
+  key the feed posted the first and swallowed the other two. The label is looked
+  up from the registry at post time rather than stored on the row, so renaming a
+  variant does not redefine every event already in the log — the `campmap-book`
+  `kind` rule.
+
+### TURNOVER IS ON FOR EVERY ORG BY DEFAULT, which I got wrong first
+
+`getTylerConfig` reads `(slug in flags) ? !!flags[slug] : true` — so the
+treasurer turnover view is available everywhere unless a flag says otherwise,
+unlike Fee Allocation, which ships off. Two render cases were written on the
+opposite assumption and **the render check is what said so**, not review. The
+consequence is that no fixture org had a single shape, so the harness now writes
+`tyler-orgs.json` switching turnover OFF for `render-check-aquatics` — the one
+org that can prove the picker is absent rather than rendering a lone checkbox.
+
+### Guards
+
+`scripts/email-report-variants.spec.js` (**90 assertions, in CI**), which LIFTS
+AND RUNS the registry and its three helpers — every defect here is a merge or a
+comparison, and a regex passes on an inverted one. `SKIP_SOURCE=1` drops the
+source half, `SKIP_LIVE=1` the live one.
+
+**The live half boots a REAL server against a fixture store** with
+`RESEND_API_KEY` unset, so each send prints its own STUB line: three ticked
+shapes produce **three stub lines under three different names**, which is the
+whole feature and is not a claim any source assertion can make. It also proves
+the row count (one, not three), that re-subscribing with fewer shapes UPDATES
+that row, and that an org which cannot render a mode has it dropped at the door.
+
+**IT ALSO STANDS UP A FAKE SLACK**, the shape `surveys.spec.js` already uses:
+`notifySlack` early-returns on an empty `SLACK_WEBHOOK_URL`, so with the webhook
+unset *"the code mentions the label"* is all anyone has proved. **Every source
+form of that assertion here was satisfied by DEAD CODE** — a mutation that
+computed the label and then dropped it kept both the registry lookup and the
+`${vSuffix}` interpolations intact, and survived twice. The captured posts are
+what settles it: three lines, each naming its own document.
+
+**Mutation-tested 24 ways, all failing by an assertion that names the defect**:
+the scheduler sending only the first variant (the bug as it stood), the other
+modes not stripped, the fee variant carrying filters it cannot honour, `drops`
+emptied, an empty list meaning send-everything and meaning send-nothing, no
+variant losing the saved params, the org gates ignored, every email titled by
+its report type again, the update branch losing the set to its own spread, the
+subscribe route trusting whatever keys arrive, the test send previewing only the
+first shape and ignoring the modal entirely, a mode parameter counted as a
+filter, the page growing its own vocabulary, the picker rendering over a single
+shape, Subscribe and Send Test each dropping the ticked shapes, nothing-ticked
+still subscribing, the modal always opening on the rollup, `generatePdf` no
+longer forwarding `fees`, the admin card no longer showing the shapes, three
+documents collapsing into one Slack line, and Slack no longer saying which one
+went out.
+
+**THE LIVE HALF ALONE CATCHES EIGHT OF THOSE** — the org gate, the label, the
+spread, the route's validation, both test-send defects and both Slack ones, i.e.
+exactly the ones a regex can be satisfied by different code. **It does NOT cover
+the cron loop**, which is not reachable without a scheduler; that one is a source
+assertion and is named as such rather than implied.
+
+**One of my own assertions was satisfied by DEAD CODE**, found by mutation: a
+bare `/modeKeys/` test passed on a build that still declared the variable and
+stopped using it. Scoped to the filter predicate. **And one of my own comments
+tripped its own guard**, Nth instance — the comment explaining why
+`reportVariants` is out of the dedup key sat inside a proximity test for exactly
+that word. The assertion slices the dedup predicate itself now.
+
+**Five `ci-check-render.js` cases, because no source assertion can see any of
+this**: the picker reads correctly whichever list it is handed, a ticked
+checkbox and an unticked one are the same markup, and a disabled Subscribe
+button and a live one differ only once React has rendered them.
+Browser-mutation-tested five ways, each failing **exactly** the case that names
+it while a neighbour keeps passing.
+
+**AND THE NOTHING-TICKED CASE COULD NOT DISCRIMINATE AT FIRST.** Subscribe is
+disabled on an empty email box whatever the checkboxes say, so the first draft
+passed with the variant check deleted. It types a valid address and waits for
+the button to go live BEFORE unticking. *Plausible is not the same as
+discriminating* — the recorded lesson, re-learned.
+
+86 specs pass, 0 fail (the two store specs skip without `STORE_TEST_URL`,
+which is their documented behaviour); **444 of 444 render cases** green.
+
+### NOT DONE
+
+- **The admin panel's own add-subscriber form still creates a rollup-only
+  subscription.** It is a different surface with its own report picker, and
+  Dan's ask was the report page; a subscription made there behaves exactly as it
+  did before. The panel DISPLAYS the shapes, so a multi-document subscription is
+  legible there and its Test button previews all of them.
+- **The three emails are three messages.** One message with three attachments is
+  arguably nicer and needs a second email template plus a rule for what a
+  partial failure looks like — a decision, not a refactor.
+- **The search box still does not reach a subscription at all.** `glq` is in the
+  fee variant's `drops` list defensively; `buildFilterParams` has never sent it.
+  Pre-existing, and its own change.
+
 ## THE REMITTANCE WORKSHEET DANVERS REBUILT BY HAND EVERY WEEK (2026-09-21)
 
 Dan: *"for our GL code rollup report, how hard would it be to add this into our

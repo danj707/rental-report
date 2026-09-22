@@ -2277,6 +2277,20 @@ const pickLocation = async (page, value) => {
 // `isOpen && p.sections.map(...)`, so nothing under a collapsed group exists in
 // the DOM — the first draft of the CSV cases waited 45s on a selector that could
 // never appear, and the render check is what said so.
+// Open the GL report's subscribe modal. The whole dialog is behind
+// `showEmailModal`, so nothing inside it exists in the DOM until the button is
+// clicked — the same trap that left four Fast Track cases waiting 45s on a
+// selector that could never appear.
+const openEmailModal = async (page) => {
+  await page.waitForSelector("[data-glcode-btn], [data-fee-sheet]", { timeout: 45000 });
+  const btns = await page.$$("button");
+  for (const b of btns) {
+    const t = await page.evaluate(e => e.textContent, b);
+    if (t && t.includes("Email")) { await b.click(); await page.waitForSelector("[data-send-test]", { timeout: 10000 }); return; }
+  }
+  throw new Error("no 📧 Email button");
+};
+
 const openFtProgram = async (page, program) => {
   await page.waitForSelector(`[data-ft-progrow="${program}"]`, { timeout: 45000 });
   await page.click(`[data-ft-progrow="${program}"]`);
@@ -6348,6 +6362,59 @@ const CASES = [
     path: `/${AQ_ORG}/gl`, token: AQ_TOKEN,
     needs: "[data-glcode-btn]", absent: "[data-fee-btn]" },
 
+  /* ── GL: subscribing to more than one SHAPE of the report ───────────────
+     Dan: "I'm a danvers admin and I select to receive all 3, or 2, or just 1
+     report on a specific cadence."
+
+     NO SOURCE ASSERTION CAN SEE ANY OF THIS. The picker reads correctly
+     whichever list it is handed, a checkbox that is ticked and one that is not
+     are the same markup, and a Subscribe button that is disabled and one that
+     is not differ only once React has rendered them. */
+  { name: "gl · the subscribe modal offers each shape this org can receive",
+    path: "/{org}/gl", act: openEmailModal,
+    needs: '[data-email-variant="rollup"]',
+    also: ['[data-email-variant="turnover"]', '[data-email-variant="fees"]'] },
+  // The default is the document ON SCREEN. Clicking Email while reading the fee
+  // worksheet and being subscribed to the rollup is the answer nobody wants —
+  // and it is invisible in source, because both are the same checkbox.
+  { name: "gl · Email from the worksheet ticks the worksheet",
+    path: "/{org}/gl?fees=1", act: openEmailModal,
+    needs: '[data-email-variant="fees"] input:checked',
+    absent: '[data-email-variant="rollup"] input:checked' },
+  { name: "gl · Email from the rollup ticks the rollup",
+    path: "/{org}/gl", act: openEmailModal,
+    needs: '[data-email-variant="rollup"] input:checked',
+    absent: '[data-email-variant="fees"] input:checked' },
+  // Untick everything and Subscribe must refuse. An empty list resolves to a
+  // single as-saved send on the server, so a button that stayed live would mail
+  // the rollup to somebody who had just said they did not want it.
+  { name: "gl · nothing ticked disables Subscribe",
+    path: "/{org}/gl", act: async p => {
+      await openEmailModal(p);
+      // A VALID ADDRESS FIRST, or the case cannot discriminate: Subscribe is
+      // disabled on an empty email box whatever the checkboxes say, so the
+      // first draft passed with the variant check deleted. Plausible is not
+      // the same as discriminating.
+      await p.type('input[placeholder="you@example.gov"]', "dan@rec.us");
+      await p.waitForFunction(() => {
+        const b = document.querySelector("[data-email-subscribe]");
+        return b && !b.disabled;
+      }, { timeout: 10000 });
+      for (const key of ["rollup", "turnover", "fees"]) {
+        const box = await p.$('[data-email-variant="' + key + '"] input');
+        if (box && await p.evaluate(e => e.checked, box)) await box.click();
+      }
+    },
+    needs: "[data-email-subscribe][disabled]" },
+  // One shape is not a choice. render-check-aquatics has turnover switched off
+  // and no fee config, so it carries exactly the rollup and gets the modal it
+  // had before this shipped — ABSENT, not a lone ticked checkbox over the only
+  // document it can receive. This is also the case that proves the gates reach
+  // the page at all: the picker cannot offer a mode the org cannot render.
+  { name: "gl · no picker for an org with one shape",
+    path: `/${AQ_ORG}/gl`, token: AQ_TOKEN, act: openEmailModal,
+    needs: "[data-send-test]", absent: "[data-email-variants]" },
+
   // ── GL: Refund Detail is a MODE the URL can set ──────────────────────────
   // Dan: "when I click to print the PDF, it prints the version without the
   // refund detail." The PDF is this page under ?_print=1, rendered by Puppeteer
@@ -7549,6 +7616,16 @@ try {
     [feeOrg]: { gl: { feeAllocation: true, ccVariableBps: 350, ccFixedCents: 30,
                       cashBps: 100, checkBps: 100, techBps: 100 } },
   }));
+} catch (_) {}
+
+/* The treasurer turnover view, unlike Fee Allocation, is ON for every org
+   unless a flag says otherwise — so without this line EVERY org has at least
+   two mailable shapes and "one shape is not a choice" has no fixture that can
+   show it. Switched OFF for render-check-aquatics, which therefore carries
+   exactly the rollup: the one org that can prove the subscribe picker is
+   ABSENT rather than rendering a lone ticked checkbox. */
+try {
+  fs.writeFileSync(path.join(dataDir, "tyler-orgs.json"), JSON.stringify({ [AQ_ORG]: false }));
 } catch (_) {}
 
 /* DEFAULT-HIDDEN REPORTS ARE LEFT HIDDEN HERE, ON PURPOSE.

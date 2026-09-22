@@ -1703,6 +1703,15 @@ function App() {
   const isFeeActive = feeEnabled && !isTylerActive &&
     (params._print === '1' ? params.fees === '1' : feeView);
 
+  // The mailable shapes of this report, as the SERVER gates them — one list,
+  // two readers (the subscribe modal and the key below). A page-side copy would
+  // offer a mode the org is not switched on for, which is how the saved-view
+  // dialog came to offer a range the server had always refused.
+  const emailVariantOptions = window.ORG_CONFIG?.emailVariants || [];
+  // Which document is on screen right now. Named the same way the server names
+  // it, so "subscribe to what I am looking at" needs no translation.
+  const currentVariantKey = isTylerActive ? 'turnover' : isFeeActive ? 'fees' : 'rollup';
+
   const [rows,    setRows]    = useState(null);
   const [orgName, setOrgName] = useState('');
   const [staleCacheAt, setStaleCacheAt] = useState(null);
@@ -1741,6 +1750,29 @@ function App() {
       return p.toString();
     }
 
+    // Only offer the picker where there is a choice. One shape is not a
+    // choice, and a lone ticked checkbox over the only document this org can
+    // receive is the dead end this repo keeps writing down.
+    const showVariantPicker = emailVariantOptions.length > 1;
+    const pickedVariants = showVariantPicker
+      ? emailVariantOptions.filter(v => emailVariants.has(v.key)).map(v => v.key)
+      : [];
+    function toggleVariant(key) {
+      setEmailVariants(prev => {
+        const next = new Set(prev);
+        if (next.has(key)) next.delete(key); else next.add(key);
+        return next;
+      });
+    }
+    // The fee worksheet is priced from the desk-scoped rows and its GL-code,
+    // tender and search controls are not on screen at all, so the server drops
+    // those filters from its email. Say so HERE rather than letting somebody
+    // read one narrowed email and one that is not and conclude the report
+    // disagrees with itself.
+    const feeDropsFilters = showVariantPicker
+      && emailVariants.has('fees')
+      && (activeFilters.length > 0 || showRefunds);
+
     // Send Test and Subscribe build ONE payload. If they built two, the test
     // email could be scoped differently from the subscription it is meant to
     // preview — a test that passes without testing the thing.
@@ -1753,9 +1785,14 @@ function App() {
         reportDateRanges: { gl: emailDateRange },
       };
       if (filterStr) body.reportParams = { gl: filterStr };
+      if (pickedVariants.length) body.reportVariants = { gl: pickedVariants };
       return body;
     }
-    const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((emailAddr || '').trim());
+    // Nothing ticked is not a subscription. Disabled with the reason on the
+    // button rather than silently sending the rollup, which is what an empty
+    // list would resolve to on the server.
+    const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test((emailAddr || '').trim())
+      && (!showVariantPicker || pickedVariants.length > 0);
 
     async function handleSendTest() {
       if (!emailValid) return;
@@ -1773,6 +1810,9 @@ function App() {
             email: body.email, report: 'gl', schedule: body.schedule,
             dateRange: emailDateRange,
             reportParams: (body.reportParams && body.reportParams.gl) || '',
+            // One test email per ticked document — a preview of two that sends
+            // one has not previewed the subscription.
+            variants: pickedVariants,
           }),
         });
         const data = await resp.json();
@@ -1825,14 +1865,17 @@ function App() {
           )}
           <p style={{color:'#666',fontSize:12,margin:'0 0 16px',lineHeight:1.5}}>
             Send yourself a test first, check it lands the way you want, then subscribe.
-            The test uses the filters and date range set right here.
+            The test uses the {showVariantPicker ? 'reports, filters' : 'filters'} and date range set right here.
           </p>
 
           {emailStatus === 'success' ? (
             <div style={{textAlign:'center',padding:'20px 0'}}>
               <div style={{fontSize:32,marginBottom:8}}>✅</div>
               <div style={{fontSize:15,fontWeight:600,color:'#16a34a',marginBottom:4}}>Subscribed!</div>
-              <div style={{fontSize:13,color:'#666'}}>You will receive {emailCadence} emails at 7am ET.</div>
+              <div style={{fontSize:13,color:'#666'}}>
+                You will receive {emailCadence} emails at 7am ET
+                {pickedVariants.length > 1 ? ' — one per report, ' + pickedVariants.length + ' in all' : ''}.
+              </div>
               <button onClick={() => { setShowEmailModal(false); setEmailStatus(null); }}
                 style={{marginTop:16,padding:'8px 20px',background:'#16a34a',color:'#fff',border:'none',borderRadius:6,cursor:'pointer',fontWeight:600}}>
                 Done
@@ -1843,6 +1886,36 @@ function App() {
               <label style={{display:'block',fontSize:11,color:'#999',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:4,fontWeight:500}}>Email</label>
               <input value={emailAddr} onChange={e => setEmailAddr(e.target.value)}
                 placeholder="you@example.gov" style={{width:'100%',padding:'8px 10px',border:'1px solid #ddd',borderRadius:6,fontSize:13,marginBottom:14,boxSizing:'border-box'}} />
+
+              {showVariantPicker && (
+                <div style={{marginBottom:14}}>
+                  <label style={{display:'block',fontSize:11,color:'#999',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:6,fontWeight:500}}>Reports</label>
+                  <div data-email-variants style={{display:'flex',flexDirection:'column',gap:6}}>
+                    {emailVariantOptions.map(v => (
+                      <label key={v.key} data-email-variant={v.key}
+                        style={{display:'flex',alignItems:'center',gap:8,fontSize:13,color:'#333',cursor:'pointer'}}>
+                        <input type="checkbox" checked={emailVariants.has(v.key)}
+                          onChange={() => toggleVariant(v.key)}
+                          style={{width:15,height:15,accentColor:'#16a34a',cursor:'pointer'}} />
+                        {v.label}
+                      </label>
+                    ))}
+                  </div>
+                  <div style={{fontSize:11,color:'#999',marginTop:6}}>
+                    {pickedVariants.length > 1
+                      ? pickedVariants.length + ' separate emails, each with its own PDF.'
+                      : pickedVariants.length === 1
+                        ? 'One email with its PDF attached.'
+                        : 'Pick at least one.'}
+                  </div>
+                </div>
+              )}
+              {feeDropsFilters && (
+                <div style={{background:'#eff6ff',border:'1px solid #bfdbfe',borderRadius:6,padding:'8px 12px',margin:'0 0 14px',fontSize:12,color:'#1e40af',lineHeight:1.45}}>
+                  The fee worksheet is priced from the whole desk, so the GL-code, tender and
+                  refund filters do not apply to it. They still apply to the other reports.
+                </div>
+              )}
 
               <label style={{display:'block',fontSize:11,color:'#999',textTransform:'uppercase',letterSpacing:'0.06em',marginBottom:6,fontWeight:500}}>Date Range</label>
               <div style={{display:'flex',gap:6,marginBottom:14,flexWrap:'wrap'}}>
@@ -1870,12 +1943,14 @@ function App() {
                 <button onClick={() => { setShowEmailModal(false); setEmailStatus(null); }}
                   style={{padding:'8px 16px',background:'#f3f4f6',border:'none',borderRadius:6,cursor:'pointer',fontSize:13}}>Cancel</button>
                 <button data-send-test onClick={handleSendTest} disabled={!emailValid || emailStatus === 'testing' || emailStatus === 'sending'}
-                  title={emailValid ? 'Send this exact report to that address now' : 'Enter an email address first'}
+                  title={emailValid ? 'Send these exact reports to that address now'
+                    : (showVariantPicker && !pickedVariants.length) ? 'Pick at least one report first'
+                    : 'Enter an email address first'}
                   style={{padding:'8px 16px',background:'#fff',color:'#166534',border:'1px solid #86efac',borderRadius:6,fontSize:13,fontWeight:600,
                   cursor: emailValid ? 'pointer' : 'not-allowed', opacity: (!emailValid || emailStatus === 'testing') ? 0.5 : 1}}>
                   {emailStatus === 'testing' ? 'Sending…' : '📨 Send Test'}
                 </button>
-                <button onClick={handleSubscribe} disabled={!emailValid || emailStatus === 'sending' || emailStatus === 'testing'}
+                <button data-email-subscribe onClick={handleSubscribe} disabled={!emailValid || emailStatus === 'sending' || emailStatus === 'testing'}
                   style={{padding:'8px 20px',background:'#16a34a',color:'#fff',border:'none',borderRadius:6,fontWeight:600,fontSize:13,
                   cursor: emailValid ? 'pointer' : 'not-allowed',
                   opacity: (!emailValid || emailStatus === 'sending') ? 0.5 : 1}}>
@@ -1915,6 +1990,11 @@ function App() {
   const [emailAddr, setEmailAddr] = useState('');
   const [emailCadence, setEmailCadence] = useState('weekly');
   const [emailDateRange, setEmailDateRange] = useState('prior30');
+  // Which of this report's mailable SHAPES to subscribe to. Seeded from the
+  // mode on screen every time the modal opens (below) rather than once at
+  // mount: clicking Email while looking at the fee worksheet and being
+  // subscribed to the rollup is the answer nobody wants.
+  const [emailVariants, setEmailVariants] = useState(() => new Set());
   const [emailStatus, setEmailStatus] = useState(null);
   const [selectedDesks, setSelectedDesks] = useState(null);
   const [selectedGlCodes, setSelectedGlCodes] = useState(null);
@@ -3304,7 +3384,7 @@ function App() {
         )}
 
         {window.ORG_CONFIG?.emailEnabled && !isPrint && (
-          <button className="btn-email" onClick={() => setShowEmailModal(true)}>
+          <button className="btn-email" onClick={() => { setEmailVariants(new Set([currentVariantKey])); setShowEmailModal(true); }}>
             📧 Email
           </button>
         )}
@@ -3638,9 +3718,10 @@ function App() {
 
         {isFeeActive ? (
           /* The remittance fee worksheet — the same loaded rows, priced. Reads
-             `displayRows` like every other surface here, so the desk, GL-code,
-             tender and text filters all narrow it exactly as they narrow the
-             table. */
+             the DESK-scoped rows, not `displayRows`: the GL-code, tender and
+             search controls are absent in this mode because a worksheet that
+             bills a subset of codes against an org-wide transaction count
+             contradicts itself. Dates and desk are the two that survive. */
           <FeeAllocation
             result={feeResult}
             orgName={displayOrg}
