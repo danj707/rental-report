@@ -17,8 +17,11 @@
      still works: window.loaderProgress is a plain function.
 
      The report treatment comes from the Recess layer — the two links
-     sit AFTER this </style> so the skin wins on equal specificity,
-     which is the whole mechanism recess-palette.spec.js guards.
+     sit AFTER this block's closing tag so the skin wins on equal
+     specificity, which is the whole mechanism recess-palette.spec.js
+     guards. (Do not write that closing tag out in here: the HTML
+     tokenizer ends a style element at the first one it sees, CSS
+     comment or not, and the rest of the sheet renders as TEXT.)
      ───────────────────────────────────────────────────────────────── */
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 

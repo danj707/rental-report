@@ -422,6 +422,16 @@ jobs:
       - name: Admin dashboard JS (inline blocks parse; every on*= handler resolves)
         run: node scripts/ci-check-admin-js.js
 
+      # A <style> or <script> block that ends EARLY. The tokenizer stops at the
+      # first `</style` / `</script` whatever the surrounding CSS comment or JS
+      # string says, so one sentence spelling out the closing tag drops the rest
+      # of the sheet into the body as visible TEXT. Shipped on cost-recovery.html
+      # and all ten of its render cases passed: the page was not broken, it was
+      # unstyled, and every case keys on a computed figure. Cheap, and it covers
+      # all 46 pages rather than only the ones a render case visits.
+      - name: Markup blocks (a style/script block that ends early renders as text)
+        run: node scripts/markup-blocks.spec.js
+
       # THE GUARD OVER THE GUARDS, and it is here because this file is the one
       # place a new spec has to be remembered. Cost Recovery shipped a
       # 126-assertion spec, mutation-tested 18 ways, with no step naming it: it

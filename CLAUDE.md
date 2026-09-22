@@ -8005,6 +8005,56 @@ guard — `new Set([])`, invisible in review, shipping to 29 dashboards on merge
 would have sailed through. `adaptive-cache.spec.js` and `cache-filename.spec.js`
 were unwired too, and both passed all along.
 
+### TWO HUNDRED LINES OF CSS PRINTED ACROSS THE TOP OF THE REPORT
+
+Dan, opening the preview he had just been handed: ***"errrr"***, with a
+screenshot of the entire stylesheet rendered as body text above the toolbar.
+
+**THE HTML TOKENIZER ENDS A `<style>` ELEMENT AT THE FIRST `</style` IT MEETS.**
+It is not parsing CSS, so a CSS comment is no protection — and line 20 of a
+205-line block said, in a comment, that the Recess links *"sit AFTER this
+`</style>`"*. Everything from line 21 on became visible text, and the page
+rendered **unstyled**. It cannot be escaped, only reworded; the same rule
+governs `</script` inside a JS string, which is the more famous half.
+
+**NOTHING CAUGHT IT, and the list is the point.** `node --check` passes (the
+HTML is not JS). The JSX parse check skips this page — it has no JSX, which is
+the *deliberate* decision recorded above. The server boots and serves 200 with a
+complete document. **All TEN cost-recovery render cases passed**, because the
+page is not broken, it is unstyled, and every one of them keys on a computed
+figure — every figure was right. `recess-palette.spec.js` passed too: it
+compares the skin's link position against the FIRST `</style>`, which was the
+one in the comment, so the assertion was true and meaningless.
+
+*Generalise it: a page that renders the wrong way round is invisible to every
+assertion about what it computed. When the thing that can break is how it LOOKS,
+something has to look.*
+
+**Two guards, because they catch it at different costs.**
+
+- **`scripts/markup-blocks.spec.js` (97 assertions, in CI)** — milliseconds, and
+  it covers **all 46 served pages** rather than only the ones a render case
+  visits. **The test is a COUNT, which is what makes it sound rather than
+  fussy:** outside HTML comments a page has as many closers as openers, and a
+  `</style>` in a CSS comment makes closers EXCEED openers (1 and 2 here).
+  Measured across all 46 pages: **zero false positives**. HTML comments are
+  stripped first, because several pages legitimately explain the cascade rule
+  that way — including, after the fix, this one. It carries a
+  vacuous-derivation assertion and proves it discriminates on the bug exactly
+  as it shipped rather than trusting that a count is the right instrument.
+- **A global per-case assertion in `ci-check-render.js`**, beside the
+  unrendered-escape and leaked-JSX ones and for the same reason — it is a CLASS
+  of bug, and every existing case sails past it. Keyed on CSS **declaration
+  syntax** (`{ … prop: value; … }`) rather than any one property, since that is
+  not English and appears in no copy here. **Verified by reintroducing the bug:
+  all ten cases fail, each quoting the leaked rule, where before all ten
+  passed.**
+
+**AND THE SPEC-COVERAGE GUARD BELOW EARNED ITSELF ON ITS FIRST NEW SPEC** —
+`markup-blocks.spec.js` was written, and the very next run named it as having no
+step in `ci.yml`. That is the whole mechanism working on the first file it could
+have been forgotten for.
+
 ### THE GUARD OVER THE GUARDS — `scripts/spec-coverage.spec.js`
 
 Dan: *"yeah sweep in that spec-coverage guard and the two cache specs"*. **8
