@@ -5954,6 +5954,71 @@ const CASES = [
      reading the other. All five figures are distinct — 100000 / 12000 /
      10000 / 1000 / 9000 — so a swapped label fails rather than rendering a
      plausible number. */
+  // The Summary tab's card strip used to carry an inline maxWidth:1100 while
+  // the tab strip above it is the page's full 1344 — Dan's screenshot, 122px
+  // of dead space each side. NO SOURCE ASSERTION CAN SEE THIS: the wrapper
+  // renders either way and every existing case keys on a card's VALUE, which
+  // is the same number at any width. So this measures the geometry, and it
+  // measures BOTH halves, because each alone passes on half the bug:
+  //   - the strip must be as wide as the tab strip (the inset), and
+  //   - no row may hold a single card (filling the width at the old 180-190px
+  //     basis puts seven on a row, which strands the eighth across a whole row
+  //     of its own — the count Dan's own org renders).
+  // Driven at THREE widths rather than one, because a single width cannot see
+  // the basis band: 1400 is the page at its max-width (the screenshot), 1240
+  // sits just above the 1210px breakpoint and 1100 just below it, so moving
+  // the breakpoint or either basis strands a card in one of them.
+  { name: "programs · the summary strip fills the page, and nothing strands",
+    path: "/{org}/programs", viewport: { width: 1400, height: 1200 },
+    needs: 'body[data-rc-sumfit-seen^="ok=1 "]',
+    act: async (page) => {
+      await page.waitForSelector(".sum-cards", { timeout: 20000 });
+      const seen = [];
+      for (const vw of [1400, 1240, 1100]) {
+        await page.setViewport({ width: vw, height: 1200 });
+        seen.push(await page.evaluate((w_) => {
+          const strip = document.querySelectorAll(".sum-cards")[0];
+          const tabs  = document.querySelector(".tabs");
+          const all   = Array.from(strip.children);
+          const w = el => Math.round(el.getBoundingClientRect().width);
+          const rowsFor = n => {
+            all.forEach((c, i) => { c.style.display = i < n ? "" : "none"; });
+            const cards = all.slice(0, n);
+            const tops = [...new Set(cards.map(c => Math.round(c.getBoundingClientRect().top)))];
+            return tops.map(t => cards.filter(c => Math.round(c.getBoundingClientRect().top) === t).length);
+          };
+          // 7, 8 and 9 are the counts orgs actually render: Refunds and
+          // Auto-pay are each gated on the feed carrying their columns.
+          const rows = [9, 8, 7].map(n => [n, rowsFor(n)]);
+          all.forEach(c => { c.style.display = ""; });
+          const fits = Math.abs(w(strip) - w(tabs)) <= 1;
+          const bad  = rows.filter(([, r]) => r.some(x => x === 1)).map(([n]) => n);
+          return "vw" + w_ + (fits ? " fits" : " INSET(strip=" + w(strip) + " tabs=" + w(tabs) + ")")
+               + (bad.length ? " STRANDED@" + bad.join(",") : " ok")
+               + " [" + rows.map(([n, r]) => n + ":" + r.join("+")).join(" ") + "]";
+        }, vw));
+      }
+      // The Check-Ins tab carried the IDENTICAL inline cap, and fixing only the
+      // tab Dan was looking at is the half-fix this repo keeps recording — two
+      // tabs on one report disagreeing about their own width. Same page, second
+      // navigation, so this costs one request rather than a whole case.
+      await page.setViewport({ width: 1400, height: 1200 });
+      await page.goto(page.url().split("?")[0] + "?tab=checkins"
+        + (page.url().includes("token=") ? "&token=" + page.url().split("token=")[1].split("&")[0] : ""),
+        { waitUntil: "networkidle0", timeout: 45000 }).catch(() => {});
+      await page.waitForSelector(".sum-cards", { timeout: 20000 }).catch(() => {});
+      seen.push(await page.evaluate(() => {
+        const strip = document.querySelectorAll(".sum-cards")[0];
+        const tabs  = document.querySelector(".tabs");
+        if (!strip || !tabs) return "checkins NOSTRIP";
+        const w = el => Math.round(el.getBoundingClientRect().width);
+        return "checkins " + (Math.abs(w(strip) - w(tabs)) <= 1
+          ? "fits ok" : "INSET(strip=" + w(strip) + " tabs=" + w(tabs) + ") ok");
+      }));
+      const good = seen.every(l => l.includes(" fits") && l.includes(" ok"));
+      await page.evaluate((txt) => { document.body.setAttribute("data-rc-sumfit-seen", txt); },
+        (good ? "ok=1 " : "ok=0 ") + seen.join(" · "));
+    } },
   { name: "programs · the window figure is period net", path: "/{org}/programs",
     // 10,000 received less 1,000 refunded.
     needs: '[data-prog-period-net="9000"]' },
