@@ -379,12 +379,13 @@
     .sum-cards { display: flex; flex-wrap: wrap; gap: 1px; margin: 16px 0;
       background: var(--rec-border-secondary); border-radius: var(--rec-radius-lg);
       box-shadow: var(--rec-shadow-surface-md), 0 0 0 1px var(--rec-border-secondary); overflow: hidden; }
-    /* The Summary tab shows NINE of these and the Check-Ins tab five, so the
-       basis has to make a ragged wrap look deliberate rather than broken: at
-       190px the nine land 5 + 4, both rows full, where a smaller basis leaves
-       one card stranded and stretched across a row of its own. Flex rather
-       than grid for the same reason — a grid's last row would show the
-       container's divider colour through the empty cells. */
+    /* THE BASIS IS NOT SET HERE — see the --rec-sum-basis block beside the
+       skin link below. The skin's `.sum-cards > .sum-card` is (0,2,0) and
+       this selector is (0,1,0), so the flex shorthand on this line has been
+       inert since the recess sweep whatever number it carried; the seam the
+       skin exposes is the custom property. Flex rather than grid, because a
+       grid's last row would show the container's divider colour through the
+       empty cells. */
     .sum-card { background: var(--rec-bg-primary); padding: 15px 18px; flex: 1 1 190px; min-width: 0; }
     .sum-card .sc-label { font-size: var(--rec-body-sm); color: var(--rec-text-secondary); font-weight: 500; margin-bottom: 4px; }
     .sum-card .sc-val { font-size: var(--rec-heading-lg); font-weight: 500; line-height: 1.2; letter-spacing: -.02em;
@@ -643,6 +644,29 @@
        specificity it wins. The tokens are linked above, where order does not
        matter: nothing else on the page declares a --rec-* property. -->
   <link rel="stylesheet" href="/recess-report.css">
+  <!-- The .sum-cards basis, which the skin reads. It is a function of the
+       STRIP'S WIDTH and the CARD COUNT, so it is measured rather than picked:
+       the Summary tab renders 7, 8 or 9 cards (Refunds and Auto-pay are each
+       gated on the feed carrying their columns) and Check-Ins five. Declared
+       here because the skin's `.sum-cards > .sum-card` is (0,2,0) and beats
+       this page's own (0,1,0) rule — the custom property is the seam, and
+       until now programs.html declared neither basis, so both its strips sat
+       on the skin's 180px fallback.
+
+       Measured in a browser across viewports and card counts. Once this strip
+       stopped being capped at 1,100px and filled the page's full 1344, a
+       180-190px basis put SEVEN on a row — which at eight cards, the count
+       Dan's own org renders, strands one stretched across a whole row of its
+       own. The bands below keep FIVE per row, so 7/8/9 come out 5+2, 5+3,
+       5+4: 230px holds five from a 1154px strip (a 1210px viewport) up to the
+       page's 1344 maximum, and 190px holds five from a 968px strip up to that
+       boundary. The one seam is a ~9px window around a 1205px viewport where
+       neither does; below a 968px strip no basis suits 7 and 9 at once, and
+       that is unchanged from before. -->
+  <style>
+    :root { --rec-sum-basis: 190px; }
+    @media (min-width: 1210px) { :root { --rec-sum-basis: 230px; } }
+  </style>
   <script>
     // ── Token auth (injected) ────────────────────────────────────────
     const URL_TOKEN = new URLSearchParams(window.location.search).get('token') || '';
@@ -3637,8 +3661,16 @@ function App() {
           // Show attendance columns only when this org tracks check-ins
           var showCi = !!(checkinSummary && checkinSummary.totalCheckIns > 0);
           var ciPctColor = function(p) { return p == null ? '#ccc' : p >= 85 ? '#16a34a' : p <= 25 ? '#dc2626' : '#333'; };
+          // FULL PAGE WIDTH, like every other tab on this report. This
+          // wrapper used to carry an inline max width of 1100px, so Summary and
+          // Check-Ins sat 122px in from each side while Revenue, Participants,
+          // Retention and Fill Rate filled the page. Measured at a 1600
+          // viewport: the tab strip above it is 1344 wide and this strip was
+          // 1,100 — the inset Dan pointed at. An inline width is also the one
+          // kind no stylesheet can take back, the rule this repo keeps
+          // recording, so it is gone rather than raised to another number.
           return (
-            <div style={{maxWidth:1100,margin:'0 auto'}}>
+            <div>
               {/* The Coffee Chart that used to open this tab lives on the org
                   dashboard now (Dan: "live widgets ... need to live on the
                   org-dashboard project"). Its conditional came out with it and
@@ -4906,7 +4938,7 @@ function App() {
               </div>
             )}
             {!ciLoading && !ciError && checkinRows && checkinRows.length > 0 && (
-              <div style={{maxWidth:1100,margin:'0 auto'}}>
+              <div>
                 <div className="sum-cards">
                   <div className="sum-card"><div className="sc-label">Total Check-Ins</div><div className="sc-val sc-green" data-ci-checkins-total={checkinSummary.totalCheckIns}>{checkinSummary.totalCheckIns.toLocaleString()}</div><div className="sc-sub">{checkinSummary.totalCheckOuts.toLocaleString()} check-outs</div></div>
                   {/* Marked absent. Its own tile rather than a sub-line on
