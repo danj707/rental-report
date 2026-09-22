@@ -105,6 +105,18 @@ if (!process.env.SKIP_SOURCE) {
   ok(/if \(!ORGS\[slug\]\)/.test(seedBlk),
     "…and an org this server does not serve gets no phantom entry");
 
+  /* ── A SEED FOR AN ORG NOT HERE YET MUST WAIT, NOT BURN ────────────────
+     Madison is not onboarded in this project, so its inventory seed is keyed on
+     the orgId and marked PER ORG. A per-key marker records it applied on the
+     first boot that cannot see the org, and the report then never appears. */
+  ok(/"inventory:2026-09-22-madison":[\s\S]*orgIds: \["14e26ada-ac6c-48ec-ad75-0590daaa4d71"\]/.test(seedBlk),
+    "Madison's inventory seed is keyed on its orgId, not a guessed slug");
+  ok(/const mark = key \+ "\|" \+ orgId;[\s\S]*if \(!slug\) \{[^}]*continue; \}/.test(seedBlk),
+    "…marked per org, and an org this server cannot see is skipped UNMARKED so it retries");
+  const addOrgBlk = src.slice(src.indexOf('app.post("/api/admin/add-org"'), src.indexOf('action: "created"'));
+  ok(/seedReportVisibility\(\)/.test(addOrgBlk),
+    "…and an org added via sync applies its waiting seed now, not on the next deploy");
+
   /* ── EVERY SURFACE HAS TO AGREE, and they are six different code paths.
      A card hidden on the org page while the cross-project API reports it
      visible is how rec-dashboard starts linking orgs to a report they cannot
@@ -182,8 +194,16 @@ if (!process.env.SKIP_SOURCE) {
   ok(!/\(function seedReportVisibility\(\)/.test(src),
     "…and NOT as a module-scope IIFE, which writes into a store that has not answered yet");
   {
-    const callSites = (src.match(/seedReportVisibility\(\);/g) || []).length;
-    eq(callSites, 1, "…called from exactly one place, so the ordering cannot drift");
+    /* The two org-CREATION routes also call it, deliberately: they run at
+       request time, i.e. after boot, so they cannot reintroduce the
+       module-scope write. Every OTHER call site is what this counts. */
+    let rest = src;
+    for (const r of ['app.post("/api/admin/add-org"', 'app.post("/api/admin/new-org"']) {
+      const i = rest.indexOf(r), j = rest.indexOf("\n});", i);
+      if (i >= 0 && j > i) rest = rest.slice(0, i) + rest.slice(j);
+    }
+    const callSites = (rest.match(/seedReportVisibility\(\);/g) || []).length;
+    eq(callSites, 1, "…called from exactly one place at boot, so the ordering cannot drift");
   }
 
   // The cross-project visibility API.
@@ -261,6 +281,21 @@ if (!process.env.SKIP_LIVE) {
     const sh = json((await get("/api/org-visibility/shrewsbury")).body);
     const s0 = (sh.available || []).find(a => a.type === "opportunities");
     ok(s0 && s0.visible === true, "…and for Shrewsbury, which Dan asked for and the inverted eye undid");
+
+    /* MADISON: absent at boot, so the seed must NOT be marked — then adding the
+       org applies it on the spot. Both halves, or "waits" is a comment. */
+    const seeds0 = json(fs.existsSync(path.join(dataDir, "report-seeds.json")) ? fs.readFileSync(path.join(dataDir, "report-seeds.json"), "utf8") : "{}");
+    ok(!Object.keys(seeds0).some(k => k.startsWith("inventory:2026-09-22-madison")),
+      "Madison's seed was not burned on a boot that could not see Madison");
+    const add = await post("/api/admin/add-org", { password: PW, slug: "spec-madison",
+      token: "specMadisonTok1234", orgId: "14e26ada-ac6c-48ec-ad75-0590daaa4d71", displayName: "Madison" });
+    ok(add.status === 200, "…the org can be added (" + add.status + ")");
+    const md = json((await get("/api/org-visibility/spec-madison")).body);
+    const m0 = (md.available || []).find(a => a.type === "inventory");
+    ok(m0 && m0.visible === true, "…and inventory is visible for it the moment it arrives");
+    const seeds1 = json(fs.readFileSync(path.join(dataDir, "report-seeds.json"), "utf8"));
+    ok(!!seeds1["inventory:2026-09-22-madison|14e26ada-ac6c-48ec-ad75-0590daaa4d71"],
+      "…and the per-org marker is written, so a toggle-off afterwards sticks");
 
     const before = json((await get("/api/org-visibility/" + slug)).body);
     const b0 = (before.available || []).find(a => a.type === "opportunities");

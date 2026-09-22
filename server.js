@@ -4172,6 +4172,14 @@ const REPORT_VISIBILITY_SEEDS = {
   // the grid's own eye was inverted for a default-hidden report, so the click
   // that looked like "show" was the one that hid it again. See the toggle route.
   "opportunities:2026-09-14-shrewsbury": { report: "opportunities", orgs: ["shrewsbury"] },
+  // Inventory pilot. Keyed on the ORGID, not a slug: Madison is not onboarded in
+  // this project yet (checked 2026-09-22 — org-by-id answered exists:false), so
+  // there is no slug here to trust, and the name the org is given when it is
+  // added is not ours to guess. Per-org marker, so it waits for the org rather
+  // than burning on a boot that cannot see it — see seedReportVisibility.
+  "inventory:2026-09-22-madison": {
+    report: "inventory", orgIds: ["14e26ada-ac6c-48ec-ad75-0590daaa4d71"],
+  },
 };
 
 /* Report SETTINGS seeds - the same one-shot shape as REPORT_VISIBILITY_SEEDS
@@ -4251,6 +4259,25 @@ function seedReportVisibility() {
     const all = readJSON(VISIBILITY_FILE, {});
     let changed = false;
     for (const [key, seed] of Object.entries(REPORT_VISIBILITY_SEEDS)) {
+      if (seed.orgIds) {
+        /* RECONCILED ON THE orgId, and the marker is PER ORG. A per-key marker
+           burns the seed on any boot that cannot see the org — a dynamic org is
+           absent from ORGS until storeConnect has loaded it, and an org not yet
+           onboarded is absent altogether — so the feature would ship doing
+           nothing, silently. Same rule as seedReportSettings. */
+        for (const orgId of seed.orgIds) {
+          const mark = key + "|" + orgId;
+          if (applied[mark]) continue;                 // this org: already run
+          const slug = Object.keys(ORGS).find(sl => ORGS[sl] && ORGS[sl].orgId === orgId);
+          if (!slug) { console.warn("[seed] " + key + ": no org with orgId " + orgId + " yet - not marked, retries"); continue; }
+          const list = Array.isArray(all[slug]) ? all[slug] : [];
+          if (!list.includes(seed.report)) { all[slug] = list.concat(seed.report); changed = true; }
+          applied[mark] = new Date().toISOString();
+          writeJSON(seedFile, applied);
+          console.log("[seed] " + key + " → " + seed.report + " shown for " + slug);
+        }
+        continue;
+      }
       if (applied[key]) continue;                      // already run: never again
       for (const slug of seed.orgs) {
         // An org that is not served here must not get a phantom entry.
@@ -8089,6 +8116,7 @@ app.post("/api/admin/add-org", express.json(), (req, res) => {
     console.error("[orgs] Failed to persist dynamic org:", e.message);
   }
   console.log(`[orgs] Added org via API: ${slug} (${orgId})`);
+  seedReportVisibility();   // a seed waiting on this orgId applies now, not next deploy
   res.json({ ok: true, action: "created", slug });
 });
 
@@ -11654,7 +11682,7 @@ const INVENTORY = require("./lib/inventory");
 // Card 22144, "Inventory Feed". Omitted when unset: the page then says the
 // feed is not wired rather than rendering an empty stock list that reads as
 // "this org sells nothing". Same shape SHARED_UUIDS used before a link existed.
-const INVENTORY_UUID = process.env.MB_INVENTORY_UUID || "";
+const INVENTORY_UUID = process.env.MB_INVENTORY_UUID || "c6069a94-0ef5-4e6e-8578-37e851edf607";
 const INVENTORY_CARD_ID = 22144;
 const inventoryEnabled = (slug) => !!ORGS[slug];
 const inventoryFile = (slug) => path.join(DATA_DIR, "inventory", String(slug).replace(/[^a-z0-9-]/gi, "") + ".json");
@@ -19262,6 +19290,8 @@ app.post("/api/admin/new-org", dashboardAuth, async (req, res) => {
   // is the watcher this needs; a console warning in Railway is not. It cannot
   // fail the creation — the org exists here regardless, exactly as it does when
   // the GitHub push above fails — and a failure is queued for the retry cron.
+  // A seed waiting on this org (by orgId) applies now rather than next deploy.
+  seedReportVisibility();
   const dashboardSync = await pushOrgToDashboard(slug, orgEntry);
 
   res.json({ ok: true, slug, reports: Object.keys(reports), github, dashboardSync });

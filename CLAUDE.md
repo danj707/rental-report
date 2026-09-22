@@ -93,8 +93,14 @@ every hour, refunds ignored.
 
 ### NOT DONE
 
-- **Card 22144 has no public link yet.** Until `MB_INVENTORY_UUID` is set the
-  page says the feed is not wired and nothing syncs.
+- **Madison is NOT onboarded in this project** (2026-09-22: `org-by-id` answered
+  `exists:false`). The seed `inventory:2026-09-22-madison` is keyed on its
+  **orgId**, marked per org, and waits: it applies the moment the org is added
+  (Add Org and the sync route both re-run the seeds), not on a boot that burns
+  it. Until then there is no Madison page to open.
+- Card 22144's public link is `c6069a94-0ef5-4e6e-8578-37e851edf607`, hardcoded
+  as the `MB_INVENTORY_UUID` fallback. `since` is typed Date on the live card;
+  the route echoes the card's own types, so either type serves.
 - **Free merch never counts down** — a $0 item has no transaction in the item
   log. A comped candy bar needs a count or an adjustment.
 - **A void older than the 3-day window is not seen.** Voids are same-day in
