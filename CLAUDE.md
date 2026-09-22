@@ -8392,6 +8392,163 @@ spec's scoped slice of `renderTiers`.
 - **No second footer row on the Ledger tab.** Its roll-ups are over rows that
   all carry an amount, so there is one population there and nothing to split.
 
+### THE POLISH PASS — seven asks, and one of them reverses Dan's own wording (2026-09-22)
+
+Dan, after reading the report against Shrewsbury's real numbers: *"ok a bunch of
+feedback here on the cost recovery report, don't hate me."* Seven items. Six are
+what they look like; the seventh is the one worth reading.
+
+### "RED IS < 100, GREEN > 100" WOULD PAINT A CORRECTLY-RUN DEPARTMENT RED
+
+*"cost recovery depends based the percentage over 100 — red is < 100, green >
+100, that kind of thing."*
+
+**On this report 100% is the wrong line to draw, and drawing it is the midpoint
+mistake again.** Tier 1 is MEANT to recover 25–50%: a department running mostly
+community programming — open play, a summer concert, the things a town funds
+because everyone gains — would be painted red for doing exactly what the pyramid
+asks of it. That is the same error as grading tier 1 at 34% against its 35%
+target when 34% is squarely inside its band, which this report already exists to
+avoid.
+
+So `crRecoveryTone` judges against the portfolio's **own blended target**, which
+is the figure the card's sub-line was already printing beside it — *"target 35% ·
+ahead by 98 pts"* — so the colour and the words now agree instead of
+contradicting each other. Green at or above target, amber within 10 points below,
+red further under.
+
+- **NO TARGET MEANS NO COLOUR.** With nothing tiered there is nothing to judge
+  against, and a red tile there would be a verdict on a portfolio nobody has
+  classified. Same rule as `null`-not-zero everywhere else here.
+- **The discriminating case is under 100 and green**: Fall '26 recovers 88%
+  against a blended 85%. A build measuring against 100 paints that red and fails
+  one render case while nothing else on the page moves.
+
+### THE OTHER SIX
+
+- **Dollar signs on every amount.** Drawn as a `::before` on a `.money` wrapper,
+  **never put in the value** — a `$` inside a `type="number"` makes the field
+  invalid, empties it, and takes the arithmetic with it. Only a COMPUTED style
+  can confirm it arrived, so the guard reads `getComputedStyle(el, "::before")`.
+- **Hide free programs**, and Dan named the limit in the same breath: *"There
+  still might be associated costs, so I don't want to exclude them."* So the
+  filter hides a program with **no revenue AND no cost entered**. A free program
+  somebody has costed is pure subsidy — the most interesting line this report
+  draws — and it survives the checkbox. **The fixture needs a PAIR**, one costed
+  and one not: with one kind of row, a build that hides every free program
+  renders an identical table and no case can tell them apart. What was hidden is
+  named beside the row count, because an exclusion nobody can see is how a total
+  stops being trusted.
+- **Colour the strip.** Money in green, money out red, the bottom line amber —
+  the convention every P&L already uses. The tints are **this page's own chip
+  palette**, not new values, and they are compound selectors on purpose: the
+  skin's `.sum-cards > .sum-card` is (0,2,0) and these are (0,3,0), so they win
+  from the page without touching the shared sheet or adding a sixth KPI family
+  for `recess-palette.spec.js`'s detector to fail on. (That detector only matches
+  a rule whose selector is a single class at line start, so a compound one cannot
+  trip it — worth knowing before adding any rule here that paints a background.)
+- **Delete a row on the overhead tab.** There WAS one. It was gated on three
+  named fields, so a line carrying only a category had no way out, and it was a
+  bare glyph with no label that nobody found — *a control nobody can find is a
+  control that does not exist*, which is the Fast Track pin over again and is
+  exactly how this arrived, as a feature request for a feature that shipped. It
+  is gated on the row being STORED now, carries a title, and turns red on hover.
+- **Sortable headers.** Nulls last in BOTH directions: an uncosted program has no
+  net and no recovery, and sorting it as zero files the whole uncosted wall at
+  one end of a money column as though somebody had measured it. The sort is
+  applied in `sliceFor`, so **the CSV and the statement come out in the order on
+  screen**. The discriminating column is the NAME — the table already opens in
+  revenue order, so a Revenue click leaves every row where it was and passes on a
+  header wired to nothing.
+- **Lean into GreenPlay.** Dan: *"never even heard of that, but that's bad ass."*
+  The ladder now runs **tier 4 down to tier 1**, because a pyramid stands on its
+  base — community benefit at the bottom, individual benefit at the apex — with a
+  wedge that steps out as it descends, each tier carrying a plain-English verdict
+  (*inside the band* / *N pts above* / *N pts under*), and a line above it reading
+  this org's own numbers back against the model. **ABOVE IS NOT WORDED AS A
+  FAILURE**: a tier 1 program recovering 90% is priced like a tier 3, which is
+  worth knowing and is not a fault — the distinction `crChipState` already draws
+  between `over` and `bad`.
+
+### "WHAT'S NEXT" — the statement, which is what the typing is FOR
+
+*"What happens after I enter all this data for say, a season? Is there a
+'generate P/L statement' or something? Seems like we're missing the 'what's
+next'?"* He is right, and it is the dead-end pattern this file keeps recording:
+the report took entry and gave back a screen.
+
+A third tab renders a real statement — income, direct costs **split five ways**
+(which is what finally makes the per-program breakdown pay for itself; until now
+those five fields were typed, summed and never read apart again), overhead by
+account, the surplus direct and after overhead, cost recovery against the
+blended target, and a tier-by-tier reading against the pyramid.
+
+- **A VIEW, NOT A PDF ROUTE.** The page already holds every figure and a print
+  stylesheet already strips the chrome, so *"Print / save as PDF"* is a button the
+  reader's own browser answers. A Puppeteer route would need its own endpoint, a
+  `#report-ready` marker and every filter written into the URL, and buys the
+  reader nothing they cannot already get.
+- **THE ASSERTION IS THAT IT TIES.** Every figure comes from the same reducers
+  the screen uses — `totals`, `crCostByCat`, `crLedgerBreakdown` — so the render
+  case requires the statement's stamp AND the strip's to agree on the same four
+  numbers. **A statement built from its own second reduction renders a perfectly
+  plausible document**, and one that quietly differs from the report it was
+  generated from is worse than no statement at all.
+- `crLedgerBreakdown` was **extracted rather than written**: the roll-up on the
+  Overhead tab had that reduction inline, and a second copy is how the account
+  table and the overhead section start reporting different money for one period.
+
+### Guards
+
+`scripts/cost-recovery.spec.js` 158 → **216 assertions**, in CI, LIFTING AND
+RUNNING the four new helpers — every defect here is a comparison or a share, and
+a regex passes on an inverted one. **Mutation-tested 13 ways, all 13 caught by an
+assertion that names the defect**: recovery measured against 100% (Dan's literal
+reading), the free filter hiding costed programs too, the hidden count dropped,
+`crCostByCat` not pro-rating, a zeroed record counted as costed, the ledger
+breakdown folding in unplaced lines, the pyramid upside down, a SHORTFALL painted
+the surplus colour, nulls sorting first, the roll-up keeping its own reduction,
+the delete gated on three named fields again, the statement re-reducing, and the
+recovery tile losing its tone.
+
+**Eight `ci-check-render` cases**, because none of this is visible in source: a
+`$` drawn by CSS, a tint that only exists once a browser has resolved the
+cascade, a sort that only happens on a click, and a statement whose whole claim
+is arithmetic agreement with the screen beside it. **Browser-mutation-tested six
+ways, each failing EXACTLY the case that names it while the other 22 keep
+passing**: the `$` never drawn, the tints written at (0,2,0) so the skin wins,
+a header click that sets the key and never redraws, the Statement tab rendering
+nothing into itself, the delete button deleting nothing, and the pyramid drawn
+upside down.
+
+**ONE CASE ASSERTED SOMETHING THE FIXTURE CANNOT SHOW, and the failure is what
+said so.** The colour case required three distinct tints; **every period in the
+fixture runs at a shortfall**, so the amber surplus never renders and `net` was
+simply absent. Asserting three would have been a test written for a fixture
+rather than for the page. It requires `in` ≠ `out` — which is the whole cascade
+claim, since a build whose overrides lose renders one ground under every tile —
+and the surplus/shortfall mapping is pinned in the spec instead and **named there
+as a source assertion** rather than implied.
+
+**MY OWN MUTATION ANCHORS WERE WRONG THREE TIMES AND THE GUARDS WERE FINE** —
+a `·` escape in the runner against a literal `·` in the file, and two
+anchors matching in more places than intended (`"net" : "bad"` appears in
+`crRecoveryTone` itself as well as in the three strip branches). *A mutation that
+does not apply has not tested anything, and it reads as a hole* — the runner
+asserts the file actually changed and counts the anchor's occurrences against
+what it expects.
+
+### NOT DONE
+
+- **No PDF route and no email subscription**, unchanged. The statement prints
+  from the browser; the two CSVs are the file exports.
+- **The amber surplus is unproven in a browser**, for the fixture reason above.
+  A period that turns a profit would show it; inventing one to paint a tile is a
+  fixture written for a test.
+- **Sorting is not in the URL.** Which column you sorted by is not part of the
+  question the report answers, so it is not shareable — the same line the tier
+  filter draws.
+
 ## Working preferences (from Dan, dan@rec.us)
 
 - **Every finished task is reported in the TEMPLATE** — one or two sentences,

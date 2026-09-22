@@ -127,7 +127,7 @@
   .card > .hint { font-size: 11.5px; color: var(--rec-text-secondary, #6a6a6a); margin-bottom: 11px; line-height: 1.5; }
 
   /* ── Tier ladder ── */
-  .tier { display: grid; grid-template-columns: minmax(180px, 1.5fr) minmax(120px, 3fr) minmax(130px, auto); gap: 12px; align-items: center; padding: 7px 0; border-top: 1px solid var(--rec-border-subtle, #eceae6); }
+  .tier { display: grid; grid-template-columns: 54px minmax(170px, 1.5fr) minmax(120px, 3fr) minmax(140px, auto); gap: 12px; align-items: center; padding: 7px 0; border-top: 1px solid var(--rec-border-subtle, #eceae6); }
   .tier:first-of-type { border-top: 0; }
   .tier .nm { font-size: 11.5px; line-height: 1.45; }
   .tier .nm i { font-style: normal; color: var(--rec-text-secondary, #6a6a6a); }
@@ -204,8 +204,91 @@
   #loader .bar { height: 100%; width: 0; background: var(--rec-brand-pine, #14532d); border-radius: 99px; transition: width .28s ease; }
   #loader .meta { font-size: 12px; color: var(--rec-text-secondary, #6a6a6a); margin-top: 8px; }
 
+  /* ── Money inputs wear their unit. Dan, on the entry fields: "These are
+        amounts, they should have dollar signs on them all." The symbol is
+        DRAWN rather than put in the value: a "$" inside a type="number" makes
+        the field invalid, empties its value and takes the arithmetic with it. ── */
+  .money { position: relative; display: inline-block; }
+  .money::before {
+    content: "$"; position: absolute; left: 7px; top: 50%; transform: translateY(-50%);
+    font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 11.5px;
+    color: var(--rec-text-tertiary, #8a8a8a); pointer-events: none;
+  }
+  .money > input { padding-left: 18px; }
+
+  /* ── The KPI strip carries the P&L's own colours: money in green, money out
+        red, the bottom line amber. That is the convention every profit and
+        loss already uses, so the strip is scannable before it is read.
+
+        THE TINTS ARE THIS PAGE'S OWN CHIP PALETTE, not new values, and they
+        are compound selectors on purpose — the skin's `.sum-cards > .sum-card`
+        is (0,2,0) and these are (0,3,0), so they win from here without
+        touching the shared sheet or adding a sixth KPI family. ── */
+  .sum-cards > .sum-card.t-in   { background: #f0fdf4; border-color: #bbf7d0; }
+  .sum-cards > .sum-card.t-out  { background: #fef2f2; border-color: #fecaca; }
+  .sum-cards > .sum-card.t-net  { background: #fffbeb; border-color: #fde68a; }
+  .sum-cards > .sum-card.t-good { background: #f0fdf4; border-color: #86efac; }
+  .sum-cards > .sum-card.t-bad  { background: #fef2f2; border-color: #fca5a5; }
+  .sum-cards > .sum-card.t-in   .sc-val { color: var(--rec-success-ink, #15803d); }
+  .sum-cards > .sum-card.t-out  .sc-val { color: var(--rec-danger-ink, #b91c1c); }
+  .sum-cards > .sum-card.t-net  .sc-val { color: var(--rec-warning-ink, #b45309); }
+  .sum-cards > .sum-card.t-good .sc-val { color: var(--rec-success-ink, #15803d); }
+  .sum-cards > .sum-card.t-bad  .sc-val { color: var(--rec-danger-ink, #b91c1c); }
+
+  /* ── The pyramid, drawn as a pyramid. GreenPlay stacks the tiers with
+        community benefit as the BASE and individual benefit at the apex, so
+        the ladder runs 4 at the top down to 1, and the wedge on the left steps
+        out as it descends. It is decoration that carries the model: a reader
+        who has never heard of the pyramid can see what it claims. ── */
+  .tier .step { display: flex; align-items: center; }
+  .tier .step i { display: block; height: 22px; border-radius: 3px;
+                  background: var(--rec-brand-pine, #14532d); opacity: .15; }
+  .tier[data-cr-tier="4"] .step i { width: 25%; }
+  .tier[data-cr-tier="3"] .step i { width: 50%; }
+  .tier[data-cr-tier="2"] .step i { width: 75%; }
+  .tier[data-cr-tier="1"] .step i { width: 100%; }
+  .tier .fig em { font-style: normal; }
+  .tier .fig em.inband { color: var(--rec-success-ink, #15803d); font-weight: 600; }
+  .tier .fig em.above  { color: var(--rec-text-secondary, #6a6a6a); }
+  .tier .fig em.under  { color: var(--rec-warning-ink, #b45309); font-weight: 600; }
+  .pyverdict { font-size: 12px; color: var(--rec-text-secondary, #4a4a4a);
+               background: var(--rec-bg-secondary, #faf9f7); border-radius: 8px;
+               padding: 8px 11px; margin-bottom: 10px; line-height: 1.5; }
+  .pyverdict b { color: var(--rec-text-primary, #1a1a1a); }
+
+  /* ── Sortable headers ── */
+  table.pl th.sortable { cursor: pointer; user-select: none; }
+  table.pl th.sortable:hover { color: var(--rec-text-primary, #1a1a1a); }
+  table.pl th.sortable .sa { opacity: .28; margin-left: 3px; font-size: 9px; }
+  table.pl th.sortable[aria-sort] { color: var(--rec-text-primary, #1a1a1a); }
+  table.pl th.sortable[aria-sort] .sa { opacity: 1; }
+
+  /* A delete nobody can find is a delete that does not exist — the recorded
+     lesson from the Fast Track pin, and exactly how this one was reported. */
+  .lgdel { color: var(--rec-text-tertiary, #9a9a9a); }
+  .lgdel:hover { background: #fee2e2; border-color: #fca5a5; color: #7f1d1d; }
+
+  /* ── The statement. What all this data entry is FOR. ── */
+  #statementView .st { max-width: 780px; }
+  #statementView .st-head { border-bottom: 2px solid var(--rec-brand-pine, #14532d);
+                            padding-bottom: 9px; margin-bottom: 2px; }
+  #statementView .st-head .t1 { font-size: 17px; font-weight: 700; letter-spacing: -.01em; }
+  #statementView .st-head .t2 { font-size: 12.5px; color: var(--rec-text-secondary, #5b5b5b); margin-top: 2px; }
+  #statementView h3 { font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em;
+                      color: var(--rec-text-secondary, #6a6a6a); margin: 17px 0 3px; font-weight: 700; }
+  #statementView table.stt { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  #statementView table.stt td { padding: 4px 0; border-bottom: 1px solid var(--rec-border-subtle, #eceae6); }
+  #statementView table.stt td + td { text-align: right; width: 130px; }
+  #statementView table.stt tr.ind td:first-child { padding-left: 15px; color: var(--rec-text-secondary, #5b5b5b); }
+  #statementView table.stt tr.sub td { font-weight: 700; border-top: 1px solid var(--rec-border, #d9d5cf); border-bottom: 0; }
+  #statementView table.stt tr.grand td { font-weight: 700; font-size: 14.5px;
+                                         border-top: 2px solid var(--rec-border, #d9d5cf); border-bottom: 0; padding-top: 7px; }
+  #statementView table.stt tr.neg td + td { color: var(--rec-danger-ink, #b91c1c); }
+  #statementView .st-foot { font-size: 11px; color: var(--rec-text-secondary, #6a6a6a);
+                            margin-top: 18px; line-height: 1.55; border-top: 1px solid var(--rec-border-subtle, #eceae6); padding-top: 9px; }
+
   @media print {
-    .toolbar, .modebar, .picks, .exp, .costin, .tiersel, .linebox, #exportCsv { display: none !important; }
+    .toolbar, .modebar, .picks, .exp, .costin, .tiersel, .linebox, #exportCsv, .stmtbar { display: none !important; }
     body { background: #fff; }
     .card, .basis { break-inside: avoid; }
   }
@@ -214,6 +297,7 @@
     .wrap { padding: 0 16px 32px; }
     .tier { grid-template-columns: 1fr; gap: 5px; }
     .tier .fig { text-align: left; }
+    .tier .step { display: none; }
   }
 </style>
   <!-- The Recess layer. recess-tokens.css carries the VALUES; recess-report.css
@@ -259,6 +343,7 @@
     <div class="seg">
       <button type="button" data-view="pl"      aria-pressed="true">P&amp;L</button>
       <button type="button" data-view="ledger"  aria-pressed="false">Overhead &amp; other</button>
+      <button type="button" data-view="statement" aria-pressed="false">Statement</button>
     </div>
   </div>
 
@@ -284,6 +369,7 @@
       <option value="0">Not tiered yet</option>
     </select></label>
     <label class="chk"><input type="checkbox" id="hideBlank"> Only programs with a cost</label>
+    <label class="chk" title="Hides programs that took no money AND have no cost entered. A free program you HAVE costed is kept — that is a subsidy, and it is the most interesting line on the page."><input type="checkbox" id="hideFree"> Hide free programs</label>
   </div>
 
   <div class="basis" id="basisNote"></div>
@@ -292,11 +378,16 @@
 
   <div id="plView">
   <div class="card" id="tierCard">
-    <h2>Against the cost recovery pyramid</h2>
-    <p class="hint">Where each tier lands against the share of its cost it is meant to recover.
-      The bands are the GreenPlay pyramid every parks department benchmarks against; the mark on each
-      bar is that tier's target. <b>Tiers are yours to set</b> — a program with no tier is counted in
-      the money above and left out of this panel.</p>
+    <h2>The GreenPlay cost recovery pyramid</h2>
+    <p class="hint">The benchmark parks and recreation departments are measured against, and the
+      reason the tiers exist. Its base is <b>community benefit</b> — open play, a summer concert,
+      programming a town funds because everyone gains from it, which is meant to recover a
+      <i>quarter to a half</i> of what it costs. Its apex is <b>individual benefit</b> — a trip, a
+      private lesson, a specialty class one household gains from, which is meant to recover
+      <i>all of it and then some</i>. A tier is not a grade: recovering 35% on a tier 1 program is
+      the model working. <b>Tiers are yours to set</b> — a program with no tier is counted in the
+      money above and left out of this panel.</p>
+    <div id="pyVerdict"></div>
     <div id="tiers"></div>
   </div>
 
@@ -308,16 +399,16 @@
       where you put them.</p>
     <div class="tablewrap">
       <table class="pl">
-        <thead><tr>
+        <thead><tr id="plHead">
           <th style="width:26px"></th>
-          <th>Program</th>
-          <th class="r">Tier</th>
-          <th class="r">Enrolled</th>
-          <th class="r">Revenue</th>
-          <th class="r">Cost</th>
-          <th class="r">Net</th>
-          <th class="r">Recovery</th>
-          <th>Status</th>
+          <th class="sortable" data-sort="name">Program<span class="sa">▴▾</span></th>
+          <th class="r sortable" data-sort="tier">Tier<span class="sa">▴▾</span></th>
+          <th class="r sortable" data-sort="enrolled">Enrolled<span class="sa">▴▾</span></th>
+          <th class="r sortable" data-sort="rev">Revenue<span class="sa">▴▾</span></th>
+          <th class="r sortable" data-sort="cost">Cost<span class="sa">▴▾</span></th>
+          <th class="r sortable" data-sort="net">Net<span class="sa">▴▾</span></th>
+          <th class="r sortable" data-sort="rec">Recovery<span class="sa">▴▾</span></th>
+          <th class="sortable" data-sort="status">Status<span class="sa">▴▾</span></th>
         </tr></thead>
         <tbody id="tbody"></tbody>
         <tfoot id="tfoot"></tfoot>
@@ -339,7 +430,8 @@
       with neither is counted below and left out rather than dropped into whichever period happens to
       be open. These stay <b>apart from program costs</b> on purpose: the tier bands on the P&amp;L tab
       are <i>direct</i> cost recovery bands, so folding the truck into a swim lesson would push it
-      under its tier for a reason that has nothing to do with the swim lesson.</p>
+      under its tier for a reason that has nothing to do with the swim lesson.
+      The <b>×</b> at the end of a row deletes that line.</p>
     <datalist id="lgCats"></datalist>
     <div id="ledgerRollup"></div>
     <div class="tablewrap">
@@ -362,6 +454,20 @@
     </div>
     <div class="rowcount" id="ledgerCount"></div>
     <div style="margin-top:10px"><button type="button" id="addRows" class="exp" style="width:auto;padding:5px 12px">+ 25 more rows</button></div>
+  </div>
+
+  <!-- WHAT ALL THE TYPING IS FOR. Dan: "What happens after I enter all this
+       data for say, a season? Is there a 'generate P/L statement' or
+       something? Seems like we're missing the 'what's next'?" — and he is
+       right: the report took entry and gave back a screen, which is the
+       dead-end pattern this repo keeps recording. This is the document. -->
+  <div class="card" id="statementView" hidden>
+    <div class="stmtbar" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
+      <button type="button" id="printStmt" class="exp" style="width:auto;padding:6px 13px;font-weight:600">⎙ Print / save as PDF</button>
+      <button type="button" id="stmtCsv" class="exp" style="width:auto;padding:6px 13px">↓ Statement CSV</button>
+      <span class="hint" style="margin:0">Prints on its own — the toolbar, the pickers and every input are left off the page.</span>
+    </div>
+    <div class="st" id="stmtBody"></div>
   </div>
 </div>
 
@@ -543,6 +649,11 @@ function crChipState(rev, cost, tier) {
   return rec >= T.lo * 0.75 ? "warn" : "bad";
 }
 
+/* Sorting a Status column needs an ORDER, and the useful one is by how much
+   attention the row wants rather than alphabetical. Ascending puts the
+   furthest under its band first. */
+var CR_STATE_ORDER = { bad: 0, warn: 1, blank: 2, nocost: 3, untiered: 4, ok: 5, over: 6, nofee: 7 };
+
 /* SECTION GRAIN IN, PROGRAM x SEASON OUT — which is the grain costs are keyed
    on, because 26% of Shrewsbury's programs recur across seasons and a swim
    lesson costs a different amount to run in July than in January. Keyed on the
@@ -621,6 +732,85 @@ function crLedgerSlice(rows, per, mode) {
   return { income: income, expense: expense, placed: placed, unplaced: unplaced };
 }
 
+/* DIRECT COST SPLIT FIVE WAYS ACROSS THE ROWS IN VIEW, which is what finally
+   makes the per-program breakdown pay for itself: until the statement existed
+   those five fields were typed, summed and never read apart again.
+
+   The predicate is crCostDollars's, character for character — only a finite
+   positive value counts, and a record holding nothing counts as uncosted — so
+   `total` ties to the Direct costs figure on the strip rather than being a
+   second opinion about it. Pro-rated by the row's own share, like every other
+   figure in a date period. */
+function crCostByCat(rows, costs) {
+  var out = { total: 0, uncosted: 0, by: {} };
+  CR_CATS.forEach(function (c) { out.by[c[0]] = 0; });
+  (rows || []).forEach(function (r) {
+    var e = costs && costs[r.p.key], any = false;
+    if (e) CR_CATS.forEach(function (c) {
+      var v = +e[c[0]];
+      if (Number.isFinite(v) && v > 0) { out.by[c[0]] += (v / 100) * r.w; out.total += (v / 100) * r.w; any = true; }
+    });
+    if (!any) out.uncosted++;
+  });
+  return out;
+}
+
+/* ONE BREAKDOWN OF THE LEDGER, read by the roll-up on screen AND by the
+   statement. Two copies of this reduction is how the account table and the
+   statement start reporting different overhead for the same period — the
+   one-reducer-N-readers rule, which crCostedSum exists for one level up. */
+function crLedgerBreakdown(rows, per, mode) {
+  var byAcct = {}, byCat = {}, income = 0, expense = 0;
+  (rows || []).forEach(function (r) {
+    var amt = (+r.amount || 0) / 100;
+    if (!amt) return;
+    var w = crShare({ season: r.season, start: r.start, end: r.end }, per, mode);
+    if (!w) return;
+    var v = amt * w, acct = r.account || "(no account)", cat = r.category || "(no category)";
+    var A = byAcct[acct] = byAcct[acct] || { inc: 0, exp: 0 };
+    var C = byCat[cat]   = byCat[cat]   || { inc: 0, exp: 0 };
+    if (r.kind === "income") { A.inc += v; C.inc += v; income += v; }
+    else { A.exp += v; C.exp += v; expense += v; }
+  });
+  var by = function (o) {
+    return Object.keys(o).sort(function (x, y) {
+      return (o[y].inc + o[y].exp) - (o[x].inc + o[x].exp) || x.localeCompare(y);
+    });
+  };
+  return { byAcct: byAcct, byCat: byCat, income: income, expense: expense,
+           accts: by(byAcct), cats: by(byCat) };
+}
+
+/* WHAT COLOUR A RECOVERY FIGURE DESERVES, and it is NOT measured against 100%.
+
+   Dan asked for "red is < 100, green > 100, that kind of thing" — and on this
+   report 100% is the wrong line to draw. Tier 1 is MEANT to recover 25-50%, so
+   a department running mostly community programming would be painted red for
+   doing exactly what the model asks. That is the midpoint mistake again, one
+   surface over.
+
+   So it is judged against the portfolio's OWN blended target, which is the
+   figure the card's sub-line already prints beside it. With nothing tiered
+   there is no target and the tile takes no colour rather than inventing a
+   verdict. */
+function crRecoveryTone(rec, target) {
+  if (rec === null || rec === undefined || !Number.isFinite(rec)) return "";
+  if (target === null || target === undefined || !Number.isFinite(target)) return "";
+  if (rec >= target) return "good";
+  return rec >= target - 10 ? "net" : "bad";
+}
+
+/* The plain-English verdict for one tier, which is what makes the pyramid
+   readable by somebody who has never heard of it. ABOVE is not a failure and
+   is not worded as one: a tier 1 program recovering 90% is priced like a
+   tier 3, which is worth knowing and is not a fault. */
+function crTierVerdict(rec, T) {
+  if (rec === null || !Number.isFinite(rec)) return ["", ""];
+  if (rec >= T.lo && rec <= T.hi) return ["inband", "inside the " + T.lo + "\u2013" + T.hi + "% band"];
+  if (rec > T.hi) return ["above", Math.round(rec - T.hi) + " pts above the band"];
+  return ["under", Math.round(T.lo - rec) + " pts under the band"];
+}
+
 function crMoney(n) {
   if (n === null || n === undefined || !Number.isFinite(n)) return "—";
   return (n < 0 ? "−$" : "$") + Math.abs(Math.round(n)).toLocaleString("en-US");
@@ -649,7 +839,10 @@ function crEsc(s) {
   var costs = {};                       // key -> { instructors: cents, …, note }
   var tiers = {};                       // key -> 1..4  (also stored, on the same record)
   var mode = "season", period = null, periodB = null;
-  var tierFilter = "", hideBlank = false, open = {};
+  var tierFilter = "", hideBlank = false, hideFree = false, open = {};
+  // "" is the report's own order (biggest revenue first). A click sets a key
+  // and a direction; a second click on the same key reverses it.
+  var sortKey = "", sortDir = -1;
   var dirty = {}, saveTimer = null, saving = false, saveFailed = false;
   var view = "pl", ledger = {}, ledgerDirty = {}, ledgerBlanks = 30, ledgerSeq = 0;
   var LEDGER_STEP = 25;
@@ -792,9 +985,39 @@ function crEsc(s) {
   // ── the slice ───────────────────────────────────────────────────────
   function periodList() { return crPeriods(mode === "compare" ? "quarter" : mode, seasons, minD, maxD); }
 
+  /* THE SORT KEY'S VALUE FOR ONE ROW, and null means "cannot answer" rather
+     than zero — an uncosted program has no net and no recovery, and sorting it
+     as 0 files the whole uncosted wall at one end of a money column as though
+     somebody had measured it. Nulls go last in BOTH directions. */
+  function sortVal(r) {
+    switch (sortKey) {
+      case "name":     return r.p.name.toLowerCase();
+      case "tier":     return r.tier || null;
+      case "enrolled": return r.p.enrolled;
+      case "rev":      return r.rev;
+      case "cost":     return r.cost;
+      case "net":      return r.cost === null ? null : r.rev - r.cost;
+      case "rec":      var x = crRecovery(r.rev, r.cost); return Number.isFinite(x) ? x : null;
+      case "status":   return CR_STATE_ORDER[crChipState(r.rev, r.cost, r.tier)];
+    }
+    return null;
+  }
+  function sortRows(out) {
+    if (!sortKey) return;
+    out.sort(function (a, b) {
+      var x = sortVal(a), y = sortVal(b);
+      var xn = x === null || x === undefined, yn = y === null || y === undefined;
+      if (xn && yn) return a.p.name.localeCompare(b.p.name);
+      if (xn) return 1;
+      if (yn) return -1;
+      var c = typeof x === "string" ? x.localeCompare(y) : (x - y);
+      return (c * sortDir) || a.p.name.localeCompare(b.p.name);
+    });
+  }
+
   function sliceFor(per) {
     var m = mode === "compare" ? "quarter" : mode;
-    var out = [], undated = 0;
+    var out = [], undated = 0, hidFree = 0;
     progs.forEach(function (p) {
       if (m !== "season" && (!p.start || !p.end)) { undated++; return; }
       var w = crShare(p, per, m);
@@ -803,10 +1026,21 @@ function crEsc(s) {
       if (tierFilter !== "" && String(tier) !== tierFilter) return;
       var cd = crCostDollars(costs[p.key]);
       if (hideBlank && cd === null) return;
+      /* HIDE FREE, BUT NEVER A FREE PROGRAM SOMEBODY HAS COSTED. Dan asked for
+         this because 37 of Shrewsbury's 82 programs charge nothing and the
+         table opens as a wall of $0 — and he named the limit in the same
+         breath: "There still might be associated costs, so I don't want to
+         exclude them." A free program with a cost entered is pure subsidy,
+         which is the single most interesting line this report can draw, so it
+         stays whatever the checkbox says. */
+      if (hideFree && p.revenue === 0 && cd === null) { hidFree++; return; }
       out.push({ p: p, w: w, tier: tier, rev: p.revenue * w, cost: cd === null ? null : cd * w, whole: cd });
     });
     out.sort(function (a, b) { return b.rev - a.rev || a.p.name.localeCompare(b.p.name); });
-    return { per: per, rows: out, undated: undated,
+    // The reader's own order, applied LAST and in sliceFor rather than in the
+    // table, so the CSV and the statement come out in the order on screen.
+    sortRows(out);
+    return { per: per, rows: out, undated: undated, hidFree: hidFree,
              ledger: crLedgerSlice(Object.keys(ledger).map(function (k) { return ledger[k]; }), per, m) };
   }
 
@@ -929,8 +1163,12 @@ function crEsc(s) {
   // recess-report.css rather than invented here — a sixth KPI family is exactly
   // what recess-palette.spec.js's detector exists to fail on, and a card the
   // skin does not style is the drift that sweep was written to end.
-  function tile(lab, val, sub) {
-    return '<div class="sum-card"><div class="sc-label">' + crEsc(lab) + "</div>"
+  /* `tone` is the P&L colour: in / out / net / good / bad, or "" for none.
+     It is a CLASS rather than a style so the tint stays in the stylesheet
+     where a theme can reach it, and an unknown tone simply paints nothing. */
+  function tile(lab, val, sub, tone) {
+    return '<div class="sum-card' + (tone ? " t-" + tone : "") + '" data-cr-tone="' + (tone || "") + '">'
+      + '<div class="sc-label">' + crEsc(lab) + "</div>"
       + '<div class="sc-val num">' + val + "</div>"
       + '<div class="sc-sub">' + (sub || "") + "</div></div>";
   }
@@ -954,19 +1192,22 @@ function crEsc(s) {
     if (dB) {
       var tb = totals(dB);
       $("kpis").innerHTML =
-          tile("Revenue", crMoney(t.rev), deltaText(t.rev, tb.rev, function (n) { return crMoney(n).replace("$", "$"); })
-               + " vs " + crEsc(dB.per.t), true)
+          tile("Revenue", crMoney(t.rev), deltaText(t.rev, tb.rev, crMoney)
+               + " vs " + crEsc(dB.per.t), "in")
         + tile("Direct costs", t.cost > 0 ? crMoney(t.cost) : "—",
-               tb.cost > 0 || t.cost > 0 ? deltaText(t.cost, tb.cost, crMoney) + " vs " + crEsc(dB.per.t) : "no costs entered yet")
+               tb.cost > 0 || t.cost > 0 ? deltaText(t.cost, tb.cost, crMoney) + " vs " + crEsc(dB.per.t) : "no costs entered yet",
+               t.cost > 0 ? "out" : "")
         + tile(t.net >= 0 ? "Surplus" : "Shortfall", t.cost > 0 ? crMoney(t.net) : "—",
                t.cost > 0 && tb.cost > 0
                  ? (note ? note + " · " : "") + deltaText(t.net, tb.net, crMoney) + " vs " + crEsc(dB.per.t)
-                 : "enter a cost to compare")
+                 : "enter a cost to compare",
+               t.cost > 0 ? (t.net >= 0 ? "net" : "bad") : "")
         + tile("Cost recovery", crPctText(t.recovery),
                t.recovery !== null && tb.recovery !== null
                  ? (note ? note + " · " : "")
                    + deltaText(t.recovery, tb.recovery, function (n) { return Math.round(n) + " pts"; }) + " vs " + crEsc(dB.per.t)
-                 : "needs a cost in both periods");
+                 : "needs a cost in both periods",
+               crRecoveryTone(t.recovery, t.target));
       return;
     }
     var L = d.ledger || { income: 0, expense: 0, placed: 0, unplaced: 0 };
@@ -985,14 +1226,18 @@ function crEsc(s) {
       $("kpis").innerHTML =
           tile("Revenue", crMoney(fullRev), L.income
                  ? crMoney(t.rev) + " from programs · " + crMoney(L.income) + " other income"
-                 : d.rows.length + " programs", true)
+                 : d.rows.length + " programs", "in")
         + tile("Direct costs", t.cost > 0 ? crMoney(t.cost) : "—",
-               t.blank ? t.blank + " of " + d.rows.length + " not costed yet" : "programs only")
-        + tile("Overhead", crMoney(L.expense), L.placed + " line" + (L.placed === 1 ? "" : "s") + " in this period")
+               t.blank ? t.blank + " of " + d.rows.length + " not costed yet" : "programs only",
+               t.cost > 0 ? "out" : "")
+        + tile("Overhead", crMoney(L.expense), L.placed + " line" + (L.placed === 1 ? "" : "s") + " in this period",
+               L.expense > 0 ? "out" : "")
         + tile(fullRevOwn - fullCost >= 0 ? "Surplus" : "Shortfall", crMoney(fullRevOwn - fullCost),
-               "after overhead · direct alone " + crMoney(t.net) + (note ? " · " + note : ""))
+               "after overhead · direct alone " + crMoney(t.net) + (note ? " · " + note : ""),
+               fullRevOwn - fullCost >= 0 ? "net" : "bad")
         + tile("Cost recovery", crPctText(t.recovery),
-               "direct · full cost " + crPctText(full) + (note ? " · " + note : ""));
+               "direct · full cost " + crPctText(full) + (note ? " · " + note : ""),
+               crRecoveryTone(t.recovery, t.target));
       // The FIGURES, stamped. A render case keyed on the words "Overhead" and
       // "full cost" passes on a build that folds the overhead into the direct
       // cost tile — the numbers are the only thing that can tell those apart,
@@ -1003,17 +1248,20 @@ function crEsc(s) {
       return;
     }
     $("kpis").innerHTML =
-        tile("Revenue", crMoney(t.rev), d.rows.length + " programs · " + t.free + " charge no fee", true)
+        tile("Revenue", crMoney(t.rev), d.rows.length + " programs · " + t.free + " charge no fee", "in")
       + tile("Direct costs", t.cost > 0 ? crMoney(t.cost) : "—",
-             t.blank ? t.blank + " of " + d.rows.length + " not costed yet" : "every program costed")
+             t.blank ? t.blank + " of " + d.rows.length + " not costed yet" : "every program costed",
+             t.cost > 0 ? "out" : "")
       + tile(t.net >= 0 ? "Surplus" : "Shortfall", t.cost > 0 ? crMoney(t.net) : "—",
-             t.cost > 0 ? (note || "revenue less every cost entered") : "enter a cost to see this")
+             t.cost > 0 ? (note || "revenue less every cost entered") : "enter a cost to see this",
+             t.cost > 0 ? (t.net >= 0 ? "net" : "bad") : "")
       + tile("Cost recovery", crPctText(t.recovery),
              t.recovery === null ? "needs at least one cost"
                : (note ? note + " · " : "")
                  + (t.target === null ? (t.untiered ? t.untiered + " untiered — no target yet" : "")
                     : "target " + crPctText(t.target) + " · "
-                      + (t.recovery >= t.target ? "ahead" : "behind") + " by " + Math.round(Math.abs(t.recovery - t.target)) + " pts"));
+                      + (t.recovery >= t.target ? "ahead" : "behind") + " by " + Math.round(Math.abs(t.recovery - t.target)) + " pts"),
+             crRecoveryTone(t.recovery, t.target));
   }
 
   function renderTiers(d) {
@@ -1028,8 +1276,12 @@ function crEsc(s) {
       // report is read against.
       if (r.cost !== null) { a.rev += r.rev; a.cost += r.cost; a.costed++; }
     });
-    var any = false;
-    var html = [1, 2, 3, 4].map(function (t) {
+    var any = false, inBand = 0, judged = 0;
+    // TOP TO BOTTOM IS 4 TO 1, because that is the pyramid: individual benefit
+    // at the apex, community benefit as the base. The wedge on the left steps
+    // out as it descends, so the shape says what the model claims before a
+    // word of the copy is read.
+    var html = [4, 3, 2, 1].map(function (t) {
       var T = CR_TIERS[t], a = agg[t];
       if (!a || !a.n) return "";
       any = true;
@@ -1039,15 +1291,41 @@ function crEsc(s) {
       var tick = Math.min(100, T.tgt / cap * 100);
       // UNDER means below the BAND, not below its midpoint.
       var under = rec !== null && rec < T.lo;
-      return '<div class="tier" data-cr-tier="' + t + '" data-cr-tier-rec="' + (rec === null ? "" : Math.round(rec)) + '">'
+      var v = crTierVerdict(rec, T);
+      if (rec !== null && Number.isFinite(rec)) { judged++; if (v[0] === "inband") inBand++; }
+      return '<div class="tier" data-cr-tier="' + t + '" data-cr-tier-rec="' + (rec === null ? "" : Math.round(rec)) + '"'
+        + ' data-cr-tier-band="' + v[0] + '">'
+        + '<div class="step" aria-hidden="true"><i></i></div>'
         + '<div class="nm"><b>Tier ' + t + " · " + crEsc(T.name) + "</b><br><i>" + crEsc(T.eg)
         + " — " + a.n + " program" + (a.n === 1 ? "" : "s")
         + (a.costed < a.n ? " · " + a.costed + " costed" : "") + "</i></div>"
         + '<div class="track"><div class="fillbar' + (under ? " under" : "") + '" style="width:' + w + '%"></div>'
         + '<div class="tick" style="left:' + tick + '%" title="target ' + T.tgt + '%"></div></div>'
         + '<div class="fig">' + (rec === null ? "<b>—</b> <span>not costed</span>"
-            : '<b class="num">' + crPctText(rec) + "</b> <span>vs " + T.lo + "–" + T.hi + "%</span>") + "</div></div>";
+            : '<b class="num">' + crPctText(rec) + '</b><br><em class="' + v[0] + '">' + v[1] + "</em>") + "</div></div>";
     }).join("");
+
+    /* THE PYRAMID, READ BACK IN WORDS. Dan on the model: "never even heard of
+       that, but that's bad ass. lean into this depending on what the org's
+       numbers look like" — so the panel states what THIS org's figures say
+       against it rather than leaving a reader to decode four bars. */
+    var t0 = totals(d), pv = "";
+    if (judged) {
+      pv = "<b>" + judged + " of your tiers " + (judged === 1 ? "has" : "have") + " enough entered to judge</b>, and "
+         + (inBand === judged ? (judged === 1 ? "it is" : "they are") + " <b>all inside their band</b>."
+            : inBand ? "<b>" + inBand + "</b> of " + judged + " " + (inBand === 1 ? "is" : "are") + " inside its band."
+            : "<b>none</b> is inside its band yet.");
+      if (t0.recovery !== null && t0.target !== null && Number.isFinite(t0.recovery)) {
+        pv += " Across everything costed you recover <b>" + crPctText(t0.recovery)
+            + "</b> against a blended target of <b>" + crPctText(t0.target) + "</b> — "
+            + (t0.recovery >= t0.target
+                ? "so this portfolio is priced ABOVE what the pyramid asks of it, which is a subsidy you are not spending."
+                : "so the pyramid asks more of this portfolio than it currently recovers.");
+      }
+      pv = '<div class="pyverdict" data-cr-pyverdict="' + inBand + "/" + judged + '">' + pv + "</div>";
+    }
+    $("pyVerdict").innerHTML = pv;
+
     var untiered = d.rows.filter(function (r) { return !r.tier; }).length;
     $("tiers").innerHTML = (any ? html : "")
       + (untiered ? '<p class="hint" style="margin:' + (any ? "10px 0 0" : "0") + '" data-cr-untiered="' + untiered + '">'
@@ -1105,9 +1383,9 @@ function crEsc(s) {
         + '<td class="r num">' + p.enrolled + "</td>"
         + '<td class="r num" data-cr-rev="' + Math.round(r.rev) + '">' + crMoney(r.rev)
         + (b ? '<div class="pmeta">' + deltaText(r.rev, b.rev, crMoney) + "</div>" : "") + "</td>"
-        + '<td class="r"><input class="costin num' + (r.whole === null ? " empty" : "") + '" type="number" min="0" step="any" '
+        + '<td class="r"><span class="money"><input class="costin num' + (r.whole === null ? " empty" : "") + '" type="number" min="0" step="any" '
         + 'data-k="' + crEsc(key) + '" placeholder="enter" value="' + (r.whole === null ? "" : r.whole) + '" '
-        + 'aria-label="Total cost for ' + crEsc(p.name) + '"></td>'
+        + 'aria-label="Total cost for ' + crEsc(p.name) + '"></span></td>'
         + '<td class="r num" data-cr-net>' + (r.cost === null ? "—" : crMoney(r.rev - r.cost)) + "</td>"
         + '<td class="r num" data-cr-rec="' + (rec === null || rec === Infinity ? "" : Math.round(rec)) + '">'
         + (rec === Infinity ? "—" : crPctText(rec)) + "</td>"
@@ -1118,14 +1396,22 @@ function crEsc(s) {
         html += '<tr class="lines"><td colspan="9"><div class="linebox">'
           + CR_CATS.map(function (c) {
               return '<label class="lineitem"><span>' + c[1] + "</span>"
-                + '<input type="number" min="0" step="any" class="num" data-k="' + crEsc(key) + '" data-c="' + c[0] + '" '
-                + 'value="' + ((+cc[c[0]] || 0) / 100 || "") + '" aria-label="' + c[1] + " cost for " + crEsc(p.name) + '"></label>';
+                + '<span class="money"><input type="number" min="0" step="any" class="num" data-k="' + crEsc(key) + '" data-c="' + c[0] + '" '
+                + 'value="' + ((+cc[c[0]] || 0) / 100 || "") + '" aria-label="' + c[1] + " cost for " + crEsc(p.name) + '"></span></label>';
             }).join("")
           + '<span class="linesum">These five add up to the total on the row.</span></div></td></tr>';
       }
     });
 
     $("tbody").innerHTML = html || '<tr><td colspan="9" class="empty-state">No programs in this period.</td></tr>';
+    // aria-sort is the state AND the styling hook, so a screen reader and the
+    // arrow cannot disagree about which column is sorted.
+    [].forEach.call($("plHead").querySelectorAll("th.sortable"), function (th) {
+      if (th.dataset.sort === sortKey) th.setAttribute("aria-sort", sortDir > 0 ? "ascending" : "descending");
+      else th.removeAttribute("aria-sort");
+      var sa = th.querySelector(".sa");
+      if (sa) sa.textContent = th.dataset.sort === sortKey ? (sortDir > 0 ? "\u25B4" : "\u25BE") : "\u25B4\u25BE";
+    });
     renderTableFoot(d, dB);
   }
 
@@ -1174,8 +1460,12 @@ function crEsc(s) {
     }
     $("tfoot").innerHTML = html;
     var need = d.rows.filter(function (r) { return r.cost === null; }).length;
+    // EXCLUDED IS NEVER HIDDEN. A filter that quietly shrinks the table is how
+    // a total stops being trusted, so what it took out is named beside it.
     $("rowCount").textContent = d.rows.length + " program" + (d.rows.length === 1 ? "" : "s")
-      + " · " + need + " still need a cost";
+      + " · " + need + " still need a cost"
+      + (d.hidFree ? "  ·  " + d.hidFree + " free program" + (d.hidFree === 1 ? "" : "s")
+          + " hidden (no revenue and no cost entered)" : "");
   }
 
   /* ONE ROW'S DERIVED CELLS, IN PLACE — because render() rebuilds the table's
@@ -1299,6 +1589,7 @@ function crEsc(s) {
   LEDGER_CATS.forEach(function (c) { LEDGER_CAT_KIND[c[0].toLowerCase()] = c[1]; });
 
   function ledgerRowHtml(id, r, n) {
+    var saved = !!r;
     r = r || {};
     var seasonOpts = ['<option value="">\u2014</option>'].concat(seasons.map(function (x) {
       return '<option value="' + crEsc(x) + '"' + (r.season === x ? " selected" : "") + ">" + crEsc(x) + "</option>";
@@ -1317,16 +1608,23 @@ function crEsc(s) {
       + '<td class="r"><select class="tiersel lg" style="width:86px" data-id="' + crEsc(id) + '" data-f="kind" aria-label="In or out">'
       + '<option value="expense"' + (r.kind === "income" ? "" : " selected") + ">Expense</option>"
       + '<option value="income"' + (r.kind === "income" ? " selected" : "") + ">Income</option></select></td>"
-      + '<td class="r"><input class="costin lg num" type="number" min="0" step="any" data-id="' + crEsc(id) + '" '
-      + 'data-f="amount" value="' + (r.amount ? r.amount / 100 : "") + '" placeholder="0" aria-label="Amount"></td>'
+      + '<td class="r"><span class="money"><input class="costin lg num" type="number" min="0" step="any" data-id="' + crEsc(id) + '" '
+      + 'data-f="amount" value="' + (r.amount ? r.amount / 100 : "") + '" placeholder="0" aria-label="Amount"></span></td>'
       + '<td class="r"><select class="tiersel lg" style="width:124px" data-id="' + crEsc(id) + '" data-f="season" aria-label="Season">'
       + seasonOpts + "</select></td>"
       + '<td class="r"><input class="costin lg" type="date" style="width:130px" data-id="' + crEsc(id) + '" data-f="start" '
       + 'value="' + crEsc(r.start || "") + '" aria-label="From"></td>'
       + '<td class="r"><input class="costin lg" type="date" style="width:130px" data-id="' + crEsc(id) + '" data-f="end" '
       + 'value="' + crEsc(r.end || "") + '" aria-label="To"></td>'
-      + "<td>" + (r.account || r.label || r.amount
-          ? '<button class="exp lgdel" type="button" data-id="' + crEsc(id) + '" aria-label="Delete this row">\u00D7</button>' : "")
+      /* EVERY SAVED ROW CARRIES ITS DELETE, not only one with an account or an
+         amount. The old gate read three named fields, so a line someone had
+         given only a category or a date had no way out and looked stuck — and
+         a delete nobody can find is the Fast Track pin over again, which is
+         exactly how this was reported. `saved` is true for a stored row and
+         false for the blank ones below it, which have nothing to delete. */
+      + "<td>" + (saved
+          ? '<button class="exp lgdel" type="button" data-id="' + crEsc(id) + '" '
+            + 'title="Delete this line" aria-label="Delete this line">\u00D7</button>' : "")
       + "</td></tr>";
   }
 
@@ -1337,26 +1635,14 @@ function crEsc(s) {
      CATEGORY above them — which is the structure they already budget in. */
   function ledgerRollupHtml(ids, per, m) {
     if (!ids.length) return "";
-    var byAcct = {}, byCat = {}, inTot = 0, outTot = 0;
-    ids.forEach(function (id) {
-      var r = ledger[id], amt = (+r.amount || 0) / 100;
-      if (!amt) return;
-      var w = crShare({ season: r.season, start: r.start, end: r.end }, per, m);
-      if (!w) return;
-      var v = amt * w, acct = r.account || "(no account)", cat = r.category || "(no category)";
-      var A = byAcct[acct] = byAcct[acct] || { inc: 0, exp: 0 };
-      var C = byCat[cat]   = byCat[cat]   || { inc: 0, exp: 0 };
-      if (r.kind === "income") { A.inc += v; C.inc += v; inTot += v; }
-      else { A.exp += v; C.exp += v; outTot += v; }
-    });
-    var accts = Object.keys(byAcct).sort(function (x, y) {
-      return (byAcct[y].inc + byAcct[y].exp) - (byAcct[x].inc + byAcct[x].exp) || x.localeCompare(y);
-    });
+    // crLedgerBreakdown is shared with the statement, so the account table here
+    // and the overhead section there cannot report different money.
+    var B = crLedgerBreakdown(ids.map(function (k) { return ledger[k]; }), per, m);
+    var byAcct = B.byAcct, byCat = B.byCat, inTot = B.income, outTot = B.expense;
+    var accts = B.accts;
     if (!accts.length) return '<p class="hint" style="margin:0 0 12px">Nothing in ' + crEsc(per.t)
       + " yet \u2014 give a line a season or a date range and it will appear here.</p>";
-    var cats = Object.keys(byCat).sort(function (x, y) {
-      return (byCat[y].inc + byCat[y].exp) - (byCat[x].inc + byCat[x].exp) || x.localeCompare(y);
-    });
+    var cats = B.cats;
     var row = function (name, o) {
       var net = o.inc - o.exp;
       return "<tr><td>" + crEsc(name) + '</td><td class="r num">' + (o.inc ? crMoney(o.inc) : "\u2014")
@@ -1448,14 +1734,131 @@ function crEsc(s) {
     });
   }
 
+  /* ── THE STATEMENT ─────────────────────────────────────────────────
+     Dan: "What happens after I enter all this data for say, a season? Is
+     there a 'generate P/L statement' or something? Seems like we're missing
+     the 'what's next'?"
+
+     It is deliberately a VIEW rather than a server-rendered PDF. The page
+     already holds every figure, a print stylesheet already strips the chrome,
+     and "Print / save as PDF" is a button the reader's own browser answers —
+     where a Puppeteer route would need its own endpoint, a #report-ready
+     marker and every filter written into the URL, none of which buys the
+     reader anything they cannot already get.
+
+     EVERY FIGURE COMES FROM THE SAME REDUCERS THE SCREEN USES — totals(),
+     crCostByCat and crLedgerBreakdown — so the statement cannot disagree with
+     the table it was generated from. A statement that quietly differs from the
+     report is worse than no statement. */
+  function stRow(label, val, cls) {
+    return '<tr' + (cls ? ' class="' + cls + '"' : "") + "><td>" + label + "</td><td>" + val + "</td></tr>";
+  }
+  function renderStatement(d) {
+    if (!d) { $("stmtBody").innerHTML = ""; return; }
+    var t = totals(d), m = mode === "compare" ? "quarter" : mode;
+    var C = crCostByCat(d.rows, costs);
+    var B = crLedgerBreakdown(Object.keys(ledger).map(function (k) { return ledger[k]; }), d.per, m);
+    var totalIncome = t.rev + B.income;
+    var fullCost = t.cost + B.expense;
+    // The RATIO takes the costed programmes' revenue, for the reason
+    // crCostedSum exists; the income STATEMENT lists every dollar taken.
+    var directNet = t.net, fullNet = t.costedRev + B.income - fullCost;
+    var full = crRecovery(t.costedRev + B.income, fullCost);
+
+    var when = new Date();
+    var h = '<div class="st-head"><div class="t1">' + crEsc(CFG.displayName || SLUG)
+      + ' \u00B7 Cost recovery statement</div><div class="t2">' + crEsc(d.per.t)
+      + " \u00B7 " + (mode === "season" ? "whole programs, whole season" : "pro-rated across each program's run dates")
+      + " \u00B7 prepared " + when.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })
+      + "</div></div>";
+
+    h += "<h3>Income</h3><table class=\"stt\">"
+      + stRow("Program revenue \u00B7 " + d.rows.length + " program" + (d.rows.length === 1 ? "" : "s"), crMoney(t.rev));
+    B.cats.forEach(function (c) {
+      if (B.byCat[c].inc > 0) h += stRow(crEsc(c), crMoney(B.byCat[c].inc), "ind");
+    });
+    h += stRow("Total income", crMoney(totalIncome), "sub") + "</table>";
+
+    h += "<h3>Direct program costs</h3><table class=\"stt\">";
+    CR_CATS.forEach(function (c) { h += stRow(c[1], crMoney(C.by[c[0]]), "ind"); });
+    h += stRow("Total direct costs"
+      + (C.uncosted ? ' <span style="font-weight:400;color:#8a8a8a">\u00B7 ' + C.uncosted + " of "
+          + d.rows.length + " not costed yet</span>" : ""), crMoney(C.total), "sub") + "</table>";
+
+    if (B.expense > 0) {
+      h += "<h3>Overhead and other costs</h3><table class=\"stt\">";
+      B.accts.forEach(function (a) { if (B.byAcct[a].exp > 0) h += stRow(crEsc(a), crMoney(B.byAcct[a].exp), "ind"); });
+      h += stRow("Total overhead", crMoney(B.expense), "sub") + "</table>";
+    }
+
+    h += "<h3>Result</h3><table class=\"stt\">"
+      + stRow("Program revenue less direct costs", crMoney(directNet), directNet < 0 ? "neg" : "")
+      + (B.expense > 0 || B.income > 0
+          ? stRow((fullNet >= 0 ? "Surplus" : "Shortfall") + " after overhead and other income",
+                  crMoney(fullNet), "grand" + (fullNet < 0 ? " neg" : ""))
+          : stRow(directNet >= 0 ? "Surplus" : "Shortfall", crMoney(directNet), "grand" + (directNet < 0 ? " neg" : "")))
+      + "</table>";
+
+    h += "<h3>Cost recovery</h3><table class=\"stt\">"
+      + stRow("Direct cost recovery", crPctText(t.recovery))
+      + (B.expense > 0 || B.income > 0 ? stRow("Full cost recovery, after overhead", crPctText(full)) : "")
+      + stRow("Blended target from the pyramid", crPctText(t.target)) + "</table>";
+
+    var tiersSeen = [1, 2, 3, 4].filter(function (x) {
+      return d.rows.some(function (r) { return r.tier === x; });
+    });
+    if (tiersSeen.length) {
+      h += "<h3>Against the GreenPlay pyramid</h3><table class=\"stt\">";
+      tiersSeen.forEach(function (x) {
+        var T = CR_TIERS[x], rv = 0, cs = 0, cn = 0, tn = 0;
+        d.rows.forEach(function (r) {
+          if (r.tier !== x) return;
+          tn++;
+          if (r.cost !== null) { rv += r.rev; cs += r.cost; cn++; }
+        });
+        var rec = crRecovery(rv, cs), v = crTierVerdict(rec, T);
+        h += stRow("Tier " + x + " \u00B7 " + crEsc(T.name)
+          + ' <span style="color:#8a8a8a;font-weight:400">\u00B7 ' + tn + " program" + (tn === 1 ? "" : "s")
+          + (cn < tn ? ", " + cn + " costed" : "") + " \u00B7 band " + T.lo + "\u2013" + T.hi + "%</span>",
+          (rec === null ? "\u2014" : crPctText(rec))
+          + (v[1] ? '<div style="font-weight:400;font-size:11px;color:#8a8a8a">' + v[1] + "</div>" : ""));
+      });
+      h += "</table>";
+    }
+    if (t.untiered) {
+      h += '<p class="hint" style="margin:8px 0 0">' + t.untiered + " program"
+        + (t.untiered === 1 ? " is" : "s are") + " not tiered, so " + (t.untiered === 1 ? "it is" : "they are")
+        + " in the money above and not in the pyramid.</p>";
+    }
+
+    h += '<div class="st-foot"><b>Costs on this statement were entered by '
+      + crEsc(CFG.displayName || SLUG) + "</b> \u2014 nothing in Rec records what a program costs to run, "
+      + "so every cost figure here was typed into this report. Revenue is every payment received less refunds, "
+      + "read from the programs feed."
+      + (mode === "season" ? "" : " Figures for a date period are an ALLOCATION: each program's own total is "
+          + "spread across the days it runs, because no card reports a program's money month by month.")
+      + (d.undated ? " " + d.undated + " program" + (d.undated === 1 ? " has" : "s have")
+          + " no dates on file and " + (d.undated === 1 ? "is" : "are") + " left out of this period." : "")
+      + (B.income || B.expense ? " Overhead and other lines are kept apart from direct program costs: the pyramid's "
+          + "bands are direct cost recovery bands." : "")
+      + "</div>";
+
+    $("stmtBody").innerHTML = h;
+    document.body.setAttribute("data-cr-stmt-seen",
+      "income=" + Math.round(totalIncome) + " direct=" + Math.round(C.total)
+      + " overhead=" + Math.round(B.expense) + " net=" + Math.round(fullNet));
+  }
+
   function setView(v) {
     view = v;
     $("plView").hidden = v !== "pl";
     $("ledgerView").hidden = v !== "ledger";
+    $("statementView").hidden = v !== "statement";
     [].forEach.call($("viewTabs").querySelectorAll("button"), function (b) {
       b.setAttribute("aria-pressed", String(b.dataset.view === v));
     });
     if (v === "ledger") renderLedger();
+    if (v === "statement") { var sl = currentSlices(); renderStatement(sl && sl.d); }
   }
 
   function render() {
@@ -1474,6 +1877,7 @@ function crEsc(s) {
     }
     renderBasis(d, dB); renderKpis(d, dB); renderTiers(d); renderTable(d, dB);
     if (view === "ledger") renderLedger();
+    if (view === "statement") renderStatement(d);
     document.body.setAttribute("data-cr-seen",
       "mode=" + mode + " period=" + (per.v || "") + " rows=" + d.rows.length
       + " rev=" + Math.round(totals(d).rev) + " undated=" + d.undated);
@@ -1556,12 +1960,29 @@ function crEsc(s) {
   $("periodBSel").addEventListener("change", function () { periodB = this.value; render(); });
   $("tierSel").addEventListener("change", function () { tierFilter = this.value; render(); });
   $("hideBlank").addEventListener("change", function () { hideBlank = this.checked; render(); });
+  $("hideFree").addEventListener("change", function () { hideFree = this.checked; render(); });
   $("runBtn").addEventListener("click", load);
   $("printBtn").addEventListener("click", function () { window.print(); });
+  $("printStmt").addEventListener("click", function () { window.print(); });
+
+  /* SORT BY A COLUMN. A second click on the same column reverses it; a third
+     column press starts that column at the direction its own data reads best
+     — money and counts biggest-first, a name A-Z. */
+  $("plHead").addEventListener("click", function (e) {
+    var th = e.target.closest("th.sortable"); if (!th) return;
+    var k = th.dataset.sort;
+    if (sortKey === k) sortDir = -sortDir;
+    else { sortKey = k; sortDir = (k === "name" || k === "status") ? 1 : -1; }
+    render();
+  });
 
   document.addEventListener("click", function (e) {
     var b = e.target.closest(".exp"); if (!b) return;
-    var k = b.dataset.k; open[k] = !open[k]; render();
+    // The delete, the add-rows button and the two statement buttons share this
+    // class for their look and carry no program key. Without this guard every
+    // one of them toggled `open[undefined]` and forced a full re-render.
+    var k = b.dataset.k; if (k === undefined) return;
+    open[k] = !open[k]; render();
   });
 
   document.addEventListener("change", function (e) {
@@ -1754,6 +2175,42 @@ function crEsc(s) {
     out.push(["Total", per.t, "", "", "", t.rev.toFixed(2), t.cost.toFixed(2), t.net.toFixed(2),
               t.recovery === null ? "" : t.recovery.toFixed(1), "", "", ""]);
     var name = "cost-recovery-" + SLUG + "-" + String(per.v).replace(/[^a-z0-9]+/gi, "-").toLowerCase() + ".csv";
+    if (window.saveTextViaPopup && window.csvFromRows) {
+      window.saveTextViaPopup(window.csvFromRows(out), name, { bom: true });
+    }
+    try {
+      fetch(withToken("/" + SLUG + "/cost-recovery/api/log?event=cost-csv&rows=" + d.rows.length),
+            { method: "POST", keepalive: true });
+    } catch (_) {}
+  });
+
+  /* The statement as a file. The same reducers as the view above it, so the
+     spreadsheet and the printed page cannot disagree; one label column and one
+     amount column, because a statement IS two columns and inventing more of
+     them would make it a different document. */
+  $("stmtCsv").addEventListener("click", function () {
+    var sl = currentSlices(); if (!sl) return;
+    var d = sl.d, t = totals(d), m = mode === "compare" ? "quarter" : mode;
+    var C = crCostByCat(d.rows, costs);
+    var B = crLedgerBreakdown(Object.keys(ledger).map(function (k) { return ledger[k]; }), d.per, m);
+    var money = function (v) { return v === null || !Number.isFinite(v) ? "" : v.toFixed(2); };
+    var out = [[(CFG.displayName || SLUG) + " · Cost recovery statement"], [d.per.t], [],
+               ["Section", "Line", "Amount"]];
+    out.push(["Income", "Program revenue", money(t.rev)]);
+    B.cats.forEach(function (c) { if (B.byCat[c].inc > 0) out.push(["Income", c, money(B.byCat[c].inc)]); });
+    out.push(["Income", "Total income", money(t.rev + B.income)]);
+    CR_CATS.forEach(function (c) { out.push(["Direct costs", c[1], money(C.by[c[0]])]); });
+    out.push(["Direct costs", "Total direct costs", money(C.total)]);
+    B.accts.forEach(function (a) { if (B.byAcct[a].exp > 0) out.push(["Overhead", a, money(B.byAcct[a].exp)]); });
+    if (B.expense > 0) out.push(["Overhead", "Total overhead", money(B.expense)]);
+    out.push(["Result", "Program revenue less direct costs", money(t.net)]);
+    out.push(["Result", "Surplus after overhead", money(t.costedRev + B.income - (t.cost + B.expense))]);
+    out.push(["Cost recovery", "Direct", t.recovery === null ? "" : t.recovery.toFixed(1)]);
+    var full = crRecovery(t.costedRev + B.income, t.cost + B.expense);
+    out.push(["Cost recovery", "Full, after overhead", full === null || !Number.isFinite(full) ? "" : full.toFixed(1)]);
+    out.push(["Cost recovery", "Blended target", t.target === null ? "" : t.target.toFixed(1)]);
+    var name = "cost-recovery-statement-" + SLUG + "-"
+      + String(d.per.v).replace(/[^a-z0-9]+/gi, "-").toLowerCase() + ".csv";
     if (window.saveTextViaPopup && window.csvFromRows) {
       window.saveTextViaPopup(window.csvFromRows(out), name, { bom: true });
     }

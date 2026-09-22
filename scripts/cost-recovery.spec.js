@@ -50,6 +50,9 @@ guard("lifting the helper block", () => {
     ;this.crFyOf=crFyOf;this.crPeriods=crPeriods;this.crShare=crShare;this.crDays=crDays;
     this.crRecovery=crRecovery;this.crChipState=crChipState;this.crRollup=crRollup;
     this.crCostedSum=crCostedSum;
+    this.crRecoveryTone=crRecoveryTone;this.crTierVerdict=crTierVerdict;
+    this.crCostByCat=crCostByCat;this.crLedgerBreakdown=crLedgerBreakdown;
+    this.CR_STATE_ORDER=CR_STATE_ORDER;
     this.crCostDollars=crCostDollars;this.crLedgerSlice=crLedgerSlice;this.crMoney=crMoney;this.crPctText=crPctText;
     this.CR_TIERS=CR_TIERS;this.CR_CATS=CR_CATS;`).call(H);
 });
@@ -191,6 +194,16 @@ ok(/Costed \\u00b7|Costed ·/.test(footFn),
    "...and the row that carries them names how many programmes they are over");
 
 const tiersFn = slice(PAGE, "function renderTiers(d) {", "var CHIP", "renderTiers");
+/* A PYRAMID STANDS ON ITS BASE. GreenPlay puts community benefit at the bottom
+   and individual benefit at the apex, so the ladder runs 4 down to 1 — the
+   opposite of the order it shipped in, and invisible to any assertion keyed on
+   an attribute rather than on position. */
+ok(/\[4, 3, 2, 1\]\.map/.test(tiersFn),
+   "the ladder is drawn from the apex down to the base, which is what a pyramid is");
+ok(/crTierVerdict\(rec, T\)/.test(tiersFn),
+   "each tier says in words where it landed, rather than leaving four bars to be decoded");
+ok(/data-cr-pyverdict/.test(tiersFn),
+   "and the panel reads this org's own numbers back against the model");
 ok(/if \(r\.cost !== null\) \{ a\.rev \+= r\.rev/.test(tiersFn),
    "a tier's bar counts revenue only with its own cost beside it");
 ok(!/a\.rev \+= r\.rev; a\.n\+\+/.test(tiersFn),
@@ -198,7 +211,44 @@ ok(!/a\.rev \+= r\.rev; a\.n\+\+/.test(tiersFn),
 ok(/crRecovery\(a\.rev, a\.cost\)/.test(tiersFn),
    "and the tier rate goes through the same helper as everything else");
 
+/* THE FREE-PROGRAMME FILTER, and the one rule that makes it safe. Dan asked
+   to hide the $0 wall — 37 of Shrewsbury's 82 programmes charge nothing — and
+   named the limit in the same breath: "There still might be associated costs,
+   so I don't want to exclude them." So a free programme somebody HAS costed
+   survives the checkbox; it is pure subsidy, the most interesting line the
+   report draws, and hiding it would take real money off the page. */
+const sliceFn = slice(PAGE, "function sliceFor(per) {", "function totals(d) {", "sliceFor");
+ok(/hideFree && p\.revenue === 0 && cd === null/.test(sliceFn),
+   "hiding free programmes spares any that carry a cost — the filter tests BOTH");
+ok(/hidFree\+\+|hidFree \+= 1/.test(sliceFn),
+   "...and counts what it took out, because an exclusion nobody can see is how a total stops being trusted");
+ok(/sortRows\(out\)/.test(sliceFn),
+   "the reader's sort is applied in sliceFor, so the CSV and the statement come out in the order on screen");
+
+const footCount = slice(PAGE, "function renderTableFoot(d, dB) {", "function patchRow", "renderTableFoot2");
+ok(/d\.hidFree \?/.test(footCount),
+   "and the row count NAMES the hidden programmes rather than silently shrinking the table");
+
+/* NULLS LAST IN BOTH DIRECTIONS. An uncosted programme has no net and no
+   recovery, and sorting it as zero files the whole uncosted wall at one end of
+   a money column as though somebody had measured it. */
+const sortFn = slice(PAGE, "function sortRows(out) {", "function sliceFor(per) {", "sortRows");
+ok(/if \(xn\) return 1;/.test(sortFn) && /if \(yn\) return -1;/.test(sortFn),
+   "a row that cannot answer sorts last whichever way the column is pointing");
+ok(/sortDir/.test(sortFn), "and the direction is applied to the comparison rather than to the array");
+
 const kpiFn = slice(PAGE, "function renderKpis(d, dB) {", "function renderTiers", "renderKpis");
+/* THE STRIP'S COLOURS. `in` and `out` are proven in a browser (only a resolved
+   cascade can say whether the tint beat the skin); the surplus/shortfall
+   mapping is proven HERE and named as a source assertion, because every period
+   in the render fixture runs at a shortfall, so no case can show the amber. */
+eq((kpiFn.match(/"net" : "bad"/g) || []).length, 3,
+   "all three strip branches paint a surplus amber and a SHORTFALL red — a shortfall " +
+   "wearing the surplus colour is the one thing this strip must not do");
+eq((kpiFn.match(/crRecoveryTone\(t\.recovery, t\.target\)/g) || []).length, 3,
+   "...and all three judge the recovery tile against the pyramid's blended target");
+ok(/"in"\)/.test(kpiFn) && /"out" : ""/.test(kpiFn),
+   "revenue reads as money in and costs as money out");
 ok(/costedNote\(t, d\.rows\.length\)/.test(kpiFn),
    "the strip works out which programmes its net and rate are over");
 eq((kpiFn.match(/note \? note/g) || []).length >= 3, true,
@@ -287,6 +337,106 @@ eq(La.expense, 0, "a season-only line lands in NO date period");
 // mode it is dates that place a row. The rule is symmetric on purpose.
 eq(La.unplaced, 4, "in a date mode, every line without dates is the unplaceable one instead");
 eq(Lb.placed, 1, "...and only the dated line lands in Q2");
+
+// ── THE POLISH PASS, 2026-09-22 ──────────────────────────
+
+/* A RECOVERY FIGURE IS NOT JUDGED AGAINST 100%, and this is the assertion that
+   says why. Dan asked for "red is < 100, green > 100" and on this report that
+   is the wrong line: tier 1 is MEANT to recover 25-50%, so a department
+   running mostly community programming would be painted red for doing exactly
+   what the pyramid asks of it. It is judged against the portfolio's own
+   blended target instead — the figure the card's sub-line already prints. */
+eq(H.crRecoveryTone(40, 35), "good",
+   "40% against a target of 35% is GOOD, though it is nowhere near 100%");
+eq(H.crRecoveryTone(88, 85), "good",
+   "...and so is 88% against 85% — the case a build measuring against 100 paints red");
+eq(H.crRecoveryTone(130, 35), "good", "well above target stays good");
+eq(H.crRecoveryTone(28, 35), "net", "a near miss is the middle state, not a failure");
+eq(H.crRecoveryTone(10, 35), "bad", "and 25 points under the target is bad");
+eq(H.crRecoveryTone(null, 35), "", "nothing costed takes no colour rather than reading as a failure");
+eq(H.crRecoveryTone(40, null), "",
+   "and with NOTHING TIERED there is no target, so the tile takes no colour rather than " +
+   "inventing a verdict about a portfolio nobody has classified");
+eq(H.crRecoveryTone(Infinity, 35), "", "a rate over a zero cost is not a rate and gets no colour");
+
+/* The plain-English verdict. ABOVE IS NOT WORDED AS A FAILURE: a tier 1
+   programme recovering 90% is priced like a tier 3, which is worth knowing and
+   is not a fault — the same distinction crChipState draws between `over` and
+   `bad` one level down. */
+eq((H.crTierVerdict(40, H.CR_TIERS[1]) || [])[0], "inband", "inside the band reads as inside the band");
+eq((H.crTierVerdict(90, H.CR_TIERS[1]) || [])[0], "above", "above the band is its own state, not a failure");
+eq((H.crTierVerdict(10, H.CR_TIERS[1]) || [])[0], "under", "and under the band is under");
+ok(/40 pts above/.test((H.crTierVerdict(90, H.CR_TIERS[1]) || [])[1] || ""),
+   "the verdict counts the points rather than leaving a reader to subtract");
+eq((H.crTierVerdict(null, H.CR_TIERS[1]) || [])[0], "", "an uncosted tier gets no verdict at all");
+
+/* DIRECT COST SPLIT FIVE WAYS, and the assertion that matters is that it TIES:
+   crCostByCat's total has to equal what crCostDollars gives the strip, or the
+   statement and the report it was generated from disagree about the same
+   period. The predicate is the same one — only a finite positive value counts. */
+const cbc = guard("crCostByCat", () => H.crCostByCat(
+  [{ p: { key: "a" }, w: 1 }, { p: { key: "b" }, w: 0.5 }, { p: { key: "c" }, w: 1 }],
+  { a: { instructors: 100000, staff: 50000 }, b: { supplies: 40000 } })) || { by: {} };
+eq(Math.round(cbc.by.instructors), 1000, "a whole-period programme contributes its whole instructor cost");
+eq(Math.round(cbc.by.staff), 500, "...and its staff cost");
+eq(Math.round(cbc.by.supplies), 200, "a HALF-period programme contributes half of its supplies");
+eq(Math.round(cbc.total), 1700, "the five categories sum to the direct cost the strip shows");
+eq(cbc.uncosted, 1, "and a programme with no record is counted as uncosted rather than as a zero");
+const cbcZero = guard("crCostByCat over a zeroed record",
+  () => H.crCostByCat([{ p: { key: "a" }, w: 1 }], { a: { instructors: 0 } })) || {};
+eq(cbcZero.uncosted, 1,
+   "a record holding nothing but zeroes is UNCOSTED, exactly as crCostDollars reads it — " +
+   "the two must agree or the statement counts a programme the strip does not");
+
+/* ONE LEDGER BREAKDOWN, TWO READERS. The roll-up on the Overhead tab and the
+   statement's overhead section both read this, because two reductions of the
+   same lines is how they start reporting different overhead for one period. */
+const lb = guard("crLedgerBreakdown", () => H.crLedgerBreakdown([
+  { account: "Trips", category: "Grants",      kind: "income",  amount: 100000, season: "Fall '26" },
+  { account: "Trips", category: "Staff wages", kind: "expense", amount: 40000,  season: "Fall '26" },
+  { account: "Fleet", category: "Maintenance", kind: "expense", amount: 200000, season: "Fall '26" },
+  { account: "Fleet", category: "Maintenance", kind: "expense", amount: 50000 },
+], { v: "Fall '26", t: "Fall '26" }, "season")) || { byAcct: {}, byCat: {} };
+eq(Math.round(lb.income), 1000, "income is summed across the placed lines");
+eq(Math.round(lb.expense), 2400, "and the unplaced line is left out of the expense, not folded in");
+eq(Math.round((lb.byAcct.Fleet || {}).exp), 2000, "the account roll-up carries only what landed in the period");
+eq(Math.round((lb.byCat.Maintenance || {}).exp), 2000, "and so does the category roll-up");
+eq((lb.accts || [])[0], "Fleet", "accounts are ordered by size, so the biggest line leads");
+
+/* The Status column can only be sorted if a state has an ORDER, and the useful
+   one is by how much attention a row wants rather than alphabetical. */
+ok(H.CR_STATE_ORDER.bad < H.CR_STATE_ORDER.ok,
+   "sorting Status ascending puts the programmes furthest under their band first");
+ok(H.CR_STATE_ORDER.blank < H.CR_STATE_ORDER.ok,
+   "...and an uncosted programme ahead of a healthy one");
+
+/* The roll-up on screen and the statement share ONE reduction of the ledger.
+   A second copy is how the account table and the overhead section start
+   reporting different money for the same period. */
+const rollFn = slice(PAGE, "function ledgerRollupHtml(ids, per, m) {", "function renderLedger", "ledgerRollupHtml");
+ok(/crLedgerBreakdown\(/.test(rollFn),
+   "the account roll-up reads the shared breakdown rather than summing the lines a second way");
+ok(!/byAcct\[acct\] = byAcct\[acct\] \|\|/.test(rollFn),
+   "...and does not keep its own copy of that reduction");
+const stmtFn = slice(PAGE, "function renderStatement(d) {", "function setView(v) {", "renderStatement");
+ok(/crLedgerBreakdown\(/.test(stmtFn) && /crCostByCat\(d\.rows, costs\)/.test(stmtFn),
+   "the statement is built from the same reducers the screen uses, so it cannot disagree with it");
+ok(/var t = totals\(d\)/.test(stmtFn),
+   "...including the one that decides which programmes the net is over");
+
+/* EVERY SAVED LINE CARRIES ITS DELETE. The old gate read three named fields,
+   so a line someone had given only a category had no way out and looked stuck
+   — and a delete nobody can find is the Fast Track pin over again, which is
+   exactly how this was reported. */
+const lrow = slice(PAGE, "function ledgerRowHtml(id, r, n) {", "/* THE ROLL-UP IS THE POINT", "ledgerRowHtml");
+ok(/var saved = !!r;/.test(lrow),
+   "a stored ledger row is known to be stored, rather than inferred from which fields are filled");
+ok(/\+ "<td>" \+ \(saved/.test(lrow),
+   "...and that is what decides whether the row can be deleted");
+ok(!/r\.account \|\| r\.label \|\| r\.amount/.test(lrow),
+   "so a line carrying only a category is no longer stuck on the page");
+ok(/title="Delete this line"/.test(lrow),
+   "and the control says what it does, because this one was reported as missing while it was on screen");
 
 // ── server registration ────────────────────────────────────────────────
 if (!process.env.SKIP_SOURCE) {
