@@ -7817,6 +7817,256 @@ per-case **`expectsConsoleError`**, because a case that drives a failing respons
 expects the page to log it, and without that an error-path case can only ever
 fail.
 
+## THE COST RECOVERY / P&L REPORT — the first surface here that WRITES (2026-09-22)
+
+Laurel at Shrewsbury, on a call, wanted a cost recovery / profit-and-loss
+report: take her programs, enter her costs, get a P&L. Dan, after seeing the
+mockup: *"new report, and anyone with the report link can edit costs"*, then
+*"build the new P/L report first, laurel loved it."*
+
+**NOTHING IN REC RECORDS WHAT A PROGRAM COSTS.** Checked before anything was
+built: no cost table, no instructor rate on the section, no facility
+charge-back. So every cost here is TYPED BY THE ORG, and the page says so on
+screen rather than letting an entered figure sit beside a measured one looking
+identical — the `DIR_FT_MINUTES_PER_REG` rule.
+
+### IT COST NO CARD PUSH, NO FLIP AND NO EXTRA METABASE TIME
+
+The page reads **`/:org/programs/api/data`** — card 17295, the same URL with the
+same parameters the Programs report sends, so the two **share one feed cache
+entry**. A `SHARED_UUIDS` entry of its own would have given it a second cache
+key for one card, which is the doubled prewarm already recorded here; that is
+also why it is in `HEALTH_SKIP_REPORTS` (the card is probed once, under
+`programs`) and why it has no `REPORT_DEPENDENCIES` entry — the `qoq` precedent,
+a report derived from another card.
+
+**The gate is therefore `SHARED_UUIDS.programs`**, not a card of its own.
+
+### THE THREE DECISIONS THE WHOLE THING RESTS ON
+
+**1. COSTS ARE KEYED ON PROGRAM *AND SEASON*.** 26% of Shrewsbury's programs
+recur, and a swim lesson costs a different amount to run in July than in
+January. Keyed on the program alone, entering this winter's figure would
+**silently rewrite the P&L of every season already closed**. `Carry costs
+forward` is what makes that bearable — it copies the most recent earlier
+season's cost and tier into an empty one, so a recurring program is one click
+rather than five fields typed again.
+
+**2. A DATE PERIOD IS AN ALLOCATION, AND THE PAGE SAYS SO IN WORDS.** Season
+mode is all-or-nothing; month/quarter/FY spread a program's own money across its
+own run days. **No card reports a program's money month by month** — card 21055
+is org-wide by month and cannot be split per program — so pro-rata is the best
+the available data supports and pretending otherwise would be an invented
+number. The parts sum to exactly 1 across the periods a program spans, which the
+spec pins: a share scheme whose slices do not add up moves money into and out of
+existence as the reader changes period.
+
+**A program with no dates cannot be placed in a date period at all.** It is
+COUNTED and named on screen, never silently dropped — that is how a total stops
+reconciling with the season view beside it.
+
+**3. ON TARGET MEANS INSIDE THE BAND, NOT ABOVE ITS MIDPOINT.** The tiers are
+the GreenPlay cost recovery pyramid every parks department benchmarks against
+(1 mostly community 25–50%, 2 considerable community 50–75%, 3 balanced
+75–100%, 4 mostly individual 100–125%). **A visual review of the mockup caught
+this**: tier 1 at 34% was painted under-target, when 34% sits squarely inside
+25–50% and is exactly what tier 1 is *for*. `crChipState` is the one definition,
+read by the row chip, the tier ladder and the CSV.
+
+**THE TIER IS TYPED TOO, and it is deliberately not guessed from the activity
+name.** An untiered program is counted in the money and left out of the ladder,
+which is stated. A keyword-derived tier would be a confident classification of
+somebody's programming that nobody asked for.
+
+### THE MUNICIPAL FISCAL YEAR IS JULY–JUNE
+
+Massachusetts has run one since 1974 and Shrewsbury is on it, so July 2026 is
+**FY2027**. `crFyOf` is one function and the spec drives both sides of the
+boundary. Season and fiscal year are **different, non-reconciling cuts** — a
+season straddles a July — and the report offers both rather than pretending one
+is the other.
+
+### WRITES, AND THE TOKEN IS THE WHOLE GATE
+
+Dan's call. It is **deliberately not** behind `isReportSettingsAdmin`: that gate
+exists for settings that spend a shared Metabase card, and these figures cost
+nothing and belong to the org. **What pays for it is the record** — every save
+posts to Slack naming the org and the program, debounced per PROGRAM because
+costing a morning's programs is a decision per program.
+
+**Say it plainly when handing this over: any staffer holding the report link can
+change a number the P&L is computed from.**
+
+- **PATCH SEMANTICS, NOT REPLACE, and that is the whole concurrency story.** It
+  is a read-modify-write on one document shared by every staffer at the org.
+  Sending only the changed keys means two people editing two different programs
+  both keep their work; a whole-document PUT makes the second save discard the
+  first. Mutation-tested on both stores.
+- **An entry that normalises to nothing is a CLEAR, not a no-op.** Somebody
+  zeroing every box means the program is no longer costed, and leaving the old
+  record makes the screen disagree with the store on reload.
+- **Integer CENTS**, like every other money figure here. The wire format is
+  dollars because that is what somebody types.
+- **`no-store` on the read.** An ETag'd list is exactly how a saved figure
+  appears not to save — already recorded for the saved-view list.
+- **The save pill must be able to say three things** — saved, saving, and
+  could-not-save. Telling somebody their figures are kept when they are not is
+  the worst outcome this page can produce, so a failed flush re-queues the edits
+  and names the failure. One drain for both stores, or the pill says "All costs
+  saved" while the ledger half is still in flight.
+- **THE STORE PATH IS A FUNCTION**, never `const F = path.join(DATA_DIR, …)` at
+  module scope — that read is stale in db mode and its write lands on the
+  container's own disk. Recorded three times; a function so it cannot recur.
+
+### THE OPEN-ENDED TAB — Jason at Windham, and the ask that changed shape twice
+
+*"add a series of 'open ended' rows where he can add expenses, profit, etc. Not
+tied to any program. Maybe another tab of open ended stuff? Start with say 25 to
+50, then let them add additional rows."*
+
+He then sent the workbook he keeps — a seventeen-column per-trip sheet (cost to
+public, cost to us, participants, cash income, SR scholarship income, supplies,
+employee cost, facility cost, profit/loss) — and I started reproducing it.
+**Then the sentence that settled it:** *"It's a really long, large spreadsheet
+that isn't very useful to pull any information from. There are lots of places
+for human error to come in and it's not great for at a glance report."* Plus how
+they actually budget: *"each account has about 10 separate lines under it that we
+break items down to. Like staff wages, supplies, maintenance."*
+
+**So reproducing his columns would have rebuilt the problem in a browser.** A
+row is **ACCOUNT → LINE ITEM → CATEGORY → AMOUNT**, in/out, with a season or a
+date range, and the tab **rolls up by account and by category above the rows** so
+it reads at a glance. The per-trip detail he says nobody pulls anything from
+stays in the sheet it came from; a trip becomes an account with an income line
+and a few expense lines.
+
+*Generalise it: when somebody sends the artifact they use today, the columns are
+evidence about their vocabulary, not a specification. Ask what is wrong with it
+before copying it.*
+
+- **OVERHEAD IS KEPT APART FROM DIRECT COST, and that separation is the point
+  rather than tidiness.** The GreenPlay bands the tier ladder is drawn against
+  are *direct* cost recovery bands, so folding the insurance and the truck into
+  a swim lesson would push every program under its tier for a reason that has
+  nothing to do with the program. Direct recovery answers *"is this program
+  priced right"*; full cost recovery answers *"did the department break even"*,
+  and the KPI strip shows both.
+- **A ledger row is placed by the SAME rule a program is**, so one line of
+  overhead cannot be counted twice by switching period — and a row carrying
+  neither a season nor dates is counted as UNPLACED and said on screen. The rule
+  is symmetric: in season mode a dated row with no season is unplaceable too.
+- **Blank rows are rendered, not stored.** Thirty to type into, `+ 25 more` to
+  grow; a row is minted only once it says something, and **every input on that
+  row is re-pointed at the new id** or the next keystroke mints a second record
+  and the reader's line splits in two as they type.
+- **THE CATEGORY CARRIES ITS OWN DIRECTION**, and that is the half that makes
+  the standing list worth having. Dan: *"Having an option for predefined
+  categories on the open ended entry items would be nice too — merchandise,
+  fees, supplies, etc. Come up with 20 or so 'recreation' style category
+  groups."* There are **26**, ordered money-in then money-out (program &
+  registration fees, memberships & passes, admissions, rentals, merchandise &
+  concessions, trips, grants, sponsorship, scholarship funding → staff wages,
+  instructor pay, benefits, officials, supplies, equipment, uniforms,
+  maintenance, facility & utilities, transport, contracted services, marketing,
+  permits & insurance, food, training, technology, other). Picking one **sets
+  whether the line is money in or out**, so an expense typed into the income
+  column — the commonest error in a hand-kept sheet, and a silent one, since
+  the total still adds up and only the sign is wrong — cannot be made by
+  accident.
+- **It is a datalist, not a select**, so a category the org invented is kept and
+  simply leaves the direction alone: the ~10 lines under an account are theirs
+  and a closed list of ours would be wrong for the first department that opens
+  it. The list is NOT sorted A–Z, because that interleaves income with
+  expense and the grouping is the useful order.
+
+### Guards
+
+`scripts/cost-recovery.spec.js` (**126 assertions, in CI**), which LIFTS AND RUNS
+the page's own helpers — every defect here is arithmetic about a share or a
+threshold and a regex passes on an inverted comparison — plus a live half that
+boots a real server and drives the real routes. `SKIP_SOURCE=1` / `SKIP_LIVE=1`
+drop either half.
+
+**Mutation-tested 18 ways, 17 caught by an assertion that NAMES the defect**:
+the season share ignoring the season, pro-rata no longer dividing by the run
+(so the parts stop summing), on-target comparing the midpoint instead of the
+band, costs keyed on the program alone so seasons merge, an uncosted program
+reading 0%, the fiscal year becoming the calendar year, the ledger no longer
+counting unplaced rows, overhead folded in as income, the store dropping the
+tier, **each** PUT replacing instead of merging, a blank ledger row stored as a
+record, the report shipping VISIBLE, the costs read losing `no-store`,
+`cost-csv` off the beacon allowlist, the Slack line no longer naming the
+program, and the store path back at module scope.
+
+**THE EIGHTEENTH IS GENUINELY BENIGN and is recorded as such** rather than
+dressed up: `normalizeCostEntry`'s `n < 0` test is redundant, because
+`Math.round` of a negative is still negative and the `cents <= 0` guard below it
+already refuses the value. **The load-bearing guard was then mutated on its own
+and IS caught by name.** A mutation that does not reproduce a bug has not tested
+anything.
+
+**THE SPEC CAUGHT A REAL DEFECT ON ITS FIRST RUN**: `normalizeCostEntry` dropped
+`tier` entirely, so the page sent it, the store binned it, and a reader's tier
+survived until the next reload.
+
+**And it DIED instead of failing by name the first time** — Nth instance. Every
+live read goes through a safe accessor now, so a route answering the wrong shape
+fails on the assertion that provoked it.
+
+**Two of my own assertions were satisfied by different code.** The message-branch
+slice landed on the **debounce key chain**, because the first
+`rec.event === "cost-save"` in server.js is the debounce key — so both Slack
+assertions passed on a build with no message branch at all. Scoped to
+`} else if (rec.event === "cost-save") {` now, with a was-it-found assertion
+ahead of it.
+
+**Ten `ci-check-render.js` cases, because no source assertion can see any of
+this** — the page reads plausibly whichever period it prices and whichever end
+of a band it compares against. The fixture is built so a wrong implementation
+cannot look right: **Fall '26 is ONE program worth $70,000 whole, and FY2027 Q1
+is FOUR programs worth $60,908** once each is pro-rated. One number separates a
+page that honours the mode from one that ignores it, and every figure was
+computed by hand before the first run and matched exactly.
+
+**A RENDER CASE OF MINE SURVIVED ITS OWN MUTATION**, and the fix is the recorded
+one: *"overhead is its own figure"* keyed on the WORDS `Overhead`, `88%` and
+`full cost`, all of which a build folding overhead into the direct-cost tile
+still renders. It keys on
+`data-cr-money="direct=80000 overhead=2700 fullrev=71200 fullcost=82700"` now.
+Browser-mutation-tested four ways afterwards — overhead folded into direct
+cost, one blank ledger row instead of thirty, the roll-up no longer grouping by
+account, and the category no longer setting the direction — each failing
+**exactly** the case that names it while the other nine keep passing. That last
+case keys on the ledger NET rather than on the dropdown's value: a build that
+flips the select and not the arithmetic renders identically.
+
+**A defect the render check found that review did not:** with one fiscal year of
+data, Compare mode picked the same quarter for both sides and drew no deltas at
+all — `list[at - 1]` clamps to the period itself at index 0. It falls through
+prior-year → previous → next now, and when a window genuinely holds one period
+it says so rather than rendering a comparison with nothing in it.
+
+### NOT DONE, and worth knowing
+
+- **THE DEFAULT WINDOW IS TWO FISCAL YEARS**, so a quarter can be compared with
+  the same quarter a year earlier the moment the page opens. That is a wide ask
+  of a heavy card: Shrewsbury measured 565 sections in 22.1s over 13 months, so
+  two FYs is ~35–45s cold and inside the 60s first try. **Apex would time out**,
+  and apex is already parked on card 17295 — the report ships hidden, so only
+  orgs Dan switches on are affected, and the reader can narrow the window.
+- **Costs do not reach the PDF, the emailed report or a saved view.** This
+  report has no PDF route and is not in `EMAIL_SUBSCRIBABLE_REPORTS`; the CSV is
+  the export and it honours the mode, the period, the tier filter and the
+  hide-blank toggle.
+- **No per-org cost categories for the PROGRAM table.** The five (instructors,
+  staff, supplies, facility, other) are fixed, because a per-org list makes two
+  orgs' reports incomparable and turns a roll-up into a union of whatever anyone
+  typed. The LEDGER's categories are free text for the opposite reason — those
+  are the org's own budget lines.
+- **No audit trail of who changed a figure.** Every save is in `events.jsonl`
+  and in Slack with the program named, but the platform has no user identity
+  behind an org token, so it cannot say which staffer typed it.
+
 ## Working preferences (from Dan, dan@rec.us)
 
 - **Every finished task is reported in the TEMPLATE** — one or two sentences,

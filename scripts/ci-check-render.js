@@ -1910,6 +1910,55 @@ const STUBS = [
      the org and the report, and a failed feed used to leave a bare card with
      nothing identifying it. Only a browser can tell that apart from a page that
      failed to render at all. */
+  /* COST RECOVERY's stored costs. MUST SIT ABOVE THE GENERIC /api/ CATCH-ALL —
+     that one answers { ok: true, rows: [] }, on which `costs` is undefined, so
+     every case would silently be testing the uncosted state. The same
+     fall-through is already recorded for the /api/data stub.
+
+     VALUES ARE CENTS, which is what the route stores and returns. They are
+     chosen to DISCRIMINATE rather than to look plausible:
+
+       Aquatic Exercise · Fall '26   rev $70,000  cost $80,000  ->  88%  tier 3 (75-100)  ON TARGET
+       Water Walking · S/S 26        rev $20,000  cost $50,000  ->  40%  tier 1 (25-50)   ON TARGET
+       Challenge Island · S/S 26     rev  $3,000  cost $10,000  ->  30%  tier 4 (100-125) BADLY UNDER
+       Lap Swim · No Season          rev $10,000  NO COST                                 COST NEEDED
+
+     So all four row states are live at once, and tier 1 at 40% is the case that
+     fails a build comparing against the band's MIDPOINT instead of the band —
+     40% is under tier 1's 35% target reading and squarely inside its 25-50%
+     band, which is what tier 1 is for. `stubMode: "nocosts"` answers an empty
+     store, i.e. an org opening this report for the first time. */
+  /* The OPEN-ENDED ledger — Jason at Windham's budget lines. Two accounts so the
+     roll-up has something to group, an INCOME line and EXPENSE lines so the net
+     is not merely a sum, and one row with NEITHER a season NOR dates, which is
+     the row that must be COUNTED as unplaced rather than dropped into whichever
+     period happens to be open.
+
+       Senior Trips   income  $1,200  Fall '26   |  staff wages $400, transport $300
+       Facilities     expense $2,000  Fall '26   |  maintenance
+       (unplaced)     expense $500    no season, no dates
+
+     So Fall '26 nets 1200 - 400 - 300 - 2000 = -1500, with one line unplaced. */
+  { match: /\/cost-recovery\/api\/ledger/, body: () => ({
+      rows: STUB_MODE === "nocosts" ? {} : {
+        r1: { ord: 0, account: "Senior Trips", label: "Holiday lights trip", category: "Registration fees",
+              kind: "income",  amount: 120000, season: "Fall '26" },
+        r2: { ord: 1, account: "Senior Trips", label: "Driver",       category: "Staff wages",
+              kind: "expense", amount: 40000,  season: "Fall '26" },
+        r3: { ord: 2, account: "Senior Trips", label: "Coach hire",   category: "Transportation",
+              kind: "expense", amount: 30000,  season: "Fall '26" },
+        r4: { ord: 3, account: "Facilities",   label: "Boiler service", category: "Maintenance",
+              kind: "expense", amount: 200000, season: "Fall '26" },
+        r5: { ord: 4, account: "Facilities",   label: "Unassigned line", category: "Supplies",
+              kind: "expense", amount: 50000 },
+      }, count: 5, maxRows: 500 }) },
+  { match: /\/cost-recovery\/api\/costs/, body: () => ({
+      costs: STUB_MODE === "nocosts" ? {} : {
+        "prog-aquatic-exercise|Fall '26":      { instructors: 6000000, staff: 1500000, supplies: 500000, tier: 3 },
+        "prog-water-walking|Spring/Summer 26": { instructors: 4000000, facility: 1000000, tier: 1 },
+        "prog-challenge-island|Spring/Summer 26": { instructors: 800000, other: 200000, tier: 4 },
+      },
+      categories: ["instructors", "staff", "supplies", "facility", "other"] }) },
   { match: /\/programs\/api\/data/,
     status: () => (STUB_MODE === "timeout504" ? 504 : 200),
     body: () => (STUB_MODE === "timeout504"
@@ -3044,6 +3093,184 @@ const CASES = [
   // The baseline, and it is a NUMBER: six meetings, one of them the same
   // section on a second date. If the card ever joined reservation_court
   // instead of aggregating it, the two-site session multiplies and this moves.
+  /* ── COST RECOVERY ──────────────────────────────────────────────────
+     NO SOURCE ASSERTION CAN SEE ANY OF THIS. The page reads plausibly
+     whichever period it prices and whichever end of a band it compares
+     against, and every number below is arithmetic the spec proves in
+     isolation — what only a browser proves is that the page WIRES those
+     helpers to the controls a reader actually clicks.
+
+     The fixture is built so a wrong implementation cannot look right:
+     Fall '26 is ONE program worth $70,000 whole, and FY2027 Q1 is FOUR
+     programs worth $60,908 once each is pro-rated across its own run
+     dates. One number separates a page that honours the mode from one
+     that ignores it. */
+  { name: "cost-recovery · a season is whole programs, whole season",
+    path: "/{org}/cost-recovery",
+    // rows=1 AND rev=70000 together: the row count alone passes on a page
+    // pricing the wrong period, and the revenue alone passes on one showing
+    // every program.
+    needs: 'body[data-cr-seen*="mode=season"][data-cr-seen*="rows=1 rev=70000"]' },
+
+  { name: "cost-recovery · a quarter pro-rates each program across its run",
+    path: "/{org}/cost-recovery",
+    needs: 'body[data-cr-seen*="mode=quarter"][data-cr-seen*="rows=4 rev=60908"]',
+    act: async (page) => {
+      await page.waitForSelector('body[data-cr-seen*="mode=season"]', { timeout: 20000 });
+      await page.click('#modeSeg button[data-mode="quarter"]');
+      await page.waitForFunction(
+        () => /mode=quarter/.test(document.body.getAttribute("data-cr-seen") || ""),
+        { timeout: 20000 });
+    } },
+
+  /* THE BAND, NOT ITS MIDPOINT. Water Walking is tier 1 at 40% — under tier
+     1's 35% target reading and squarely INSIDE its published 25–50% band,
+     which is exactly what tier 1 exists to do. A build comparing against
+     `tgt` paints this amber and calls a community program a failure. The
+     case requires the figure AND the absence of the under treatment,
+     because either alone passes on half the defect. */
+  { name: "cost-recovery · on target means inside the band, not above its midpoint",
+    path: "/{org}/cost-recovery",
+    needs: '[data-cr-tier="1"][data-cr-tier-rec="40"] .fillbar:not(.under)',
+    also: ['[data-cr-row*="water-walking"] [data-cr-state="ok"]',
+           '[data-cr-row*="challenge-island"] [data-cr-state="bad"]'],
+    act: async (page) => {
+      await page.waitForSelector('body[data-cr-seen*="mode=season"]', { timeout: 20000 });
+      await page.select("#periodSel", "Spring/Summer 26");
+      await page.waitForFunction(
+        () => /period=Spring/.test(document.body.getAttribute("data-cr-seen") || ""),
+        { timeout: 20000 });
+    } },
+
+  /* An uncosted program must say so rather than read 0%. "Not costed yet"
+     and "recovers nothing" are different facts and the page renders them
+     differently — the same null-versus-zero rule as hasAbsent. Lap Swim has
+     revenue and no cost, so a page defaulting a missing cost to 0 would show
+     a confident 0% against a program nobody has costed. */
+  { name: "cost-recovery · an uncosted program says so rather than reading 0%",
+    path: "/{org}/cost-recovery",
+    needs: '[data-cr-row*="lap-swim"] [data-cr-state="blank"]',
+    also: ['[data-cr-row*="lap-swim"] [data-cr-rec=""]', "#tiers [data-cr-untiered]"],
+    act: async (page) => {
+      await page.waitForSelector('body[data-cr-seen*="mode=season"]', { timeout: 20000 });
+      await page.select("#periodSel", "No Season");
+      await page.waitForFunction(
+        () => /period=No Season/.test(document.body.getAttribute("data-cr-seen") || ""),
+        { timeout: 20000 });
+    } },
+
+  /* Compare is the QoQ shape Dan asked for. Keyed on the SECOND period
+     picker existing and on a delta being drawn — "a compare button
+     rendered" passes on a mode that shows one period twice. */
+  { name: "cost-recovery · compare puts two periods side by side",
+    path: "/{org}/cost-recovery",
+    needs: "#periodBSel option",
+    also: [".sum-cards .delta", 'body[data-cr-seen*="mode=compare"]'],
+    act: async (page) => {
+      await page.waitForSelector('body[data-cr-seen*="mode=season"]', { timeout: 20000 });
+      await page.click('#modeSeg button[data-mode="compare"]');
+      await page.waitForFunction(
+        () => /mode=compare/.test(document.body.getAttribute("data-cr-seen") || ""),
+        { timeout: 20000 });
+    } },
+
+  /* AN ORG THAT HAS NEVER COSTED ANYTHING still gets the report — the money
+     it already has, with every program asking for a cost. An empty store is
+     the state EVERY org is in on the day this ships, so a page that only
+     works once somebody has typed something would ship broken for all of
+     them. */
+  { name: "cost-recovery · a fresh org gets the report, not an empty page",
+    path: "/{org}/cost-recovery", stubMode: "nocosts",
+    needs: 'body[data-cr-seen*="rows=1 rev=70000"]',
+    also: ["[data-cr-state=\"blank\"]", "#tiers [data-cr-untiered]"] },
+
+  /* ── the open-ended ledger. Jason at Windham: "add a series of open ended
+     rows where he can add expenses, profit, etc. Not tied to any program." ── */
+  { name: "cost-recovery · overhead lines roll up by account, and land in the period",
+    path: "/{org}/cost-recovery",
+    // net = 1200 income − (400 + 300 + 2000) = −1500, with the fifth line
+    // UNPLACED because it carries neither a season nor dates. Both halves in one
+    // assertion: the net alone passes on a build that quietly counts the
+    // unplaced row, and the unplaced count alone passes on one that mis-sums.
+    needs: 'body[data-cr-ledger-seen*="rows=5 placed=4 unplaced=1"][data-cr-ledger-seen*="net=-1500"]',
+    also: ['[data-cr-rollup="2"]', '[data-cr-rollup-net="-1500"]'],
+    act: async (page) => {
+      await page.waitForSelector('body[data-cr-seen*="mode=season"]', { timeout: 20000 });
+      await page.click('#viewTabs button[data-view="ledger"]');
+      await page.waitForFunction(
+        () => /rows=5/.test(document.body.getAttribute("data-cr-ledger-seen") || ""),
+        { timeout: 20000 });
+    } },
+
+  /* BLANK ROWS TO TYPE INTO. "Start with say 25 to 50, then let them add
+     additional rows." A table with five stored lines and no blanks is a list,
+     not a budget sheet — and the blanks must NOT be stored records, which is
+     what the row count above proves alongside this. */
+  { name: "cost-recovery · the ledger opens with rows to type into, and can grow",
+    path: "/{org}/cost-recovery",
+    needs: "#ledgerBody tr:nth-child(30)",
+    also: ["#addRows", "#lgCats option"],
+    act: async (page) => {
+      await page.waitForSelector('body[data-cr-seen*="mode=season"]', { timeout: 20000 });
+      await page.click('#viewTabs button[data-view="ledger"]');
+      await page.waitForSelector("#ledgerBody tr", { timeout: 20000 });
+      const before = await page.$$eval("#ledgerBody tr", (r) => r.length);
+      await page.click("#addRows");
+      await page.waitForFunction(
+        (n) => document.querySelectorAll("#ledgerBody tr").length > n, { timeout: 10000 }, before);
+    } },
+
+  /* OVERHEAD IS A SEPARATE FIGURE FROM DIRECT COST, because the tier bands on
+     the P&L tab are DIRECT cost recovery bands. A build that folded the boiler
+     into a swim lesson's cost would push every program under its tier for a
+     reason that has nothing to do with the program — so the strip must show
+     both, and direct recovery must still read 88% with overhead present. */
+  /* THE CATEGORY CARRIES THE DIRECTION. Dan asked for "20 or so recreation
+     style category groups"; the half that makes them worth having is that
+     picking Grants sets the line to money IN and picking Maintenance sets it
+     to money OUT, so the commonest error in a hand-kept sheet — an expense
+     typed into the income column — cannot be made by accident.
+
+     Row r2 is a Staff wages EXPENSE of $400. Typing "Grants" into its category
+     must flip it to income, which moves the Fall '26 net by twice that amount:
+     −1500 → −700. Keyed on the NET rather than on the select's value, because
+     a build that flips the dropdown and not the arithmetic renders identically. */
+  { name: "cost-recovery · a known category sets whether the line is money in or out",
+    path: "/{org}/cost-recovery",
+    needs: 'body[data-cr-ledger-seen*="net=-700"]',
+    act: async (page) => {
+      await page.waitForSelector('body[data-cr-seen*="mode=season"]', { timeout: 20000 });
+      await page.click('#viewTabs button[data-view="ledger"]');
+      await page.waitForFunction(
+        () => /net=-1500/.test(document.body.getAttribute("data-cr-ledger-seen") || ""),
+        { timeout: 20000 });
+      const sel = '[data-cr-ledger="r2"] [data-f="category"]';
+      await page.click(sel, { clickCount: 3 });
+      await page.type(sel, "Grants");
+      await page.waitForFunction(
+        () => /net=-700/.test(document.body.getAttribute("data-cr-ledger-seen") || ""),
+        { timeout: 20000 });
+    } },
+
+  { name: "cost-recovery · overhead is its own figure, not folded into direct cost",
+    path: "/{org}/cost-recovery",
+    // KEYED ON THE FIGURES, not the words. Fall '26 is $80,000 of DIRECT
+    // program cost and $2,700 of overhead, and a build that folds one into the
+    // other still renders a tile headed "Overhead" — only the numbers separate
+    // them. Full revenue is 70,000 + 1,200 of other income; full cost is
+    // 80,000 + 2,700.
+    needs: '#kpis[data-cr-money="direct=80000 overhead=2700 fullrev=71200 fullcost=82700"]',
+    also: ['body[data-cr-seen*="rows=1 rev=70000"]'],
+    act: async (page) => {
+      await page.waitForSelector('body[data-cr-seen*="mode=season"]', { timeout: 20000 });
+      await page.waitForFunction(() => {
+        const t = document.querySelector("#kpis").textContent || "";
+        // Direct recovery still reads 88% with overhead present, and the
+        // full-cost figure is stated BESIDE it rather than replacing it.
+        return /Overhead/.test(t) && /88%/.test(t) && /full cost/.test(t);
+      }, { timeout: 20000 });
+    } },
+
   { name: "programs-schedule · six meetings, one section twice",
     path: "/{org}/programs-schedule",
     needs: "[data-ready='true'][data-ps-rows='6']" },

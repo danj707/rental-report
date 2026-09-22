@@ -43,7 +43,7 @@ const openpdf = fs.readFileSync(path.join(ROOT, "public/open-pdf.js"), "utf8");
 /* Every page on the layer. Listed rather than globbed, because the set is a
    DECISION: the three public customer pages, the retired reports and the QBR
    are deliberately off it, and a glob would quietly sweep them in. */
-const LAYER = ["court-utilization", "custom-report", "directors-report", "facilities",
+const LAYER = ["cost-recovery", "court-utilization", "custom-report", "directors-report", "facilities",
   "facility", "fasttrack", "gl", "historic", "instructor-payout", "lessons",
   "memberships", "opportunities", "products", "programs-schedule", "programs",
   "qoq", "roster", "users", "waitlist"];
