@@ -1558,6 +1558,7 @@ function MethodFilter({ methods, selected, onChange }) {
     <div className="loc-filter-wrap" ref={wrapRef}>
       <button
         className={'btn-loc-filter' + (allSelected ? '' : ' active')}
+        data-method-btn="1"
         style={{fontSize:11, padding:'4px 10px', ...(allSelected ? {} : {borderColor:'#f59e0b', color:'#fde68a'})}}
         onClick={() => setOpen(o => !o)}
       >
@@ -2484,25 +2485,47 @@ function App() {
     setIntent(p => (p.glCodes === null ? p : { ...p, glCodes: null }));
   }
 
-  // Rows actually rendered: desk-filtered then re-collapsed to one row per GL code.
-  // For orgs without a desk dimension this is a no-op (displayRows === rows).
-  const displayRows = useMemo(() => {
+  /* DESK SCOPE, ONE DEFINITION, THREE READERS.
+
+     The rollup table narrows further (GL checkboxes, the search box, the
+     tender picker); the fee worksheet must NOT, so it stops here. Extracted
+     rather than duplicated because the counts and the rows have to be scoped
+     by the same rule: `feeCounts` used to re-derive the desk scope from React
+     state while this branch read it from the URL, so on the FIRST render of a
+     PDF a desk-filtered table was priced against org-wide transaction counts.
+     One memo, and that class of drift cannot recur. */
+  const deskRows = useMemo(() => {
     if (!rows) return [];
-    var base;
     // Belt-and-suspenders: in print mode, apply the desk filter from the URL on
     // the FIRST render. #report-ready is in the DOM as soon as rows are, so
     // waiting for the intent effect to settle is a race Puppeteer can lose.
     if (params._print === '1' && params.desks) {
       const allowed = new Set(params.desks.split(',').map(d => d.trim()));
-      const filtered = rows.filter(r => allowed.has(r.deskLocation || NO_DESK_LABEL));
-      base = aggregateByGlCode(filtered);
-    } else if (!hasDesk) {
-      base = rows;
-    } else {
-      const sel = selectedDesks || new Set(allDesks);
-      const filtered = rows.filter(r => sel.has(r.deskLocation || NO_DESK_LABEL));
-      base = aggregateByGlCode(filtered);
+      return aggregateByGlCode(rows.filter(r => allowed.has(r.deskLocation || NO_DESK_LABEL)));
     }
+    if (!hasDesk) return rows;
+    const sel = selectedDesks || new Set(allDesks);
+    return aggregateByGlCode(rows.filter(r => sel.has(r.deskLocation || NO_DESK_LABEL)));
+  }, [rows, hasDesk, selectedDesks, allDesks, params._print, params.desks]);
+
+  /* The RAW desk-scoped rows, before aggregateByGlCode throws the desk identity
+     away. `feeCounts` dedupes the distinct card counts per desk and needs it. */
+  const deskRawRows = useMemo(() => {
+    if (!rows) return [];
+    if (params._print === '1' && params.desks) {
+      const allowed = new Set(params.desks.split(',').map(d => d.trim()));
+      return rows.filter(r => allowed.has(r.deskLocation || NO_DESK_LABEL));
+    }
+    if (!hasDesk) return rows;
+    const sel = selectedDesks || new Set(allDesks);
+    return rows.filter(r => sel.has(r.deskLocation || NO_DESK_LABEL));
+  }, [rows, hasDesk, selectedDesks, allDesks, params._print, params.desks]);
+
+  // Rows actually rendered: desk-filtered then re-collapsed to one row per GL code.
+  // For orgs without a desk dimension this is a no-op (displayRows === rows).
+  const displayRows = useMemo(() => {
+    if (!rows) return [];
+    var base = deskRows;
     // GL CODE CHECKBOXES. Applied before the text filter and independently of
     // it: the two answer different questions ("show me exactly these accounts"
     // vs "find the one whose name mentions swim"), and an admin may well use
@@ -2545,7 +2568,7 @@ function App() {
       base = base.map(r => applyMethodFilter(r, methodSel));
     }
     return base;
-  }, [rows, hasDesk, selectedDesks, allDesks, glFilter, selectedGlCodes, allGlCodes, selectedMethods, availableMethods]);
+  }, [rows, deskRows, glFilter, selectedGlCodes, allGlCodes, selectedMethods, availableMethods]);
 
   const totals = useMemo(() => {
     if (!displayRows) return {};
@@ -2773,9 +2796,10 @@ function App() {
      second one justifies pricing a fee at zero. */
   const feeCounts = useMemo(() => {
     if (!rows) return null;
-    const scoped = hasDesk
-      ? rows.filter(r => (selectedDesks || new Set(allDesks)).has(r.deskLocation || NO_DESK_LABEL))
-      : rows;
+    // The SAME desk scope the table uses, not a second derivation of it - see
+    // deskRawRows. Re-deriving it here from React state is what let a printed
+    // desk-filtered worksheet be priced on org-wide counts.
+    const scoped = deskRawRows;
     const hasTxnCounts = scoped.some(r => r.cardPaymentTxns != null);
     if (!scoped.some(r => r.deskDistinctCardPayments != null)) return { hasTxnCounts };
     const byDesk = new Map();
@@ -2788,14 +2812,39 @@ function App() {
     let pay = 0, ref = 0;
     for (const v of byDesk.values()) { pay += v.pay; ref += v.ref; }
     return { hasTxnCounts, trueCardPayments: pay, trueCardRefunds: ref };
-  }, [rows, hasDesk, selectedDesks, allDesks]);
+  }, [rows, deskRawRows]);
 
   // Priced ONCE, here, and handed to the worksheet — so the beacon below and
   // what is on screen can never be two different answers.
   const feeResult = useMemo(() => {
     if (!isFeeActive || !window.RecFeeAllocation) return null;
-    return window.RecFeeAllocation.allocateFees(displayRows, feeCfg, feeCounts || {});
-  }, [isFeeActive, displayRows, feeCfg, feeCounts]);
+    /* PRICED OFF THE DESK-SCOPED ROWS, NEVER `displayRows`.
+
+       This worksheet is a reconciliation against what Rec actually billed, and
+       that bill is for the whole window. The three narrowers below `deskRows`
+       cannot be expressed in it at all:
+
+       - THE GL CHECKBOXES. The $0.30 fee is charged on the TRUE distinct
+         transaction count, which is a per-DESK figure - and a card payment
+         that pays for two GL codes belongs partly to each, so there is no
+         honest count for "the codes still ticked". Priced off displayRows the
+         fixed half stayed at the org-wide count while every other fee shrank:
+         untick Childcare on Danvers' own week and it still billed 217
+         transactions ($65.10) against $10,119.50 of card volume left on
+         screen, with the variable fee correctly down at $354.18. The table
+         contradicted itself.
+       - THE SEARCH BOX, for the same reason by a different door.
+       - THE TENDER PICKER, which is worse: applyMethodFilter REWRITES each
+         row's money, so a worksheet priced after it reports cash the org did
+         not take.
+
+       Dates and desk still apply, and both are sound: a desk-distinct count is
+       additive across desks, so a desk-scoped worksheet reconciles to that
+       desk's own remittance. The controls that cannot reach it are hidden
+       while the mode is on rather than greyed - a dead control invites a
+       click. */
+    return window.RecFeeAllocation.allocateFees(deskRows, feeCfg, feeCounts || {});
+  }, [isFeeActive, deskRows, feeCfg, feeCounts]);
 
   /* Whether a town actually uses this in place of the spreadsheet it rebuilt by
      hand is the signal worth having, so the ping carries the figure it priced
@@ -2892,14 +2941,17 @@ function App() {
         clear: () => handleDesksChange(new Set(allDesks)),
       });
     }
-    if (availableMethods.length > 1 && selectedMethods && selectedMethods.size < availableMethods.length) {
+    /* A chip for a filter the worksheet does not honour is worse than no chip:
+       it says "this view is narrowed" about numbers that are not. The desk chip
+       above stays, because the desk scope IS applied here. */
+    if (!isFeeActive && availableMethods.length > 1 && selectedMethods && selectedMethods.size < availableMethods.length) {
       chips.push({
         key: 'methods',
         label: availableMethods.filter(m => selectedMethods.has(m.key)).map(m => m.label).join(', '),
         clear: () => handleMethodsChange(new Set(availableMethods.map(m => m.key))),
       });
     }
-    if (glFilter.trim()) {
+    if (!isFeeActive && glFilter.trim()) {
       chips.push({ key: 'glq', label: '"' + glFilter.trim() + '"', clear: () => setGlFilter('') });
     }
 
@@ -3147,7 +3199,14 @@ function App() {
           />
         )}
 
-        {hasGlCodes && selectedGlCodes && (
+        {/* HIDDEN, NOT GREYED, while the fee worksheet is on. Neither of these
+            can reach it - it prices off the desk-scoped rows - and a control
+            that cannot do anything is a dead end somebody clicks. Hidden rather
+            than cleared, so a selection made on the rollup is still there when
+            the reader switches back. The desk picker above stays, because a
+            desk-scoped worksheet is sound and reconciles to that desk's own
+            remittance. */}
+        {!isFeeActive && hasGlCodes && selectedGlCodes && (
           <CheckFilter
             slug="glcode" icon="🏷️" label="GL Code" title="GL Code"
             options={allGlCodes}
@@ -3156,7 +3215,7 @@ function App() {
           />
         )}
 
-        {availableMethods.length > 1 && selectedMethods && (
+        {!isFeeActive && availableMethods.length > 1 && selectedMethods && (
           <MethodFilter
             methods={availableMethods}
             selected={selectedMethods}
@@ -3209,11 +3268,14 @@ function App() {
 
         <div className="toolbar-spacer" />
 
-        <input type="text" value={glFilter} onChange={e => setGlFilter(e.target.value)}
-          placeholder="Filter GL codes..."
-          style={{background:'rgba(255,255,255,.12)',border:'1px solid rgba(255,255,255,.2)',borderRadius:6,padding:'5px 10px',color:'#fff',fontSize:12,fontFamily:'inherit',width:160,outline:'none'}} />
+        {!isFeeActive && (
+          <input type="text" value={glFilter} onChange={e => setGlFilter(e.target.value)}
+            placeholder="Filter GL codes..."
+            data-gl-search="1"
+            style={{background:'rgba(255,255,255,.12)',border:'1px solid rgba(255,255,255,.2)',borderRadius:6,padding:'5px 10px',color:'#fff',fontSize:12,fontFamily:'inherit',width:160,outline:'none'}} />
+        )}
 
-        {rows && <span className="row-count">{displayRows.length} GL code{displayRows.length !== 1 ? 's' : ''}{glFilter.trim() ? ' (filtered)' : ''}</span>}
+        {rows && !isFeeActive && <span className="row-count">{displayRows.length} GL code{displayRows.length !== 1 ? 's' : ''}{glFilter.trim() ? ' (filtered)' : ''}</span>}
 
         {rows && dataAsOf && (() => {
           const d = new Date(dataAsOf);

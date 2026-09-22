@@ -205,6 +205,155 @@ a broken server rather than an uninstalled repo. `npm install` there first.
 - **The other open `/api/admin` routes were NOT audited.** `delete-org` was
   checked and is properly gated; the rest were left alone rather than swept.
 
+## THE WORKSHEET WAS PRICED OFF THE FILTERED ROWS (2026-09-22)
+
+Found auditing the fee allocation after Dan asked whether rounding was handled
+"like the GAAP specs do". **The rounding was already right; the SCOPE was not.**
+
+Dan's own call on the fix, and it is better than either option I put to him:
+*"how about disable the gl code filters on the cc txn gl code view?"* — then,
+settling it: ***"they will never filter on this view. literally filter for
+dates, click the button and export."***
+
+### THE FIXED FEE STAYED ORG-WIDE WHILE EVERY OTHER FEE SHRANK
+
+`feeResult` priced off **`displayRows`**, which the GL checkboxes, the search box
+and the tender picker all narrow. But the $0.30 half is charged on the **TRUE
+distinct transaction count**, which `feeCounts` derives from the **desk** rows
+and nothing else. Two different populations, one table:
+
+| Danvers' own week | fixed fee | billed on | grand total |
+|---|---|---|---|
+| all GL codes | $65.10 | 217 txns | 3,914.47 |
+| **Childcare unticked** | **$65.10** | **217 txns** | 537.56 |
+
+Card volume on screen falls to $10,119.50 and the variable fee correctly follows
+it to $354.18 — while the flat half still bills all 217. **The table contradicts
+itself**, and the *"Check against the remittance summary"* block then presents a
+subset as if it reconciles to an org-wide bill.
+
+**AND THERE IS NO CORRECT NUMBER TO COMPUTE, which is why the fix is not
+arithmetic.** A card payment that pays for two GL codes belongs partly to each,
+so *"how many distinct transactions touched only the codes still ticked"* is not
+a question the data can answer. Dan's answer — the filters do not belong on this
+view at all — is the only one that does not invent something.
+
+### TWO NARROWERS I HAD NOT PUT IN FRONT OF HIM, and the second is worse
+
+- **The search box** is the same defect by a different door.
+- **THE TENDER PICKER REWRITES THE MONEY.** `applyMethodFilter` recomputes each
+  row from the selected tenders, so a worksheet priced after it reports cash the
+  org never took — not a subset of rows, a different number in the same cell.
+
+### ONE DESK SCOPE, THREE READERS — and that closes a live PRINT bug
+
+`deskRows` / `deskRawRows` are their own memos now; `displayRows` builds on them
+and the worksheet reads them directly. That was not tidiness:
+
+**`feeCounts` re-derived the desk scope from REACT STATE while `displayRows`
+read it from the URL.** `selectedDesks` is `useState(null)` and filled by an
+effect, so on the FIRST render of a PDF — which is the render, `#report-ready`
+is in the DOM as soon as rows are — a desk-filtered table was priced against
+**org-wide** transaction counts. Live today for anyone who desk-filters and
+exports. One memo and that class cannot recur.
+
+**The desk filter STAYS, and that asymmetry is the point.** A
+`transaction_event_id` has exactly one desk, so desk-distinct counts are
+additive across desks and a desk-scoped worksheet genuinely reconciles to that
+desk's own remittance. Dates likewise. Only the three that cannot be expressed
+in a remittance bill are cut.
+
+### HIDDEN, NOT GREYED — and hidden, not CLEARED
+
+A control that cannot move the numbers is a dead end somebody clicks, so the
+three are absent while the mode is on (the standing rule; the settings-gear
+carve-out was about discovering a feature, and a reader already inside the mode
+is not discovering it). **Their chips go too** — a chip saying *"this view is
+narrowed"* over numbers that are not is worse than no chip.
+
+They are **hidden rather than cleared**, so a selection made on the rollup
+survives a round trip through the worksheet.
+
+### AND THE ROUNDING QUESTION, answered: it was already correct
+
+Worth recording so it is not re-derived. Every money figure is **integer cents**
+from `toCents` on; rates are basis points and whole cents, never floats; each
+section total is rounded **once** from the org-wide figure; and largest-remainder
+apportionment splits it so the parts sum exactly, residual cents landing on the
+largest remainders with a **deterministic tie-break** (remainder, then weight,
+then position) so two runs cannot disagree.
+
+**Measured rather than asserted: 30,000 random allocations over card-shaped
+data, ZERO foot or cross-foot breaks** — every column sums to its total, every
+row's components sum across to its row total, every row total sums to the grand
+total. Display is one formatter (`FeeMoney`, `minimumFractionDigits: 2`), and a
+mechanical check found **0 of 17 money fields bypassing it**; null renders an em
+dash, never `$0.00`.
+
+That is exactly why our Rec row reads **471.14** and Danvers' sheet **471.13**:
+she rounds each row once off unrounded intermediates (`471.1325`), so her row
+total does not equal the three figures printed beside it and her summary
+(**3,914.46**) misses her own verification line (**3,914.47**). Ours ties.
+
+**AN EARLIER STRESS RUN REPORTED 122 FAILURES AND EVERY ONE WAS MY FIXTURE.**
+It generated per-GL refund counts of zero beside a non-zero desk-distinct refund
+count — a state card 17293 cannot emit, since a refund carries a GL code. Fixing
+the generator to card-shaped data took it to zero. *A failing invariant on data
+the source cannot produce is a bug in the test, and reporting it as a finding
+costs more than finding nothing.*
+
+### Guards
+
+`scripts/fee-allocation.spec.js` 145 → **160 assertions**, in CI.
+**Mutation-tested nine ways, all failing by an assertion that names the
+defect**: priced off `displayRows` again (the bug), each of the three controls
+left visible, the DESK picker also hidden (the over-correction), `feeCounts`
+re-deriving its own desk scope (the print race), `displayRows` repeating the
+desk scope instead of building on it, and each of the two stale chips restored.
+
+**THE SPEC WAS PINNING THE BUG AS THE REQUIREMENT.** Its assertion read *"the
+worksheet is priced from displayRows, so every toolbar filter narrows it too"* —
+the same shape as `report-settings.spec.js` once requiring `disabled` on the
+gear. Replaced, with the reasoning in the message so the next person does not
+re-derive it.
+
+**AND ONE MUTATION SURVIVED, on the half that mattered most.** My
+"two print fallbacks" count could not see `feeCounts` re-deriving the desk scope
+from React state, because that adds no `params._print` occurrence. The guard is
+scoped to the `feeCounts` slice now — it must read `deskRawRows` and must not
+re-filter `rows` itself.
+
+**MY MUTATION RUNNER REPORTED ALL NINE AS SURVIVORS FIRST**, because it grepped
+for `assertions passed` — and this spec prints **`"160 assertions passed, 3
+FAILED."`** on failure. Nth instance of the recorded rule, walked into anyway:
+**judge a spec by its EXIT CODE.**
+
+**Three `ci-check-render.js` cases, because no source assertion can see this** —
+the component reads correctly whichever rows it is handed. The scoping case
+takes the route a reader actually takes (untick on the ROLLUP, then switch
+modes, since the picker is gone once the worksheet is on) and requires the total
+to stay **744.84** with all four rows. Browser-mutation-tested, each failing
+**exactly the case that names it**: the bug fails *"unticking a GL code cannot
+move the worksheet"*, and each visible control fails *"the filters it cannot
+honour are gone"*.
+
+**A pre-existing spec pinned a literal my change legitimately moved**, Nth
+instance and the one I wrote up last night: `gl-code-filter.spec.js` matched the
+whole dependency array from `[rows, hasDesk, selectedDesks, allDesks, glFilter`,
+so lifting the desk scope into its own memo broke a **GL-filter** assertion with
+nothing about the GL filter having changed. It slices the `displayRows` memo and
+tests membership now, with a was-it-found assertion ahead of it.
+
+88 pass, 0 fail, 0 skipped, with `@babel/standalone` pinned at 7.23.9 as CI does.
+
+### NOT DONE
+
+- **No banner saying the worksheet ignores those filters.** Nothing to explain:
+  the controls are not on screen, and dates and desk — the two that do apply —
+  are both visible. A note about absent controls is noise.
+- **The rollup's own filters are untouched.** This changes nothing outside the
+  fee mode.
+
 ## THE REMITTANCE WORKSHEET DANVERS REBUILT BY HAND EVERY WEEK (2026-09-21)
 
 Dan: *"for our GL code rollup report, how hard would it be to add this into our

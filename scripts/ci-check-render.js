@@ -6274,6 +6274,46 @@ const CASES = [
     needs: '[data-fee-split="1"]' },
   { name: "gl · the rates are stated as inputs", path: "/{org}/gl?fees=1",
     needs: "[data-fee-rates]" },
+
+  /* ── The worksheet ignores every narrower it cannot express ──────────────
+     This is a RECONCILIATION against what Rec billed, and that bill is for the
+     whole window. The $0.30 fee rides the TRUE distinct transaction count, a
+     per-DESK figure - and a card payment spanning two GL codes belongs partly
+     to each, so there is no honest count for "the codes still ticked".
+
+     Priced off displayRows the fixed half stayed at the org-wide count while
+     every other fee shrank with the rows, so the table contradicted itself.
+     Only a browser can see this: the source reads correctly either way, and
+     "a worksheet rendered" passes on the bug.
+
+     The route is the one a reader actually takes - untick on the ROLLUP, then
+     switch modes - because the picker is hidden once the worksheet is on. */
+  { name: "gl · unticking a GL code cannot move the worksheet", path: "/{org}/gl",
+    act: async p => {
+      await openGlCodes(p);
+      await p.click('[data-glcode-opt="4100"]');            // the biggest code
+      await p.waitForSelector("[data-glcode-badge]", { timeout: 15000 });
+      await p.click("[data-glcode-btn]");                   // shut the menu
+      const btns = await p.$$("button");
+      for (const b of btns) {
+        const t = await p.evaluate(e => e.textContent, b);
+        if (t && t.includes("Fee Allocation")) { await b.click(); return; }
+      }
+      throw new Error("no → Fee Allocation button");
+    },
+    // Unchanged, and the four rows are all still there.
+    needs: '[data-fee-sheet="1"][data-fee-rows="4"][data-fee-total="744.84"]',
+    // What the bug rendered: Program Revenue's $10,000 and 20 transactions gone
+    // from the rows while the flat fee still billed all 32.
+    absent: '[data-fee-rows="3"]' },
+
+  /* Hidden, not greyed. A control that cannot affect the numbers is a dead end
+     somebody clicks, and this repo's rule is absent-not-disabled. */
+  { name: "gl · the filters it cannot honour are gone", path: "/{org}/gl?fees=1",
+    needs: '[data-fee-sheet="1"]',
+    absent: "[data-glcode-btn], [data-gl-search], [data-method-btn]" },
+  { name: "gl · they come back on the rollup", path: "/{org}/gl",
+    needs: "[data-glcode-btn]", also: ["[data-gl-search]"] },
   // The PDF is this page under ?_print=1 with an empty localStorage, so the URL
   // is the only channel the mode has — the bug this repo has shipped four times.
   { name: "gl · the PDF render honours the fee mode", path: "/{org}/gl?_print=1&fees=1",
