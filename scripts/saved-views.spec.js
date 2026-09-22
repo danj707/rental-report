@@ -313,12 +313,15 @@ function glSlice(startMarker, endMarker) {
   return GL_HTML.slice(i, j);
 }
 
-test("the GL allowlist carries the refund mode and the GL codes, in build order", () => {
+test("the GL allowlist carries every mode and the GL codes, in build order", () => {
+  // A NEW KEY GOES ON THE END. cleanViewParams emits in this order and the page
+  // builds currentFilterParams the same way, so the dirty check is a string
+  // comparison — insert a key in the middle and every view already saved reads
+  // as edited the instant it is applied. `fees` (the Remittance Fee Allocation
+  // mode) was appended for exactly that reason, as `refunds` was before it.
   assert.deepStrictEqual(REG.SAVED_VIEW_PARAMS.gl,
-    ["desks", "gl_codes", "methods", "glq", "tyler", "refunds"],
-    "key ORDER is load-bearing: cleanViewParams emits in this order and the page "
-    + "builds currentFilterParams the same way, so the dirty check is a valid "
-    + "string comparison");
+    ["desks", "gl_codes", "methods", "glq", "tyler", "refunds", "fees"],
+    "key ORDER is load-bearing, and a new key is APPENDED rather than inserted");
 });
 
 test("parseViewParams reads the refund mode BOTH ways", () => {

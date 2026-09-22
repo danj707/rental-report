@@ -129,8 +129,14 @@ const R = loadRegistry();
 // unregistered report to be refused.
 ok(R.REPORT_SETTINGS_SCHEMA.roster, "the roster is registered");
 ok(R.REPORT_SETTINGS_SCHEMA.facility, "so is the facility hub's aquatics scope");
+ok(R.REPORT_SETTINGS_SCHEMA.gl, "and the GL report's fee-allocation settings");
+// `gl` USED TO BE THE UNREGISTERED EXAMPLE HERE, and it is registered now - the
+// recurring trap of a spec pinning a literal a later change legitimately moves.
+// The claim was never about gl; it is that the gate reads the registry, so it
+// keeps a report that really is unregistered on the negative side.
 ok(R.reportSettingsEnabled("roster") && R.reportSettingsEnabled("facility")
-   && !R.reportSettingsEnabled("gl") && !R.reportSettingsEnabled("programs"),
+   && R.reportSettingsEnabled("gl")
+   && !R.reportSettingsEnabled("programs") && !R.reportSettingsEnabled("waitlist"),
    "and the gate reads the registry rather than a second list — an unregistered report is still refused");
 
 // ── 3. Defaults are the values the page ships ────────────────────────────────
@@ -597,7 +603,10 @@ ok(/ePACT columns no longer the verified set/.test(SERVER),
        "…by DROPPING the org's record rather than writing the defaults into it, so a later change "
        + "to a platform default still reaches an org that reset");
 
-    r = await call("GET", `/${org}/gl/api/settings?token=${encodeURIComponent(token)}&admin=${ADMIN_KEY}`);
+    // `programs`, not `gl` - the GL report joined the registry when the fee
+    // allocation view shipped. What is being tested is the REFUSAL, so this
+    // needs a report that genuinely has no settings, not a particular slug.
+    r = await call("GET", `/${org}/programs/api/settings?token=${encodeURIComponent(token)}&admin=${ADMIN_KEY}`);
     is(r.status, 404, "an unregistered report 404s rather than accepting settings nothing reads");
 
     r = await call("PUT", `/${org}/roster/api/settings?token=nope&admin=${ADMIN_KEY}`, { defaultDays: 30 });

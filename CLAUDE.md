@@ -205,6 +205,319 @@ a broken server rather than an uninstalled repo. `npm install` there first.
 - **The other open `/api/admin` routes were NOT audited.** `delete-org` was
   checked and is properly gated; the rest were left alone rather than swept.
 
+## THE REMITTANCE WORKSHEET DANVERS REBUILT BY HAND EVERY WEEK (2026-09-21)
+
+Dan: *"for our GL code rollup report, how hard would it be to add this into our
+current reporting, just for them? It's the CC Tnx by GL code tab that's the
+issue, we only do it for Danvers, and it's a total pain. We upload the items log
+into a claude artifact, and it creates this data for us."* Then, on the shape:
+***"mode on the gl report, keep the gate open."***
+
+A third MODE on the GL Code Rollup, beside Refund Detail and → Turnover:
+**→ Fee Allocation**, which prices card, cash, cheque and technology fees by GL
+code from the rows already on screen.
+
+### THE CARD ALREADY HAD FIVE OF THE NINE INPUTS, which is why this was a day
+
+Card 17293 has emitted card payments, card refunds, cash, cheque and total
+revenue per GL code all along. **Everything Steps 3 and 4 need was already
+there** — cash, cheque and technology fees are all percentages of revenue and
+need no counts at all.
+
+**WHAT WAS MISSING IS THE PER-METHOD TRANSACTION COUNTS.** The card carried one
+`Number of Payments` across every method, and card processing is billed **per
+transaction as well as per dollar**, so the flat half could not be derived from
+the money columns at any price. Six columns (four per-GL counts, two per-desk),
+no logic change.
+
+### THE SHEET REPRODUCES TO THE CENT, and that was established before anything was built
+
+Measured off `materialized.item_log_report` rather than transcribed off the
+spreadsheet, for its own week (2026-08-23..31):
+
+| | card payments | # txns | cash | cheque | revenue |
+|---|---|---|---|---|---|
+| Childcare | 74,764 | 147 | 0 | 436 | 75,581 |
+| DCOA | 356 | 9 | 80 | 100 | 536 |
+| Rec | 9,763.50 | 61 | 0 | 300 | 10,063.50 |
+| **TOTAL** | **84,883.50** | **217** | **80** | **836** | **86,180.50** |
+
+…and the whole cascade lands on **CC $3,043.50 · cash+cheque $9.16 · technology
+$861.81 · total $3,914.47**, every figure matching her sheet.
+
+### THE ONE REAL DEFECT IN THE MANUAL METHOD, and it is invisible in a good week
+
+**A card payment that pays for two GL codes is counted once under each**, so the
+per-GL counts sum to MORE than the transactions that happened. Measured over the
+12 months to 2026-09: **73 of Danvers' 3,942 card payments (1.9%) touch two GL
+codes**, so the counts sum to 4,015 and the flat fee overshoots the real charge
+by **$21.90 a year** — invisibly, because every row looks right.
+
+**HER SHEET'S OWN WEEK CONTAINS ZERO SPLIT CARTS** — 147 + 61 + 9 = 217, exactly
+the true count — which is why the manual method has always reconciled. It will
+not always.
+
+**SO EVERY FEE IS AN ALLOCATION OF A TOTAL, NEVER A SUM OF PER-ROW FEES.** The
+section total is computed once from the org-wide figure and split across GL
+codes by largest-remainder apportionment. Two things fall out of that, and the
+second is why it is not merely tidier:
+
+- **The parts always sum.** Her sheet's own summary reads $3,914.46 against its
+  verification line's $3,914.47 — per-row rounding, one cent. This ties.
+- **The flat fee is charged on the TRUE distinct count** and apportioned across
+  the per-GL counts, so it reconciles with the remittance summary in a split
+  week too. In a clean week the output is identical to the manual method's.
+
+**WHERE THE TRUE COUNT COMES FROM:** a `transaction_event_id` has exactly one
+desk, so per-DESK distinct counts are additive across desks — the same property
+the existing `Desk Distinct Payments` column already relies on for the TOTALS
+row. Danvers has two desks and the live card returns **216 + 1 = 217**, which is
+the fixture the spec is built on.
+
+### A PRE-COLUMN FEED WITHHOLDS THE FLAT FEE RATHER THAN PRICING IT AT ZERO
+
+Feeds cache four hours, so a payload from before the card push and one from
+after are both live at once. `countOf(undefined)` is 0, and a 0 here prices the
+flat half at nothing and hands back a grand total that is **$65.10 short and
+entirely plausible**. Presence is asked of the RESPONSE; absent, every
+fixed-fee figure renders an em dash and the page says why. The percentage-based
+fees are still computed, because they can be.
+
+**I SHIPPED THAT BUG AND THE SPEC IS WHAT FOUND IT** — the first version printed
+`$0.00` on a pre-column feed and I only saw it writing the degradation case.
+
+### THE DESK FILTER DESTROYS THE THING THE DEDUPE NEEDS
+
+`displayRows` is re-aggregated to one row per GL code when a desk filter is on,
+which throws away the desk identity. So the page computes the true counts from
+the RAW desk-scoped rows — the same dedupe the TOTALS row already does — and
+hands them to `allocateFees` as an override. The per-GL counts go on
+`GL_SPLIT_FIELDS`, the NULL-PRESERVING path, **not** `GL_MONEY_FIELDS`: `pf(undefined)`
+is 0, which answers "yes this feed can tell you" and reintroduces the bug above.
+
+### CARD 17293 — pushed, and it fixed a latent trap on the way
+
+**MY OWN LITERAL DRY RUN IS WHAT EXPOSED IT.** Substituting plain literals for
+the tags failed with `invalid input syntax for type interval: "2026-08-31"` —
+because `{{end_date}} + INTERVAL '1 day'` **only parses while the tag is typed
+Date**, and an API push regenerates every tag as Text. So the push would have
+broken the card in a second, sharper way on top of the parameter mismatch. Both
+bounds are cast now (`{{end_date}}::date + INTERVAL '1 day'`), the same fix
+cards 18547/18151 already carry. *A cast protects the SQL, not the feed* — the
+flip is still needed, because the app sends `date/single` and Metabase refuses
+that against a Text tag.
+
+Pushed and **diffed back byte-identical** — the `~ '^[0-9]+$'` regex survived the
+JSON boundary, the six columns landed, and the trailing `ORDER BY` is intact.
+
+**THE CARD REGISTERS SIX PARAMETERS, AND THAT IS THE STATE THAT MATTERS.** Read
+live at 22:30 on the day of the push: the three original `org_id`/`start_date`/
+`end_date` **plus** a second `string/=` set for the same three slugs — the
+documented duplication this file already records for cards 17301, 17295 and
+18151. So the remedy is the documented one: open the card and **re-save until
+that list is three again**, with both dates typed Date.
+
+### A CAST MAKES THE SQL SURVIVE A TEXT TAG — AND BLINDS EVERY ROW-RETURNING CHECK
+
+The sharpest thing this push taught, and it was measured rather than reasoned,
+by running both shapes against the live card minutes apart:
+
+| what sent it | result |
+|---|---|
+| `verify-report-live.js` (the card's **OWN** registered types) | **200, 9 rows in 4.1s** |
+| the APP's shape (`date/single`, as `buildMetabaseParams` hardcodes) | **400 `"An error occurred."` in 0.3s** |
+
+Both true at the same instant, on the same card. The verifier merges values onto
+each parameter's own `type`, so with a Text tag it sends `string/=` — and the
+**cast** means the SQL then runs perfectly. The app cannot do that: it hardcodes
+`date/single`, Metabase refuses that against a Text-typed tag, and the GL report
+is down for every org while the check reports green.
+
+**So the cast is worth having and it moves the failure rather than removing it.**
+It kills the `invalid input syntax for type interval` half permanently; it also
+means **no row-returning check can see a missing flip any more** — not the
+manifest, not the health check, both of which send the card's own types.
+
+**`param-drift` IS THE GUARD, and it is the only one.** `diffCardParamTypes`
+walks **every** parameter and flags any `start_date`/`end_date` that is not
+`date/*` — verified against this exact six-parameter shape: **2 entries, both
+carrying the flip link**. The manifest row's own label used to claim it would
+catch the flip; it was corrected to say what it actually covers and to point
+here, because *a guard that names the wrong failure mode is a guard people learn
+to skim.*
+
+*Generalise it: when a card's bounds are cast, the only thing left that can see a
+Text tag is a check that reads the card's DEFINITION. A check that asks the card
+for rows will answer 200 on a report nobody can load.*
+
+### THE GATE IS OPEN AND THE MODE SHIPS OFF
+
+Dan asked to keep the gate open, and the standing rule is that anything new
+ships hidden. Both, without contradiction: the mechanism is generic — any org
+is one toggle — and `feeAllocation` defaults **false**.
+
+**THE GATE AND THE RATES LIVE IN ONE RECORD** (`REPORT_SETTINGS_SCHEMA.gl`),
+because enabling a second town without looking at its rates would silently price
+its money with Danvers' contract terms. Reading settings does not need the
+`reportSettings` feature flag — that flag gates the EDITING panel — so a seeded
+org works whether or not the flag is up.
+
+**RATES ARE BASIS POINTS AND CENTS, never floats.** They multiply every dollar
+on the page, and a stored `0.0349999` is a report that is a cent out for reasons
+nobody can find.
+
+`REPORT_SETTINGS_SEEDS` turns Danvers on, one-shot, **called from `storeBoot`'s
+`finally` and never at module scope** — the recorded lesson that a write at
+module scope lands on the container's own disk and takes its own applied-marker
+with it, silently, on every boot.
+
+**AND THE MARKER IS PER ORG, BECAUSE A PER-KEY ONE BURNS THE SEED ON A BOOT THAT
+CANNOT SEE THE ORG YET.** The PR preview found it: `[seed] gl-fees:...-danvers:
+unknown org town-of-danvers`, and the key recorded applied **anyway**, so the
+next boot would skip the seed entirely — the feature shipping doing nothing, the
+only symptom a line in a boot log. On the preview that is correct behaviour (a
+fresh environment has its own empty store and Danvers is DYNAMIC), and it is
+**not preview-only**: `seedReportSettings` runs in `storeBoot`'s `finally`, past
+every early return in `storeConnect()`, while **`loadDynamicOrgs` runs INSIDE
+`storeConnect`** — after the configure timeout and the thrown-connect returns.
+So on any boot where the store answers late, `ORGS` holds only the static map
+and a per-key marker burns the seed on production too.
+
+Keyed `key|slug`: an org this boot cannot see stays unapplied and retries, while
+an org already seeded is still never re-seeded over a toggle it changed since —
+which is the rule the marker exists for. The old per-key marker is still
+honoured, so anything applied under it stays applied.
+
+*Generalise it: an idempotency marker must be keyed on the thing that actually
+succeeded. Keyed one level up it records work that never happened, and the
+failure is silent by construction.* **`seedReportVisibility` has the same
+per-key shape** and is not changed here — its orgs are static, so nothing can be
+missing at boot; the day one of them becomes dynamic, it inherits this bug.
+
+**AND THE SLUG WAS VERIFIED AGAINST PRODUCTION, BY THE UUID, BEFORE IT WAS
+TRUSTED.** `seedReportSettings` does `if (!ORGS[slug]) { warn; continue; }`, so a
+slug that is merely plausible makes the seed **warn and skip** — the feature
+ships and does nothing for the one org it exists for, and the only symptom is a
+line in the boot log. Danvers is a DYNAMIC org: `town-of-danvers` appears
+nowhere in `server.js`, and `public/qbr.html`'s own hand-kept `ORG_OPTIONS`
+carries **`['danvers','Danvers']`**, which is a different list and reads as a
+contradiction. Resolved the way this file already prescribes — *reconcile on the
+`orgId`, never the slug* — through `GET /api/admin/org-by-id/<uuid>` on
+production: **`slug: "town-of-danvers"`, displayName "Town of Danvers"**. So the
+seed applies. (That route answers with the org's TOKEN beside the slug, so read
+the slug and do not print the response.)
+
+*Generalise it: a seed keyed on a slug is a link that can rot, and it rots
+silently. Check it against the identity both projects share before shipping — the
+`town-of-shrewsbury` link 404'd for five weeks for exactly this reason.*
+
+### Guards
+
+`scripts/fee-allocation.spec.js` (**140 assertions, in CI**), which LIFTS AND
+RUNS `public/fee-allocation.js` — every defect here is arithmetic about a share
+or a threshold, and a regex passes on an inverted allocation. The golden case is
+Danvers' own week, pinned figure by figure.
+
+**Mutation-tested 24 ways, all failing by an assertion that names the defect**:
+the flat fee priced on the summed per-GL counts (the manual method's own bug),
+the presence gate hardcoded true, apportionment rounding each row independently
+so the parts stop summing, the all-zero GL code rendered, the per-desk counts
+summed per row instead of deduped, an unreadable rate falling to 0%, `fees`
+dropped from each of the four gates one at a time, the mode shipping ON, a
+schema rate drifting from `DEFAULT_FEE_RATES`, the seed added at module scope, a
+view that can only turn the mode on, print mode trusting React state, the
+worksheet reading the unfiltered rows, the page growing its own copy of the
+arithmetic, the trailing `ORDER BY` dropped, the date casts removed, the true
+count computed per GL code, and a $0 line item counted as a transaction.
+
+**THREE OF MY FIRST MUTATIONS DID NOT REPRODUCE THE BUG, and that is the
+recurring lesson rather than a footnote.** Mutating `ccFixTotal` alone left every
+downstream `hasTxnCounts ?` guard intact; mutating the `!byDesk.has(desk)` guard
+left the **Map keyed by desk** doing the dedupe anyway; and `countOf`'s `> 0` is
+genuinely BENIGN (a COUNT is never negative), so the load-bearing guard is the
+SQL's `raw_amount_cents > 0` and that is what is tested now. *A mutation that
+does not reproduce the bug has not tested the guard.*
+
+**AND ONE OF MY OWN COMMENTS TRIPPED ITS OWN GUARD**, Nth instance: the SQL
+comment quoted `raw_amount_cents > 0`, so the assertion counting occurrences
+read 5 where 4 were expected. Reworded rather than teaching the assertion to
+skip comments — keeping it dumb and literal is the more robust half.
+
+**Ten `ci-check-render.js` cases**, because none of this is visible in source —
+the component reads plausibly whichever column it prices. The fixture's grand
+total is **744.84**, and priced off the summed per-GL counts (33 × $0.30 instead
+of the true 32) it is **745.14**, so one number separates the shipped arithmetic
+from the manual method's. Browser-mutation-tested: the flat fee on the summed
+counts fails five cases, the org gate ignored fails exactly the two absence
+cases, the presence gate hardcoded true fails exactly the pre-column case.
+
+**THE FIRST VERSION OF THE GATE CASE SURVIVED ITS OWN MUTATION.** It asked for
+`/{org}/gl` without `?fees=1` — and the sheet would not render there for an
+ENABLED org either, so the absence proved nothing. It asks for the mode
+explicitly now.
+
+**AND I EDITED `public/gl.html` WHILE A MUTATION RUNNER OWNED IT**, which is
+recorded in this file and which I did anyway: the runner restored its snapshot
+and wiped the edit. Found by checking the file afterwards rather than by the
+failure, which is luck. *Never edit a file a mutation runner is holding.*
+
+**Two pre-existing specs named `gl` as their example of an UNREGISTERED report**
+and broke when it joined the settings registry — the third instance of exactly
+this (it was `facility` before, for the same reason). `report-settings.spec.js`
+keeps its intent with a report that really is unregistered;
+`report-settings-unlock.spec.js` now **DERIVES** one from the registry, because
+naming a fourth slug just queues the same failure up again.
+
+**AND A THIRD ONE PINNED A LITERAL MY CHANGE LEGITIMATELY MOVED** —
+`saved-views.spec.js` asserts `SAVED_VIEW_PARAMS.gl` **byte for byte**, because
+key ORDER is what makes the dirty check a valid string comparison. Appending
+`fees` is the correct change and it breaks that assertion by design. The fix is
+to update the literal and say **why** in the message — *a new key is APPENDED,
+never inserted*, or every view already saved reads as edited the instant it is
+applied. Re-verified by mutation: `fees` slid into the middle of the list fails
+it by name.
+
+**AND MY OWN SPEC DID THE SAME THING TO ITSELF, one merge later.** Its beacon
+assertions read `/"backup-failed", "fee-alloc"\]\)/` — pinned to whichever event
+happened to sit beside ours — so main appending `org-synced` to `SLACK_NOTIFY`
+broke a fee-allocation assertion with nothing about fee allocation having
+changed. **The neighbour was there for a reason, which is why the fix is not a
+wider regex:** `SLACK_NOTIFY` and the log route's `ALLOWED` list share most of
+their names, so an unscoped `includes("fee-alloc")` is satisfied by the wrong
+one. SLICE the list, then test membership — and select the right list by a
+MEMBER (`roster-open`) rather than by position, because server.js declares five
+`ALLOWED` arrays, one per beacon route. Each slice carries a was-it-found
+assertion ahead of it, or the membership test passes on an empty string.
+
+*Generalise it: when scoping forces you to pin a neighbour, slice instead. A
+neighbour is somebody else's to change.*
+
+### I REPORTED A GREEN SUITE THAT HAD NOT RUN THE SPEC THAT CAUGHT THIS
+
+**`saved-views.spec.js` and `facility-summary.spec.js` SKIP when
+`@babel/standalone` is absent** — they print `skipped — …` and **exit 0**. This
+sandbox does not carry it, so my suite runner counted both as passes, printed
+*"87 pass / 0 fail"*, and I put that number in front of Dan as verification. CI
+installs the pinned **7.23.9** and failed within 35 seconds of the push.
+
+*Nth instance of the recorded rule that a runner which cannot tell pass from fail
+has not tested anything* — and the new half is that **a SKIP is not a PASS**, so
+a runner must count the three states apart rather than reading an exit code.
+Install `@babel/standalone@7.23.9` (pinned, exactly as CI does) before a local
+suite run means anything; without it the number is over a smaller set than it
+claims. With it: **87 pass, 0 fail, 0 skipped.**
+
+### NOT DONE
+
+- **No editing UI for the rates beyond the existing settings panel**, which is
+  behind the `reportSettings` flag (off in production). Danvers is seeded with
+  its own rates, so this only matters the day a second town is switched on.
+- **The worksheet is screen and PDF only.** The CSV/Excel exports still carry the
+  rollup, not the fee breakdown — a separate decision about what a finance file
+  should contain.
+- **Nothing reads the remittance summary back.** The verification block states
+  our four figures for a human to compare; it cannot fetch what Rec billed.
+
 ## THE BACKUP HAD BEEN FAILING AND NOTHING SAID SO (2026-09-20)
 
 Dan, asked what was left on the list: *"anything we can do around stability or

@@ -290,6 +290,55 @@
       line-height: 1.5;
     }
 
+    /* ── Fee Allocation worksheet ── */
+    .fee-sheet { max-width: 1100px; margin: 0 auto; }
+    .fee-step { margin-bottom: 26px; }
+    .fee-step h3 {
+      font-size: 13px; font-weight: 700; margin: 0 0 8px; color: #111;
+      letter-spacing: .2px;
+    }
+    .fee-step .step-note { font-size: 11px; color: #6b7280; margin: -4px 0 8px; }
+    .fee-table { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+    .fee-table thead th {
+      background: #eff6ff; border-bottom: 1px solid #bfdbfe; padding: 6px 8px;
+      text-align: left; font-weight: 600; font-size: 10.5px; color: #1e3a8a;
+      text-transform: uppercase; letter-spacing: .3px; white-space: nowrap;
+    }
+    .fee-table thead th.num { text-align: right; }
+    .fee-table tbody td { padding: 5px 8px; border-bottom: 1px solid #f1f5f9; }
+    .fee-table tbody tr:hover { background: none; }
+    .fee-table td.num, .fee-table tfoot td.num {
+      text-align: right; font-family: 'IBM Plex Mono', monospace; white-space: nowrap;
+    }
+    .fee-table tfoot td {
+      border-top: 2px solid #334155; border-bottom: none; padding: 6px 8px;
+      font-weight: 700; background: #f8fafc;
+    }
+    .fee-rates { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 0 0 22px;
+      font-size: 11.5px; color: #334155; }
+    .fee-rates .r { white-space: nowrap; }
+    .fee-rates .r b { font-family: 'IBM Plex Mono', monospace; }
+    .fee-verify { max-width: 520px; border: 1px solid #e2e8f0; border-radius: 8px;
+      padding: 12px 14px; background: #f8fafc; }
+    .fee-verify .row { display: flex; justify-content: space-between; gap: 20px;
+      font-size: 12px; padding: 3px 0; }
+    .fee-verify .row.total { border-top: 1px solid #cbd5e1; margin-top: 5px;
+      padding-top: 7px; font-weight: 700; }
+    .fee-verify .row .v { font-family: 'IBM Plex Mono', monospace; }
+    .fee-note {
+      margin: 0 0 18px; padding: 9px 12px; border-radius: 8px; font-size: 12px;
+      background: #fffbeb; border: 1px solid #fde68a; color: #92400e;
+    }
+    .fee-note.info { background: #eff6ff; border-color: #bfdbfe; color: #1e40af; }
+    /* The printed copy is what a treasurer signs off, so the tinted header rows
+       and the verification panel must survive a printer that drops backgrounds. */
+    @media print {
+      .fee-table thead th, .fee-table tfoot td, .fee-verify, .fee-note {
+        -webkit-print-color-adjust: exact; print-color-adjust: exact;
+      }
+      .fee-step { page-break-inside: avoid; }
+    }
+
     /* ── Tyler turnover cover sheets ── */
     .tyler-sheet { max-width: 720px; margin: 0 auto; padding: 10px 4px 30px; }
     .tyler-sheet + .tyler-sheet { border-top: 1px dashed #bbb; padding-top: 30px; }
@@ -600,6 +649,9 @@
 <script src="/open-pdf.js" defer></script>
   <script src="/report-loader.js"></script>
 <script src="/saved-views.js" defer></script>
+<!-- The fee arithmetic, shared byte-for-byte with scripts/fee-allocation.spec.js.
+     Deferred, so it is read at CALL time like open-pdf.js, never at module scope. -->
+<script src="/fee-allocation.js" defer></script>
 </head>
 <body>
 <div id="root"></div>
@@ -633,7 +685,11 @@ function glOptionKey(r) {
 function getParams() {
   const p = new URLSearchParams(window.location.search);
   return { start_date: p.get('start_date'), end_date: p.get('end_date'), _print: p.get('_print'), tyler: p.get('tyler'),
-           glq: p.get('glq'), view: p.get('view'), desks: p.get('desks'), refunds: p.get('refunds') };
+           glq: p.get('glq'), view: p.get('view'), desks: p.get('desks'), refunds: p.get('refunds'),
+           // Gate 1 of four. An explicit whitelist: a key missing here reads
+           // `undefined` and the deep link silently does nothing, which is
+           // invisible in review because the code either side looks correct.
+           fees: p.get('fees') };
 }
 
 function toISO(d) {
@@ -688,7 +744,17 @@ const GL_MONEY_FIELDS = [
   'totalPayments','numPayments','ccRefunds','cashRefunds','checkRefunds',
   'orgCreditRefunds','otherRefunds','totalRefunds','numRefunds','netAmount'
 ];
-const GL_SPLIT_FIELDS = ['ccOnlinePayments','ccInPersonPayments','ccOnlineRefunds','ccInPersonRefunds'];
+// Summed when present, left NULL when the feed has not got them - the same
+// null-preserving path the split-CC columns use, and for the same reason: these
+// are read as "can this feed answer at all?", and `pf(undefined)` is 0, which
+// answers yes and would price the flat card fee at nothing.
+//
+// Per-GL counts ARE additive across desks (a transaction has exactly one desk,
+// so a GL code's transactions at two desks are disjoint sets). The per-DESK
+// distinct counts are NOT, which is why they are deliberately absent from this
+// list - the page hands the worksheet those separately, deduped by desk.
+const GL_SPLIT_FIELDS = ['ccOnlinePayments','ccInPersonPayments','ccOnlineRefunds','ccInPersonRefunds',
+  'cardPaymentTxns','cardRefundTxns','cashTxns','checkTxns'];
 
 // Check numbers are text but almost always digits — sort them as numbers so
 // "9" lands before "104", falling back to string order for anything else.
@@ -802,6 +868,20 @@ function normalizeRow(raw) {
     deskDistinctPayments: raw['Desk Distinct Payments'] != null ? pf(raw['Desk Distinct Payments']) : null,
     deskDistinctRefunds:  raw['Desk Distinct Refunds']  != null ? pf(raw['Desk Distinct Refunds'])  : null,
 
+    // Per-method distinct transaction counts, for the Fee Allocation view.
+    // NULL (never 0) when the card has not got them yet: card processing is
+    // billed per transaction, and a 0 would price the flat half at nothing and
+    // hand back a total that is short without saying so. Feeds cache four
+    // hours, so a pre-column payload is live for a TTL after the card push.
+    cardPaymentTxns: raw['Card Payment Txns'] != null ? pf(raw['Card Payment Txns']) : null,
+    cardRefundTxns:  raw['Card Refund Txns']  != null ? pf(raw['Card Refund Txns'])  : null,
+    cashTxns:        raw['Cash Txns']         != null ? pf(raw['Cash Txns'])         : null,
+    checkTxns:       raw['Check Txns']        != null ? pf(raw['Check Txns'])        : null,
+    // The TRUE card counts, per desk (additive across desks, unlike the four
+    // above). What the $0.30 flat fee is actually charged on.
+    deskDistinctCardPayments: raw['Desk Distinct Card Payments'] != null ? pf(raw['Desk Distinct Card Payments']) : null,
+    deskDistinctCardRefunds:  raw['Desk Distinct Card Refunds']  != null ? pf(raw['Desk Distinct Card Refunds'])  : null,
+
     netAmount:          pf(raw['Net Amount']),
   };
 }
@@ -884,6 +964,296 @@ function fmtMDY(iso) {
 
 // Short code: -427001-NY* (next-year deferred) codes ARE their NY* suffix;
 // everything else comes from the per-org map (rec.us doesn't store them).
+/* ── Fee Allocation worksheet ───────────────────────────────────────────
+   The weekly remittance sheet, rendered from the rows already on screen. All
+   arithmetic lives in /fee-allocation.js, shared byte-for-byte with the spec -
+   this component only formats what it is handed. */
+function FeeMoney({ v }) {
+  // NULL is not zero. A dash is "this feed cannot say"; $0.00 is "nothing was
+  // charged", and on a fee sheet those are very different claims.
+  if (v == null) return <span style={{color:'#9ca3af'}}>—</span>;
+  return <span>{v.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>;
+}
+function feePct(v) { return v == null ? '—' : v.toFixed(1) + '%'; }
+function feeNum(v) { return v == null ? '—' : v.toLocaleString('en-US'); }
+
+function FeeAllocation({ result, orgName, rangeLabel }) {
+  // Handed the priced result rather than pricing it again: two callers of the
+  // arithmetic is two answers that can disagree, and the Slack ping reads the
+  // same object this renders. Absent (the deferred script has not loaded), say
+  // so rather than throwing and blanking the page.
+  const out = result;
+  if (!out) {
+    return <div className="fee-note">The fee arithmetic did not load. Refresh the page.</div>;
+  }
+  const R = out.rates, T = out.totals, B = out.basis;
+
+  if (!out.rows.length) {
+    return <div style={{textAlign:'center', padding:'40px 0', color:'#888'}}>
+      No GL activity in the selected date range.
+    </div>;
+  }
+
+  const bps = (b) => (b / 100).toFixed(b % 100 === 0 ? 1 : 2) + '%';
+  const money = (v) => <FeeMoney v={v} />;
+
+  return (
+    <div className="fee-sheet" data-fee-sheet="1"
+         data-fee-rows={out.rows.length}
+         data-fee-cardtxns={B.billedCardPayments == null ? '' : B.billedCardPayments}
+         data-fee-total={T.totalFees == null ? '' : T.totalFees.toFixed(2)}>
+
+      <div className="report-header">
+        <div className="report-header-left">
+          <div>
+            <div className="org-label">{orgName}</div>
+            <h1>Fee Allocation by GL Code</h1>
+          </div>
+        </div>
+        <div className="report-header-right">
+          <div className="rh-meta" style={{fontWeight:600}}>{rangeLabel}</div>
+        </div>
+      </div>
+
+      {/* The rates are an INPUT, not a measurement — stated on screen so a
+          treasurer can argue with the number instead of trusting it. */}
+      <div className="fee-rates" data-fee-rates="1">
+        <span className="r">CC variable <b>{bps(R.ccVariableBps)}</b></span>
+        <span className="r">CC per transaction <b>${(R.ccFixedCents / 100).toFixed(2)}</b></span>
+        <span className="r">Cash <b>{bps(R.cashBps)}</b></span>
+        <span className="r">Check <b>{bps(R.checkBps)}</b></span>
+        <span className="r">Technology <b>{bps(R.techBps)}</b></span>
+      </div>
+
+      {!B.hasTxnCounts && (
+        <div className="fee-note" data-fee-nocounts="1">
+          This feed predates the per-transaction counts, so the <b>flat card fee
+          cannot be priced</b> and every figure that depends on it is shown as a
+          dash rather than as zero. Percentage-based fees below are complete.
+          Refresh once the feed cache turns over (up to four hours).
+        </div>
+      )}
+
+      {B.hasTxnCounts && B.splitCardPayments > 0 && (
+        <div className="fee-note info" data-fee-split={B.splitCardPayments}>
+          <b>{B.splitCardPayments}</b> card payment{B.splitCardPayments === 1 ? '' : 's'} in
+          this window paid for more than one GL code, so the per-GL counts below add up to
+          more than the {feeNum(B.billedCardPayments)} transactions that actually happened.
+          The flat fee is charged on the true count and split across the GL codes in
+          proportion, which is why a row's fixed fee is not exactly
+          ${(R.ccFixedCents / 100).toFixed(2)} × its own count.
+        </div>
+      )}
+
+      {/* ── Step 1 ── */}
+      <div className="fee-step">
+        <h3>1 · Revenue and transaction counts by GL code</h3>
+        <table className="fee-table">
+          <thead><tr>
+            <th>GL Code</th>
+            <th className="num">Card Payments</th><th className="num">Card Refunds</th>
+            <th className="num">Cash</th><th className="num">Check</th>
+            <th className="num">Total Revenue</th>
+            <th className="num"># Card Pay</th><th className="num"># Card Rfnd</th>
+            <th className="num"># Cash</th><th className="num"># Check</th>
+          </tr></thead>
+          <tbody>
+            {out.rows.map(r => (
+              <tr key={r.glCode} data-fee-gl={r.glCode}>
+                <td>{r.glCode}</td>
+                <td className="num">{money(r.cardPayments)}</td>
+                <td className="num">{money(r.cardRefunds)}</td>
+                <td className="num">{money(r.cash)}</td>
+                <td className="num">{money(r.check)}</td>
+                <td className="num">{money(r.revenue)}</td>
+                <td className="num">{feeNum(r.nCardPay)}</td>
+                <td className="num">{feeNum(r.nCardRef)}</td>
+                <td className="num">{feeNum(r.nCash)}</td>
+                <td className="num">{feeNum(r.nCheck)}</td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot><tr>
+            <td>TOTAL</td>
+            <td className="num">{money(T.cardPayments)}</td>
+            <td className="num">{money(T.cardRefunds)}</td>
+            <td className="num">{money(T.cash)}</td>
+            <td className="num">{money(T.check)}</td>
+            <td className="num">{money(T.revenue)}</td>
+            {/* The counts on this row are the ones the fee is CHARGED on, not
+                the column summed — printing the sum would contradict the fixed
+                fee two sections down. */}
+            <td className="num" data-fee-total-cardpay={T.nCardPay == null ? '' : T.nCardPay}>{feeNum(T.nCardPay)}</td>
+            <td className="num">{feeNum(T.nCardRef)}</td>
+            <td className="num">{feeNum(T.nCash)}</td>
+            <td className="num">{feeNum(T.nCheck)}</td>
+          </tr></tfoot>
+        </table>
+      </div>
+
+      {/* ── Step 2 ── */}
+      <div className="fee-step">
+        <h3>2 · Credit card fee allocation</h3>
+        <div className="step-note">
+          {bps(R.ccVariableBps)} of card volume plus ${(R.ccFixedCents / 100).toFixed(2)} per
+          transaction, on payments and on refunds.
+        </div>
+        <table className="fee-table">
+          <thead><tr>
+            <th>GL Code</th>
+            <th className="num">% of Payments</th><th className="num">Variable</th>
+            <th className="num">Fixed</th><th className="num">Payment Fee</th>
+            <th className="num">% of Refunds</th><th className="num">Variable</th>
+            <th className="num">Fixed</th><th className="num">Refund Fee</th>
+            <th className="num">Total CC</th>
+          </tr></thead>
+          <tbody>
+            {out.rows.map(r => (
+              <tr key={r.glCode}>
+                <td>{r.glCode}</td>
+                <td className="num">{feePct(r.pctCardPay)}</td>
+                <td className="num">{money(r.ccVariable)}</td>
+                <td className="num">{money(r.ccFixed)}</td>
+                <td className="num">{money(r.ccPaymentFee)}</td>
+                <td className="num">{feePct(r.pctCardRef)}</td>
+                <td className="num">{money(r.refVariable)}</td>
+                <td className="num">{money(r.refFixed)}</td>
+                <td className="num">{money(r.ccRefundFee)}</td>
+                <td className="num">{money(r.ccFees)}</td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot><tr>
+            <td>TOTAL</td><td className="num"></td>
+            <td className="num">{money(T.ccVariable)}</td>
+            <td className="num">{money(T.ccFixed)}</td>
+            <td className="num">{money(T.ccPaymentFee)}</td>
+            <td className="num"></td>
+            <td className="num">{money(T.refVariable)}</td>
+            <td className="num">{money(T.refFixed)}</td>
+            <td className="num">{money(T.ccRefundFee)}</td>
+            <td className="num">{money(T.ccFees)}</td>
+          </tr></tfoot>
+        </table>
+      </div>
+
+      {/* ── Step 3 ── */}
+      <div className="fee-step">
+        <h3>3 · Cash and check fee allocation</h3>
+        <table className="fee-table">
+          <thead><tr>
+            <th>GL Code</th>
+            <th className="num">Cash</th><th className="num">Cash Fee</th>
+            <th className="num">Check</th><th className="num">Check Fee</th>
+            <th className="num">Total</th>
+          </tr></thead>
+          <tbody>
+            {out.rows.map(r => (
+              <tr key={r.glCode}>
+                <td>{r.glCode}</td>
+                <td className="num">{money(r.cash)}</td>
+                <td className="num">{money(r.cashFee)}</td>
+                <td className="num">{money(r.check)}</td>
+                <td className="num">{money(r.checkFee)}</td>
+                <td className="num">{money(r.cashCheckFees)}</td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot><tr>
+            <td>TOTAL</td>
+            <td className="num">{money(T.cash)}</td>
+            <td className="num">{money(T.cashFee)}</td>
+            <td className="num">{money(T.check)}</td>
+            <td className="num">{money(T.checkFee)}</td>
+            <td className="num">{money(T.cashCheckFees)}</td>
+          </tr></tfoot>
+        </table>
+      </div>
+
+      {/* ── Step 4 ── */}
+      <div className="fee-step">
+        <h3>4 · Technology fee allocation</h3>
+        <div className="step-note">{bps(R.techBps)} of total sales.</div>
+        <table className="fee-table">
+          <thead><tr>
+            <th>GL Code</th><th className="num">Total Revenue</th>
+            <th className="num">% of Revenue</th><th className="num">Technology Fee</th>
+          </tr></thead>
+          <tbody>
+            {out.rows.map(r => (
+              <tr key={r.glCode}>
+                <td>{r.glCode}</td>
+                <td className="num">{money(r.revenue)}</td>
+                <td className="num">{feePct(r.pctRevenue)}</td>
+                <td className="num">{money(r.techFee)}</td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot><tr>
+            <td>TOTAL</td>
+            <td className="num">{money(T.revenue)}</td>
+            <td className="num"></td>
+            <td className="num">{money(T.techFee)}</td>
+          </tr></tfoot>
+        </table>
+      </div>
+
+      {/* ── Step 5 ── */}
+      <div className="fee-step">
+        <h3>5 · Total fee allocation by GL code</h3>
+        <table className="fee-table">
+          <thead><tr>
+            <th>GL Code</th><th className="num">CC Fees</th>
+            <th className="num">Cash/Check</th><th className="num">Technology</th>
+            <th className="num">Total Fees</th><th className="num">Total Revenue</th>
+            <th className="num">Fees % of Revenue</th>
+          </tr></thead>
+          <tbody>
+            {out.rows.map(r => (
+              <tr key={r.glCode} data-fee-row-total={r.totalFees == null ? '' : r.totalFees.toFixed(2)}>
+                <td>{r.glCode}</td>
+                <td className="num">{money(r.ccFees)}</td>
+                <td className="num">{money(r.cashCheckFees)}</td>
+                <td className="num">{money(r.techFee)}</td>
+                <td className="num">{money(r.totalFees)}</td>
+                <td className="num">{money(r.revenue)}</td>
+                <td className="num">{feePct(r.feePctRevenue)}</td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot><tr>
+            <td>TOTAL</td>
+            <td className="num">{money(T.ccFees)}</td>
+            <td className="num">{money(T.cashCheckFees)}</td>
+            <td className="num">{money(T.techFee)}</td>
+            <td className="num">{money(T.totalFees)}</td>
+            <td className="num">{money(T.revenue)}</td>
+            <td className="num">{feePct(T.feePctRevenue)}</td>
+          </tr></tfoot>
+        </table>
+      </div>
+
+      {/* ── Verification ── */}
+      <div className="fee-step">
+        <h3>Check against the remittance summary</h3>
+        <div className="fee-verify">
+          <div className="row"><span>CC processing (payments + refunds)</span><span className="v">{money(T.ccFees)}</span></div>
+          <div className="row"><span>Cash + check fees</span><span className="v">{money(T.cashCheckFees)}</span></div>
+          <div className="row"><span>Technology fee</span><span className="v">{money(T.techFee)}</span></div>
+          <div className="row total"><span>Total Rec fees</span><span className="v">{money(T.totalFees)}</span></div>
+        </div>
+        <div className="step-note" style={{marginTop:8}}>
+          Card volume {money(T.cardPayments)} over {feeNum(T.nCardPay)} transactions ·
+          refunds {money(T.cardRefunds)} over {feeNum(T.nCardRef)} ·
+          total sales {money(T.revenue)}.
+          {B.emptyGlCodes > 0 && ' ' + B.emptyGlCodes + ' GL code' + (B.emptyGlCodes === 1 ? '' : 's') +
+            ' with no activity at all ' + (B.emptyGlCodes === 1 ? 'is' : 'are') + ' not listed.'}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function tylerShortCode(fullNumber, shortCodes) {
   if (!fullNumber) return '';
   const ny = fullNumber.match(/-427001-(NY[\w-]*)$/i);
@@ -1282,7 +1652,8 @@ function parseViewParams(params) {
   const p = new URLSearchParams(params || '');
   const csv = k => { const v = p.get(k); return v ? v.split(',').map(x => x.trim()).filter(Boolean) : null; };
   return { desks: csv('desks'), methods: csv('methods'), glCodes: csv('gl_codes'), glq: p.get('glq') || '',
-           tyler: p.get('tyler') === '1', refunds: p.get('refunds') === '1' };
+           tyler: p.get('tyler') === '1', refunds: p.get('refunds') === '1',
+           fees: p.get('fees') === '1' };
 }
 
 function viewFilterSummary(v, methodLabels) {
@@ -1294,6 +1665,7 @@ function viewFilterSummary(v, methodLabels) {
   if (f.glq)     bits.push('"' + f.glq + '"');
   if (f.tyler)   bits.push('turnover');
   if (f.refunds) bits.push('refund detail');
+  if (f.fees)    bits.push('fee allocation');
   return bits.length ? bits.join(' · ') : 'no filters';
 }
 
@@ -1316,6 +1688,19 @@ function App() {
   const [tylerView, setTylerView] = useState(() => tylerEnabled && params.tyler === '1');
   // Belt-and-suspenders for print mode: trust the URL, not React state.
   const isTylerActive = tylerEnabled && (params._print === '1' ? params.tyler === '1' : tylerView);
+
+  // "→ Fee Allocation" — the weekly remittance worksheet, computed from the
+  // rows already on screen. Offered only where the org is switched on, and the
+  // same object carries the RATES, so the gate and the contract terms are one
+  // answer rather than two that can drift.
+  const feeCfg     = window.ORG_CONFIG?.feeAlloc || null;
+  const feeEnabled = !!feeCfg;
+  const [feeView, setFeeView] = useState(() => feeEnabled && params.fees === '1');
+  // Print mode trusts the URL, not React state — Puppeteer renders this page
+  // with an empty localStorage and has no state to trust. Tyler wins if both
+  // are somehow set: two whole-table modes cannot both render.
+  const isFeeActive = feeEnabled && !isTylerActive &&
+    (params._print === '1' ? params.fees === '1' : feeView);
 
   const [rows,    setRows]    = useState(null);
   const [orgName, setOrgName] = useState('');
@@ -1821,9 +2206,10 @@ function App() {
     if (glFilter.trim()) p.set('glq', glFilter.trim());
     if (isTylerActive)   p.set('tyler', '1');
     if (showRefunds)     p.set('refunds', '1');
+    if (isFeeActive)     p.set('fees', '1');
     return p.toString();
   }, [hasDesk, selectedDesks, allDesks, hasGlCodes, selectedGlCodes, allGlCodes,
-      availableMethods, selectedMethods, glFilter, isTylerActive, showRefunds]);
+      availableMethods, selectedMethods, glFilter, isTylerActive, showRefunds, isFeeActive]);
 
   // widget copies a URL that reproduces the on-screen view (mirrors the PDF).
   // MUST sit below everything it reads. It used to sit above most of it, and
@@ -1841,11 +2227,12 @@ function App() {
       if (availableMethods.length > 1 && selectedMethods && selectedMethods.size < availableMethods.length) qs.set('methods', [...selectedMethods].join(','));
       if (isTylerActive) qs.set('tyler', '1');
       if (showRefunds && !isTylerActive) qs.set('refunds', '1');
+      if (isFeeActive) qs.set('fees', '1');
       if (URL_TOKEN) qs.set('token', URL_TOKEN);
       return `${window.location.pathname}?${qs.toString()}`;
     };
     return () => { try { delete window.recShareLink; } catch (e) { window.recShareLink = undefined; } };
-  }, [loadedStart, loadedEnd, startDate, endDate, isTylerActive, showRefunds,
+  }, [loadedStart, loadedEnd, startDate, endDate, isTylerActive, showRefunds, isFeeActive,
       hasDesk, selectedDesks, allDesks, hasGlCodes, selectedGlCodes, allGlCodes,
       selectedMethods, availableMethods]);
 
@@ -1920,6 +2307,10 @@ function App() {
     // ON could never turn it back off, so switching from the refund view to a
     // plain one would leave the refund columns on screen.
     setShowRefunds(!!f.refunds);
+    // Both directions, like tyler and refunds above: a view that could only
+    // turn the mode ON would leave the worksheet on screen when you opened a
+    // plain view after it.
+    if (feeEnabled) setFeeView(!!f.fees);
     setWarnDismissed(false);
     setActiveViewId(v.id);
     try { localStorage.setItem(LS_LAST_VIEW + orgSlug, v.id); } catch (_) {}
@@ -1938,7 +2329,7 @@ function App() {
     // Keep the URL honest: it reproduces the filters AND names the view.
     try {
       const qs = new URLSearchParams(window.location.search);
-      ['desks', 'gl_codes', 'methods', 'glq', 'tyler', 'refunds'].forEach(k => qs.delete(k));
+      ['desks', 'gl_codes', 'methods', 'glq', 'tyler', 'refunds', 'fees'].forEach(k => qs.delete(k));
       new URLSearchParams(v.params).forEach((val, k) => qs.set(k, val));
       qs.set('view', v.id);
       if (range) { qs.set('start_date', range.start); qs.set('end_date', range.end); }
@@ -1958,12 +2349,13 @@ function App() {
     setGlFilter('');
     if (tylerEnabled) setTylerView(false);
     setShowRefunds(false);
+    if (feeEnabled) setFeeView(false);
     setActiveViewId(null);
     setWarnDismissed(false);
     try { localStorage.removeItem(LS_LAST_VIEW + orgSlug); } catch (_) {}
     try {
       const qs = new URLSearchParams(window.location.search);
-      ['desks', 'gl_codes', 'methods', 'glq', 'tyler', 'refunds', 'view'].forEach(k => qs.delete(k));
+      ['desks', 'gl_codes', 'methods', 'glq', 'tyler', 'refunds', 'fees', 'view'].forEach(k => qs.delete(k));
       const q = qs.toString();
       window.history.replaceState(null, '', window.location.pathname + (q ? '?' + q : ''));
     } catch (_) {}
@@ -2370,6 +2762,57 @@ function App() {
 
   const isPrint = params._print === '1';
 
+  /* The card counts the flat fee is CHARGED on, for the desks currently in
+     view. Computed here rather than inside the worksheet because the desk
+     filter re-aggregates displayRows to one row per GL code, which destroys the
+     desk identity the dedupe needs - the same reason the TOTALS row computes
+     its own distinct counts this way rather than summing the column.
+
+     PRESENCE is asked of the RAW response, never of a value: `Card Payment
+     Txns` absent and `Card Payment Txns: 0` are different facts, and only the
+     second one justifies pricing a fee at zero. */
+  const feeCounts = useMemo(() => {
+    if (!rows) return null;
+    const scoped = hasDesk
+      ? rows.filter(r => (selectedDesks || new Set(allDesks)).has(r.deskLocation || NO_DESK_LABEL))
+      : rows;
+    const hasTxnCounts = scoped.some(r => r.cardPaymentTxns != null);
+    if (!scoped.some(r => r.deskDistinctCardPayments != null)) return { hasTxnCounts };
+    const byDesk = new Map();
+    for (const r of scoped) {
+      const k = r.deskLocation || NO_DESK_LABEL;
+      if (!byDesk.has(k) && r.deskDistinctCardPayments != null) {
+        byDesk.set(k, { pay: r.deskDistinctCardPayments || 0, ref: r.deskDistinctCardRefunds || 0 });
+      }
+    }
+    let pay = 0, ref = 0;
+    for (const v of byDesk.values()) { pay += v.pay; ref += v.ref; }
+    return { hasTxnCounts, trueCardPayments: pay, trueCardRefunds: ref };
+  }, [rows, hasDesk, selectedDesks, allDesks]);
+
+  // Priced ONCE, here, and handed to the worksheet — so the beacon below and
+  // what is on screen can never be two different answers.
+  const feeResult = useMemo(() => {
+    if (!isFeeActive || !window.RecFeeAllocation) return null;
+    return window.RecFeeAllocation.allocateFees(displayRows, feeCfg, feeCounts || {});
+  }, [isFeeActive, displayRows, feeCfg, feeCounts]);
+
+  /* Whether a town actually uses this in place of the spreadsheet it rebuilt by
+     hand is the signal worth having, so the ping carries the figure it priced
+     rather than just the click. Not from the print render: that is Puppeteer,
+     and the PDF route already logs `pdf` server-side. */
+  const feeLogged = useRef('');
+  useEffect(() => {
+    if (!feeResult || isPrint) return;
+    const key = (loadedStart || '') + '|' + (loadedEnd || '');
+    if (feeLogged.current === key) return;      // one ping per window, not per render
+    feeLogged.current = key;
+    logClientEvent('fee-alloc', {
+      fees: feeResult.totals.totalFees == null ? '' : feeResult.totals.totalFees.toFixed(2),
+      txns: feeResult.totals.nCardPay == null ? '' : String(feeResult.totals.nCardPay),
+    });
+  }, [feeResult, isPrint, loadedStart, loadedEnd]);
+
   function downloadPdf() {
     const parts = window.location.pathname.split('/').filter(Boolean);
     const qs = new URLSearchParams({ start_date: loadedStart||'', end_date: loadedEnd||'' });
@@ -2390,6 +2833,9 @@ function App() {
     }
     // Tyler mode → portrait Munis cover sheets instead of the landscape rollup
     if (isTylerActive) qs.set('tyler', '1');
+    // Fee Allocation. Same reason as Refund Detail below: the print page has no
+    // React state, so the URL is the only channel this mode has.
+    if (isFeeActive) qs.set('fees', '1');
     // Refund Detail. The print page has no React state and an empty
     // localStorage, so this param is the only way the mode reaches the PDF.
     if (showRefunds && !isTylerActive) qs.set('refunds', '1');
@@ -2398,7 +2844,8 @@ function App() {
       : '/api/pdf';
     // Opened in its own window rather than downloaded — a download started by a
     // sandboxed iframe is silently dropped. See open-pdf.js.
-    openReportPdf(withToken(pdfUrl), { label: isTylerActive ? 'Treasurer Turnover' : 'GL Code Rollup' });
+    openReportPdf(withToken(pdfUrl), { label: isTylerActive ? 'Treasurer Turnover'
+                                               : isFeeActive ? 'Fee Allocation' : 'GL Code Rollup' });
   }
 
   // ── Tyler/Munis GL Account Detail ───────────────────────────────────
@@ -2730,6 +3177,17 @@ function App() {
             title="Re-render this report as the treasurer turnover cover sheets (Credit, then Cash &amp; Check)"
           >
             → Turnover
+          </button>
+        )}
+        {feeEnabled && !isTylerActive && (
+          <button
+            className={feeView ? 'active' : ''}
+            style={{fontSize:11, padding:'4px 10px', ...(feeView ? {borderColor:'#2563eb', color:'#bfdbfe'} : {})}}
+            onClick={() => setFeeView(v => !v)}
+            data-fee-btn="1"
+            title="Re-render these rows as the weekly remittance fee worksheet — card, cash, check and technology fees allocated by GL code"
+          >
+            → Fee Allocation
           </button>
         )}
         {munisEnabled && (
@@ -3116,7 +3574,17 @@ function App() {
 
         {renderFilterWarning()}
 
-        {isTylerActive ? (
+        {isFeeActive ? (
+          /* The remittance fee worksheet — the same loaded rows, priced. Reads
+             `displayRows` like every other surface here, so the desk, GL-code,
+             tender and text filters all narrow it exactly as they narrow the
+             table. */
+          <FeeAllocation
+            result={feeResult}
+            orgName={displayOrg}
+            rangeLabel={dateRangeLabel}
+          />
+        ) : isTylerActive ? (
           /* Tyler/Munis turnover — the loaded rows re-rendered as the two
              treasurer cover sheets (credit, then cash & check) */
           <TylerSheets
