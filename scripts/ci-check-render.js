@@ -8138,6 +8138,25 @@ function waitForServer(started) {
         return m ? m[0] + "  in: " + t.slice(Math.max(0, t.indexOf(m[0]) - 60), t.indexOf(m[0]) + 40).replace(/\s+/g, " ") : null;
       });
       if (leaked) errs.push("JSX leaked to the screen as text: " + leaked);
+
+      // A STYLESHEET THAT RENDERED AS TEXT, on EVERY case, same argument: the
+      // page is not broken, it is unstyled, so nothing that keys on a value
+      // can see it. The HTML tokenizer ends a <style> element at the FIRST
+      // `</style` it meets — inside a CSS comment or not — so one sentence in
+      // a comment that spells out the closing tag drops the rest of the sheet
+      // into the body as visible text. That shipped on cost-recovery.html and
+      // ALL TEN of its render cases passed, because every one of them asserts
+      // a computed figure and every figure was right.
+      //
+      // Keyed on CSS DECLARATION SYNTAX rather than any one property: the
+      // leak is always a run of `prop: value;` inside braces, which is not
+      // English and appears in no copy on this platform.
+      const cssText = await page.evaluate(() => {
+        const t = document.body.innerText || "";
+        const m = t.match(/\{[^{}]*[a-z-]+\s*:\s*[^;{}]+;[^{}]*\}/);
+        return m ? m[0].slice(0, 80).replace(/\s+/g, " ") : null;
+      });
+      if (cssText) errs.push("a stylesheet rendered as TEXT — a <style> block ended early, most likely on a `</style` written inside a CSS comment: " + cssText);
     } catch (e) {
       errs.push("navigation: " + e.message.split("\n")[0].slice(0, 160));
     }
