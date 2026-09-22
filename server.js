@@ -5381,8 +5381,11 @@ function notifySlack(rec) {
   if (slackMuted(rec)) return;
   // Email sends key by recipient (+ status) so a daily run to several
   // subscribers posts each send, instead of collapsing them into one line.
+  // ...and by VARIANT, for the same reason: a subscription carrying the rollup,
+  // the turnover sheets and the fee worksheet sends three documents, and the
+  // default key would post the first and swallow the other two.
   const key = rec.event === "email"
-    ? `${rec.org}|${rec.report}|${rec.email}|${rec.status || ""}`
+    ? `${rec.org}|${rec.report}|${rec.email}|${rec.variant || ""}|${rec.status || ""}`
     : rec.event === "game"
       ? `${rec.org}|${rec.report}|game|${rec.game || ""}`
     // Map pin clicks key by location so browsing several parks posts each one,
@@ -5645,9 +5648,17 @@ function notifySlack(rec) {
   } else if (rec.event === "email") {
     const to = rec.email ? ` to \`${rec.email}\`` : "";
     const trig = rec.trigger === "manual" ? " · manual send" : ` · ${rec.schedule || "scheduled"} queue`;
+    // WHICH document, by its own name. "emailed gl" three times says nothing
+    // about a subscription that carries three of them. The record stores the
+    // KEY (stable, groupable); the label is looked up here rather than stored,
+    // so renaming a variant does not redefine every row already in the feed.
+    const vName = rec.variant
+      ? (REPORT_EMAIL_VARIANTS[rec.report] || []).find(v => v.key === rec.variant)?.label || rec.variant
+      : "";
+    const vSuffix = vName ? ` — ${vName}` : "";
     text = (rec.status && rec.status !== "sent")
-      ? `⚠️ ${orgName} (\`${rec.org}\`) email FAILED for *${rec.report}*${to}${trig}`
-      : `${meta.emoji} ${orgName} (\`${rec.org}\`) ${meta.verb} *${rec.report}*${to}${trig}`;
+      ? `⚠️ ${orgName} (\`${rec.org}\`) email FAILED for *${rec.report}*${vSuffix}${to}${trig}`
+      : `${meta.emoji} ${orgName} (\`${rec.org}\`) ${meta.verb} *${rec.report}*${vSuffix}${to}${trig}`;
   } else if (rec.event === "game") {
     text = `${meta.emoji} ${orgName} (\`${rec.org}\`) — someone is playing *${rec.game || "a hidden game"}* on the facilities report`;
   } else if (rec.event === "permits") {
@@ -6194,7 +6205,7 @@ const db = {
   getAllBySchedule(schedule) {
     return readJSON(SUBS_FILE, []).filter(s => s.active && s.schedule === schedule);
   },
-  upsertSubscription(org, email, reports, schedule, locationFilter, dateRange, reportParams, reportDateRanges) {
+  upsertSubscription(org, email, reports, schedule, locationFilter, dateRange, reportParams, reportDateRanges, reportVariants) {
     const subs = readJSON(SUBS_FILE, []);
     const now  = new Date().toISOString();
     const params = (reportParams && typeof reportParams === "object" && !Array.isArray(reportParams)) ? reportParams : {};
@@ -6209,10 +6220,16 @@ const db = {
       const sp = (s.reportParams && typeof s.reportParams === "object") ? s.reportParams : {};
       return JSON.stringify(sp) === paramsKey;
     });
+    // reportVariants is DELIBERATELY not part of the dedup key above. Same
+    // address, same cadence, same filters IS the same subscription — coming
+    // back and ticking a third document has to update that row, not mint a
+    // second one nobody can tell apart in the admin list. Which means it must
+    // be written explicitly in the update branch: the spread would otherwise
+    // carry the old variant set past a save that meant to change it.
     if (idx >= 0) {
-      subs[idx] = { ...subs[idx], reports, schedule, locationFilter: locationFilter || null, dateRange: dateRange || null, reportParams: params, reportDateRanges: reportDateRanges || {}, active: 1, updated_at: now };
+      subs[idx] = { ...subs[idx], reports, schedule, locationFilter: locationFilter || null, dateRange: dateRange || null, reportParams: params, reportDateRanges: reportDateRanges || {}, reportVariants: reportVariants || {}, active: 1, updated_at: now };
     } else {
-      subs.push({ id: Date.now() + Math.floor(Math.random() * 1000), org, email, reports, schedule, locationFilter: locationFilter || null, dateRange: dateRange || null, reportParams: params, reportDateRanges: reportDateRanges || {}, active: 1, created_at: now, updated_at: now });
+      subs.push({ id: Date.now() + Math.floor(Math.random() * 1000), org, email, reports, schedule, locationFilter: locationFilter || null, dateRange: dateRange || null, reportParams: params, reportDateRanges: reportDateRanges || {}, reportVariants: reportVariants || {}, active: 1, created_at: now, updated_at: now });
     }
     writeJSON(SUBS_FILE, subs);
   },
@@ -6224,9 +6241,12 @@ const db = {
       : subs.filter(s => !(s.org === org && s.email === email));
     writeJSON(SUBS_FILE, filtered);
   },
-  appendLog(org, email, report, schedule, status, message) {
+  appendLog(org, email, report, schedule, status, message, variant) {
     const log = readJSON(LOG_FILE, []);
-    log.unshift({ id: Date.now(), org, email, report, schedule, status, message: message || null, sent_at: new Date().toISOString() });
+    // `report` stays the report TYPE and the variant rides beside it, so a row
+    // can still be grouped by report while the log says which of the three
+    // documents actually went out.
+    log.unshift({ id: Date.now(), org, email, report, schedule, status, message: message || null, variant: variant || null, sent_at: new Date().toISOString() });
     writeJSON(LOG_FILE, log.slice(0, 200));
   },
   getLog(org) {
@@ -6880,7 +6900,11 @@ async function sendFastTrackDigest(orgSlug, email, schedule) {
 }
 
 // ── Send report email ────────────────────────────────────────────────
-async function sendReportEmail(orgSlug, email, reportType, schedule, locationFilter, dateRange, savedParams) {
+// `variant` is one entry of REPORT_EMAIL_VARIANTS, or null for "as saved" —
+// which is every caller that predates variants. It decides what this email is
+// CALLED: three GL emails arriving under one subject line would be three
+// documents a reader has to open to tell apart.
+async function sendReportEmail(orgSlug, email, reportType, schedule, locationFilter, dateRange, savedParams, variant) {
   const orgConfig = ORGS[orgSlug];
   // Fast Track digest subscriptions ride the normal subscription records as
   // reportType 'fasttrack' with savedParams 'digest=1' — no PDF, inline HTML.
@@ -6888,7 +6912,8 @@ async function sendReportEmail(orgSlug, email, reportType, schedule, locationFil
       && new URLSearchParams(savedParams).get("digest") === "1") {
     return sendFastTrackDigest(orgSlug, email, schedule);
   }
-  const reportLabel = reportType === "gl"
+  const reportLabel = variant ? variant.label
+    : reportType === "gl"
     ? "GL Code Rollup"
     : reportType === "historic"
       ? "Historic Buildings Schedule"
@@ -6929,8 +6954,15 @@ async function sendReportEmail(orgSlug, email, reportType, schedule, locationFil
     } else {
       label = "Saved view";
     }
-    // Count non-date/token filter params for a tiny indicator in the email
-    const filterCount = [...cleaned.keys()].filter(k => !["start_date","end_date","token"].includes(k)).length;
+    // Count non-date/token filter params for a tiny indicator in the email.
+    // A variant's own MODE parameter is not a filter — the subject already
+    // names the document, and "(1 filter)" on an unfiltered fee worksheet
+    // claims a narrowing that is not there.
+    const modeKeys = new Set();
+    for (const v of (REPORT_EMAIL_VARIANTS[reportType] || [])) {
+      for (const [k] of new URLSearchParams(v.params)) modeKeys.add(k);
+    }
+    const filterCount = [...cleaned.keys()].filter(k => !["start_date","end_date","token"].includes(k) && !modeKeys.has(k)).length;
     if (filterCount > 0) viewSuffix = ` (${filterCount} filter${filterCount === 1 ? "" : "s"})`;
   } else {
     const resolvedDateRange = dateRange || (reportType === "gl" ? "lastMonth" : "next7");
@@ -6943,7 +6975,7 @@ async function sendReportEmail(orgSlug, email, reportType, schedule, locationFil
   const resend = getResendClient();
   if (!resend) {
     console.log(`[mail] STUB — would send "${reportLabel}" (${label}) to ${email}`);
-    db.appendLog(orgSlug, email, reportType, schedule, "sent", "RESEND_API_KEY not configured — stub send");
+    db.appendLog(orgSlug, email, reportType, schedule, "sent", "RESEND_API_KEY not configured — stub send", variant ? variant.key : null);
     return { ok: true, stub: true };
   }
 
@@ -7030,7 +7062,7 @@ async function sendReportEmail(orgSlug, email, reportType, schedule, locationFil
     console.error(`[mail] Failed to send to ${email}: ${err.message}`);
   }
 
-  db.appendLog(orgSlug, email, reportType, schedule, status, message);
+  db.appendLog(orgSlug, email, reportType, schedule, status, message, variant ? variant.key : null);
   return { ok: status === "sent", error: message };
 }
 
@@ -7070,6 +7102,73 @@ function rangeBlocked(report, dateRange) {
   return (REPORT_BLOCKED_RANGES[report] || {})[dateRange] || null;
 }
 
+// ── A report can be mailed in more than one SHAPE ─────────────────────
+// The GL report renders THREE different documents off one feed — the rollup,
+// the treasurer turnover sheets and the remittance fee worksheet — and they are
+// the same report TYPE with a mode parameter, so `reportParams.gl` (one string
+// per report) cannot express "send me two of them". A Danvers admin who wants
+// the rollup and the fee worksheet on one cadence is asking for ONE
+// subscription, not two rows that happen to share an address and a cadence.
+//
+// So a subscription carries VARIANT KEYS, not param strings: the server owns
+// the vocabulary, which is what lets it label each email ("Remittance Fee
+// Allocation" rather than a third identically-titled "GL Code Rollup") and
+// refuse a key an org is not switched on for. Same argument as
+// savedViewRanges — the page is handed the list rather than growing its own
+// copy, which is how gl.html came to offer a range the server had always
+// refused.
+const REPORT_EMAIL_VARIANTS = {
+  gl: [
+    { key: "rollup",   label: "GL Code Rollup",            params: "" },
+    { key: "turnover", label: "Treasurer Turnover",        params: "tyler=1",
+      gate: slug => !!getTylerConfig(slug) },
+    // The worksheet is priced from the DESK-scoped rows, and the GL-code,
+    // tender and search controls are ABSENT from that mode on screen — a
+    // control that cannot move the numbers is a dead end somebody clicks.
+    // Carrying those filters into the subscription would file a narrowing the
+    // document does not apply: the same contradiction, by the other door.
+    { key: "fees",     label: "Remittance Fee Allocation", params: "fees=1",
+      gate: slug => !!feeAllocConfig(slug),
+      drops: ["gl_codes", "methods", "glq", "refunds"] },
+  ],
+};
+
+// Which variants THIS org may be sent. A gate that fails means the mode does
+// not render for this org at all, so offering it would subscribe somebody to an
+// email that could only ever arrive as the plain rollup.
+function emailVariantsFor(slug, report) {
+  return (REPORT_EMAIL_VARIANTS[report] || []).filter(v => !v.gate || v.gate(slug));
+}
+
+// The variants one scheduled send should produce. `[null]` — a single send with
+// the params exactly as saved — is the answer for every report with no variant
+// registry AND for every subscription written before this existed, so the
+// scheduler's behaviour is unchanged unless a subscription actually asks for
+// something else.
+function resolveEmailVariants(slug, report, keys) {
+  if (!Array.isArray(keys) || !keys.length) return [null];
+  const offered = emailVariantsFor(slug, report);
+  const picked = keys.map(k => offered.find(v => v.key === k)).filter(Boolean);
+  return picked.length ? picked : [null];
+}
+
+// The variant's own mode parameter laid over the subscription's saved filters.
+function variantParams(report, savedParams, variant) {
+  if (!variant) return savedParams || null;
+  const p = new URLSearchParams(typeof savedParams === "string" ? savedParams : "");
+  (variant.drops || []).forEach(k => p.delete(k));
+  // Strip every OTHER variant's mode parameter FIRST. Two whole-table modes
+  // cannot both render, so a saved string carrying `fees=1` must not decide
+  // what the turnover variant's email contains — and the rollup variant, whose
+  // own params are empty, is exactly the case that needs this.
+  for (const other of (REPORT_EMAIL_VARIANTS[report] || [])) {
+    for (const [k] of new URLSearchParams(other.params)) p.delete(k);
+  }
+  for (const [k, v] of new URLSearchParams(variant.params)) p.set(k, v);
+  const out = p.toString();
+  return out.length ? out : null;
+}
+
 async function runSchedule(scheduleType) {
   if (!getFlags().emailSubscriptions) { console.log(`[cron] ${scheduleType} skipped — emailSubscriptions flag is OFF`); return; }
   console.log(`[cron] Running ${scheduleType} sends...`);
@@ -7083,8 +7182,16 @@ async function runSchedule(scheduleType) {
         console.log(`[cron] Skipping ${sub.org}/${report} for ${sub.email} — "${perReportDateRange}" is never populated at send time`);
         continue;
       }
-      const _res = await sendReportEmail(sub.org, sub.email, report, scheduleType, sub.locationFilter, perReportDateRange, savedParams);
-      logEvent(sub.org, report, "email", null, { email: sub.email, schedule: scheduleType, trigger: "scheduled", status: _res && _res.ok ? "sent" : "error" });
+      // One email per VARIANT, each with its own PDF. Three documents in one
+      // message would need a second template and would lose the per-variant
+      // link — and, more to the point, a PDF that failed to build would take
+      // the other two down with it. `[null]` is a subscription that asked for
+      // no variant, i.e. every subscription written before this shipped.
+      const variants = resolveEmailVariants(sub.org, report, sub.reportVariants && sub.reportVariants[report]);
+      for (const variant of variants) {
+        const _res = await sendReportEmail(sub.org, sub.email, report, scheduleType, sub.locationFilter, perReportDateRange, variantParams(report, savedParams, variant), variant);
+        logEvent(sub.org, report, "email", null, { email: sub.email, schedule: scheduleType, trigger: "scheduled", variant: variant ? variant.key : null, status: _res && _res.ok ? "sent" : "error" });
+      }
     }
   }
   console.log(`[cron] ${scheduleType} sends complete — ${subs.length} subscribers`);
@@ -12763,7 +12870,7 @@ app.get("/:org/admin/subscribers", (req, res) => {
 
 app.post("/:org/admin/subscribe", (req, res) => {
   if (!ORGS[req.params.org]) return res.status(404).json({ error: "Unknown org" });
-  const { email, reports, schedule, locationFilter, dateRange, reportParams, reportDateRanges } = req.body;
+  const { email, reports, schedule, locationFilter, dateRange, reportParams, reportDateRanges, reportVariants } = req.body;
   if (!email || !reports?.length || !schedule) return res.status(400).json({ error: "email, reports, and schedule are required" });
   const emailDomain = email.split("@")[1]?.toLowerCase();
   // Domain restriction removed — access is gated by EMAIL_ENABLED_ORGS + token
@@ -12798,6 +12905,20 @@ app.post("/:org/admin/subscribe", (req, res) => {
       if (validReports.includes(k) && validDateRanges.includes(v)) cleanDateRanges[k] = v;
     }
   }
+  // Which SHAPES of each report to send. Validated against what this org is
+  // actually switched on for, so a hand-built body cannot subscribe somebody to
+  // a mode that does not render for them — it would arrive as the plain rollup
+  // under a name the org has never seen.
+  const cleanVariants = {};
+  if (reportVariants && typeof reportVariants === "object" && !Array.isArray(reportVariants)) {
+    for (const [rt, keys] of Object.entries(reportVariants)) {
+      if (!validReports.includes(rt) || !Array.isArray(keys)) continue;
+      const offered = emailVariantsFor(req.params.org, rt).map(v => v.key);
+      const picked = [...new Set(keys.filter(k => offered.includes(k)))];
+      if (picked.length) cleanVariants[rt] = picked;
+    }
+  }
+
   db.upsertSubscription(
     req.params.org,
     email.toLowerCase().trim(),
@@ -12807,6 +12928,7 @@ app.post("/:org/admin/subscribe", (req, res) => {
     validDateRanges.includes(dateRange) ? dateRange : null,
     cleanReportParams,
     cleanDateRanges,
+    cleanVariants,
   );
   res.json({ ok: true });
 });
@@ -12911,16 +13033,37 @@ app.post("/:org/admin/test-send", async (req, res) => {
   const blocked = rangeBlocked(report, dateRange);
   if (blocked) return res.status(400).json({ error: blocked });
 
+  // A test has to test the thing about to be SAVED, and that now includes how
+  // many documents the subscription will produce. Ticking three and previewing
+  // one is the same failure the reportParams override exists to prevent, one
+  // dimension over — so every ticked variant is sent, SEQUENTIALLY, because
+  // each one spins its own Puppeteer render.
+  const variants = resolveEmailVariants(
+    slug, report,
+    Array.isArray(req.body.variants) ? req.body.variants
+      : ((sub?.reportVariants && sub.reportVariants[report]) || null),
+  );
+
   res.json({
     ok: true,
     message: "Sending in background — check your inbox in a moment",
     // Echo the scope actually used, so the caller can say what it sent rather
     // than claiming a filtered test it did not run.
-    scope: { report, schedule, dateRange: dateRange || null, filters: savedParams || null },
+    scope: {
+      report, schedule, dateRange: dateRange || null, filters: savedParams || null,
+      variants: variants.map(v => v ? v.key : null).filter(Boolean),
+    },
   });
-  sendReportEmail(slug, email, report, schedule, locationFilter, dateRange, savedParams)
-    .then(_res => logEvent(slug, report, "email", req, { email, schedule, trigger: "manual", status: _res && _res.ok ? "sent" : "error" }))
-    .catch(err => console.error("[test-send] Error:", err));
+  (async () => {
+    for (const variant of variants) {
+      try {
+        const _res = await sendReportEmail(slug, email, report, schedule, locationFilter, dateRange, variantParams(report, savedParams, variant), variant);
+        logEvent(slug, report, "email", req, { email, schedule, trigger: "manual", variant: variant ? variant.key : null, status: _res && _res.ok ? "sent" : "error" });
+      } catch (err) {
+        console.error("[test-send] Error:", err);
+      }
+    }
+  })();
 });
 
 // ── Serve HTML report pages ──────────────────────────────────────────
@@ -13239,6 +13382,11 @@ app.get("/:org/gl", (req, res) => {
                       // null unless this org is switched on; the page treats it
                       // as the gate AND as the rates, so there is one answer.
                       feeAlloc: feeAllocConfig(slug),
+                      // The mailable shapes of this report, gated per org. The
+                      // page must not grow its own copy: gl.html hardcoded the
+                      // saved-view range list and offered "Today", which the
+                      // server had always refused, for months.
+                      emailVariants: emailVariantsFor(slug, "gl").map(v => ({ key: v.key, label: v.label })),
                       savedViewRanges: SAVED_VIEW_RELATIVE_OFFER.gl };
   const html = require("fs").readFileSync(path.join(__dirname, "public", "gl.html"), "utf8");
   res.send(html.replace("<head>", () => "<head>" + orgConfigInject(orgConfig, req)));

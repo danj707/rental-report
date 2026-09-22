@@ -162,10 +162,18 @@ ok(/glSel && allGlCodes\.length > 1 && glSel\.size < allGlCodes\.length/.test(co
 ok(/params\._print === '1'[\s\S]{0,400}gl_codes/.test(code),
    "PRINT AND PDF RECONSTRUCT THE SELECTION FROM THE URL — they have no React state, and an export carrying codes the reader excluded is worse than one that fails");
 
-// The funnel's deps: a selection the memo cannot see is a filter that only
-// applies after some unrelated state happens to change.
-const deps = /\}, \[rows, hasDesk, selectedDesks, allDesks, glFilter([^\]]*)\]\);/.exec(code);
-ok(deps && /selectedGlCodes/.test(deps[1]) && /allGlCodes/.test(deps[1]),
+/* The funnel's deps: a selection the memo cannot see is a filter that only
+   applies after some unrelated state happens to change.
+
+   SLICED, then tested for membership. This used to pin the whole array from
+   `[rows, hasDesk, selectedDesks, allDesks, glFilter` - so lifting the desk
+   scope into its own memo broke a GL-FILTER assertion with nothing about the
+   GL filter having changed. A neighbour is somebody else's to change; the
+   claim here is only that the two GL names are in there. */
+const funnel = code.slice(code.indexOf("const displayRows = useMemo("));
+const deps = /\}, \[([^\]]*)\]\);/.exec(funnel);
+ok(deps, "the displayRows memo's dependency array was found (or the next assertion is vacuous)");
+ok(deps && /\bselectedGlCodes\b/.test(deps[1]) && /\ballGlCodes\b/.test(deps[1]),
    "the funnel re-runs when the GL selection changes");
 
 // ── 6. the deep link is whitelisted ────────────────────────────────────────

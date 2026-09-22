@@ -205,6 +205,351 @@ a broken server rather than an uninstalled repo. `npm install` there first.
 - **The other open `/api/admin` routes were NOT audited.** `delete-org` was
   checked and is properly gated; the rest were left alone rather than swept.
 
+## THE WORKSHEET WAS PRICED OFF THE FILTERED ROWS (2026-09-22)
+
+Found auditing the fee allocation after Dan asked whether rounding was handled
+"like the GAAP specs do". **The rounding was already right; the SCOPE was not.**
+
+Dan's own call on the fix, and it is better than either option I put to him:
+*"how about disable the gl code filters on the cc txn gl code view?"* — then,
+settling it: ***"they will never filter on this view. literally filter for
+dates, click the button and export."***
+
+### THE FIXED FEE STAYED ORG-WIDE WHILE EVERY OTHER FEE SHRANK
+
+`feeResult` priced off **`displayRows`**, which the GL checkboxes, the search box
+and the tender picker all narrow. But the $0.30 half is charged on the **TRUE
+distinct transaction count**, which `feeCounts` derives from the **desk** rows
+and nothing else. Two different populations, one table:
+
+| Danvers' own week | fixed fee | billed on | grand total |
+|---|---|---|---|
+| all GL codes | $65.10 | 217 txns | 3,914.47 |
+| **Childcare unticked** | **$65.10** | **217 txns** | 537.56 |
+
+Card volume on screen falls to $10,119.50 and the variable fee correctly follows
+it to $354.18 — while the flat half still bills all 217. **The table contradicts
+itself**, and the *"Check against the remittance summary"* block then presents a
+subset as if it reconciles to an org-wide bill.
+
+**AND THERE IS NO CORRECT NUMBER TO COMPUTE, which is why the fix is not
+arithmetic.** A card payment that pays for two GL codes belongs partly to each,
+so *"how many distinct transactions touched only the codes still ticked"* is not
+a question the data can answer. Dan's answer — the filters do not belong on this
+view at all — is the only one that does not invent something.
+
+### TWO NARROWERS I HAD NOT PUT IN FRONT OF HIM, and the second is worse
+
+- **The search box** is the same defect by a different door.
+- **THE TENDER PICKER REWRITES THE MONEY.** `applyMethodFilter` recomputes each
+  row from the selected tenders, so a worksheet priced after it reports cash the
+  org never took — not a subset of rows, a different number in the same cell.
+
+### ONE DESK SCOPE, THREE READERS — and that closes a live PRINT bug
+
+`deskRows` / `deskRawRows` are their own memos now; `displayRows` builds on them
+and the worksheet reads them directly. That was not tidiness:
+
+**`feeCounts` re-derived the desk scope from REACT STATE while `displayRows`
+read it from the URL.** `selectedDesks` is `useState(null)` and filled by an
+effect, so on the FIRST render of a PDF — which is the render, `#report-ready`
+is in the DOM as soon as rows are — a desk-filtered table was priced against
+**org-wide** transaction counts. Live today for anyone who desk-filters and
+exports. One memo and that class cannot recur.
+
+**The desk filter STAYS, and that asymmetry is the point.** A
+`transaction_event_id` has exactly one desk, so desk-distinct counts are
+additive across desks and a desk-scoped worksheet genuinely reconciles to that
+desk's own remittance. Dates likewise. Only the three that cannot be expressed
+in a remittance bill are cut.
+
+### HIDDEN, NOT GREYED — and hidden, not CLEARED
+
+A control that cannot move the numbers is a dead end somebody clicks, so the
+three are absent while the mode is on (the standing rule; the settings-gear
+carve-out was about discovering a feature, and a reader already inside the mode
+is not discovering it). **Their chips go too** — a chip saying *"this view is
+narrowed"* over numbers that are not is worse than no chip.
+
+They are **hidden rather than cleared**, so a selection made on the rollup
+survives a round trip through the worksheet.
+
+### AND THE ROUNDING QUESTION, answered: it was already correct
+
+Worth recording so it is not re-derived. Every money figure is **integer cents**
+from `toCents` on; rates are basis points and whole cents, never floats; each
+section total is rounded **once** from the org-wide figure; and largest-remainder
+apportionment splits it so the parts sum exactly, residual cents landing on the
+largest remainders with a **deterministic tie-break** (remainder, then weight,
+then position) so two runs cannot disagree.
+
+**Measured rather than asserted: 30,000 random allocations over card-shaped
+data, ZERO foot or cross-foot breaks** — every column sums to its total, every
+row's components sum across to its row total, every row total sums to the grand
+total. Display is one formatter (`FeeMoney`, `minimumFractionDigits: 2`), and a
+mechanical check found **0 of 17 money fields bypassing it**; null renders an em
+dash, never `$0.00`.
+
+That is exactly why our Rec row reads **471.14** and Danvers' sheet **471.13**:
+she rounds each row once off unrounded intermediates (`471.1325`), so her row
+total does not equal the three figures printed beside it and her summary
+(**3,914.46**) misses her own verification line (**3,914.47**). Ours ties.
+
+**AN EARLIER STRESS RUN REPORTED 122 FAILURES AND EVERY ONE WAS MY FIXTURE.**
+It generated per-GL refund counts of zero beside a non-zero desk-distinct refund
+count — a state card 17293 cannot emit, since a refund carries a GL code. Fixing
+the generator to card-shaped data took it to zero. *A failing invariant on data
+the source cannot produce is a bug in the test, and reporting it as a finding
+costs more than finding nothing.*
+
+### Guards
+
+`scripts/fee-allocation.spec.js` 145 → **160 assertions**, in CI.
+**Mutation-tested nine ways, all failing by an assertion that names the
+defect**: priced off `displayRows` again (the bug), each of the three controls
+left visible, the DESK picker also hidden (the over-correction), `feeCounts`
+re-deriving its own desk scope (the print race), `displayRows` repeating the
+desk scope instead of building on it, and each of the two stale chips restored.
+
+**THE SPEC WAS PINNING THE BUG AS THE REQUIREMENT.** Its assertion read *"the
+worksheet is priced from displayRows, so every toolbar filter narrows it too"* —
+the same shape as `report-settings.spec.js` once requiring `disabled` on the
+gear. Replaced, with the reasoning in the message so the next person does not
+re-derive it.
+
+**AND ONE MUTATION SURVIVED, on the half that mattered most.** My
+"two print fallbacks" count could not see `feeCounts` re-deriving the desk scope
+from React state, because that adds no `params._print` occurrence. The guard is
+scoped to the `feeCounts` slice now — it must read `deskRawRows` and must not
+re-filter `rows` itself.
+
+**MY MUTATION RUNNER REPORTED ALL NINE AS SURVIVORS FIRST**, because it grepped
+for `assertions passed` — and this spec prints **`"160 assertions passed, 3
+FAILED."`** on failure. Nth instance of the recorded rule, walked into anyway:
+**judge a spec by its EXIT CODE.**
+
+**Three `ci-check-render.js` cases, because no source assertion can see this** —
+the component reads correctly whichever rows it is handed. The scoping case
+takes the route a reader actually takes (untick on the ROLLUP, then switch
+modes, since the picker is gone once the worksheet is on) and requires the total
+to stay **744.84** with all four rows. Browser-mutation-tested, each failing
+**exactly the case that names it**: the bug fails *"unticking a GL code cannot
+move the worksheet"*, and each visible control fails *"the filters it cannot
+honour are gone"*.
+
+**A pre-existing spec pinned a literal my change legitimately moved**, Nth
+instance and the one I wrote up last night: `gl-code-filter.spec.js` matched the
+whole dependency array from `[rows, hasDesk, selectedDesks, allDesks, glFilter`,
+so lifting the desk scope into its own memo broke a **GL-filter** assertion with
+nothing about the GL filter having changed. It slices the `displayRows` memo and
+tests membership now, with a was-it-found assertion ahead of it.
+
+88 pass, 0 fail, 0 skipped, with `@babel/standalone` pinned at 7.23.9 as CI does.
+
+### NOT DONE
+
+- **No banner saying the worksheet ignores those filters.** Nothing to explain:
+  the controls are not on screen, and dates and desk — the two that do apply —
+  are both visible. A note about absent controls is noise.
+- **The rollup's own filters are untouched.** This changes nothing outside the
+  fee mode.
+
+## ONE SUBSCRIPTION COULD ONLY CARRY ONE OF THE THREE DOCUMENTS (2026-09-22)
+
+Dan, with the subscribe modal open on the GL report: *"need to be able to
+support signing up for emails for the gl code report and/or turnover and/or fee
+allocation breakdown. Goal is I'm a danvers admin and I select to receive all 3,
+or 2, or just 1 report on a specific cadence. 1 works now, but we need to
+support up to all three."*
+
+**AND "1 WORKS NOW" WAS GENEROUS — the one it sent was always the ROLLUP.**
+`buildFilterParams` carried desks, GL codes, tenders and `refunds`, and it has
+never carried `tyler` or `fees`. So a Danvers admin who clicked 📧 Email while
+reading the fee worksheet subscribed to the plain table, silently, and found out
+on the following Monday. **Fifth instance of the four-gate pattern already
+recorded here for `gl_codes`, `refunds`, `pii` and `sites`** — `generatePdf` has
+forwarded both mode parameters since the day each shipped, and every one of
+those gates passed; the subscription is a FIFTH surface, and it was the one that
+never asked.
+
+### THE MODEL COULD NOT EXPRESS IT — `reportParams` is one string per REPORT
+
+A subscription stores `reports: ["gl"]` and `reportParams.gl: "<query string>"`.
+The three documents are the same report TYPE with a mode parameter, so that
+field can hold exactly one of them. There is no place to put "and also the
+worksheet".
+
+**The tempting fix is three subscriptions**, and it is wrong for one reason that
+only shows up later: the admin panel would list three rows with the same
+address, the same cadence and the same filters, distinguishable only by an
+obscure query string — and unsubscribing, or moving from weekly to monthly,
+becomes three clicks that a reader has no way to know belong together. Dan asked
+to *select* two or three, which is one decision.
+
+So a subscription carries **variant KEYS**, `reportVariants: { gl: [...] }`, and
+the server owns the vocabulary (`REPORT_EMAIL_VARIANTS`). Keys rather than param
+strings, for three reasons the strings could not give:
+
+- the server can **label** each email, so three GL emails do not arrive under
+  one subject line;
+- it can **refuse** a key for an org that is not switched on for that mode —
+  stored as a string, `tyler=1` would arrive as the rollup wearing another name;
+- the page is **handed** the list rather than growing its own copy, which is the
+  rule that exists because `gl.html` hardcoded its saved-view range list and
+  offered *"Today"*, which the server had always refused, for months.
+
+### `[null]` IS THE ANSWER FOR EVERY SUBSCRIPTION THAT PREDATES THIS
+
+`resolveEmailVariants` returns `[null]` — one send, params exactly as saved —
+for an absent list, an empty list, an unknown key, and every report with no
+registry. **The two ways to get that wrong are not symmetric and both are
+silent**: returning the whole registry starts mailing three documents to
+everybody already subscribed to one, and returning `[]` stops mailing anything
+at all. The spec drives both.
+
+### THE FEE VARIANT DROPS THE FILTERS IT CANNOT HONOUR
+
+`drops: ["gl_codes", "methods", "glq", "refunds"]`. The worksheet is priced from
+the desk-scoped rows and those three controls are **absent from that mode on
+screen** — the fix one section up. Carrying them into the subscription would
+file a narrowing the document does not apply: the same contradiction arriving by
+the other door, and invisible, because the email would look filtered and the
+numbers would not be. **The desk filter stays**, for the reason it stayed on
+screen: a `transaction_event_id` has exactly one desk, so a desk-scoped
+worksheet genuinely reconciles to that desk's own bill.
+
+**AND EVERY VARIANT STRIPS THE OTHER MODES FIRST.** A saved string can already
+carry `fees=1`, and without the strip every variant would inherit it — three
+emails, one document, three names. The rollup, whose own params are empty, is
+exactly the case that needs it.
+
+### THREE EMAILS, NOT ONE WITH THREE ATTACHMENTS
+
+Each already has its own subject, its own PDF filename and its own "view online"
+link, and the scheduler already sends one email per report for a two-report
+subscription, so this is the shape the system had. The load-bearing reason is
+failure: **a PDF that does not build must not take the other two down with it**,
+and a per-document send log is what says which one it was.
+
+- **`reportVariants` is DELIBERATELY not part of the dedup key.** Same address,
+  same cadence, same filters IS the same subscription — coming back and ticking
+  a third document updates that row. Which means it has to be written
+  **explicitly** in the update branch: the `{ ...subs[idx] }` spread would
+  otherwise carry the old set straight past a save that meant to change it, and
+  the mutation that deletes it fails by name.
+- **A mode parameter is not a filter.** The subject's `(N filters)` counter read
+  the URL, so an unfiltered fee worksheet announced itself as *"(1 filter)"* —
+  a narrowing that is not there.
+- **The modal opens on the document you are looking at.** Seeded on every open
+  rather than once at mount, or clicking Email from the worksheet subscribes you
+  to the rollup.
+- **Nothing ticked disables both buttons.** An empty list resolves to a single
+  as-saved send on the server, so a live button would mail the rollup to
+  somebody who had just said they did not want it.
+- **No picker where there is one shape.** Absent, not a lone ticked checkbox
+  over the only document the org can receive.
+- **Send Test sends one email PER ticked shape.** Ticking three and previewing
+  one is the same failure the `reportParams` override exists to prevent, one
+  dimension over.
+- **Slack keys by DOCUMENT and names it.** The email debounce key already
+  carried the recipient, *"so a daily run to several subscribers posts each
+  send, instead of collapsing them into one line"* — three documents to one
+  address in one minute is the same argument, and without the variant in that
+  key the feed posted the first and swallowed the other two. The label is looked
+  up from the registry at post time rather than stored on the row, so renaming a
+  variant does not redefine every event already in the log — the `campmap-book`
+  `kind` rule.
+
+### TURNOVER IS ON FOR EVERY ORG BY DEFAULT, which I got wrong first
+
+`getTylerConfig` reads `(slug in flags) ? !!flags[slug] : true` — so the
+treasurer turnover view is available everywhere unless a flag says otherwise,
+unlike Fee Allocation, which ships off. Two render cases were written on the
+opposite assumption and **the render check is what said so**, not review. The
+consequence is that no fixture org had a single shape, so the harness now writes
+`tyler-orgs.json` switching turnover OFF for `render-check-aquatics` — the one
+org that can prove the picker is absent rather than rendering a lone checkbox.
+
+### Guards
+
+`scripts/email-report-variants.spec.js` (**90 assertions, in CI**), which LIFTS
+AND RUNS the registry and its three helpers — every defect here is a merge or a
+comparison, and a regex passes on an inverted one. `SKIP_SOURCE=1` drops the
+source half, `SKIP_LIVE=1` the live one.
+
+**The live half boots a REAL server against a fixture store** with
+`RESEND_API_KEY` unset, so each send prints its own STUB line: three ticked
+shapes produce **three stub lines under three different names**, which is the
+whole feature and is not a claim any source assertion can make. It also proves
+the row count (one, not three), that re-subscribing with fewer shapes UPDATES
+that row, and that an org which cannot render a mode has it dropped at the door.
+
+**IT ALSO STANDS UP A FAKE SLACK**, the shape `surveys.spec.js` already uses:
+`notifySlack` early-returns on an empty `SLACK_WEBHOOK_URL`, so with the webhook
+unset *"the code mentions the label"* is all anyone has proved. **Every source
+form of that assertion here was satisfied by DEAD CODE** — a mutation that
+computed the label and then dropped it kept both the registry lookup and the
+`${vSuffix}` interpolations intact, and survived twice. The captured posts are
+what settles it: three lines, each naming its own document.
+
+**Mutation-tested 24 ways, all failing by an assertion that names the defect**:
+the scheduler sending only the first variant (the bug as it stood), the other
+modes not stripped, the fee variant carrying filters it cannot honour, `drops`
+emptied, an empty list meaning send-everything and meaning send-nothing, no
+variant losing the saved params, the org gates ignored, every email titled by
+its report type again, the update branch losing the set to its own spread, the
+subscribe route trusting whatever keys arrive, the test send previewing only the
+first shape and ignoring the modal entirely, a mode parameter counted as a
+filter, the page growing its own vocabulary, the picker rendering over a single
+shape, Subscribe and Send Test each dropping the ticked shapes, nothing-ticked
+still subscribing, the modal always opening on the rollup, `generatePdf` no
+longer forwarding `fees`, the admin card no longer showing the shapes, three
+documents collapsing into one Slack line, and Slack no longer saying which one
+went out.
+
+**THE LIVE HALF ALONE CATCHES EIGHT OF THOSE** — the org gate, the label, the
+spread, the route's validation, both test-send defects and both Slack ones, i.e.
+exactly the ones a regex can be satisfied by different code. **It does NOT cover
+the cron loop**, which is not reachable without a scheduler; that one is a source
+assertion and is named as such rather than implied.
+
+**One of my own assertions was satisfied by DEAD CODE**, found by mutation: a
+bare `/modeKeys/` test passed on a build that still declared the variable and
+stopped using it. Scoped to the filter predicate. **And one of my own comments
+tripped its own guard**, Nth instance — the comment explaining why
+`reportVariants` is out of the dedup key sat inside a proximity test for exactly
+that word. The assertion slices the dedup predicate itself now.
+
+**Five `ci-check-render.js` cases, because no source assertion can see any of
+this**: the picker reads correctly whichever list it is handed, a ticked
+checkbox and an unticked one are the same markup, and a disabled Subscribe
+button and a live one differ only once React has rendered them.
+Browser-mutation-tested five ways, each failing **exactly** the case that names
+it while a neighbour keeps passing.
+
+**AND THE NOTHING-TICKED CASE COULD NOT DISCRIMINATE AT FIRST.** Subscribe is
+disabled on an empty email box whatever the checkboxes say, so the first draft
+passed with the variant check deleted. It types a valid address and waits for
+the button to go live BEFORE unticking. *Plausible is not the same as
+discriminating* — the recorded lesson, re-learned.
+
+86 specs pass, 0 fail (the two store specs skip without `STORE_TEST_URL`,
+which is their documented behaviour); **444 of 444 render cases** green.
+
+### NOT DONE
+
+- **The admin panel's own add-subscriber form still creates a rollup-only
+  subscription.** It is a different surface with its own report picker, and
+  Dan's ask was the report page; a subscription made there behaves exactly as it
+  did before. The panel DISPLAYS the shapes, so a multi-document subscription is
+  legible there and its Test button previews all of them.
+- **The three emails are three messages.** One message with three attachments is
+  arguably nicer and needs a second email template plus a rule for what a
+  partial failure looks like — a decision, not a refactor.
+- **The search box still does not reach a subscription at all.** `glq` is in the
+  fee variant's `drops` list defensively; `buildFilterParams` has never sent it.
+  Pre-existing, and its own change.
+
 ## THE REMITTANCE WORKSHEET DANVERS REBUILT BY HAND EVERY WEEK (2026-09-21)
 
 Dan: *"for our GL code rollup report, how hard would it be to add this into our

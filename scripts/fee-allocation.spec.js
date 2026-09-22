@@ -382,8 +382,61 @@ for (const col of ["Card Payment Txns", "Card Refund Txns", "Cash Txns", "Check 
 // The null-not-zero rule, on the page as well as in the library.
 ok(/cardPaymentTxns: raw\['Card Payment Txns'\] != null \? pf\([^)]+\) : null/.test(norm),
    "an absent count maps to NULL, never to 0");
-ok(/allocateFees\(displayRows, feeCfg, feeCounts \|\| \{\}\)/.test(gl),
-   "the worksheet is priced from displayRows, so every toolbar filter narrows it too");
+/* PRICED OFF THE DESK-SCOPED ROWS, NEVER `displayRows`.
+
+   This assertion used to read the other way round - "priced from displayRows,
+   so every toolbar filter narrows it too" - and it was pinning a real bug as
+   though it were the requirement, the same shape as report-settings.spec.js
+   once requiring `disabled` on the gear.
+
+   It is wrong because this worksheet reconciles against what Rec BILLED, and
+   three of the toolbar's controls cannot be expressed in that bill:
+
+   - the GL checkboxes: the $0.30 fee rides the TRUE distinct transaction
+     count, a per-DESK figure, and a card payment spanning two GL codes belongs
+     partly to each - so there is no honest count for "the codes still ticked".
+     Priced off displayRows the fixed half stayed at the org-wide count while
+     every other fee shrank with the rows: untick Childcare on Danvers' own week
+     and it still billed 217 transactions ($65.10) against the $10,119.50 of
+     card volume left on screen.
+   - the search box, the same defect by a different door.
+   - the tender picker, which is worse - applyMethodFilter REWRITES each row's
+     money, so the worksheet would report cash the org never took.
+
+   Dates and desk still apply and both are sound: a desk-distinct count is
+   additive across desks. */
+ok(/allocateFees\(deskRows, feeCfg, feeCounts \|\| \{\}\)/.test(gl),
+   "the worksheet is priced from the DESK-SCOPED rows, so the GL/search/tender filters cannot reach it");
+ok(!/allocateFees\(displayRows/.test(gl),
+   "...and never from displayRows, which those three narrow");
+
+/* ONE desk scope, THREE readers. `feeCounts` used to re-derive it from React
+   state while displayRows read it from the URL, so on the FIRST render of a
+   PDF a desk-filtered table was priced against org-wide counts. */
+ok(/const deskRows = useMemo\(/.test(gl), "the desk scope is its own memo");
+ok(/const deskRawRows = useMemo\(/.test(gl),
+   "...with a raw copy, because aggregateByGlCode destroys the desk identity the dedupe needs");
+ok(/var base = deskRows;/.test(gl), "displayRows builds ON the desk scope rather than repeating it");
+eq((gl.match(/params\._print === '1' && params\.desks/g) || []).length, 2,
+   "the print-mode desk fallback lives in the two shared memos and nowhere else");
+
+/* The three controls are ABSENT while the mode is on, not greyed: a control
+   that cannot affect the numbers is a dead end somebody clicks. Hidden rather
+   than cleared, so a rollup selection survives a round trip through the mode.
+   The DESK picker deliberately keeps rendering. */
+for (const [guard, what] of [
+  ["\\{!isFeeActive && hasGlCodes && selectedGlCodes &&", "the GL-code picker"],
+  ["\\{!isFeeActive && availableMethods\\.length > 1 && selectedMethods &&", "the tender picker"],
+  ["\\{!isFeeActive && \\(\\s*<input type=\"text\" value=\\{glFilter\\}", "the GL search box"],
+]) {
+  ok(new RegExp(guard).test(gl), what + " is hidden while the worksheet is on");
+}
+ok(/\{hasDesk && selectedDesks && \(\s*<CheckFilter/.test(gl),
+   "...while the DESK picker still renders, because a desk-scoped worksheet is sound");
+ok(/if \(!isFeeActive && glFilter\.trim\(\)\)/.test(gl),
+   "no search chip on a view the search cannot narrow");
+ok(/if \(!isFeeActive && availableMethods\.length > 1/.test(gl),
+   "no tender chip either - a chip claims the numbers are narrowed");
 // ONE pricing, two readers (the render and the Slack ping). Two calls is two
 // answers that can disagree about the same window.
 eq((gl.match(/RecFeeAllocation\.allocateFees\(/g) || []).length, 1,
@@ -393,6 +446,16 @@ ok(/result=\{feeResult\}/.test(gl), "...and the component is handed that result"
 // identity the true-count dedupe needs — so the page computes it from the RAW
 // desk-scoped rows, the same way the TOTALS row already does.
 const counts = slice(gl, "const feeCounts = useMemo(", "const feeResult = useMemo(");
+/* Scoped to the feeCounts block, because the file-wide "two print fallbacks"
+   count above cannot see this: re-deriving the desk scope here from React state
+   adds no `params._print` occurrence, so that assertion stayed green while the
+   bug came back. It is the bug that matters most - React state is null on the
+   FIRST render, so a printed desk-filtered worksheet was priced on org-wide
+   counts. */
+ok(/const scoped = deskRawRows;/.test(counts),
+   "the true counts read the SHARED desk scope");
+ok(!/rows\.filter\(/.test(counts),
+   "...and feeCounts never re-filters the rows itself");
 ok(/if \(!byDesk\.has\(k\)/.test(counts), "the true card count is DEDUPED by desk, not summed per row");
 ok(/scoped\.some\(r => r\.cardPaymentTxns != null\)/.test(counts),
    "presence is asked of the rows, not derived from a value");

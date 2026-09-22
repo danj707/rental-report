@@ -465,6 +465,21 @@ const REPORT_LABELS = {
   'instructor-payout':'Instructor Pay', retention:'Retention',
 };
 function reportLabel(r) { return REPORT_LABELS[r] || r; }
+// A report can be subscribed to in more than one SHAPE (the GL report mails a
+// rollup, a turnover sheet and a fee worksheet off one feed). Without this the
+// card for a three-document subscription reads exactly like a one-document one.
+const VARIANT_LABELS = { rollup: 'Rollup', turnover: 'Turnover', fees: 'Fee Allocation' };
+function variantBadges(sub) {
+  const rv = sub && sub.reportVariants;
+  if (!rv || typeof rv !== 'object') return '';
+  const out = [];
+  for (const [report, keys] of Object.entries(rv)) {
+    if (!Array.isArray(keys) || !keys.length) continue;
+    keys.forEach(k => out.push('<span class="badge" style="background:#eef2ff;color:#3730a3;border:1px solid #c7d2fe;font-size:10px">'
+      + (VARIANT_LABELS[k] || k) + '</span>'));
+  }
+  return out.length ? '<div class="filter-detail">' + out.join(' ') + '</div>' : '';
+}
 function formatFilters(rp) {
   if (!rp || typeof rp !== 'object') return '';
   const parts = [];
@@ -504,7 +519,7 @@ function renderSubscribers(subs) {
         ${subs.map(s => `
           <tr>
             <td class="email-cell">${s.email}</td>
-            <td>${s.reports.map(r => `<span class="badge badge-${r}">${reportLabel(r)}</span>`).join('')}${(() => { const f = formatFilters(s.reportParams); const lf = s.locationFilter; return (f || lf) ? '<div class="filter-detail">' + (f ? '<span>' + f + '</span>' : '') + (lf && !f ? '<span>\u{1F4CD} ' + lf + '</span>' : '') + '</div>' : ''; })()}</td>
+            <td>${s.reports.map(r => `<span class="badge badge-${r}">${reportLabel(r)}</span>`).join('')}${variantBadges(s)}${(() => { const f = formatFilters(s.reportParams); const lf = s.locationFilter; return (f || lf) ? '<div class="filter-detail">' + (f ? '<span>' + f + '</span>' : '') + (lf && !f ? '<span>\u{1F4CD} ' + lf + '</span>' : '') + '</div>' : ''; })()}</td>
             <td>
               <span class="badge badge-${s.schedule}">${s.schedule}</span>
               ${s.reportDateRanges ? Object.entries(s.reportDateRanges).map(([k,v]) => '<span class="badge" style="background:#f0f0f0;color:#555;border:1px solid #ddd;font-size:10px">' + k + ': ' + v + '</span>').join(' ') : (s.dateRange ? '<span class="badge" style="background:#f0f0f0;color:#555;border:1px solid #ddd">' + s.dateRange + '</span>' : '')}
@@ -535,7 +550,7 @@ function renderLog(log) {
           <tr>
             <td>${l.sent_at.replace('T',' ').slice(0,16)}</td>
             <td>${l.email}</td>
-            <td>${l.report}</td>
+            <td>${l.report}${l.variant ? ` <span class="badge" style="background:#eef2ff;color:#3730a3;border:1px solid #c7d2fe;font-size:10px">${VARIANT_LABELS[l.variant] || l.variant}</span>` : ''}</td>
             <td>${l.schedule}</td>
             <td class="${l.status === 'sent' ? 'log-sent' : 'log-error'}">${l.status}${l.message ? ` — ${l.message.slice(0,40)}` : ''}</td>
           </tr>`).join('')}
