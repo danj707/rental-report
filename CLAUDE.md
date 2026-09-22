@@ -7987,6 +7987,30 @@ threshold and a regex passes on an inverted comparison — plus a live half that
 boots a real server and drives the real routes. `SKIP_SOURCE=1` / `SKIP_LIVE=1`
 drop either half.
 
+**AND IT SAID "in CI" WHILE NOT BEING IN CI — for the whole of the first PR.**
+Every spec here gets its own step in `.github/workflows/ci.yml`, by hand, and a
+new spec file is simply not run until somebody adds one. The commit message, the
+PR body and this very paragraph all claimed it was wired; the workflow had no
+step for it, so the 126 assertions ran exactly once, on my machine, and the
+mutation testing behind them guarded nothing on any later push. **Judge "is it in
+CI" by reading the workflow, not by reading the claim** — the claim is written by
+whoever also forgot the step.
+
+**A SWEEP OVER `scripts/*.spec.js` AGAINST THE WORKFLOW FOUND THREE MORE.**
+`report-visibility.spec.js` is the one that matters and it is wired now, on this
+PR, because it is the guard for the rule this report depends on: the
+`MAY_BE_VISIBLE` **whitelist** that freezes every-new-report-ships-hidden. **This
+file has claimed twice that it was in CI. It never was**, so the diff that would
+have failed a guard — `new Set([])`, invisible in review, shipping to 29
+dashboards on merge — would have sailed through. `adaptive-cache.spec.js` and
+`cache-filename.spec.js` are also unwired and both pass; left alone rather than
+swept into a cost-recovery PR, and named here so they are not lost.
+
+*Generalise it: the real fix is a guard that fails when a `scripts/*.spec.js`
+exists with no step naming it — the recorded rule that a guard you have to
+remember to extend is the thing that already failed here four times. Not built,
+because it would have widened this PR; it is the cheapest thing on the list.*
+
 **Mutation-tested 18 ways, 17 caught by an assertion that NAMES the defect**:
 the season share ignoring the season, pro-rata no longer dividing by the run
 (so the parts stop summing), on-target comparing the midpoint instead of the

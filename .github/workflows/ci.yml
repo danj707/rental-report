@@ -389,6 +389,27 @@ jobs:
       - name: Org sync (no token to an unauthenticated caller; the push reconciles on orgId)
         run: node scripts/org-sync.spec.js
 
+      # Every new report ships HIDDEN, and this is the guard that freezes it:
+      # MAY_BE_VISIBLE is a WHITELIST of what may be seen without Dan asking,
+      # deliberately not a blacklist of what must be hidden — a blacklist is
+      # satisfied by forgetting to add to it, which is exactly how this goes
+      # wrong. A visibility default is the one change that ships to 29
+      # dashboards on merge and is invisible in review: the diff reads
+      # `new Set([])`. It had NEVER run here despite CLAUDE.md claiming twice
+      # that it did; wired now, on the PR that depends on the rule it freezes.
+      - name: Report visibility (new reports ship hidden; the eye does not lock the report)
+        run: node scripts/report-visibility.spec.js
+
+      # Cost Recovery. Every defect this report can have is arithmetic about a
+      # share or a threshold — a pro-rata allocation whose parts must sum to
+      # exactly 1, a band test where "on target" means INSIDE the band rather
+      # than above its midpoint — and a regex passes on an inverted comparison,
+      # so the spec LIFTS AND RUNS the helpers. The live half boots a real
+      # server and drives the two PATCH stores, because the merge semantics are
+      # what stop two people editing two rows from losing each other's work.
+      - name: Cost Recovery (the parts sum to 1; on target means inside the band; PATCH keeps both edits)
+        run: node scripts/cost-recovery.spec.js
+
       - name: Admin dashboard JS (inline blocks parse; every on*= handler resolves)
         run: node scripts/ci-check-admin-js.js
 
