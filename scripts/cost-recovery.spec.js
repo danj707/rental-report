@@ -473,9 +473,15 @@ if (!process.env.SKIP_SOURCE) {
      why both are pinned, and pinned together. */
   const cro = slice("const COST_RECOVERY_ORGS", ";");
   ok(cro.length > 10, "COST_RECOVERY_ORGS was found — otherwise the next assertions are vacuous");
-  ok(/"shrewsbury"/.test(cro) && /"windham"/.test(cro), "the pilot is Shrewsbury and Windham");
+  ok(/"shrewsbury"/.test(cro) && /"windham"/.test(cro) && /"pawnee"/.test(cro),
+     "the pilot is Shrewsbury, Windham and Pawnee");
   const croSlugs = (cro.match(/"[a-z0-9-]+"/g) || []);
-  ok(croSlugs.length === 2, "…and ONLY those two — a third slug is a decision somebody has to justify");
+  /* THE COUNT IS THE GUARD, and moving it is meant to cost a sentence. It read
+     2 until 2026-09-23, when Dan asked for Pawnee — "can you add this report to
+     the City of Pawnee's account as well" — which is exactly the decision the
+     old label demanded somebody justify. Widening it to 3 is that justification;
+     what the assertion still refuses is the pilot quietly becoming all 29. */
+  ok(croSlugs.length === 3, "…and ONLY those three — a fourth slug is a decision somebody has to justify");
 
   /* THE EYE STILL GOVERNS. Both gates on the org dashboard, in one condition:
      drop the second and the pilot orgs get a card they never asked to see. */
