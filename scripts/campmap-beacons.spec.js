@@ -173,6 +173,21 @@ const CAMPMAP = [
       assert.strictEqual(rec.open, undefined, "an absurd count is dropped");
     });
 
+    await test("a phone booking says it came from a phone, and nothing else gets through that field", async () => {
+      // The phone layout (2026-09-23) adds device=mobile to its pings so the feed
+      // can say a booking came from a phone. The route is un-tokened, so the field
+      // takes the one known word and drops anything else rather than echoing it.
+      let r = await post("log?event=campmap-book&site=Site%2021&nights=2&device=mobile");
+      assert.strictEqual(r.status, 200, r.body);
+      let rec = events().filter(x => x.event === "campmap-book" && x.site === "Site 21").pop();
+      assert.ok(rec, "phone booking not recorded");
+      assert.strictEqual(rec.device, "mobile", "the phone tag was dropped");
+      r = await post("log?event=campmap-site&site=Site%2022&device=%3Cscript%3E");
+      assert.strictEqual(r.status, 200, r.body);
+      rec = events().filter(x => x.event === "campmap-site" && x.site === "Site 22").pop();
+      assert.strictEqual(rec.device, undefined, "an unknown device value was stored as-is");
+    });
+
     console.log(`\n${passed}/${passed} passing`);
   } finally {
     child.kill("SIGKILL");
