@@ -1885,7 +1885,7 @@ const ORGS = {
   },
 };
 
-const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "products", "memberships", "court-utilization", "calendar", "fasttrack", "waitlist", "users", "program-demographics", "instructor-payout", "retention", "annual-report", "section-detail", "ice-calendar", "qoq", "checkins", "program-checkins", "selfservice", "programs-monthly", "programs-schedule"];
+const REPORT_TYPES = ["facility", "gl", "historic", "programs", "roster", "products", "memberships", "court-utilization", "calendar", "fasttrack", "waitlist", "users", "program-demographics", "instructor-payout", "retention", "annual-report", "section-detail", "ice-calendar", "qoq", "checkins", "program-checkins", "selfservice", "programs-monthly", "programs-schedule", "cost-recovery"];
 
 // ── Friendly report directory — label + emoji per report type ──────────
 // Powers the smart Project-Update composer (auto-draft from the changelog):
@@ -1916,6 +1916,7 @@ const REPORT_DIRECTORY = {
   selfservice:         { label: "Self-Service Mix",         emoji: "🖱️" },
   "programs-monthly":  { label: "Programs by Month",        emoji: "📅" },
   "programs-schedule": { label: "Program Schedule",       emoji: "🗓️" },
+  "cost-recovery":     { label: "Cost Recovery",          emoji: "⚖️" },
   // The per-org custom data reports are MERGED IN below, from CUSTOM_REPORTS,
   // so their label and emoji have ONE definition — a transcribed copy drifts
   // the first time one is renamed, and this map drives the project-update
@@ -2991,7 +2992,7 @@ const NON_ADDABLE_REPORTS = new Set(["program-demographics", "retention", "annua
 // How many consecutive failed probes before a report is called down. One is
 // load; two in a row is a report. See the flap note in checkOne().
 const HEALTH_ALERT_AFTER = Number(process.env.HEALTH_ALERT_AFTER || 2);
-const HEALTH_SKIP_REPORTS = new Set(["section-detail", "annual-report", "qoq", "qbr-stats", "checkins", "program-checkins", "selfservice", "programs-monthly"]);
+const HEALTH_SKIP_REPORTS = new Set(["section-detail", "annual-report", "qoq", "qbr-stats", "checkins", "program-checkins", "selfservice", "programs-monthly", "cost-recovery"]);
 const RENTAL_CALENDAR_ORGS = new Set(["watertown", "norman", "niagarafalls"]);
 // Director's Report (quarterly executive summary) — org-wide since 2026-08-04
 // (piloted on Watertown earlier the same day). With ALL_ORGS true every org
@@ -3052,7 +3053,7 @@ async function resolveBannerUrl(org) {
    pins the list of reports that are visible by default, so adding a report
    that anyone can see without him asking fails a guard rather than appearing
    on 29 dashboards on deploy. */
-const DEFAULT_HIDDEN_REPORTS = new Set(["opportunities", "inventory"]);
+const DEFAULT_HIDDEN_REPORTS = new Set(["opportunities", "inventory", "cost-recovery"]);
 // Reports RETIRED as standalone cards: kept as valid report types + endpoints
 // (so the Facilities hub's native Court Utilization tab, chat, and /api/data all
 // keep working) but no longer rendered as a clickable card on org/admin grids.
@@ -5257,7 +5258,7 @@ setTimeout(() => { checkCardParamTypes().catch(() => {}); }, 150 * 1000).unref?.
 // Inert if the env var is unset. Fire-and-forget — never blocks or breaks logging.
 // To change what pings Slack, edit SLACK_NOTIFY. High-frequency events (view/fetch)
 // are debounced per org+report so Slack isn't a firehose.
-const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "campmap-filter", "campmap-amenity", "pdf", "excel", "print", "summary", "game", "map", "outdoor", "fields", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email", "checkin-loc", "checkin-member", "checkin-failed", "form-open", "epact", "settings-open", "settings-unlock", "settings-locked", "settings-save", "settings-reset", "deadlink", "generate", "wizard-save", "mb-autorenew", "mb-salesmix", "ft-export", "panel-csv", "intel-csv", "wizard-feedback", "roster-open", "report-csv", "survey-response", "insights-listen", "opp-drill", "opp-print", "opp-csv", "backup-failed", "org-synced", "fee-alloc", "inv-count", "inv-receive", "inv-link", "inv-track", "inv-reorder"]);
+const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "campmap-filter", "campmap-amenity", "pdf", "excel", "print", "summary", "game", "map", "outdoor", "fields", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email", "checkin-loc", "checkin-member", "checkin-failed", "form-open", "epact", "settings-open", "settings-unlock", "settings-locked", "settings-save", "settings-reset", "deadlink", "generate", "wizard-save", "mb-autorenew", "mb-salesmix", "ft-export", "panel-csv", "intel-csv", "wizard-feedback", "roster-open", "report-csv", "survey-response", "insights-listen", "opp-drill", "opp-print", "opp-csv", "backup-failed", "org-synced", "fee-alloc", "inv-count", "inv-receive", "inv-link", "inv-track", "inv-reorder", "cost-save", "cost-csv"]);
 const SLACK_DEBOUNCE_MS = { view: 30 * 60 * 1000, fetch: 30 * 60 * 1000,
   // A broken report stays broken. The health check only reports NEW failures,
   // but a flapping card would otherwise post every hour.
@@ -5354,6 +5355,11 @@ const SLACK_EVENT_META = {
   "inv-link":    { emoji: "\u{1F3F7}\uFE0F", verb: "linked a barcode on" },
   "inv-track":   { emoji: "\u{1F4CA}", verb: "changed what is tracked on" },
   "inv-reorder": { emoji: "\u{1F6D2}", verb: "hit a reorder point on" },
+  // An org typing what a program COSTS is the highest-signal thing on this
+  // platform: it is the one number Rec does not hold, so every one of them is
+  // somebody deciding this report is worth keeping up to date.
+  "cost-save": { emoji: "\u2696\uFE0F", verb: "entered program costs on" },
+  "cost-csv":  { emoji: "\uD83D\uDCC4", verb: "exported the P&L from" },
   // FIVE WRONG ATTEMPTS. Not a typo — this is the one worth reading as a
   // security event, which is why only the lockout posts and single misses do not.
   "settings-locked": { emoji: "\uD83D\uDEA8", verb: "was LOCKED OUT of the report settings for" },
@@ -5448,6 +5454,11 @@ function notifySlack(rec) {
     // key would keep only the first roster they opened.
     : rec.event === "roster-open"
       ? `${rec.org}|${rec.report}|roster-open|${rec.section || ""}`
+    // Per PROGRAM: costing a morning's worth of programs is a decision per
+    // program, and the default org|report|event key would record only the
+    // first one typed — which is the whole signal this event exists for.
+    : rec.event === "cost-save"
+      ? `${rec.org}|cost-recovery|cost-save|${rec.program || ""}`
     // Per FINDING: working down three opportunities in a morning is three
     // decisions, and the default org|report|event key would record only the
     // first one clicked — which is precisely the signal this event exists for.
@@ -5716,6 +5727,16 @@ function notifySlack(rec) {
       : rec.event === "inv-reorder" ? ` \u2014 ${rec.onHand} left, reorder at ${rec.reorder}${rec.emailed ? " \u00B7 email sent" : " \u00B7 no email address set"}`
       : "";
     text = `${meta.emoji} ${orgName} (\`${rec.org}\`) ${meta.verb} ${what} in *inventory*${detail}`;
+  } else if (rec.event === "cost-save") {
+    // NAME what moved. "Somebody saved costs" is the post that makes a feature
+    // look busy and tells nobody anything; the program being costed is the
+    // thing worth reading, and a removal is a different event from a save.
+    const prog = rec.program ? ` \u00B7 *${String(rec.program).split("|")[0]}*` : "";
+    const n    = Number(rec.saved || 0), gone = Number(rec.removed || 0);
+    const what = n && gone ? `${n} saved, ${gone} cleared`
+               : gone     ? `${gone} cleared`
+               : `${n} program${n === 1 ? "" : "s"}`;
+    text = `${meta.emoji} ${orgName} (\`${rec.org}\`) ${meta.verb} *Cost Recovery*${prog} \u00B7 ${what}`;
   } else if (rec.event === "fee-alloc") {
     const fees  = rec.fees  ? ` \u00B7 $${rec.fees} in fees` : "";
     const txns  = rec.txns  ? ` over ${rec.txns} card transactions` : "";
@@ -9331,7 +9352,7 @@ app.post("/:org/:report/api/log", resolveOrg, (req, res) => {
   const { event, game, location, view } = req.query;
   // view-apply is events.jsonl-only by design — it is not in SLACK_NOTIFY, so
   // logEvent records it without pinging the feed (see the saved-views block).
-  const ALLOWED = ["excel", "print", "summary", "game", "map", "view-apply", "checkin-loc", "checkin-member", "checkin-failed", "form-open", "epact", "settings-open", "mb-autorenew", "mb-salesmix", "ft-export", "panel-csv", "intel-csv", "roster-open", "insights-listen", "fee-alloc"];
+  const ALLOWED = ["excel", "print", "summary", "game", "map", "view-apply", "checkin-loc", "checkin-member", "checkin-failed", "form-open", "epact", "settings-open", "mb-autorenew", "mb-salesmix", "ft-export", "panel-csv", "intel-csv", "roster-open", "insights-listen", "fee-alloc", "cost-csv"];
   if (!ALLOWED.includes(event)) return res.status(400).json({ ok: false, error: "Unknown event" });
   const ciN = Number(req.query.n);
   const extra = event === "game" && game ? { game: String(game).slice(0, 60) }
@@ -13176,6 +13197,331 @@ app.put("/:org/:report/api/settings", (req, res) => {
   });
   res.json({ ok: true, settings: merged, dropped,
              epactVerified: epactIsVerified(merged.epactColumns) });
+});
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// COST RECOVERY — the org's own program costs
+//
+// Nothing in the Rec platform records what a program COSTS to run. There is
+// no cost table, no instructor rate on the section, no facility charge-back —
+// checked before any of this was built. So every figure here is TYPED BY THE
+// ORG, and the report says so on screen rather than letting an entered number
+// sit beside a measured one looking the same. Same rule as
+// DIR_FT_MINUTES_PER_REG and the fee-allocation rates.
+//
+// KEYED ON PROGRAM **AND SEASON**, never the program alone. 26% of
+// Shrewsbury's programs recur across seasons, and a swim lesson costs a
+// different amount to run in the summer than in the winter — keyed on the
+// program alone, entering this winter's cost would silently rewrite the P&L of
+// every season already closed. `carryForward` is what makes that bearable: it
+// copies the most recent earlier season's figure into an empty one, so a
+// recurring program is one click rather than five fields.
+//
+// STORED AS INTEGER CENTS. These multiply every dollar on the page and divide
+// into a recovery percentage; a stored 149.99999 is a report that is a cent out
+// for reasons nobody can find. The wire format is dollars, because that is what
+// somebody types.
+// ═══════════════════════════════════════════════════════════════════════
+
+// Lazy, never `const X = path.join(DATA_DIR, …)` at module scope — that read is
+// stale in db mode and its write lands on the container's own disk. Recorded
+// three times in CLAUDE.md; this is a function so it cannot recur.
+function costRecoveryFile() { return path.join(DATA_DIR, "program-costs.json"); }
+
+// The five buckets a parks department actually keeps. Fixed rather than
+// free-form: a per-org category list makes two orgs' reports incomparable and
+// turns the roll-up into a union of whatever anyone has typed.
+const COST_CATEGORIES = ["instructors", "staff", "supplies", "facility", "other"];
+const COST_MAX_CENTS   = 100000000;   // $1,000,000 for one program-season
+const COST_MAX_KEYS    = 5000;        // apex runs ~5,900 sections across ~900 programs
+const COST_NOTE_MAX    = 280;
+
+let _costStore = null;
+function readCostStore() {
+  if (_costStore === null) _costStore = readJSON(costRecoveryFile(), {});
+  return _costStore;
+}
+function writeCostStore(all) {
+  writeJSON(costRecoveryFile(), all);
+  _costStore = all;
+}
+
+// A stored record, cleaned. Returns null when nothing survives, so an entry
+// that is all zeroes and no note is DROPPED rather than kept as a costed
+// program — "costed at nothing" and "not costed yet" are different facts and
+// the report renders them differently.
+function normalizeCostEntry(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const out = {};
+  let any = false;
+  for (const c of COST_CATEGORIES) {
+    const v = raw[c];
+    if (v == null || v === "") continue;
+    const n = Number(v);
+    if (!Number.isFinite(n) || n < 0) continue;
+    const cents = Math.round(n);
+    if (cents <= 0) continue;
+    out[c] = Math.min(cents, COST_MAX_CENTS);
+    any = true;
+  }
+  // THE TIER TRAVELS ON THE SAME RECORD, and dropping it here is what the spec
+  // caught: the page sent it, the store silently binned it, and a reader's tier
+  // survived until the next reload. It is the org's own classification of the
+  // program under the GreenPlay pyramid, so it is as much their typed input as
+  // the cost is.
+  const tier = Number(raw.tier);
+  if (Number.isFinite(tier) && tier >= 1 && tier <= 4) { out.tier = Math.round(tier); any = true; }
+  const note = typeof raw.note === "string" ? raw.note.trim().slice(0, COST_NOTE_MAX) : "";
+  if (note) { out.note = note; any = true; }
+  return any ? out : null;
+}
+
+// A cost key is "<programId>|<season>". Both halves come from card 17295, so
+// the shape is ours rather than the caller's — an unbounded key is a document
+// anyone holding the token can grow without limit.
+function validCostKey(k) {
+  return typeof k === "string" && k.length > 1 && k.length <= 200 && k.indexOf("|") > 0;
+}
+
+function orgCosts(slug) {
+  const rec = readCostStore()[slug];
+  return rec && typeof rec === "object" ? rec : {};
+}
+
+
+// ── Cost Recovery API ────────────────────────────────────────────────
+// THE ORG TOKEN IS THE WHOLE GATE, and that is Dan's call (2026-09-22):
+// *"anyone with the report link can edit costs."* So this is a WRITE path
+// whose only credential is the link, which is a real decision rather than an
+// oversight — every staffer at the org holds that token, and any of them can
+// change a figure the P&L is computed from. It is deliberately NOT behind
+// `isReportSettingsAdmin`: that gate exists for settings that spend a SHARED
+// Metabase card, and these numbers cost nothing and belong to the org.
+// What pays for it is the record: every save posts to Slack naming the org,
+// the program and the figure, so a change is visible rather than silent.
+app.get("/:org/cost-recovery/api/costs", (req, res) => {
+  const slug = req.params.org;
+  if (!ORGS[slug]) return res.status(404).json({ error: "Unknown org" });
+  const supplied = req.query.token || req.headers["x-token"] || "";
+  if (ORGS[slug].token && supplied !== ORGS[slug].token) return res.status(403).json({ error: "Invalid token" });
+  const costs = orgCosts(slug);
+  res.set("Cache-Control", "no-store");
+  res.json({ costs, categories: COST_CATEGORIES, count: Object.keys(costs).length });
+});
+
+app.put("/:org/cost-recovery/api/costs", express.json({ limit: "512kb" }), (req, res) => {
+  const slug = req.params.org;
+  if (!ORGS[slug]) return res.status(404).json({ error: "Unknown org" });
+  const supplied = req.query.token || req.headers["x-token"] || (req.body && req.body.token) || "";
+  if (ORGS[slug].token && supplied !== ORGS[slug].token) return res.status(403).json({ error: "Invalid token" });
+
+  const patch = (req.body && req.body.costs) || {};
+  if (typeof patch !== "object" || Array.isArray(patch)) {
+    return res.status(400).json({ error: "costs must be an object keyed by \"<programId>|<season>\"" });
+  }
+
+  // PATCH SEMANTICS, NOT REPLACE, and that is the whole concurrency story.
+  // This is a read-modify-write on ONE document shared by every staffer at the
+  // org — fine for a counter, not fine for somebody's typed figures. Sending
+  // only the keys that changed means two people editing two different programs
+  // both keep their work; a whole-document PUT would make the second save
+  // silently discard the first. An explicit null DELETES that program's entry,
+  // because "clear this cost" has to be expressible.
+  const all  = readCostStore();
+  const cur  = Object.assign({}, all[slug] || {});
+  const saved = [], dropped = [], removed = [];
+
+  for (const k of Object.keys(patch)) {
+    if (!validCostKey(k)) { dropped.push(k.slice(0, 60)); continue; }
+    if (patch[k] === null) { if (cur[k]) { delete cur[k]; removed.push(k); } continue; }
+    const entry = normalizeCostEntry(patch[k]);
+    // An entry that normalises to nothing is a CLEAR, not a no-op: somebody
+    // zeroing every box means the program is no longer costed, and leaving the
+    // old record would make the screen disagree with the store on reload.
+    if (!entry) { if (cur[k]) { delete cur[k]; removed.push(k); } continue; }
+    cur[k] = entry; saved.push(k);
+  }
+
+  if (Object.keys(cur).length > COST_MAX_KEYS) {
+    return res.status(400).json({
+      error: `That would store ${Object.keys(cur).length} program costs, over the ${COST_MAX_KEYS} limit for one organization.`,
+    });
+  }
+
+  if (Object.keys(cur).length) all[slug] = cur; else delete all[slug];
+  writeCostStore(all);
+
+  if (saved.length || removed.length) {
+    logEvent(slug, "cost-recovery", "cost-save", req, {
+      saved: saved.length,
+      removed: removed.length,
+      // The FIRST key only, clamped. Which program somebody is costing is the
+      // useful half of the signal; the whole list would put an org's entire
+      // program catalogue in the event log and in Slack.
+      program: String(saved[0] || removed[0] || "").slice(0, 80),
+    });
+  }
+
+  res.json({ ok: true, saved: saved.length, removed: removed.length, dropped, count: Object.keys(cur).length });
+});
+
+
+// ── The OPEN-ENDED ledger ────────────────────────────────────────────
+// Jason at Windham, 2026-09-22: *"add a series of 'open ended' rows where he
+// can add expenses, profit, etc. Not tied to any program."*
+//
+// THIS IS THE OTHER HALF OF A REAL P&L, not a convenience. Every parks
+// department's cost recovery splits DIRECT costs (the instructor, the
+// supplies — which the program table above holds) from INDIRECT ones (the
+// insurance, the truck, the admin salary), and the GreenPlay pyramid's bands
+// are DIRECT-cost bands. So these rows are kept apart from program costs and
+// reported apart: folding overhead into a program's direct cost would move
+// every program below its tier band for a reason that has nothing to do with
+// the program.
+//
+// A SEPARATE FILE from program-costs.json on purpose. This is an ordered LIST
+// where that is a keyed map, the validation is different, and a row here has
+// no program to belong to — one document holding both would need a reserved
+// key namespace to keep them apart, which is the sort of thing that works
+// until somebody names a program after it.
+function costLedgerFile() { return path.join(DATA_DIR, "cost-ledger.json"); }
+
+const LEDGER_MAX_ROWS  = 500;
+const LEDGER_LABEL_MAX = 120;
+
+let _ledgerStore = null;
+function readLedgerStore() {
+  if (_ledgerStore === null) _ledgerStore = readJSON(costLedgerFile(), {});
+  return _ledgerStore;
+}
+function writeLedgerStore(all) {
+  writeJSON(costLedgerFile(), all);
+  _ledgerStore = all;
+}
+
+function isISODate(v) { return typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v); }
+
+// A row survives only if it says something. A blank row is not stored at all —
+// the page renders thirty of them to type into, and persisting those would put
+// hundreds of empty records in every org's document.
+/* ONE BUDGET LINE, NOT ONE ROW OF A TRIP SHEET.
+
+   Jason sent the workbook he keeps today and then said the thing that decided
+   this shape: *"It's a really long, large spreadsheet that isn't very useful to
+   pull any information from. There are lots of places for human error to come
+   in and it's not great for at a glance report."* So reproducing his seventeen
+   columns would have rebuilt the problem in a browser. What he ALSO said is
+   how they actually budget: *"each account has about 10 separate lines under
+   it that we break items down to. Like staff wages, supplies, maintenance."*
+
+   So a row here is ACCOUNT -> LINE ITEM -> CATEGORY -> AMOUNT, which is the
+   structure they already think in, and the page rolls it up by account and by
+   category so it reads at a glance. The wide per-trip columns (cost to public,
+   participants, scholarship) are deliberately NOT here: a trip is an account
+   with an income line and a few expense lines, and the detail he says nobody
+   pulls anything from stays in the sheet it came from.
+
+   INCOME AND EXPENSE ARE BOTH REAL — "expenses, profit, etc." — so a grant, a
+   sponsorship or a trip's fee income is a row with kind "income".
+
+   Money is integer CENTS, like the program costs. A row that says nothing is
+   not stored: the page renders thirty blanks to type into and persisting those
+   would grow a document for no reason. */
+function normalizeLedgerRow(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const out = {};
+  const txt = (v, n) => (typeof v === "string" && v.trim() ? v.trim().slice(0, n) : "");
+
+  const account  = txt(raw.account,  LEDGER_LABEL_MAX);
+  const label    = txt(raw.label,    LEDGER_LABEL_MAX);
+  const category = txt(raw.category, 60);
+  if (account)  out.account = account;
+  if (label)    out.label = label;
+  if (category) out.category = category;
+
+  const amount = Number(raw.amount);
+  const cents = Number.isFinite(amount) && amount > 0 ? Math.min(Math.round(amount), COST_MAX_CENTS) : 0;
+  if (cents) out.amount = cents;
+  out.kind = raw.kind === "income" ? "income" : "expense";
+
+  if (isISODate(raw.start)) out.start = raw.start;
+  // A single date is a point, not a range: end defaults to start so one day's
+  // spend lands wholly in the period containing it rather than in none.
+  if (isISODate(raw.end)) out.end = raw.end; else if (out.start) out.end = out.start;
+  if (out.start && out.end && out.end < out.start) { const t = out.start; out.start = out.end; out.end = t; }
+
+  const season = txt(raw.season, 120);
+  if (season) out.season = season;
+  const note = txt(raw.note, COST_NOTE_MAX);
+  if (note) out.note = note;
+
+  const ord = Number(raw.ord);
+  out.ord = Number.isFinite(ord) ? Math.max(0, Math.min(99999, Math.round(ord))) : 0;
+
+  // `ord` and `kind` are on every row including the blank ones, so neither
+  // counts as the row saying something.
+  return (account || label || category || cents || note || out.start) ? out : null;
+}
+
+function validLedgerId(k) { return typeof k === "string" && /^[A-Za-z0-9_-]{1,40}$/.test(k); }
+
+app.get("/:org/cost-recovery/api/ledger", (req, res) => {
+  const slug = req.params.org;
+  if (!ORGS[slug]) return res.status(404).json({ error: "Unknown org" });
+  const supplied = req.query.token || req.headers["x-token"] || "";
+  if (ORGS[slug].token && supplied !== ORGS[slug].token) return res.status(403).json({ error: "Invalid token" });
+  const rec = readLedgerStore()[slug];
+  const rows = rec && typeof rec === "object" ? rec : {};
+  res.set("Cache-Control", "no-store");
+  res.json({ rows, count: Object.keys(rows).length, maxRows: LEDGER_MAX_ROWS });
+});
+
+app.put("/:org/cost-recovery/api/ledger", express.json({ limit: "512kb" }), (req, res) => {
+  const slug = req.params.org;
+  if (!ORGS[slug]) return res.status(404).json({ error: "Unknown org" });
+  const supplied = req.query.token || req.headers["x-token"] || (req.body && req.body.token) || "";
+  if (ORGS[slug].token && supplied !== ORGS[slug].token) return res.status(403).json({ error: "Invalid token" });
+
+  const patch = (req.body && req.body.rows) || {};
+  if (typeof patch !== "object" || Array.isArray(patch)) {
+    return res.status(400).json({ error: "rows must be an object keyed by row id" });
+  }
+
+  // PATCH BY ID, exactly as the program costs do — and for the same reason.
+  // These are thirty rows one person is typing into while another may be
+  // editing a different one, and a whole-list PUT would make the second save
+  // discard the first.
+  const all = readLedgerStore();
+  const cur = Object.assign({}, all[slug] || {});
+  const saved = [], dropped = [], removed = [];
+
+  for (const id of Object.keys(patch)) {
+    if (!validLedgerId(id)) { dropped.push(String(id).slice(0, 40)); continue; }
+    if (patch[id] === null) { if (cur[id]) { delete cur[id]; removed.push(id); } continue; }
+    const row = normalizeLedgerRow(patch[id]);
+    // A row emptied back out is a DELETE, not a stored blank.
+    if (!row) { if (cur[id]) { delete cur[id]; removed.push(id); } continue; }
+    cur[id] = row; saved.push(id);
+  }
+
+  if (Object.keys(cur).length > LEDGER_MAX_ROWS) {
+    return res.status(400).json({
+      error: `That would store ${Object.keys(cur).length} ledger rows, over the ${LEDGER_MAX_ROWS} limit for one organization.`,
+    });
+  }
+
+  if (Object.keys(cur).length) all[slug] = cur; else delete all[slug];
+  writeLedgerStore(all);
+
+  if (saved.length || removed.length) {
+    logEvent(slug, "cost-recovery", "cost-save", req, {
+      saved: saved.length, removed: removed.length,
+      program: "overhead · " + String((patch[saved[0]] && patch[saved[0]].label) || "").slice(0, 60),
+    });
+  }
+
+  res.json({ ok: true, saved: saved.length, removed: removed.length, dropped, count: Object.keys(cur).length });
 });
 
 // ── Subscription API ─────────────────────────────────────────────────
@@ -17261,6 +17607,34 @@ app.get("/:org/waitlist", (req, res) => {
   res.type("html").send(loadEstimateInject(require("fs").readFileSync(path.join(__dirname, "public", "waitlist.html"), "utf8"), req));
 });
 
+app.get("/:org/cost-recovery", (req, res) => {
+  const slug = req.params.org;
+  const org  = ORGS[slug];
+  if (!org) return res.status(404).send("Unknown org");
+  // THE GATE IS THE PROGRAMS CARD, because this report has none of its own.
+  // It reads card 17295 through /:org/programs/api/data - the same URL and the
+  // same parameters the Programs report sends, so the two SHARE a feed cache
+  // entry and this page adds no Metabase load at all. A SHARED_UUIDS entry of
+  // its own would have given it a second cache key for one card, which is the
+  // doubled prewarm this file already records.
+  if (!org.programs?.mbUuid && !SHARED_UUIDS.programs) {
+    return res.status(404).send("Cost Recovery needs the Programs card, which is not configured for this org.");
+  }
+  logEvent(slug, "cost-recovery", "view", req);
+  const slugTitle = slug.charAt(0).toUpperCase() + slug.slice(1);
+  const orgConfig = {
+    slug,
+    displayName: org.displayName || `${slugTitle} Parks & Recreation`,
+    logoUrl: org.logoUrl || "",
+    token: org.token || "",
+    costCategories: COST_CATEGORIES,
+  };
+  const html = require("fs").readFileSync(path.join(__dirname, "public", "cost-recovery.html"), "utf8");
+  // orgConfigInject already folds loadEstimate into the same object, so this is
+  // NOT also wrapped in loadEstimateInject - that would write the key twice.
+  res.type("html").send(html.replace("</head>", () => orgConfigInject(orgConfig, req) + "</head>"));
+});
+
 app.get("/:org/programs-schedule", (req, res) => {
   const slug = req.params.org;
   const org  = ORGS[slug];
@@ -19691,6 +20065,7 @@ app.get("/", (req, res) => {
     "ice-calendar":      { label: "Ice Participant Calendar", icon: "❄️", desc: "Participant-filtered monthly ice program calendar", color: "#0ea5e9" },
     qoq:                 { label: "QoQ Revenue Comparison", icon: "📉", desc: "Quarter-over-quarter GL revenue comparison with delta analysis", color: "#8b5cf6" },
     "programs-schedule": { label: "Program Schedule", icon: "🗓️", desc: "Every class and camp meeting by date, location and site — instructor, confirmed count, and a link to each roster", color: "#7c3aed" },
+    "cost-recovery": { label: "Cost Recovery", icon: "⚖️", desc: "Enter what each program costs to run, then read the profit and loss by season, quarter, fiscal year or month — against the cost recovery target for its tier", color: "#0f766e" },
     // The per-org data reports, as the ONE card org.html actually draws. The
     // description is the card's own wording so the two surfaces agree.
     [DATA_REPORTS_KEY]:  { label: "Data Reports", icon: "📋", desc: "Row-level reports with roll-ups, built to print and to export", color: "#b45309" },

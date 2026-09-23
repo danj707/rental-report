@@ -7927,6 +7927,738 @@ per-case **`expectsConsoleError`**, because a case that drives a failing respons
 expects the page to log it, and without that an error-path case can only ever
 fail.
 
+## THE COST RECOVERY / P&L REPORT — the first surface here that WRITES (2026-09-22)
+
+Laurel at Shrewsbury, on a call, wanted a cost recovery / profit-and-loss
+report: take her programs, enter her costs, get a P&L. Dan, after seeing the
+mockup: *"new report, and anyone with the report link can edit costs"*, then
+*"build the new P/L report first, laurel loved it."*
+
+**NOTHING IN REC RECORDS WHAT A PROGRAM COSTS.** Checked before anything was
+built: no cost table, no instructor rate on the section, no facility
+charge-back. So every cost here is TYPED BY THE ORG, and the page says so on
+screen rather than letting an entered figure sit beside a measured one looking
+identical — the `DIR_FT_MINUTES_PER_REG` rule.
+
+### IT COST NO CARD PUSH, NO FLIP AND NO EXTRA METABASE TIME
+
+The page reads **`/:org/programs/api/data`** — card 17295, the same URL with the
+same parameters the Programs report sends, so the two **share one feed cache
+entry**. A `SHARED_UUIDS` entry of its own would have given it a second cache
+key for one card, which is the doubled prewarm already recorded here; that is
+also why it is in `HEALTH_SKIP_REPORTS` (the card is probed once, under
+`programs`) and why it has no `REPORT_DEPENDENCIES` entry — the `qoq` precedent,
+a report derived from another card.
+
+**The gate is therefore `SHARED_UUIDS.programs`**, not a card of its own.
+
+### THE THREE DECISIONS THE WHOLE THING RESTS ON
+
+**1. COSTS ARE KEYED ON PROGRAM *AND SEASON*.** 26% of Shrewsbury's programs
+recur, and a swim lesson costs a different amount to run in July than in
+January. Keyed on the program alone, entering this winter's figure would
+**silently rewrite the P&L of every season already closed**. `Carry costs
+forward` is what makes that bearable — it copies the most recent earlier
+season's cost and tier into an empty one, so a recurring program is one click
+rather than five fields typed again.
+
+**2. A DATE PERIOD IS AN ALLOCATION, AND THE PAGE SAYS SO IN WORDS.** Season
+mode is all-or-nothing; month/quarter/FY spread a program's own money across its
+own run days. **No card reports a program's money month by month** — card 21055
+is org-wide by month and cannot be split per program — so pro-rata is the best
+the available data supports and pretending otherwise would be an invented
+number. The parts sum to exactly 1 across the periods a program spans, which the
+spec pins: a share scheme whose slices do not add up moves money into and out of
+existence as the reader changes period.
+
+**A program with no dates cannot be placed in a date period at all.** It is
+COUNTED and named on screen, never silently dropped — that is how a total stops
+reconciling with the season view beside it.
+
+**3. ON TARGET MEANS INSIDE THE BAND, NOT ABOVE ITS MIDPOINT.** The tiers are
+the GreenPlay cost recovery pyramid every parks department benchmarks against
+(1 mostly community 25–50%, 2 considerable community 50–75%, 3 balanced
+75–100%, 4 mostly individual 100–125%). **A visual review of the mockup caught
+this**: tier 1 at 34% was painted under-target, when 34% sits squarely inside
+25–50% and is exactly what tier 1 is *for*. `crChipState` is the one definition,
+read by the row chip, the tier ladder and the CSV.
+
+**THE TIER IS TYPED TOO, and it is deliberately not guessed from the activity
+name.** An untiered program is counted in the money and left out of the ladder,
+which is stated. A keyword-derived tier would be a confident classification of
+somebody's programming that nobody asked for.
+
+### THE MUNICIPAL FISCAL YEAR IS JULY–JUNE
+
+Massachusetts has run one since 1974 and Shrewsbury is on it, so July 2026 is
+**FY2027**. `crFyOf` is one function and the spec drives both sides of the
+boundary. Season and fiscal year are **different, non-reconciling cuts** — a
+season straddles a July — and the report offers both rather than pretending one
+is the other.
+
+### WRITES, AND THE TOKEN IS THE WHOLE GATE
+
+Dan's call. It is **deliberately not** behind `isReportSettingsAdmin`: that gate
+exists for settings that spend a shared Metabase card, and these figures cost
+nothing and belong to the org. **What pays for it is the record** — every save
+posts to Slack naming the org and the program, debounced per PROGRAM because
+costing a morning's programs is a decision per program.
+
+**Say it plainly when handing this over: any staffer holding the report link can
+change a number the P&L is computed from.**
+
+- **PATCH SEMANTICS, NOT REPLACE, and that is the whole concurrency story.** It
+  is a read-modify-write on one document shared by every staffer at the org.
+  Sending only the changed keys means two people editing two different programs
+  both keep their work; a whole-document PUT makes the second save discard the
+  first. Mutation-tested on both stores.
+- **An entry that normalises to nothing is a CLEAR, not a no-op.** Somebody
+  zeroing every box means the program is no longer costed, and leaving the old
+  record makes the screen disagree with the store on reload.
+- **Integer CENTS**, like every other money figure here. The wire format is
+  dollars because that is what somebody types.
+- **`no-store` on the read.** An ETag'd list is exactly how a saved figure
+  appears not to save — already recorded for the saved-view list.
+- **The save pill must be able to say three things** — saved, saving, and
+  could-not-save. Telling somebody their figures are kept when they are not is
+  the worst outcome this page can produce, so a failed flush re-queues the edits
+  and names the failure. One drain for both stores, or the pill says "All costs
+  saved" while the ledger half is still in flight.
+- **THE STORE PATH IS A FUNCTION**, never `const F = path.join(DATA_DIR, …)` at
+  module scope — that read is stale in db mode and its write lands on the
+  container's own disk. Recorded three times; a function so it cannot recur.
+
+### THE OPEN-ENDED TAB — Jason at Windham, and the ask that changed shape twice
+
+*"add a series of 'open ended' rows where he can add expenses, profit, etc. Not
+tied to any program. Maybe another tab of open ended stuff? Start with say 25 to
+50, then let them add additional rows."*
+
+He then sent the workbook he keeps — a seventeen-column per-trip sheet (cost to
+public, cost to us, participants, cash income, SR scholarship income, supplies,
+employee cost, facility cost, profit/loss) — and I started reproducing it.
+**Then the sentence that settled it:** *"It's a really long, large spreadsheet
+that isn't very useful to pull any information from. There are lots of places
+for human error to come in and it's not great for at a glance report."* Plus how
+they actually budget: *"each account has about 10 separate lines under it that we
+break items down to. Like staff wages, supplies, maintenance."*
+
+**So reproducing his columns would have rebuilt the problem in a browser.** A
+row is **ACCOUNT → LINE ITEM → CATEGORY → AMOUNT**, in/out, with a season or a
+date range, and the tab **rolls up by account and by category above the rows** so
+it reads at a glance. The per-trip detail he says nobody pulls anything from
+stays in the sheet it came from; a trip becomes an account with an income line
+and a few expense lines.
+
+*Generalise it: when somebody sends the artifact they use today, the columns are
+evidence about their vocabulary, not a specification. Ask what is wrong with it
+before copying it.*
+
+- **OVERHEAD IS KEPT APART FROM DIRECT COST, and that separation is the point
+  rather than tidiness.** The GreenPlay bands the tier ladder is drawn against
+  are *direct* cost recovery bands, so folding the insurance and the truck into
+  a swim lesson would push every program under its tier for a reason that has
+  nothing to do with the program. Direct recovery answers *"is this program
+  priced right"*; full cost recovery answers *"did the department break even"*,
+  and the KPI strip shows both.
+- **A ledger row is placed by the SAME rule a program is**, so one line of
+  overhead cannot be counted twice by switching period — and a row carrying
+  neither a season nor dates is counted as UNPLACED and said on screen. The rule
+  is symmetric: in season mode a dated row with no season is unplaceable too.
+- **Blank rows are rendered, not stored.** Thirty to type into, `+ 25 more` to
+  grow; a row is minted only once it says something, and **every input on that
+  row is re-pointed at the new id** or the next keystroke mints a second record
+  and the reader's line splits in two as they type.
+- **THE CATEGORY CARRIES ITS OWN DIRECTION**, and that is the half that makes
+  the standing list worth having. Dan: *"Having an option for predefined
+  categories on the open ended entry items would be nice too — merchandise,
+  fees, supplies, etc. Come up with 20 or so 'recreation' style category
+  groups."* There are **26**, ordered money-in then money-out (program &
+  registration fees, memberships & passes, admissions, rentals, merchandise &
+  concessions, trips, grants, sponsorship, scholarship funding → staff wages,
+  instructor pay, benefits, officials, supplies, equipment, uniforms,
+  maintenance, facility & utilities, transport, contracted services, marketing,
+  permits & insurance, food, training, technology, other). Picking one **sets
+  whether the line is money in or out**, so an expense typed into the income
+  column — the commonest error in a hand-kept sheet, and a silent one, since
+  the total still adds up and only the sign is wrong — cannot be made by
+  accident.
+- **It is a datalist, not a select**, so a category the org invented is kept and
+  simply leaves the direction alone: the ~10 lines under an account are theirs
+  and a closed list of ours would be wrong for the first department that opens
+  it. The list is NOT sorted A–Z, because that interleaves income with
+  expense and the grouping is the useful order.
+
+### Guards
+
+`scripts/cost-recovery.spec.js` (**126 assertions, in CI**), which LIFTS AND RUNS
+the page's own helpers — every defect here is arithmetic about a share or a
+threshold and a regex passes on an inverted comparison — plus a live half that
+boots a real server and drives the real routes. `SKIP_SOURCE=1` / `SKIP_LIVE=1`
+drop either half.
+
+**AND IT SAID "in CI" WHILE NOT BEING IN CI — for the whole of the first PR.**
+Every spec here gets its own step in `.github/workflows/ci.yml`, by hand, and a
+new spec file is simply not run until somebody adds one. The commit message, the
+PR body and this very paragraph all claimed it was wired; the workflow had no
+step for it, so the 126 assertions ran exactly once, on my machine, and the
+mutation testing behind them guarded nothing on any later push. **Judge "is it in
+CI" by reading the workflow, not by reading the claim** — the claim is written by
+whoever also forgot the step.
+
+**A SWEEP OVER `scripts/*.spec.js` AGAINST THE WORKFLOW FOUND THREE MORE**, and
+all four are wired now. `report-visibility.spec.js` is the one that mattered: it
+is the guard for the rule this report depends on — the `MAY_BE_VISIBLE`
+**whitelist** that freezes every-new-report-ships-hidden. **This file had claimed
+twice that it was in CI. It never was**, so the diff that would have failed a
+guard — `new Set([])`, invisible in review, shipping to 29 dashboards on merge —
+would have sailed through. `adaptive-cache.spec.js` and `cache-filename.spec.js`
+were unwired too, and both passed all along.
+
+### TWO HUNDRED LINES OF CSS PRINTED ACROSS THE TOP OF THE REPORT
+
+Dan, opening the preview he had just been handed: ***"errrr"***, with a
+screenshot of the entire stylesheet rendered as body text above the toolbar.
+
+**THE HTML TOKENIZER ENDS A `<style>` ELEMENT AT THE FIRST `</style` IT MEETS.**
+It is not parsing CSS, so a CSS comment is no protection — and line 20 of a
+205-line block said, in a comment, that the Recess links *"sit AFTER this
+`</style>`"*. Everything from line 21 on became visible text, and the page
+rendered **unstyled**. It cannot be escaped, only reworded; the same rule
+governs `</script` inside a JS string, which is the more famous half.
+
+**NOTHING CAUGHT IT, and the list is the point.** `node --check` passes (the
+HTML is not JS). The JSX parse check skips this page — it has no JSX, which is
+the *deliberate* decision recorded above. The server boots and serves 200 with a
+complete document. **All TEN cost-recovery render cases passed**, because the
+page is not broken, it is unstyled, and every one of them keys on a computed
+figure — every figure was right. `recess-palette.spec.js` passed too: it
+compares the skin's link position against the FIRST `</style>`, which was the
+one in the comment, so the assertion was true and meaningless.
+
+*Generalise it: a page that renders the wrong way round is invisible to every
+assertion about what it computed. When the thing that can break is how it LOOKS,
+something has to look.*
+
+**Two guards, because they catch it at different costs.**
+
+- **`scripts/markup-blocks.spec.js` (97 assertions, in CI)** — milliseconds, and
+  it covers **all 46 served pages** rather than only the ones a render case
+  visits. **The test is a COUNT, which is what makes it sound rather than
+  fussy:** outside HTML comments a page has as many closers as openers, and a
+  `</style>` in a CSS comment makes closers EXCEED openers (1 and 2 here).
+  Measured across all 46 pages: **zero false positives**. HTML comments are
+  stripped first, because several pages legitimately explain the cascade rule
+  that way — including, after the fix, this one. It carries a
+  vacuous-derivation assertion and proves it discriminates on the bug exactly
+  as it shipped rather than trusting that a count is the right instrument.
+- **A global per-case assertion in `ci-check-render.js`**, beside the
+  unrendered-escape and leaked-JSX ones and for the same reason — it is a CLASS
+  of bug, and every existing case sails past it. Keyed on CSS **declaration
+  syntax** (`{ … prop: value; … }`) rather than any one property, since that is
+  not English and appears in no copy here. **Verified by reintroducing the bug:
+  all ten cases fail, each quoting the leaked rule, where before all ten
+  passed.**
+  **And clean across the whole harness: 454 of 454 cases pass with it and ZERO
+  false positives**, so no page's legitimate copy trips the CSS-declaration
+  regex. That closes the caveat `2b34e46` carries in its own commit message,
+  which was written while the sweep was still running — recorded here rather
+  than left in a message nobody re-reads.
+
+**AND THE SPEC-COVERAGE GUARD BELOW EARNED ITSELF ON ITS FIRST NEW SPEC** —
+`markup-blocks.spec.js` was written, and the very next run named it as having no
+step in `ci.yml`. That is the whole mechanism working on the first file it could
+have been forgotten for.
+
+### THE GUARD OVER THE GUARDS — `scripts/spec-coverage.spec.js`
+
+Dan: *"yeah sweep in that spec-coverage guard and the two cache specs"*. **8
+assertions, in CI, last in the validate job**, and it is the fix that makes the
+rest of this section unable to recur.
+
+**THE LIST IS DERIVED FROM THE DIRECTORY, NEVER TYPED.** That is the whole
+point, and it is the fourth time this file has had to write it down: `gl_codes`,
+`refunds`, `pii` and `sites` each reached the screen and not the PDF, each was
+fixed with a spec NAMING that one filter, and each of those specs was then
+satisfied by the next filter nobody added to it. *A guard you have to remember
+to extend is the thing that failed.* Add `scripts/foo.spec.js` with no step and
+the next run fails naming `foo` **and printing the YAML to write**.
+
+- **A SPEC NAMED ONLY IN A COMMENT DOES NOT COUNT**, and that is proven on a
+  synthetic workflow rather than asserted about the parse. `ci.yml` is thick
+  with comments that quote the things they describe, and this file already
+  records assertions tripped by a comment quoting the string they forbade —
+  so the parse reads `run:` lines and nothing else. A **commented-out** step
+  does not count either: that is a step somebody switched off.
+- **IT IS NOT js-yaml.** That parser resolves here only as a TRANSITIVE
+  dependency, so an unrelated `npm` change would make this **die with a module
+  error rather than fail by name** — the recorded rule that a guard which dies
+  has not told anyone what broke.
+- **A VACUOUS-DERIVATION ASSERTION RUNS FIRST**, because every claim below it
+  compares two derived sets: if the glob or the parse silently stops matching,
+  both collapse to empty and the whole file passes on nothing.
+- **`NOT_IN_CI` names each exemption WITH ITS REASON**, never a pattern — an
+  exemption that is a regex quietly widens into *"any spec I did not want to
+  wire"*, which is the hand-kept list this replaces. It is **empty today**. A
+  key naming a spec that no longer exists fails, or the next file to take that
+  name inherits a pass it never earned; so does a key for a spec that IS wired.
+- **It covers ITSELF**, or the guard is one rename away from being the thing it
+  guards against.
+
+**Mutation-tested eleven ways, all eleven caught by an assertion that names the
+defect**: a brand-new spec with no step (the bug itself), an existing step
+deleted, a step commented out, a step replaced by a comment mentioning it, the
+glob broken, the parse broken, a stale `NOT_IN_CI` key, a `NOT_IN_CI` entry with
+no reason, `NOT_IN_CI` used to excuse a spec that is wired, this guard's own step
+deleted, and a `run:` naming a spec that does not exist.
+
+**91 specs run from `ci.yml`, 91 pass, 0 fail, 0 skipped.** And my own suite
+runner reported **three skips that were not skips** — it matched the word
+*"skipped"* inside passing assertion labels (*"malformed rows are skipped without
+throwing"*). Nth instance of the recorded rule in a new costume: a runner that
+cannot tell the three states apart has not measured them. The number above is
+after reading what those three actually printed.
+
+**Mutation-tested 18 ways, 17 caught by an assertion that NAMES the defect**:
+the season share ignoring the season, pro-rata no longer dividing by the run
+(so the parts stop summing), on-target comparing the midpoint instead of the
+band, costs keyed on the program alone so seasons merge, an uncosted program
+reading 0%, the fiscal year becoming the calendar year, the ledger no longer
+counting unplaced rows, overhead folded in as income, the store dropping the
+tier, **each** PUT replacing instead of merging, a blank ledger row stored as a
+record, the report shipping VISIBLE, the costs read losing `no-store`,
+`cost-csv` off the beacon allowlist, the Slack line no longer naming the
+program, and the store path back at module scope.
+
+**THE EIGHTEENTH IS GENUINELY BENIGN and is recorded as such** rather than
+dressed up: `normalizeCostEntry`'s `n < 0` test is redundant, because
+`Math.round` of a negative is still negative and the `cents <= 0` guard below it
+already refuses the value. **The load-bearing guard was then mutated on its own
+and IS caught by name.** A mutation that does not reproduce a bug has not tested
+anything.
+
+**THE SPEC CAUGHT A REAL DEFECT ON ITS FIRST RUN**: `normalizeCostEntry` dropped
+`tier` entirely, so the page sent it, the store binned it, and a reader's tier
+survived until the next reload.
+
+**And it DIED instead of failing by name the first time** — Nth instance. Every
+live read goes through a safe accessor now, so a route answering the wrong shape
+fails on the assertion that provoked it.
+
+**Two of my own assertions were satisfied by different code.** The message-branch
+slice landed on the **debounce key chain**, because the first
+`rec.event === "cost-save"` in server.js is the debounce key — so both Slack
+assertions passed on a build with no message branch at all. Scoped to
+`} else if (rec.event === "cost-save") {` now, with a was-it-found assertion
+ahead of it.
+
+**Ten `ci-check-render.js` cases, because no source assertion can see any of
+this** — the page reads plausibly whichever period it prices and whichever end
+of a band it compares against. The fixture is built so a wrong implementation
+cannot look right: **Fall '26 is ONE program worth $70,000 whole, and FY2027 Q1
+is FOUR programs worth $60,908** once each is pro-rated. One number separates a
+page that honours the mode from one that ignores it, and every figure was
+computed by hand before the first run and matched exactly.
+
+**A RENDER CASE OF MINE SURVIVED ITS OWN MUTATION**, and the fix is the recorded
+one: *"overhead is its own figure"* keyed on the WORDS `Overhead`, `88%` and
+`full cost`, all of which a build folding overhead into the direct-cost tile
+still renders. It keys on
+`data-cr-money="direct=80000 overhead=2700 fullrev=71200 fullcost=82700"` now.
+Browser-mutation-tested four ways afterwards — overhead folded into direct
+cost, one blank ledger row instead of thirty, the roll-up no longer grouping by
+account, and the category no longer setting the direction — each failing
+**exactly** the case that names it while the other nine keep passing. That last
+case keys on the ledger NET rather than on the dropdown's value: a build that
+flips the select and not the arithmetic renders identically.
+
+**A defect the render check found that review did not:** with one fiscal year of
+data, Compare mode picked the same quarter for both sides and drew no deltas at
+all — `list[at - 1]` clamps to the period itself at index 0. It falls through
+prior-year → previous → next now, and when a window genuinely holds one period
+it says so rather than rendering a comparison with nothing in it.
+
+### NOT DONE, and worth knowing
+
+- **THE DEFAULT WINDOW IS TWO FISCAL YEARS**, so a quarter can be compared with
+  the same quarter a year earlier the moment the page opens. That is a wide ask
+  of a heavy card: Shrewsbury measured 565 sections in 22.1s over 13 months, so
+  two FYs is ~35–45s cold and inside the 60s first try. **Apex would time out**,
+  and apex is already parked on card 17295 — the report ships hidden, so only
+  orgs Dan switches on are affected, and the reader can narrow the window.
+- **Costs do not reach the PDF, the emailed report or a saved view.** This
+  report has no PDF route and is not in `EMAIL_SUBSCRIBABLE_REPORTS`; the CSV is
+  the export and it honours the mode, the period, the tier filter and the
+  hide-blank toggle.
+- **No per-org cost categories for the PROGRAM table.** The five (instructors,
+  staff, supplies, facility, other) are fixed, because a per-org list makes two
+  orgs' reports incomparable and turns a roll-up into a union of whatever anyone
+  typed. The LEDGER's categories are free text for the opposite reason — those
+  are the org's own budget lines.
+- **No audit trail of who changed a figure.** Every save is in `events.jsonl`
+  and in Slack with the program named, but the platform has no user identity
+  behind an org token, so it cannot say which staffer typed it.
+
+### THE COST FIELD TYPED BACKWARDS (2026-09-22)
+
+Dan, on the preview he had just been handed: *"the cost button doesn't quite
+work correctly, can't enter numbers right."*
+
+**MEASURED IN A BROWSER RATHER THAN READ: typing `3251` entered `152803000`,
+and `12.50` came out `50.21`.** Digits went in RIGHT TO LEFT.
+
+`render()` rebuilds the table's `innerHTML`, and the `input` handler called it
+on **every keystroke** — so the box being typed into was destroyed and replaced
+mid-word. The replacement was focused fresh, a number input's caret then sits at
+**position 0**, and each further digit was inserted at the START.
+
+**AND THE LINE THAT WAS MEANT TO PREVENT IT COULD NEVER HAVE RUN.** It called
+`setSelectionRange` to put the caret back, and **`setSelectionRange` THROWS on
+`type="number"`** — the selection API is defined for text, search, url, tel and
+password only. So the caret restore threw an uncaught error on every keystroke,
+on top of the reversal it existed to fix. Its comment read *"Keep the caret
+where it was"*, which is the kind of comment that stops the next person looking.
+
+**THE LEDGER TWELVE HUNDRED LINES AWAY ALREADY HAD IT RIGHT**, in its own
+words: `renderLedgerTotalsOnly()`, *"the row itself is left alone so the caret
+stays put."* Same file, same session, opposite answer. *A rule written once in
+one function does not generalise itself to the next one.*
+
+**`step="5"` was the third defect**, and it is what Dan's screenshot shows the
+spinner for: a cost of `3251` is not a multiple of five, so the field was
+`:invalid`, and the arrows and the spinner moved money **five dollars** at a
+time. `step="any"` on all three money inputs.
+
+### THE FIX, and the property that makes it safe
+
+`patchRow(k)` updates one row's derived cells in place — Net, Recovery, the
+status chip, the Total row, the KPI strip and the tier ladder — and touches no
+`<input>` that has the caret. **`render()` is still the authority and now runs
+on `change`, i.e. on blur**, so anything the patch misses is reconciled the
+moment the field is left. That is what keeps the in-place patch an optimisation
+rather than a second source of truth.
+
+- **BY ROLE, NOT BY POSITION.** The first draft read `tr.children[6]` — the
+  `cells[col]` trap this file already records for `sortUsage`, where adding a
+  column lands every figure under the wrong header. The three cells carry
+  `data-cr-net` / `data-cr-rec` / `data-cr-chip` and are queried by those.
+- **A ROW CAN LEAVE THE SLICE MID-EDIT.** Clear a cost with *hide programs with
+  no cost* on and `sliceFor` drops that row, so `r` is null while the row is
+  still on screen until blur. Its figures are **blanked** rather than left
+  showing the cost that was just deleted.
+- **The breakdown editor had the mirror defect** — typing a line item moved the
+  KPI strip and left its own row showing the old Net, Recovery and status. It
+  shares `patchRow` now, so the two cannot drift apart again.
+- `currentSlices()` is the one place that decides which period is on screen;
+  three copies of that derivation is how one surface starts drawing a different
+  quarter from the other two.
+
+### Guards
+
+**Three `ci-check-render.js` cases, and the reason they did not exist is the
+lesson.** All ten cost-recovery cases passed on the shipped build, because every
+one of them keys on a figure the page computed from a cost **already in the
+fixture** — no case had ever put a KEYSTROKE into the field. The bug lives
+between keystrokes, so only typing can see it. *A control with ten green cases
+and no case that operates it is an untested control.*
+
+Mutation-tested **nine ways, all nine caught by a case that names the defect**
+while its neighbours keep passing: the bug exactly as it shipped (`render()` on
+every keystroke), each of Net / Recovery / the Total row left stale, `step="5"`
+restored, cells looked up by position again, a row leaving the slice keeping the
+deleted cost, the breakdown editor no longer patching its row, and the blur
+`render()` removed so `patchRow` becomes the only truth.
+
+**THREE SURVIVED A FIRST PASS, and every one was my assertions rather than the
+mutations.** The case read `data-cr-rec` — **the ATTRIBUTE a test reads, not the
+TEXT Dan reads** — so a build that stopped repainting the cell passed it;
+nothing asserted `checkValidity()`, so `step="5"` sailed through; and nothing
+left the field, so removing the blur `render()` changed nothing observable.
+*An assertion that reads the hook instead of the rendered value is checking that
+the page still has a handle, not that it drew the right number* — and a case
+that never blurs cannot see the reconciliation the whole design rests on.
+
+**The failure messages are the bug in the reader's own terms**, which is what
+makes them worth keeping: the clearing case fails reading
+`after value="" net=−$10,000 rec="88"` — the deleted cost still on screen — and
+the typing case reproduces Dan's report as `typed="152803000"`.
+
+**AND I TRIED TO EDIT THE FILE WHILE THE MUTATION RUNNER HELD IT** — the trap
+recorded twice in this file, walked into a third time. The edit aborted only
+because its anchor assertion failed on the runner's own `/* stale */`. The
+runner restores from the bytes it saved, so a successful write would have been
+silently reverted. *Check nothing is holding a file before editing it, and keep
+the anchor assertions strict enough to notice.*
+
+### A RATE OVER TWO POPULATIONS — the Total row read 2738% (2026-09-22)
+
+Dan, with the bottom of the Programs table on screen: *"alignment issues on the
+bottom. these should all be dollars"* — over a Total row reading
+`Total · 82 programs · $202,024 · $7,378 · $194,646 · 2738%`, above a footnote
+saying **80 still need a cost**.
+
+**THE COLUMNS ARE NOT MISALIGNED, AND THAT WAS MEASURED BEFORE ANYTHING WAS
+CHANGED.** A browser was driven at the real page and the bounding boxes of the
+header, the Total row and a body row read back: **9 cells each, identical left
+and right edges to the pixel**, in three different states (everything costed,
+nothing costed, and a fattened 82-row fixture at 1600px). So there is no
+`colspan` off-by-one here — which is worth saying plainly, because that IS the
+recorded failure for this symptom (*"adding a column is the change that shifts
+a footer"*) and it is the first place anybody would look.
+
+**WHAT IS WRONG IS THE ARITHMETIC: revenue was summed over all 82 programmes
+and cost over the two that had one.**
+
+```js
+d.rows.forEach(function (r) {
+  rev += r.rev;                                   // every programme
+  if (r.cost !== null) { cost += r.cost; }        // the two that are costed
+});
+…rev / cost * 100                                 // 2738%
+```
+
+Two different populations in one ratio — **the fee worksheet's own bug, one
+report over**, where the fixed fee stayed org-wide while every other fee shrank.
+`$194,646` is not a net of anything and `2738%` is not a recovery rate.
+
+### THREE REDUCERS HAD THEIR OWN COPY, which is why it shipped
+
+`totals()` (the KPI strip), `renderTableFoot()`'s own loop (the Total row) and
+`renderTiers()`'s `agg` (the ladder) each summed the rows separately and each
+made the same mistake. **The tier ladder is the one that matters most: it is
+the surface the whole report is drawn against**, and a tier holding twenty
+programmes with one costed was drawing its bar out of that one's cost and all
+twenty's revenue.
+
+`crCostedSum(rows)` is the one predicate now, at module scope beside
+`crRecovery` so a spec can RUN it. **The revenue in the numerator is the revenue
+of the programmes in the denominator**, and the count travels with the figure so
+the page can name the population.
+
+- **IT IS NOT THE COLUMN TOTAL AND MUST NOT REPLACE IT.** The Revenue column
+  still sums every row, because that is what the column holds. `t.rev` is
+  unchanged; `t.costedRev` is new.
+- **The rate goes through `crRecovery`**, not the arithmetic inline, or the
+  portfolio and the row cells can disagree about a zero cost.
+
+### TWO POPULATIONS, TWO ROWS — and the second one disappears
+
+A single row whose Revenue, Cost and Net cannot be checked against each other is
+its own contradiction, so the footer splits:
+
+| | Revenue | Cost | Net | Recovery |
+|---|---|---|---|---|
+| `Total · 82 programs` | all 82 | the costed | **—** | **—** |
+| `Costed · 2 of 82` | the costed | the costed | ties | a real rate |
+
+**Once every programme is costed the two populations are the same one and the
+second row is not rendered at all**, which is the state the fixture's
+Spring/Summer 26 period is in — so a build that always renders it fails a case
+by name rather than telling an org that has costed everything that only some of
+it is costed.
+
+**The KPI strip names the population too** (`costedNote`), on the surplus and
+the recovery tiles. It prints all-programme revenue in the tile beside them, so
+leaving it unsaid is exactly how a rate over two programmes gets read as the
+whole portfolio's — the recorded lesson from the Programs summary, where *the
+arithmetic was fine and the labels were the defect*. **Full-cost recovery takes
+the same population**; the Revenue tile does not, because that is the money the
+department actually took.
+
+### Guards
+
+`scripts/cost-recovery.spec.js` 126 → **158 assertions**, in CI, which LIFTS AND
+RUNS `crCostedSum` — every defect here is a comparison and a regex passes on an
+inverted one — plus assertions **scoped to each of the four readers**, since a
+file-wide test is satisfied by whichever one still happens to call the helper.
+Each slice carries a was-it-found assertion ahead of it.
+
+**Two `ci-check-render` cases, and ONE NUMBER separates the two builds.** The
+fixture's quarter view is 4 programmes with 3 costed: the shipped build makes
+`$60,908 / $91,895` into **−$30,987 and 66%**, the fixed one withholds both from
+the Total row and puts **−$40,987 and 55%** on a row naming the three
+programmes they are over. A case keyed on *"a Total row rendered"*, or on the
+revenue alone, passes on the bug — which is why all thirteen existing cases did.
+
+**Mutation-tested six ways, all six caught by an assertion that names the
+defect**: the bug exactly as it shipped, `crCostedSum` counting the uncosted
+rows' revenue, the Total row printing a net and a rate it cannot make, the
+costed row rendered when nothing is left to cost, the KPI strip no longer naming
+the population, and full-cost recovery reverting to all-programme revenue.
+
+**THE TIER LADDER'S GUARD IS A SOURCE ASSERTION, and it is named as such rather
+than implied.** No fixture period has a tier holding both a costed and an
+uncosted programme — a tier comes from the cost record, so an uncosted
+programme is usually untiered — and giving one a tier-only record would break
+the existing *"an uncosted program says so"* case, which asserts the untiered
+note. So that mutation SURVIVES all fifteen render cases and is caught by the
+spec's scoped slice of `renderTiers`.
+
+### NOT DONE
+
+- **The alignment complaint is answered with a measurement, not a change.** If
+  Dan was pointing at something else on that screen, the geometry numbers above
+  are what to re-read first.
+- **No second footer row on the Ledger tab.** Its roll-ups are over rows that
+  all carry an amount, so there is one population there and nothing to split.
+
+### THE POLISH PASS — seven asks, and one of them reverses Dan's own wording (2026-09-22)
+
+Dan, after reading the report against Shrewsbury's real numbers: *"ok a bunch of
+feedback here on the cost recovery report, don't hate me."* Seven items. Six are
+what they look like; the seventh is the one worth reading.
+
+### "RED IS < 100, GREEN > 100" WOULD PAINT A CORRECTLY-RUN DEPARTMENT RED
+
+*"cost recovery depends based the percentage over 100 — red is < 100, green >
+100, that kind of thing."*
+
+**On this report 100% is the wrong line to draw, and drawing it is the midpoint
+mistake again.** Tier 1 is MEANT to recover 25–50%: a department running mostly
+community programming — open play, a summer concert, the things a town funds
+because everyone gains — would be painted red for doing exactly what the pyramid
+asks of it. That is the same error as grading tier 1 at 34% against its 35%
+target when 34% is squarely inside its band, which this report already exists to
+avoid.
+
+So `crRecoveryTone` judges against the portfolio's **own blended target**, which
+is the figure the card's sub-line was already printing beside it — *"target 35% ·
+ahead by 98 pts"* — so the colour and the words now agree instead of
+contradicting each other. Green at or above target, amber within 10 points below,
+red further under.
+
+- **NO TARGET MEANS NO COLOUR.** With nothing tiered there is nothing to judge
+  against, and a red tile there would be a verdict on a portfolio nobody has
+  classified. Same rule as `null`-not-zero everywhere else here.
+- **The discriminating case is under 100 and green**: Fall '26 recovers 88%
+  against a blended 85%. A build measuring against 100 paints that red and fails
+  one render case while nothing else on the page moves.
+
+### THE OTHER SIX
+
+- **Dollar signs on every amount.** Drawn as a `::before` on a `.money` wrapper,
+  **never put in the value** — a `$` inside a `type="number"` makes the field
+  invalid, empties it, and takes the arithmetic with it. Only a COMPUTED style
+  can confirm it arrived, so the guard reads `getComputedStyle(el, "::before")`.
+- **Hide free programs**, and Dan named the limit in the same breath: *"There
+  still might be associated costs, so I don't want to exclude them."* So the
+  filter hides a program with **no revenue AND no cost entered**. A free program
+  somebody has costed is pure subsidy — the most interesting line this report
+  draws — and it survives the checkbox. **The fixture needs a PAIR**, one costed
+  and one not: with one kind of row, a build that hides every free program
+  renders an identical table and no case can tell them apart. What was hidden is
+  named beside the row count, because an exclusion nobody can see is how a total
+  stops being trusted.
+- **Colour the strip.** Money in green, money out red, the bottom line amber —
+  the convention every P&L already uses. The tints are **this page's own chip
+  palette**, not new values, and they are compound selectors on purpose: the
+  skin's `.sum-cards > .sum-card` is (0,2,0) and these are (0,3,0), so they win
+  from the page without touching the shared sheet or adding a sixth KPI family
+  for `recess-palette.spec.js`'s detector to fail on. (That detector only matches
+  a rule whose selector is a single class at line start, so a compound one cannot
+  trip it — worth knowing before adding any rule here that paints a background.)
+- **Delete a row on the overhead tab.** There WAS one. It was gated on three
+  named fields, so a line carrying only a category had no way out, and it was a
+  bare glyph with no label that nobody found — *a control nobody can find is a
+  control that does not exist*, which is the Fast Track pin over again and is
+  exactly how this arrived, as a feature request for a feature that shipped. It
+  is gated on the row being STORED now, carries a title, and turns red on hover.
+- **Sortable headers.** Nulls last in BOTH directions: an uncosted program has no
+  net and no recovery, and sorting it as zero files the whole uncosted wall at
+  one end of a money column as though somebody had measured it. The sort is
+  applied in `sliceFor`, so **the CSV and the statement come out in the order on
+  screen**. The discriminating column is the NAME — the table already opens in
+  revenue order, so a Revenue click leaves every row where it was and passes on a
+  header wired to nothing.
+- **Lean into GreenPlay.** Dan: *"never even heard of that, but that's bad ass."*
+  The ladder now runs **tier 4 down to tier 1**, because a pyramid stands on its
+  base — community benefit at the bottom, individual benefit at the apex — with a
+  wedge that steps out as it descends, each tier carrying a plain-English verdict
+  (*inside the band* / *N pts above* / *N pts under*), and a line above it reading
+  this org's own numbers back against the model. **ABOVE IS NOT WORDED AS A
+  FAILURE**: a tier 1 program recovering 90% is priced like a tier 3, which is
+  worth knowing and is not a fault — the distinction `crChipState` already draws
+  between `over` and `bad`.
+
+### "WHAT'S NEXT" — the statement, which is what the typing is FOR
+
+*"What happens after I enter all this data for say, a season? Is there a
+'generate P/L statement' or something? Seems like we're missing the 'what's
+next'?"* He is right, and it is the dead-end pattern this file keeps recording:
+the report took entry and gave back a screen.
+
+A third tab renders a real statement — income, direct costs **split five ways**
+(which is what finally makes the per-program breakdown pay for itself; until now
+those five fields were typed, summed and never read apart again), overhead by
+account, the surplus direct and after overhead, cost recovery against the
+blended target, and a tier-by-tier reading against the pyramid.
+
+- **A VIEW, NOT A PDF ROUTE.** The page already holds every figure and a print
+  stylesheet already strips the chrome, so *"Print / save as PDF"* is a button the
+  reader's own browser answers. A Puppeteer route would need its own endpoint, a
+  `#report-ready` marker and every filter written into the URL, and buys the
+  reader nothing they cannot already get.
+- **THE ASSERTION IS THAT IT TIES.** Every figure comes from the same reducers
+  the screen uses — `totals`, `crCostByCat`, `crLedgerBreakdown` — so the render
+  case requires the statement's stamp AND the strip's to agree on the same four
+  numbers. **A statement built from its own second reduction renders a perfectly
+  plausible document**, and one that quietly differs from the report it was
+  generated from is worse than no statement at all.
+- `crLedgerBreakdown` was **extracted rather than written**: the roll-up on the
+  Overhead tab had that reduction inline, and a second copy is how the account
+  table and the overhead section start reporting different money for one period.
+
+### Guards
+
+`scripts/cost-recovery.spec.js` 158 → **216 assertions**, in CI, LIFTING AND
+RUNNING the four new helpers — every defect here is a comparison or a share, and
+a regex passes on an inverted one. **Mutation-tested 13 ways, all 13 caught by an
+assertion that names the defect**: recovery measured against 100% (Dan's literal
+reading), the free filter hiding costed programs too, the hidden count dropped,
+`crCostByCat` not pro-rating, a zeroed record counted as costed, the ledger
+breakdown folding in unplaced lines, the pyramid upside down, a SHORTFALL painted
+the surplus colour, nulls sorting first, the roll-up keeping its own reduction,
+the delete gated on three named fields again, the statement re-reducing, and the
+recovery tile losing its tone.
+
+**Eight `ci-check-render` cases**, because none of this is visible in source: a
+`$` drawn by CSS, a tint that only exists once a browser has resolved the
+cascade, a sort that only happens on a click, and a statement whose whole claim
+is arithmetic agreement with the screen beside it. **Browser-mutation-tested six
+ways, each failing EXACTLY the case that names it while the other 22 keep
+passing**: the `$` never drawn, the tints written at (0,2,0) so the skin wins,
+a header click that sets the key and never redraws, the Statement tab rendering
+nothing into itself, the delete button deleting nothing, and the pyramid drawn
+upside down.
+
+**ONE CASE ASSERTED SOMETHING THE FIXTURE CANNOT SHOW, and the failure is what
+said so.** The colour case required three distinct tints; **every period in the
+fixture runs at a shortfall**, so the amber surplus never renders and `net` was
+simply absent. Asserting three would have been a test written for a fixture
+rather than for the page. It requires `in` ≠ `out` — which is the whole cascade
+claim, since a build whose overrides lose renders one ground under every tile —
+and the surplus/shortfall mapping is pinned in the spec instead and **named there
+as a source assertion** rather than implied.
+
+**MY OWN MUTATION ANCHORS WERE WRONG THREE TIMES AND THE GUARDS WERE FINE** —
+a `·` escape in the runner against a literal `·` in the file, and two
+anchors matching in more places than intended (`"net" : "bad"` appears in
+`crRecoveryTone` itself as well as in the three strip branches). *A mutation that
+does not apply has not tested anything, and it reads as a hole* — the runner
+asserts the file actually changed and counts the anchor's occurrences against
+what it expects.
+
+### NOT DONE
+
+- **No PDF route and no email subscription**, unchanged. The statement prints
+  from the browser; the two CSVs are the file exports.
+- **The amber surplus is unproven in a browser**, for the fixture reason above.
+  A period that turns a profit would show it; inventing one to paint a tile is a
+  fixture written for a test.
+- **Sorting is not in the URL.** Which column you sorted by is not part of the
+  question the report answers, so it is not shareable — the same line the tier
+  filter draws.
+
 ## Working preferences (from Dan, dan@rec.us)
 
 - **Every finished task is reported in the TEMPLATE** — one or two sentences,

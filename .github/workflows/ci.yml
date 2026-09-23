@@ -136,6 +136,15 @@ jobs:
       - name: Cache memory budget spec (the cap is BYTES, and boot obeys it while it loads)
         run: node scripts/cache-memory-budget.spec.js
 
+      # Which entries are worth holding resident, and the key they are held
+      # under. Both were unwired until 2026-09-22 and both pass; they are the
+      # residency and filename halves of the same cache the budget above bounds.
+      - name: Adaptive cache spec (residency follows what people actually open)
+        run: node scripts/adaptive-cache.spec.js
+
+      - name: Cache filename spec (one key builder; a parameter shift cannot split write from read)
+        run: node scripts/cache-filename.spec.js
+
 
       # One loading state across every report, and a progress bar whose estimate
       # is measured rather than invented. Lifts and RUNS both the curve and the
@@ -392,8 +401,50 @@ jobs:
       - name: Org sync (no token to an unauthenticated caller; the push reconciles on orgId)
         run: node scripts/org-sync.spec.js
 
+      # Every new report ships HIDDEN, and this is the guard that freezes it:
+      # MAY_BE_VISIBLE is a WHITELIST of what may be seen without Dan asking,
+      # deliberately not a blacklist of what must be hidden — a blacklist is
+      # satisfied by forgetting to add to it, which is exactly how this goes
+      # wrong. A visibility default is the one change that ships to 29
+      # dashboards on merge and is invisible in review: the diff reads
+      # `new Set([])`. It had NEVER run here despite CLAUDE.md claiming twice
+      # that it did; wired now, on the PR that depends on the rule it freezes.
+      - name: Report visibility (new reports ship hidden; the eye does not lock the report)
+        run: node scripts/report-visibility.spec.js
+
+      # Cost Recovery. Every defect this report can have is arithmetic about a
+      # share or a threshold — a pro-rata allocation whose parts must sum to
+      # exactly 1, a band test where "on target" means INSIDE the band rather
+      # than above its midpoint — and a regex passes on an inverted comparison,
+      # so the spec LIFTS AND RUNS the helpers. The live half boots a real
+      # server and drives the two PATCH stores, because the merge semantics are
+      # what stop two people editing two rows from losing each other's work.
+      - name: Cost Recovery (the parts sum to 1; on target means inside the band; PATCH keeps both edits)
+        run: node scripts/cost-recovery.spec.js
+
       - name: Admin dashboard JS (inline blocks parse; every on*= handler resolves)
         run: node scripts/ci-check-admin-js.js
+
+      # A <style> or <script> block that ends EARLY. The tokenizer stops at the
+      # first `</style` / `</script` whatever the surrounding CSS comment or JS
+      # string says, so one sentence spelling out the closing tag drops the rest
+      # of the sheet into the body as visible TEXT. Shipped on cost-recovery.html
+      # and all ten of its render cases passed: the page was not broken, it was
+      # unstyled, and every case keys on a computed figure. Cheap, and it covers
+      # all 46 pages rather than only the ones a render case visits.
+      - name: Markup blocks (a style/script block that ends early renders as text)
+        run: node scripts/markup-blocks.spec.js
+
+      # THE GUARD OVER THE GUARDS, and it is here because this file is the one
+      # place a new spec has to be remembered. Cost Recovery shipped a
+      # 126-assertion spec, mutation-tested 18 ways, with no step naming it: it
+      # ran once on the author's machine and guarded nothing. The list is
+      # DERIVED from scripts/ rather than typed, because a hand-kept list is
+      # satisfied by forgetting to add to it — which is how this fails. Last in
+      # the job on purpose: it costs a second, and a full run has by then proved
+      # the steps it is counting actually work.
+      - name: Every spec is in CI (derived from scripts/, so a new one joins this on its own)
+        run: node scripts/spec-coverage.spec.js
 
   # The browser half. Split out on 2026-09-01: 223 render cases at ~2.8s each is
   # over ten minutes on its own, and it must never be the reason the spec suite

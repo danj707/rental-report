@@ -950,6 +950,25 @@ function programRows() {
     Object.assign(
       sec("Challenge Island", "Challenge Island Summer",        "sec-ci-1", 11, 20, "Spring/Summer 26",   URHO,   [0,    0, 2,  300], [  0,   0,   0,   0,   0], ["Pearlena Sok", 1],                 ["2026-08-15", "2026-09-15"], [ 3000,  0,  0,  0]),
       { "Section Status": "Canceled" }),
+    /* TWO FREE PROGRAMMES, and they are a PAIR on purpose. Dan asked to hide
+       the $0 wall — 37 of Shrewsbury's 82 programs charge nothing — and named
+       the limit in the same breath: "There still might be associated costs, so
+       I don't want to exclude them."
+
+       So one of these has a cost entered and the other does not, and only that
+       pair can tell a correct filter from one that hides every free programme:
+       with one kind of row a build that hides both renders an identical table.
+       Open Gym Night is the one that must SURVIVE the checkbox — a free
+       programme somebody has costed is pure subsidy, the most interesting line
+       this report draws.
+
+       Behind their own stub mode so no existing case's counts, totals or
+       period list move. Both are UNTIERED, which keeps them out of the pyramid
+       and leaves tier 1 reading 40% for the band case. */
+    ...(STUB_MODE === "freeprogs" ? [
+      sec("Open Gym Night",    "Open Gym Night Drop-In",         "sec-og-1", 30, 40, "Spring/Summer 26",   URHO,   [0, 0, 0, 0], [0, 0, 0, 0, 0], null, ["2026-07-01", "2026-09-30"], [0, 0, 0, 0]),
+      sec("Community Concert", "Concert on the Common",          "sec-cc-1", 80, 99, "Spring/Summer 26",   URHO,   [0, 0, 0, 0], [0, 0, 0, 0, 0], null, ["2026-07-01", "2026-09-30"], [0, 0, 0, 0]),
+    ] : []),
   ];
 }
 
@@ -1910,6 +1929,58 @@ const STUBS = [
      the org and the report, and a failed feed used to leave a bare card with
      nothing identifying it. Only a browser can tell that apart from a page that
      failed to render at all. */
+  /* COST RECOVERY's stored costs. MUST SIT ABOVE THE GENERIC /api/ CATCH-ALL —
+     that one answers { ok: true, rows: [] }, on which `costs` is undefined, so
+     every case would silently be testing the uncosted state. The same
+     fall-through is already recorded for the /api/data stub.
+
+     VALUES ARE CENTS, which is what the route stores and returns. They are
+     chosen to DISCRIMINATE rather than to look plausible:
+
+       Aquatic Exercise · Fall '26   rev $70,000  cost $80,000  ->  88%  tier 3 (75-100)  ON TARGET
+       Water Walking · S/S 26        rev $20,000  cost $50,000  ->  40%  tier 1 (25-50)   ON TARGET
+       Challenge Island · S/S 26     rev  $3,000  cost $10,000  ->  30%  tier 4 (100-125) BADLY UNDER
+       Lap Swim · No Season          rev $10,000  NO COST                                 COST NEEDED
+
+     So all four row states are live at once, and tier 1 at 40% is the case that
+     fails a build comparing against the band's MIDPOINT instead of the band —
+     40% is under tier 1's 35% target reading and squarely inside its 25-50%
+     band, which is what tier 1 is for. `stubMode: "nocosts"` answers an empty
+     store, i.e. an org opening this report for the first time. */
+  /* The OPEN-ENDED ledger — Jason at Windham's budget lines. Two accounts so the
+     roll-up has something to group, an INCOME line and EXPENSE lines so the net
+     is not merely a sum, and one row with NEITHER a season NOR dates, which is
+     the row that must be COUNTED as unplaced rather than dropped into whichever
+     period happens to be open.
+
+       Senior Trips   income  $1,200  Fall '26   |  staff wages $400, transport $300
+       Facilities     expense $2,000  Fall '26   |  maintenance
+       (unplaced)     expense $500    no season, no dates
+
+     So Fall '26 nets 1200 - 400 - 300 - 2000 = -1500, with one line unplaced. */
+  { match: /\/cost-recovery\/api\/ledger/, body: () => ({
+      rows: STUB_MODE === "nocosts" ? {} : {
+        r1: { ord: 0, account: "Senior Trips", label: "Holiday lights trip", category: "Registration fees",
+              kind: "income",  amount: 120000, season: "Fall '26" },
+        r2: { ord: 1, account: "Senior Trips", label: "Driver",       category: "Staff wages",
+              kind: "expense", amount: 40000,  season: "Fall '26" },
+        r3: { ord: 2, account: "Senior Trips", label: "Coach hire",   category: "Transportation",
+              kind: "expense", amount: 30000,  season: "Fall '26" },
+        r4: { ord: 3, account: "Facilities",   label: "Boiler service", category: "Maintenance",
+              kind: "expense", amount: 200000, season: "Fall '26" },
+        r5: { ord: 4, account: "Facilities",   label: "Unassigned line", category: "Supplies",
+              kind: "expense", amount: 50000 },
+      }, count: 5, maxRows: 500 }) },
+  { match: /\/cost-recovery\/api\/costs/, body: () => ({
+      costs: STUB_MODE === "nocosts" ? {} : {
+        "prog-aquatic-exercise|Fall '26":      { instructors: 6000000, staff: 1500000, supplies: 500000, tier: 3 },
+        "prog-water-walking|Spring/Summer 26": { instructors: 4000000, facility: 1000000, tier: 1 },
+        "prog-challenge-island|Spring/Summer 26": { instructors: 800000, other: 200000, tier: 4 },
+        // Only under `freeprogs`, and only on ONE of the two free programmes.
+        ...(STUB_MODE === "freeprogs"
+          ? { "prog-open-gym-night|Spring/Summer 26": { staff: 150000 } } : {}),
+      },
+      categories: ["instructors", "staff", "supplies", "facility", "other"] }) },
   { match: /\/programs\/api\/data/,
     status: () => (STUB_MODE === "timeout504" ? 504 : 200),
     body: () => (STUB_MODE === "timeout504"
@@ -3044,6 +3115,657 @@ const CASES = [
   // The baseline, and it is a NUMBER: six meetings, one of them the same
   // section on a second date. If the card ever joined reservation_court
   // instead of aggregating it, the two-site session multiplies and this moves.
+  /* ── COST RECOVERY ──────────────────────────────────────────────────
+     NO SOURCE ASSERTION CAN SEE ANY OF THIS. The page reads plausibly
+     whichever period it prices and whichever end of a band it compares
+     against, and every number below is arithmetic the spec proves in
+     isolation — what only a browser proves is that the page WIRES those
+     helpers to the controls a reader actually clicks.
+
+     The fixture is built so a wrong implementation cannot look right:
+     Fall '26 is ONE program worth $70,000 whole, and FY2027 Q1 is FOUR
+     programs worth $60,908 once each is pro-rated across its own run
+     dates. One number separates a page that honours the mode from one
+     that ignores it. */
+  { name: "cost-recovery · a season is whole programs, whole season",
+    path: "/{org}/cost-recovery",
+    // rows=1 AND rev=70000 together: the row count alone passes on a page
+    // pricing the wrong period, and the revenue alone passes on one showing
+    // every program.
+    needs: 'body[data-cr-seen*="mode=season"][data-cr-seen*="rows=1 rev=70000"]' },
+
+  /* TYPING A COST. No case had ever put a keystroke into this field, which is
+     why it shipped unusable: render() rebuilt the table's innerHTML on every
+     `input`, so the box was DESTROYED and replaced mid-word, the replacement
+     was focused fresh with a number input's caret at position 0, and each
+     further digit went in at the START. Measured on the shipped build: "3251"
+     was entered as "152803000" and "12.50" as "50.21". The caret-restore that
+     was meant to prevent it called setSelectionRange, which THROWS on
+     type="number", so it had never once completed.
+
+     Every existing cost-recovery case keys on a figure the page computed from
+     a cost already in the fixture — all ten passed on this. The bug is in what
+     happens between keystrokes, so only typing can see it.
+
+     Three claims, because each alone passes on part of it:
+       - the field holds what was typed, digits and a decimal point;
+       - the row's own Recovery RECOMPUTED, so not rebuilding the table did not
+         cost the reader a stale number (the whole risk of the fix);
+       - the element was never replaced, which is the mechanism itself. */
+  { name: "cost-recovery · typing a cost enters the digits in order",
+    path: "/{org}/cost-recovery",
+    needs: 'body[data-rc-costin-seen^="ok=1 "]',
+    act: async (page) => {
+      await page.waitForSelector(".costin", { timeout: 20000 });
+      const sel = ".costin";
+      const val = () => page.$eval(sel, e => e.value);
+      const clear = () => page.$eval(sel, e => {
+        e.value = ""; e.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+      // Mark the element so a rebuild is detectable: innerHTML cannot carry an
+      // expando, so a surviving mark IS proof the node was never replaced.
+      await page.$eval(sel, e => { e.__kept = 1; });
+      await clear(); await page.click(sel);
+      for (const ch of "3251") await page.keyboard.type(ch);
+      const typed = await val();
+      await clear(); await page.click(sel);
+      for (const ch of "12.50") await page.keyboard.type(ch);
+      const dec = await val();
+      // Back to a whole number, then read what the row now says about it.
+      await clear(); await page.click(sel);
+      for (const ch of "3251") await page.keyboard.type(ch);
+      const row = await page.evaluate(() => {
+        const box = document.querySelector(".costin");
+        const tr = box.closest("tr");
+        const foot = document.querySelector("tfoot [data-cr-total-rec]");
+        const rev = +tr.querySelector("[data-cr-rev]").getAttribute("data-cr-rev");
+        const txt = el => (el.textContent || "").replace(/\s+/g, "");
+        return { kept: box.__kept === 1, focused: document.activeElement === box, rev: rev,
+                 // The ATTRIBUTE is what a test reads; the TEXT is what Dan reads.
+                 // Asserting only the first let a build that stopped repainting
+                 // the cell survive, because the attribute was still being set.
+                 recAttr: +tr.children[7].getAttribute("data-cr-rec"),
+                 recText: txt(tr.children[7]), netText: txt(tr.children[6]),
+                 // step="5" made every cost that is not a multiple of five
+                 // :invalid, and moved the spinner and the arrow keys by $5.
+                 valid: box.checkValidity(), step: box.step,
+                 // The Total row reads the same costs. Leaving it out let a
+                 // build that never refreshed it survive this case.
+                 foot: foot ? +foot.getAttribute("data-cr-total-rec") : -1,
+                 wantRec: Math.round(rev / 3251 * 100) };
+      });
+      const wantNet = "$" + (row.rev - 3251).toLocaleString("en-US");
+      // This row is the only costed one in the fixture's default period, so the
+      // Total row's recovery is this row's. That is what makes the footer
+      // checkable without pinning a second fixture number.
+      const ok = typed === "3251" && dec === "12.50" && row.kept && row.focused && row.rev > 0
+        && row.recAttr === row.wantRec && row.recText === row.wantRec + "%"
+        && row.netText === wantNet && row.valid && row.foot === row.wantRec;
+      await page.evaluate(t => document.body.setAttribute("data-rc-costin-seen", t),
+        (ok ? "ok=1 " : "ok=0 ") + "typed=" + JSON.stringify(typed)
+        + " decimal=" + JSON.stringify(dec) + " elementKept=" + row.kept
+        + " stillFocused=" + row.focused + " rev=" + row.rev
+        + " recovery=" + row.recText + "/" + row.recAttr + " (want " + row.wantRec + "%)"
+        + " net=" + row.netText + " (want " + wantNet + ")"
+        + " step=" + row.step + " valid=" + row.valid + " totalRow=" + row.foot);
+    } },
+
+  /* THE BREAKDOWN EDITOR, which had the same defect one level down and in the
+     other direction: typing a line item moved the KPI strip above the table and
+     left the row it belonged to showing the old Net, Recovery and status. It
+     shares patchRow now, so this case is what stops the two drifting apart
+     again. Types into the FIRST line box and requires the row's own Net to
+     follow it — a build that only repaints the KPIs renders a perfectly
+     plausible row. */
+  { name: "cost-recovery · a line item updates the row it belongs to",
+    path: "/{org}/cost-recovery",
+    needs: 'body[data-rc-lineitem-seen^="ok=1 "]',
+    act: async (page) => {
+      await page.waitForSelector(".costin", { timeout: 20000 });
+      await page.$eval(".costin", e => { e.value = ""; e.dispatchEvent(new Event("input", { bubbles: true })); });
+      await page.click("tr.prog .exp");                       // open the breakdown
+      await page.waitForSelector("tr.lines input[data-c]", { timeout: 20000 });
+      const line = "tr.lines input[data-c]";
+      await page.click(line);
+      for (const ch of "1250") await page.keyboard.type(ch);
+      const out = await page.evaluate(() => {
+        const inp = document.querySelector("tr.lines input[data-c]");
+        const tr = document.querySelector("tr.prog");
+        const rev = +tr.querySelector("[data-cr-rev]").getAttribute("data-cr-rev");
+        const txt = el => (el.textContent || "").replace(/\s+/g, "");
+        return { lineValue: inp.value, rowTotal: tr.querySelector(".costin").value,
+                 net: txt(tr.querySelector("[data-cr-net]")),
+                 rec: +tr.querySelector("[data-cr-rec]").getAttribute("data-cr-rec"),
+                 wantNet: "$" + (rev - 1250).toLocaleString("en-US"),
+                 wantRec: Math.round(rev / 1250 * 100) };
+      });
+      const ok = out.lineValue === "1250" && out.rowTotal === "1250"
+        && out.net === out.wantNet && out.rec === out.wantRec;
+      await page.evaluate(t => document.body.setAttribute("data-rc-lineitem-seen", t),
+        (ok ? "ok=1 " : "ok=0 ") + "lineBox=" + JSON.stringify(out.lineValue)
+        + " rowTotal=" + JSON.stringify(out.rowTotal)
+        + " net=" + out.net + " (want " + out.wantNet + ")"
+        + " recovery=" + out.rec + " (want " + out.wantRec + ")");
+    } },
+
+  /* CLEARING A COST WHILE "only programs with a cost" IS ON. sliceFor drops
+     that row, so patchRow has no row object to price it from — while the row
+     is still ON SCREEN, because the table is not rebuilt until blur. The
+     figures are blanked rather than left showing the cost that was just
+     deleted, which is the one way this fix could have put a stale number in
+     front of a reader. */
+  { name: "cost-recovery · clearing a cost does not leave the old figures behind",
+    path: "/{org}/cost-recovery",
+    needs: 'body[data-rc-clear-seen^="ok=1 "]',
+    act: async (page) => {
+      await page.waitForSelector(".costin", { timeout: 20000 });
+      await page.click("#hideBlank");
+      await page.waitForFunction(() => document.querySelectorAll("tr.prog").length > 0,
+        { timeout: 20000 });
+      const before = await page.evaluate(() => {
+        const tr = document.querySelector("tr.prog");
+        return { net: (tr.querySelector("[data-cr-net]").textContent || "").trim(),
+                 rec: tr.querySelector("[data-cr-rec]").getAttribute("data-cr-rec") };
+      });
+      // Select the whole value and delete it, the way a reader clears a field.
+      await page.click(".costin");
+      await page.keyboard.down("Control"); await page.keyboard.press("KeyA"); await page.keyboard.up("Control");
+      await page.keyboard.press("Backspace");
+      const after = await page.evaluate(() => {
+        const tr = document.querySelector("tr.prog");
+        return { onScreen: !!tr, value: tr.querySelector(".costin").value,
+                 net: (tr.querySelector("[data-cr-net]").textContent || "").trim(),
+                 rec: tr.querySelector("[data-cr-rec]").getAttribute("data-cr-rec"),
+                 empty: tr.querySelector(".costin").classList.contains("empty") };
+      });
+      // AND THEN LEAVE THE FIELD. render() runs on `change`, and it is the
+      // authority the whole in-place patch rests on: the row no longer belongs
+      // in this view, so it goes. Without this the case cannot tell a design
+      // with a reconciling blur from one where patchRow is the only truth.
+      await page.evaluate(() => document.querySelector(".costin").blur());
+      await page.waitForFunction(() => document.querySelectorAll("tr.prog").length === 0
+        || !document.querySelector("tr.prog .costin.empty"), { timeout: 20000 }).catch(() => {});
+      const gone = await page.evaluate(() => !document.querySelector("tr.prog .costin.empty"));
+      const ok = before.net !== "—" && before.rec !== ""      // it really had figures to lose
+        && after.onScreen && after.value === "" && after.empty
+        && after.net === "—" && after.rec === "" && gone;
+      await page.evaluate(t => document.body.setAttribute("data-rc-clear-seen", t),
+        (ok ? "ok=1 " : "ok=0 ") + "before net=" + before.net + " rec=" + before.rec
+        + " · after value=" + JSON.stringify(after.value) + " net=" + after.net
+        + " rec=" + JSON.stringify(after.rec) + " emptyClass=" + after.empty
+        + " rowStillOnScreen=" + after.onScreen + " · droppedOnBlur=" + gone);
+    } },
+
+  /* A RATE OVER TWO POPULATIONS. Dan opened Shrewsbury's report with 82
+     programmes and a cost typed on two, and the Total row read $202,024
+     against $7,378 with a recovery of 2738% — revenue summed over all 82,
+     cost over the two, and a net and a rate made out of the pair. The KPI
+     strip said the same and every tier bar was drawn the same way.
+
+     The quarter view is the fixture's own version of that state: 4 programmes,
+     3 costed. ONE NUMBER SEPARATES THE TWO BUILDS — the shipped one makes
+     $60,908 / $91,895 into −$30,987 and 66%, the fixed one withholds both from
+     the Total row and puts −$40,987 and 55% on a row that names the three
+     programmes they are computed over. A case keyed on "a Total row rendered",
+     or on the revenue alone, passes on the bug.
+
+     Three claims, because each alone passes on part of it:
+       - the Total row totals its COLUMNS and withholds what it cannot make;
+       - the Costed row's own arithmetic ties (50,908 − 91,895 = −40,987);
+       - the KPI recovery is the costed one, and says so. */
+  { name: "cost-recovery · a rate is taken over the programs that carry a cost",
+    path: "/{org}/cost-recovery",
+    needs: 'body[data-rc-costedrate-seen^="ok=1 "]',
+    act: async (page) => {
+      await page.waitForSelector('body[data-cr-seen*="mode=season"]', { timeout: 20000 });
+      await page.click('#modeSeg button[data-mode="quarter"]');
+      await page.waitForFunction(
+        () => /mode=quarter/.test(document.body.getAttribute("data-cr-seen") || ""),
+        { timeout: 20000 });
+      const r = await page.evaluate(() => {
+        const txt = (el) => (el ? (el.textContent || "").replace(/\s+/g, "") : "");
+        const rows = [...document.querySelectorAll("#tfoot tr")];
+        const cells = (tr) => [...tr.children].map(txt);
+        const costed = document.querySelector("#tfoot tr.costed");
+        return {
+          footRows: rows.length,
+          total: rows[0] ? cells(rows[0]) : [],
+          costed: costed ? cells(costed) : [],
+          costedRev: costed ? +costed.querySelector("[data-cr-costed-rev]").getAttribute("data-cr-costed-rev") : -1,
+          rec: costed ? +costed.querySelector("[data-cr-total-rec]").getAttribute("data-cr-total-rec") : -1,
+          kpis: [...document.querySelectorAll("#kpis > *")].map(e => (e.textContent || "").replace(/\s+/g, " ").trim()),
+        };
+      });
+      const kpiRec = r.kpis.find(t => /^Cost recovery/.test(t)) || "";
+      const kpiNet = r.kpis.find(t => /^(Surplus|Shortfall)/.test(t)) || "";
+      const ok = r.footRows === 2
+        // The Total row totals each column and makes nothing out of the pair.
+        && r.total[4] === "$60,908" && r.total[5] === "$91,895"
+        && r.total[6] === "\u2014" && r.total[7] === "\u2014"
+        // ...and the row that carries a net and a rate names its own population
+        // and ties: 50,908 - 91,895 = -40,987.
+        && /Costed\u00b73of4/.test(r.costed[1]) && r.costed[4] === "$50,908"
+        && r.costed[5] === "$91,895" && r.costed[6] === "\u2212$40,987" && r.costed[7] === "55%"
+        && r.costedRev === 50908 && r.rec === 55
+        // 66% is the shipped build's figure. The strip must not carry it either.
+        && /55%/.test(kpiRec) && !/66%/.test(kpiRec) && /3 of 4 costed/.test(kpiRec)
+        && /\u2212\$40,987/.test(kpiNet) && /3 of 4 costed/.test(kpiNet);
+      await page.evaluate((v) => document.body.setAttribute("data-rc-costedrate-seen", v),
+        (ok ? "ok=1 " : "ok=0 ") + "footRows=" + r.footRows
+        + " total=" + JSON.stringify(r.total.slice(4, 8))
+        + " costed=" + JSON.stringify(r.costed.slice(1, 8))
+        + " costedRevAttr=" + r.costedRev + " recAttr=" + r.rec
+        + " kpiRecovery=" + JSON.stringify(kpiRec) + " kpiNet=" + JSON.stringify(kpiNet));
+    } },
+
+  /* ...and with nothing left to cost there is ONE population, so the second
+     row must NOT be there. Without this a build that always renders it passes
+     the case above while telling an org that has costed everything that only
+     some of it is costed. Spring/Summer 26 is 2 programmes, both costed. */
+  { name: "cost-recovery · a fully costed period gets one total row, not two",
+    path: "/{org}/cost-recovery",
+    needs: 'body[data-rc-onetotal-seen^="ok=1 "]',
+    act: async (page) => {
+      await page.waitForSelector('body[data-cr-seen*="mode=season"]', { timeout: 20000 });
+      await page.select("#periodSel", "Spring/Summer 26");
+      await page.waitForFunction(
+        () => /period=Spring/.test(document.body.getAttribute("data-cr-seen") || ""),
+        { timeout: 20000 });
+      const r = await page.evaluate(() => {
+        const txt = (el) => (el ? (el.textContent || "").replace(/\s+/g, "") : "");
+        const rows = [...document.querySelectorAll("#tfoot tr")];
+        return { footRows: rows.length, costedRows: document.querySelectorAll("#tfoot tr.costed").length,
+                 total: rows[0] ? [...rows[0].children].map(txt) : [] };
+      });
+      const ok = r.footRows === 1 && r.costedRows === 0
+        && r.total[4] === "$23,000" && r.total[5] === "$60,000"
+        && r.total[6] === "\u2212$37,000" && r.total[7] === "38%";
+      await page.evaluate((v) => document.body.setAttribute("data-rc-onetotal-seen", v),
+        (ok ? "ok=1 " : "ok=0 ") + "footRows=" + r.footRows + " costedRows=" + r.costedRows
+        + " total=" + JSON.stringify(r.total.slice(4, 8)));
+    } },
+
+  { name: "cost-recovery · a quarter pro-rates each program across its run",
+    path: "/{org}/cost-recovery",
+    needs: 'body[data-cr-seen*="mode=quarter"][data-cr-seen*="rows=4 rev=60908"]',
+    act: async (page) => {
+      await page.waitForSelector('body[data-cr-seen*="mode=season"]', { timeout: 20000 });
+      await page.click('#modeSeg button[data-mode="quarter"]');
+      await page.waitForFunction(
+        () => /mode=quarter/.test(document.body.getAttribute("data-cr-seen") || ""),
+        { timeout: 20000 });
+    } },
+
+  /* THE BAND, NOT ITS MIDPOINT. Water Walking is tier 1 at 40% — under tier
+     1's 35% target reading and squarely INSIDE its published 25–50% band,
+     which is exactly what tier 1 exists to do. A build comparing against
+     `tgt` paints this amber and calls a community program a failure. The
+     case requires the figure AND the absence of the under treatment,
+     because either alone passes on half the defect. */
+  { name: "cost-recovery · on target means inside the band, not above its midpoint",
+    path: "/{org}/cost-recovery",
+    needs: '[data-cr-tier="1"][data-cr-tier-rec="40"] .fillbar:not(.under)',
+    also: ['[data-cr-row*="water-walking"] [data-cr-state="ok"]',
+           '[data-cr-row*="challenge-island"] [data-cr-state="bad"]'],
+    act: async (page) => {
+      await page.waitForSelector('body[data-cr-seen*="mode=season"]', { timeout: 20000 });
+      await page.select("#periodSel", "Spring/Summer 26");
+      await page.waitForFunction(
+        () => /period=Spring/.test(document.body.getAttribute("data-cr-seen") || ""),
+        { timeout: 20000 });
+    } },
+
+  /* An uncosted program must say so rather than read 0%. "Not costed yet"
+     and "recovers nothing" are different facts and the page renders them
+     differently — the same null-versus-zero rule as hasAbsent. Lap Swim has
+     revenue and no cost, so a page defaulting a missing cost to 0 would show
+     a confident 0% against a program nobody has costed. */
+  { name: "cost-recovery · an uncosted program says so rather than reading 0%",
+    path: "/{org}/cost-recovery",
+    needs: '[data-cr-row*="lap-swim"] [data-cr-state="blank"]',
+    also: ['[data-cr-row*="lap-swim"] [data-cr-rec=""]', "#tiers [data-cr-untiered]"],
+    act: async (page) => {
+      await page.waitForSelector('body[data-cr-seen*="mode=season"]', { timeout: 20000 });
+      await page.select("#periodSel", "No Season");
+      await page.waitForFunction(
+        () => /period=No Season/.test(document.body.getAttribute("data-cr-seen") || ""),
+        { timeout: 20000 });
+    } },
+
+  /* Compare is the QoQ shape Dan asked for. Keyed on the SECOND period
+     picker existing and on a delta being drawn — "a compare button
+     rendered" passes on a mode that shows one period twice. */
+  { name: "cost-recovery · compare puts two periods side by side",
+    path: "/{org}/cost-recovery",
+    needs: "#periodBSel option",
+    also: [".sum-cards .delta", 'body[data-cr-seen*="mode=compare"]'],
+    act: async (page) => {
+      await page.waitForSelector('body[data-cr-seen*="mode=season"]', { timeout: 20000 });
+      await page.click('#modeSeg button[data-mode="compare"]');
+      await page.waitForFunction(
+        () => /mode=compare/.test(document.body.getAttribute("data-cr-seen") || ""),
+        { timeout: 20000 });
+    } },
+
+  /* AN ORG THAT HAS NEVER COSTED ANYTHING still gets the report — the money
+     it already has, with every program asking for a cost. An empty store is
+     the state EVERY org is in on the day this ships, so a page that only
+     works once somebody has typed something would ship broken for all of
+     them. */
+  { name: "cost-recovery · a fresh org gets the report, not an empty page",
+    path: "/{org}/cost-recovery", stubMode: "nocosts",
+    needs: 'body[data-cr-seen*="rows=1 rev=70000"]',
+    also: ["[data-cr-state=\"blank\"]", "#tiers [data-cr-untiered]"] },
+
+  /* ── the open-ended ledger. Jason at Windham: "add a series of open ended
+     rows where he can add expenses, profit, etc. Not tied to any program." ── */
+  { name: "cost-recovery · overhead lines roll up by account, and land in the period",
+    path: "/{org}/cost-recovery",
+    // net = 1200 income − (400 + 300 + 2000) = −1500, with the fifth line
+    // UNPLACED because it carries neither a season nor dates. Both halves in one
+    // assertion: the net alone passes on a build that quietly counts the
+    // unplaced row, and the unplaced count alone passes on one that mis-sums.
+    needs: 'body[data-cr-ledger-seen*="rows=5 placed=4 unplaced=1"][data-cr-ledger-seen*="net=-1500"]',
+    also: ['[data-cr-rollup="2"]', '[data-cr-rollup-net="-1500"]'],
+    act: async (page) => {
+      await page.waitForSelector('body[data-cr-seen*="mode=season"]', { timeout: 20000 });
+      await page.click('#viewTabs button[data-view="ledger"]');
+      await page.waitForFunction(
+        () => /rows=5/.test(document.body.getAttribute("data-cr-ledger-seen") || ""),
+        { timeout: 20000 });
+    } },
+
+  /* BLANK ROWS TO TYPE INTO. "Start with say 25 to 50, then let them add
+     additional rows." A table with five stored lines and no blanks is a list,
+     not a budget sheet — and the blanks must NOT be stored records, which is
+     what the row count above proves alongside this. */
+  { name: "cost-recovery · the ledger opens with rows to type into, and can grow",
+    path: "/{org}/cost-recovery",
+    needs: "#ledgerBody tr:nth-child(30)",
+    also: ["#addRows", "#lgCats option"],
+    act: async (page) => {
+      await page.waitForSelector('body[data-cr-seen*="mode=season"]', { timeout: 20000 });
+      await page.click('#viewTabs button[data-view="ledger"]');
+      await page.waitForSelector("#ledgerBody tr", { timeout: 20000 });
+      const before = await page.$$eval("#ledgerBody tr", (r) => r.length);
+      await page.click("#addRows");
+      await page.waitForFunction(
+        (n) => document.querySelectorAll("#ledgerBody tr").length > n, { timeout: 10000 }, before);
+    } },
+
+  /* OVERHEAD IS A SEPARATE FIGURE FROM DIRECT COST, because the tier bands on
+     the P&L tab are DIRECT cost recovery bands. A build that folded the boiler
+     into a swim lesson's cost would push every program under its tier for a
+     reason that has nothing to do with the program — so the strip must show
+     both, and direct recovery must still read 88% with overhead present. */
+  /* THE CATEGORY CARRIES THE DIRECTION. Dan asked for "20 or so recreation
+     style category groups"; the half that makes them worth having is that
+     picking Grants sets the line to money IN and picking Maintenance sets it
+     to money OUT, so the commonest error in a hand-kept sheet — an expense
+     typed into the income column — cannot be made by accident.
+
+     Row r2 is a Staff wages EXPENSE of $400. Typing "Grants" into its category
+     must flip it to income, which moves the Fall '26 net by twice that amount:
+     −1500 → −700. Keyed on the NET rather than on the select's value, because
+     a build that flips the dropdown and not the arithmetic renders identically. */
+  { name: "cost-recovery · a known category sets whether the line is money in or out",
+    path: "/{org}/cost-recovery",
+    needs: 'body[data-cr-ledger-seen*="net=-700"]',
+    act: async (page) => {
+      await page.waitForSelector('body[data-cr-seen*="mode=season"]', { timeout: 20000 });
+      await page.click('#viewTabs button[data-view="ledger"]');
+      await page.waitForFunction(
+        () => /net=-1500/.test(document.body.getAttribute("data-cr-ledger-seen") || ""),
+        { timeout: 20000 });
+      const sel = '[data-cr-ledger="r2"] [data-f="category"]';
+      await page.click(sel, { clickCount: 3 });
+      await page.type(sel, "Grants");
+      await page.waitForFunction(
+        () => /net=-700/.test(document.body.getAttribute("data-cr-ledger-seen") || ""),
+        { timeout: 20000 });
+    } },
+
+  { name: "cost-recovery · overhead is its own figure, not folded into direct cost",
+    path: "/{org}/cost-recovery",
+    // KEYED ON THE FIGURES, not the words. Fall '26 is $80,000 of DIRECT
+    // program cost and $2,700 of overhead, and a build that folds one into the
+    // other still renders a tile headed "Overhead" — only the numbers separate
+    // them. Full revenue is 70,000 + 1,200 of other income; full cost is
+    // 80,000 + 2,700.
+    needs: '#kpis[data-cr-money="direct=80000 overhead=2700 fullrev=71200 fullcost=82700"]',
+    also: ['body[data-cr-seen*="rows=1 rev=70000"]'],
+    act: async (page) => {
+      await page.waitForSelector('body[data-cr-seen*="mode=season"]', { timeout: 20000 });
+      await page.waitForFunction(() => {
+        const t = document.querySelector("#kpis").textContent || "";
+        // Direct recovery still reads 88% with overhead present, and the
+        // full-cost figure is stated BESIDE it rather than replacing it.
+        return /Overhead/.test(t) && /88%/.test(t) && /full cost/.test(t);
+      }, { timeout: 20000 });
+    } },
+
+  /* ── The polish pass, 2026-09-22 ──────────────────────────────────────
+     Seven things Dan asked for after reading the report against Shrewsbury's
+     real numbers. Every one of them is invisible to a source assertion: a
+     dollar sign drawn by CSS, a tint that only exists once a browser has
+     resolved the cascade, a sort that only happens on a click, and a
+     statement whose whole claim is that its figures equal the ones on the
+     screen it was generated from. */
+
+  /* Dan: "These are amounts, they should have dollar signs on them all."
+     The symbol is a ::before rather than part of the value — a "$" typed into
+     a type="number" empties the field — so the only thing that can confirm it
+     arrived is a COMPUTED style. Both shapes are checked: the row's own cost
+     box and one of the five breakdown fields behind the expander. */
+  { name: "cost-recovery · every money field wears a dollar sign",
+    path: "/{org}/cost-recovery",
+    needs: 'body[data-rc-money-seen="cost=$ line=$ ledger=$"]',
+    act: async (page) => {
+      await page.waitForSelector('body[data-cr-seen*="mode=season"]', { timeout: 20000 });
+      await page.click("tr.prog .exp");
+      await page.waitForSelector(".linebox .money > input", { timeout: 20000 });
+      await page.click('#viewTabs button[data-view="ledger"]');
+      await page.waitForSelector('#ledgerBody .money > input[data-f="amount"]', { timeout: 20000 });
+      await page.click('#viewTabs button[data-view="pl"]');
+      await page.waitForSelector("tr.prog", { timeout: 20000 });
+      await page.evaluate(() => {
+        const g = (sel) => {
+          const el = document.querySelector(sel);
+          if (!el) return "MISSING";
+          return (getComputedStyle(el.parentElement, "::before").content || "").replace(/["']/g, "");
+        };
+        document.body.setAttribute("data-rc-money-seen",
+          "cost=" + g("td .money > input.costin") +
+          " line=" + g(".linebox .money > input") +
+          " ledger=" + g('#ledgerBody .money > input[data-f="amount"]'));
+      });
+    } },
+
+  /* Dan: "Lets color up this top bar. revenue in light green, costs in light
+     red, surplus maybe orange". A class name proves nothing — the skin's own
+     `.sum-cards > .sum-card` sets a background at (0,2,0) and these tints are
+     (0,3,0), so whether they win is a fact about the CASCADE and only a
+     browser knows it. Keyed on the three RESOLVED backgrounds being three
+     different colours: a build whose overrides lose renders one ground under
+     all four tiles and every tone attribute still in place. */
+  { name: "cost-recovery · the strip is coloured like a P&L",
+    path: "/{org}/cost-recovery",
+    // in ≠ out is the WHOLE claim, and two tones is all this fixture can show:
+    // every period in it runs at a shortfall, so the amber surplus never
+    // renders and asserting three colours would be a test written for a
+    // fixture rather than for the page. The surplus/shortfall mapping is
+    // pinned in cost-recovery.spec.js instead, and named there as a source
+    // assertion rather than implied.
+    needs: 'body[data-rc-tone-seen*="distinct=2"]',
+    also: ['.sum-cards .sum-card[data-cr-tone="in"]',
+           '.sum-cards .sum-card[data-cr-tone="out"]',
+           '.sum-cards .sum-card[data-cr-tone="bad"]'],
+    act: async (page) => {
+      await page.waitForSelector('body[data-cr-seen*="mode=season"]', { timeout: 20000 });
+      await page.waitForSelector('.sum-cards .sum-card[data-cr-tone="in"]', { timeout: 20000 });
+      await page.evaluate(() => {
+        const bg = (t) => {
+          const el = document.querySelector('.sum-cards .sum-card[data-cr-tone="' + t + '"]');
+          return el ? getComputedStyle(el).backgroundColor : "";
+        };
+        const seen = ["in", "out"].map(bg);
+        const distinct = new Set(seen.filter(Boolean)).size;
+        document.body.setAttribute("data-rc-tone-seen", "distinct=" + distinct + " " + seen.join("|"));
+      });
+    } },
+
+  /* THE ONE THAT REVERSES DAN'S OWN WORDING, and the reason is on the card.
+     He asked for "red is < 100, green > 100" — on this report 100% is the
+     wrong line: tier 1 is MEANT to recover 25-50%, so a department running
+     mostly community programming would be painted red for doing exactly what
+     the pyramid asks. Fall '26 recovers 88% against a blended target of 85%,
+     so the tile is GREEN while sitting under 100. A build measuring against
+     100 paints it red and fails here; nothing else on the page moves. */
+  { name: "cost-recovery · a rate is judged against the pyramid, not against 100%",
+    path: "/{org}/cost-recovery",
+    needs: '.sum-cards .sum-card[data-cr-tone="good"]',
+    also: ['body[data-rc-rec-seen="88% good"]'],
+    act: async (page) => {
+      await page.waitForSelector('body[data-cr-seen*="mode=season"]', { timeout: 20000 });
+      await page.waitForFunction(() => /88%/.test(document.querySelector("#kpis").textContent || ""),
+        { timeout: 20000 });
+      await page.evaluate(() => {
+        const cards = [].slice.call(document.querySelectorAll(".sum-cards .sum-card"));
+        const c = cards.filter(x => /Cost recovery/.test(x.textContent))[0];
+        const v = c ? (c.querySelector(".sc-val") || {}).textContent : "";
+        document.body.setAttribute("data-rc-rec-seen",
+          (v || "").trim() + " " + (c ? c.getAttribute("data-cr-tone") : "?"));
+      });
+    } },
+
+  /* Dan: "Need a checkbox or something at the top to 'hide all zero dollar or
+     free programs'. There still might be associated costs, so I don't want to
+     exclude them."
+
+     Spring/Summer 26 under `freeprogs` is FOUR programmes, two of them free:
+     Open Gym Night carries a cost and Community Concert does not. Ticking the
+     box must leave THREE and keep Open Gym Night — a build that hides every
+     free programme leaves two and reads "2 free programs hidden", which is why
+     the fixture needs the pair rather than one $0 row. */
+  { name: "cost-recovery · hiding free programs keeps the one that has a cost",
+    path: "/{org}/cost-recovery", stubMode: "freeprogs",
+    needs: 'body[data-rc-free-seen="before=4 after=3 gym=1 concert=0"]',
+    also: ["#rowCount"],
+    act: async (page) => {
+      await page.waitForSelector('body[data-cr-seen*="mode=season"]', { timeout: 20000 });
+      await page.select("#periodSel", "Spring/Summer 26");
+      await page.waitForFunction(() => /period=Spring/.test(document.body.getAttribute("data-cr-seen") || ""),
+        { timeout: 20000 });
+      const count = () => page.evaluate(() => document.querySelectorAll("#tbody tr.prog").length);
+      const before = await count();
+      await page.click("#hideFree");
+      await page.waitForFunction((b) => document.querySelectorAll("#tbody tr.prog").length !== b,
+        { timeout: 20000 }, before);
+      const after = await count();
+      await page.evaluate((b, a) => {
+        document.body.setAttribute("data-rc-free-seen",
+          "before=" + b + " after=" + a
+          + " gym=" + document.querySelectorAll('[data-cr-row*="open-gym-night"]').length
+          + " concert=" + document.querySelectorAll('[data-cr-row*="community-concert"]').length);
+      }, before, after);
+    } },
+
+  /* Dan: "make these top column headers sortable." Only a click can show it,
+     and the discriminating column is the NAME: the table already opens in
+     revenue order, so a Revenue click leaves the rows exactly where they were
+     and passes on a header wired to nothing. Spring/Summer 26 opens Water
+     Walking first on revenue; by name Challenge Island leads, and a second
+     click puts Water Walking back. */
+  { name: "cost-recovery · a column header sorts the table both ways",
+    path: "/{org}/cost-recovery",
+    needs: 'body[data-rc-sort-seen="rev=water-walking asc=challenge-island desc=water-walking"]',
+    also: ['#plHead th[data-sort="name"][aria-sort]'],
+    act: async (page) => {
+      await page.waitForSelector('body[data-cr-seen*="mode=season"]', { timeout: 20000 });
+      await page.select("#periodSel", "Spring/Summer 26");
+      await page.waitForFunction(() => /period=Spring/.test(document.body.getAttribute("data-cr-seen") || ""),
+        { timeout: 20000 });
+      const first = () => page.evaluate(() =>
+        (document.querySelector("#tbody tr.prog") || {}).getAttribute ?
+          document.querySelector("#tbody tr.prog").getAttribute("data-cr-row") : "");
+      const rev = await first();
+      await page.click('#plHead th[data-sort="name"]');
+      await page.waitForFunction(() => document.querySelector('#plHead th[data-sort="name"][aria-sort="ascending"]'),
+        { timeout: 20000 });
+      const asc = await first();
+      await page.click('#plHead th[data-sort="name"]');
+      await page.waitForFunction(() => document.querySelector('#plHead th[data-sort="name"][aria-sort="descending"]'),
+        { timeout: 20000 });
+      const desc = await first();
+      const key = (s) => String(s || "").split("|")[0].replace(/^prog-/, "");
+      await page.evaluate((r, a, d) => {
+        document.body.setAttribute("data-rc-sort-seen", "rev=" + r + " asc=" + a + " desc=" + d);
+      }, key(rev), key(asc), key(desc));
+    } },
+
+  /* Dan: "What happens after I enter all this data for say, a season? Is there
+     a 'generate P/L statement' or something? Seems like we're missing the
+     'what's next'?"
+
+     THE ASSERTION IS THAT IT TIES. A statement is only worth printing if its
+     figures are the report's own, so this requires the statement's stamp AND
+     the strip's to agree on the same four numbers — income 71,200 against
+     full revenue 71,200, direct 80,000, overhead 2,700, and a net of -11,500
+     which is 71,200 - 82,700. A statement built from its own second reduction
+     would render a perfectly plausible document and fail here. */
+  { name: "cost-recovery · the statement ties to the report it came from",
+    path: "/{org}/cost-recovery",
+    needs: 'body[data-cr-stmt-seen="income=71200 direct=80000 overhead=2700 net=-11500"]',
+    also: ['#kpis[data-cr-money="direct=80000 overhead=2700 fullrev=71200 fullcost=82700"]',
+           "#statementView:not([hidden]) .st-head"],
+    act: async (page) => {
+      await page.waitForSelector('body[data-cr-seen*="mode=season"]', { timeout: 20000 });
+      await page.click('#viewTabs button[data-view="statement"]');
+      await page.waitForSelector("#stmtBody .st-head", { timeout: 20000 });
+    } },
+
+  /* Dan, on the model: "never even heard of that, but that's bad ass. lean
+     into this." A pyramid has its base at the BOTTOM, so the ladder runs tier
+     4 down to tier 1 — which is the opposite of the order it shipped in, and
+     is invisible to any assertion keyed on an attribute rather than on
+     position. Spring/Summer 26 carries tier 1 and tier 4 at once. */
+  { name: "cost-recovery · the pyramid stands on its base, tier 4 down to tier 1",
+    path: "/{org}/cost-recovery",
+    needs: 'body[data-rc-py-seen="first=4 last=1 verdict=1"]',
+    also: ["#pyVerdict [data-cr-pyverdict]"],
+    act: async (page) => {
+      await page.waitForSelector('body[data-cr-seen*="mode=season"]', { timeout: 20000 });
+      await page.select("#periodSel", "Spring/Summer 26");
+      await page.waitForFunction(() => document.querySelectorAll("#tiers .tier").length > 1,
+        { timeout: 20000 });
+      await page.evaluate(() => {
+        const t = [].slice.call(document.querySelectorAll("#tiers .tier"));
+        document.body.setAttribute("data-rc-py-seen",
+          "first=" + t[0].getAttribute("data-cr-tier")
+          + " last=" + t[t.length - 1].getAttribute("data-cr-tier")
+          + " verdict=" + document.querySelectorAll("#pyVerdict [data-cr-pyverdict]").length);
+      });
+    } },
+
+  /* Dan: "need a way to delete a row on the overhead and other page." There
+     WAS one, gated on three named fields — so a line carrying only a category
+     had no way out — and it was a bare glyph nobody found, which is the Fast
+     Track pin over again. Keyed on the row count actually falling: a button
+     that renders and deletes nothing looks identical. */
+  { name: "cost-recovery · a saved overhead line can be deleted",
+    path: "/{org}/cost-recovery",
+    needs: 'body[data-cr-ledger-seen*="rows=4"]',
+    also: ["#ledgerBody .lgdel"],
+    act: async (page) => {
+      await page.waitForSelector('body[data-cr-seen*="mode=season"]', { timeout: 20000 });
+      await page.click('#viewTabs button[data-view="ledger"]');
+      await page.waitForFunction(() => /rows=5/.test(document.body.getAttribute("data-cr-ledger-seen") || ""),
+        { timeout: 20000 });
+      await page.click("#ledgerBody .lgdel");
+      await page.waitForFunction(() => /rows=4/.test(document.body.getAttribute("data-cr-ledger-seen") || ""),
+        { timeout: 20000 });
+    } },
+
   { name: "programs-schedule · six meetings, one section twice",
     path: "/{org}/programs-schedule",
     needs: "[data-ready='true'][data-ps-rows='6']" },
@@ -7976,6 +8698,25 @@ function waitForServer(started) {
         return m ? m[0] + "  in: " + t.slice(Math.max(0, t.indexOf(m[0]) - 60), t.indexOf(m[0]) + 40).replace(/\s+/g, " ") : null;
       });
       if (leaked) errs.push("JSX leaked to the screen as text: " + leaked);
+
+      // A STYLESHEET THAT RENDERED AS TEXT, on EVERY case, same argument: the
+      // page is not broken, it is unstyled, so nothing that keys on a value
+      // can see it. The HTML tokenizer ends a <style> element at the FIRST
+      // `</style` it meets — inside a CSS comment or not — so one sentence in
+      // a comment that spells out the closing tag drops the rest of the sheet
+      // into the body as visible text. That shipped on cost-recovery.html and
+      // ALL TEN of its render cases passed, because every one of them asserts
+      // a computed figure and every figure was right.
+      //
+      // Keyed on CSS DECLARATION SYNTAX rather than any one property: the
+      // leak is always a run of `prop: value;` inside braces, which is not
+      // English and appears in no copy on this platform.
+      const cssText = await page.evaluate(() => {
+        const t = document.body.innerText || "";
+        const m = t.match(/\{[^{}]*[a-z-]+\s*:\s*[^;{}]+;[^{}]*\}/);
+        return m ? m[0].slice(0, 80).replace(/\s+/g, " ") : null;
+      });
+      if (cssText) errs.push("a stylesheet rendered as TEXT — a <style> block ended early, most likely on a `</style` written inside a CSS comment: " + cssText);
     } catch (e) {
       errs.push("navigation: " + e.message.split("\n")[0].slice(0, 160));
     }
