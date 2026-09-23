@@ -201,6 +201,9 @@ jobs:
       - name: Chart data is downloadable (panel CSV + workbook sheets)
         run: node scripts/panel-csv.spec.js
 
+      - name: Community Intel signup window + signups chart
+        run: node scripts/community-signups.spec.js
+
       - name: Programs location filter (one funnel; a stale ?loc= cannot empty the report)
         run: node scripts/programs-location.spec.js
 

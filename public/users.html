@@ -136,6 +136,36 @@
   .insights-feedback .fb-send:hover { background:#4f46e5!important; }
 
   .grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:14px; }
+  .sg-ctl { display:flex; align-items:center; gap:6px; margin-left:6px; }
+  .sg-lbl { font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:#aaa; font-weight:600; }
+  .sg-to { font-size:12px; color:#aaa; }
+  .sg-date { background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.25); color:#fff; border-radius:4px; padding:4px 6px; font:inherit; font-size:12px; color-scheme:dark; }
+  .toolbar .sg-pre { padding:4px 9px; font-size:11px; }
+  .sg-scope { margin:0 0 14px; padding:10px 14px; background:#eef2ff; border:1px solid #c7d2fe; border-left:4px solid #6366f1; border-radius:8px; font-size:13px; color:#312e81; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
+  .sg-empty { margin:40px auto; max-width:620px; text-align:center; color:#475569; font-size:14px; line-height:1.6; }
+  .sg-empty button { margin-left:6px; padding:4px 12px; border:1px solid #6366f1; background:#6366f1; color:#fff; border-radius:6px; cursor:pointer; font:inherit; font-size:12px; }
+  .sgc { margin-bottom:16px; }
+  .sgc-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+  .sgc-sub { font-size:12px; color:#6b7280; }
+  .sgc-mode button { padding:4px 11px; border:1px solid #d1d5db; background:#fff; color:#374151; font:inherit; font-size:12px; cursor:pointer; }
+  .sgc-mode button:first-child { border-radius:999px 0 0 999px; } .sgc-mode button:last-child { border-radius:0 999px 999px 0; border-left:0; }
+  .sgc-mode button.on { background:#134e4a; border-color:#134e4a; color:#fff; }
+  .sgc-chips { display:flex; flex-wrap:wrap; gap:6px; margin:12px 0 8px; }
+  .sgc-chip { display:inline-flex; align-items:center; gap:6px; padding:4px 11px; border:1px solid #d1d5db; border-radius:999px; background:#fff; color:#374151; font:inherit; font-size:12px; cursor:pointer; }
+  .sgc-chip .dot { width:7px; height:7px; border-radius:50%; background:#cbd5e1; }
+  .sgc-chip.on { color:#fff; } .sgc-chip.on .dot { background:#fff; }
+  .sgc-chip b { font-weight:600; opacity:.8; }
+  .sgc-wrap { position:relative; }
+  .sgc-svg { display:block; max-width:100%; }
+  .sgc-chip:focus { outline:none; } .sgc-chip:focus-visible { outline:2px solid #134e4a; outline-offset:2px; }
+  .sgc-tick { font-size:11px; fill:#94a3b8; }
+  .sgc-end { font-size:12px; fill:#334155; }
+  .sgc-tip { position:absolute; top:6px; transform:translateX(-50%); background:#0f172a; color:#fff; padding:7px 10px; border-radius:6px; font-size:12px; pointer-events:none; white-space:nowrap; }
+  .sgc-tip-h { font-weight:700; margin-bottom:3px; }
+  .sgc-tip .dot { display:inline-block; width:7px; height:7px; border-radius:50%; margin-right:6px; }
+  .sgc-empty { padding:40px 0; text-align:center; color:#9ca3af; font-style:italic; font-size:13px; }
+  .sgc-toggle { display:flex; justify-content:flex-end; margin:-4px 0 8px; }
+  .sgc-toggle button { padding:4px 11px; border:1px solid #d1d5db; border-radius:999px; background:#fff; color:#374151; font:inherit; font-size:12px; cursor:pointer; }
   .panel { background:#fff; border-radius:10px; padding:16px 18px; box-shadow:0 1px 3px rgba(0,0,0,.06), 0 0 0 1px rgba(0,0,0,.03); }
   .panel-head { font-size:11px; font-weight:700; color:#374151; text-transform:uppercase; letter-spacing:.04em; margin-bottom:10px; }
   .panel-note { font-size:10px; color:#9ca3af; font-style:italic; margin-left:6px; }
@@ -277,6 +307,90 @@ var isPrint = urlParams.get('_print') === '1';
 if (isPrint) document.body.classList.add('print-mode');
 function withToken(u) { return !token ? u : u + (u.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(token); }
 
+// ── Signup window ────────────────────────────────────────────────────────────
+// Needham: "see user signups by date … basically a graph of users signing up."
+// The card is dateless (the whole org's accounts, cached), so this is a CLIENT
+// filter over `Created At` and costs no Metabase time. It keys on each PERSON's
+// own signup date, so a household counts when at least one of its people
+// signed up in the window. At module scope so a spec can RUN it.
+//
+// THE DAY IS THE READER'S LOCAL DAY, built from parts. `Created At` is a
+// timestamp and new Date() reads it as the instant it is; a bare YYYY-MM-DD is
+// passed through untouched, because new Date("2026-09-01") is UTC midnight and
+// lands on Aug 31 across the US.
+var SIGNUP_ISO = /^\d{4}-\d{2}-\d{2}$/;
+function signupParam(v) { return v && SIGNUP_ISO.test(v) ? v : ''; }
+function sgPad(n) { return (n < 10 ? '0' : '') + n; }
+function signupYmd(v) {
+  if (!v) return null;
+  var s = String(v).trim();
+  if (SIGNUP_ISO.test(s)) return s;
+  var d = new Date(s);
+  if (isNaN(d.getTime())) return null;
+  return d.getFullYear() + '-' + sgPad(d.getMonth() + 1) + '-' + sgPad(d.getDate());
+}
+// A row with no readable signup date is OUT of any window and IN "all time" —
+// it cannot be said to have signed up between two dates.
+function signupInWindow(createdAt, from, to) {
+  if (!from && !to) return true;
+  var ymd = signupYmd(createdAt);
+  if (!ymd) return false;
+  if (from && ymd < from) return false;
+  if (to && ymd > to) return false;
+  return true;
+}
+function sgDayNum(ymd) { var p = ymd.split('-'); return Date.UTC(+p[0], +p[1] - 1, +p[2]) / 86400000; }
+function sgFromDayNum(n) { var d = new Date(n * 86400000); return d.getUTCFullYear() + '-' + sgPad(d.getUTCMonth() + 1) + '-' + sgPad(d.getUTCDate()); }
+var SG_MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function sgDayLabel(ymd) { var p = ymd.split('-'); return SG_MON[+p[1] - 1] + ' ' + (+p[2]); }
+// The graph the ask is really about. A narrow window drawn by MONTH is one bar,
+// so the bucket follows the span: days up to ~two months, weeks up to ~half a
+// year, months beyond. Every bucket in the span is emitted, zeros included — a
+// signup graph that skips quiet days reads as steady growth.
+function signupSeries(rows, from, to) {
+  var days = [];
+  (rows || []).forEach(function (r) { var y = signupYmd(r && r['Created At']); if (y) days.push(y); });
+  if (!days.length) return { gran: 'month', points: [], cumulative: [] };
+  days.sort();
+  var lo = from || days[0], hi = to || days[days.length - 1];
+  if (hi < lo) { var t = lo; lo = hi; hi = t; }
+  var span = sgDayNum(hi) - sgDayNum(lo) + 1;
+  var gran = span <= 62 ? 'day' : span <= 200 ? 'week' : 'month';
+  function keyOf(ymd) {
+    if (gran === 'day') return ymd;
+    if (gran === 'month') return ymd.slice(0, 7);
+    var n = sgDayNum(ymd), dow = (new Date(n * 86400000).getUTCDay() + 6) % 7; // Monday = 0
+    return sgFromDayNum(n - dow);
+  }
+  function labelOf(k) {
+    if (gran === 'month') { var p = k.split('-'); return SG_MON[+p[1] - 1] + " '" + p[0].slice(2); }
+    return (gran === 'week' ? 'Wk of ' : '') + sgDayLabel(k);
+  }
+  var counts = {};
+  days.forEach(function (y) { if (y >= lo && y <= hi) { var k = keyOf(y); counts[k] = (counts[k] || 0) + 1; } });
+  var keys = [], seen = {};
+  for (var n = sgDayNum(lo), end = sgDayNum(hi); n <= end; n++) {
+    var k = keyOf(sgFromDayNum(n));
+    if (!seen[k]) { seen[k] = 1; keys.push(k); }
+  }
+  var running = 0;
+  var points = keys.map(function (k) { return { key: k, month: labelOf(k), count: counts[k] || 0 }; });
+  var cumulative = points.map(function (p) { running += p.count; return { month: p.month, cumulative: running }; });
+  // The bucket holding TODAY is not finished, so a per-bucket line always dives
+  // there. `open` lets the chart draw that last step as in progress.
+  var open = !!points.length && points[points.length - 1].key === keyOf(signupToday());
+  return { gran: gran, points: points, cumulative: cumulative, open: open };
+}
+function signupWindowLabel(from, to) {
+  function f(y) { var p = y.split('-'); return SG_MON[+p[1] - 1] + ' ' + (+p[2]) + ', ' + p[0]; }
+  if (from && to) return f(from) + ' – ' + f(to);
+  if (from) return 'since ' + f(from);
+  if (to) return 'through ' + f(to);
+  return '';
+}
+function signupToday() { var d = new Date(); return d.getFullYear() + '-' + sgPad(d.getMonth() + 1) + '-' + sgPad(d.getDate()); }
+function signupDaysAgo(n) { return sgFromDayNum(sgDayNum(signupToday()) - n); }
+
 // ── Which tab a URL may land on ──────────────────────────────────────────────
 // This page did not read ?tab= at ALL, so the org dashboard's new tab chips
 // would have landed every one of them on Demographics — the link looks right and
@@ -325,6 +439,170 @@ function ChartPanel({ title, note, desc, type, data, labelKey, dataKeys, colors,
     return function(){if(chartRef.current)chartRef.current.destroy();};
   }, [data]);
   return (<div className={'panel '+(className||'')}><div className="panel-head">{title}{note&&<span className="panel-note">{note}</span>}</div>{desc&&<div className="panel-desc">{desc}</div>}<div className="chart-wrap">{(!data||!data.length)?<div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100%',color:'#9ca3af',fontSize:13,fontStyle:'italic'}}>No data for this period</div>:<canvas ref={canvasRef}></canvas>}</div></div>);
+}
+
+/* ═══ SignupsChart — the "Adoption over time" shape, for signups only ═══
+   Needham asked for a graph of people signing up; Dan: "add a signup graph
+   like this one, toggleable on or off." One line per cohort, chips that add
+   and remove lines, direct labels at the line ends, a crosshair tooltip.
+   Every series is bucketed over the SAME span (the window, or the data's own
+   first and last signup) so the lines share an x axis — a subset left to pick
+   its own span would draw a head-of-household line starting a month late. */
+var SG_SERIES = [
+  { key: 'all',      label: 'All people',          test: function () { return true; } },
+  { key: 'hoh',      label: 'Heads of household',  test: function (r) { return r['Role'] === 'Head of Household'; } },
+  { key: 'member',   label: 'Household members',   test: function (r) { return r['Role'] === 'Member'; } },
+  { key: 'resident', label: 'Residents',           test: function (r) { return String(r['Residency?'] || '').trim() === 'Yes'; } },
+  { key: 'nonres',   label: 'Non-residents',       test: function (r) { return String(r['Residency?'] || '').trim() !== 'Yes'; } }
+];
+function signupChartSeries(rows, from, to) {
+  var people = (rows || []).filter(function (r) {
+    var em = String((r && r['Email']) || '').trim().toLowerCase();
+    return !(em.indexOf('@rec.us') !== -1 && em.indexOf('guest-user+') !== 0);   // same staff rule as compute()
+  });
+  var ds = [];
+  people.forEach(function (r) { var y = signupYmd(r['Created At']); if (y) ds.push(y); });
+  if (!ds.length) return { gran: 'month', labels: [], series: {} };
+  ds.sort();
+  var lo = from || ds[0], hi = to || ds[ds.length - 1];
+  var base = signupSeries(people, lo, hi);
+  var series = {};
+  SG_SERIES.forEach(function (d) {
+    var sub = signupSeries(people.filter(d.test), lo, hi);
+    // An empty cohort still gets a flat line over the shared axis, not nothing.
+    series[d.key] = base.points.map(function (p, i) {
+      var q = sub.points.length === base.points.length ? sub.points[i] : null;
+      return q ? q.count : 0;
+    });
+  });
+  return { gran: base.gran, open: !!base.open, labels: base.points.map(function (p) { return p.month; }), series: series };
+}
+function SignupsChart({ rows, from, to }) {
+  var [on, setOn] = useState(function () {
+    try { var v = localStorage.getItem('ci_signup_lines'); if (v) return JSON.parse(v); } catch (e) {}
+    return ['all', 'hoh', 'member'];
+  });
+  var [mode, setMode] = useState('cumulative');
+  var [hover, setHover] = useState(null);
+  // Draw at the container's REAL width. A fixed viewBox stretched with
+  // a non-uniform aspect ratio distorts every label on the chart.
+  var wrapRef = useRef(null);
+  var [W, setW] = useState(1000);
+  useEffect(function () {
+    var el = wrapRef.current; if (!el) return;
+    function size() { var w = Math.round(el.getBoundingClientRect().width); if (w > 200) setW(w); }
+    size();
+    if (typeof ResizeObserver === 'undefined') { window.addEventListener('resize', size); return function () { window.removeEventListener('resize', size); }; }
+    var ro = new ResizeObserver(size); ro.observe(el);
+    return function () { ro.disconnect(); };
+  }, [on.length > 0, rows]);
+  var data = useMemo(function () { return signupChartSeries(rows, from, to); }, [rows, from, to]);
+  useEffect(function () { try { localStorage.setItem('ci_signup_lines', JSON.stringify(on)); } catch (e) {} }, [on]);
+  var CAT = window.RECESS_CAT || ['#a855f7', '#0ea5e9', '#84cc16', '#ec4899', '#7e22ce'];
+  // Colour by the series' own SLOT, so adding a line never repaints the others.
+  function colorOf(k) { var i = SG_SERIES.findIndex(function (d) { return d.key === k; }); return CAT[i % CAT.length]; }
+  function valuesOf(k) {
+    var v = data.series[k] || [];
+    if (mode === 'daily') return v;
+    var run = 0; return v.map(function (x) { run += x; return run; });
+  }
+  function toggle(k) { setOn(function (prev) { return prev.indexOf(k) >= 0 ? prev.filter(function (x) { return x !== k; }) : prev.concat([k]); }); }
+  var n = data.labels.length;
+  var H = 300, L = 52, R = 200, T = 14, B = 30;
+  var active = SG_SERIES.filter(function (d) { return on.indexOf(d.key) >= 0; });
+  var maxY = 0;
+  active.forEach(function (d) { valuesOf(d.key).forEach(function (v) { if (v > maxY) maxY = v; }); });
+  maxY = Math.max(1, maxY);
+  // Round gridlines (1, 2, 2.5 or 5 x 10^k) and only as much headroom as the
+  // next one — a peak of 10,400 on a 20,000 axis wastes half the chart.
+  var rawTick = Math.max(1, maxY / 4), mag = Math.pow(10, Math.floor(Math.log10(rawTick))), f = rawTick / mag;
+  var tick = (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * mag;
+  if (tick < 1) tick = 1;
+  var gridN = Math.max(1, Math.ceil(maxY / tick));
+  var niceMax = tick * gridN;
+  var grid = []; for (var gi = 0; gi <= gridN; gi++) grid.push(tick * gi);
+  function x(i) { return L + (n <= 1 ? 0 : i * (W - L - R) / (n - 1)); }
+  function y(v) { return T + (H - T - B) * (1 - v / niceMax); }
+  function path(vals) {
+    return vals.map(function (v, i) {
+      if (i === 0) return 'M' + x(0) + ',' + y(v);
+      return (mode === 'cumulative' ? 'H' + x(i) + 'V' + y(v) : 'L' + x(i) + ',' + y(v));
+    }).join('');
+  }
+  // End labels, nudged apart so two lines that finish close together stay legible.
+  var ends = active.map(function (d) { var v = valuesOf(d.key); var last = v.length ? v[v.length - 1] : 0; return { d: d, v: last, y: y(last) }; })
+    .sort(function (a, b) { return a.y - b.y; });
+  // Nudge apart, then pull the stack back up if it ran past the plot floor —
+  // pushing only downward is how the lowest label fell off the chart.
+  var GAP = 15, floor = H - B + 4;
+  for (var i = 1; i < ends.length; i++) if (ends[i].y - ends[i - 1].y < GAP) ends[i].y = ends[i - 1].y + GAP;
+  if (ends.length && ends[ends.length - 1].y > floor) {
+    ends[ends.length - 1].y = floor;
+    for (var j = ends.length - 2; j >= 0; j--) if (ends[j + 1].y - ends[j].y < GAP) ends[j].y = ends[j + 1].y - GAP;
+  }
+  var tickEvery = Math.max(1, Math.ceil(n / 7));
+  var totalAll = (data.series.all || []).reduce(function (a, b) { return a + b; }, 0);
+  function onMove(e) {
+    var box = e.currentTarget.getBoundingClientRect();
+    var px = e.clientX - box.left;
+    var idx = n <= 1 ? 0 : Math.round((px - L) / ((W - L - R) / (n - 1)));
+    setHover(Math.max(0, Math.min(n - 1, idx)));
+  }
+  var gword = { day: 'day', week: 'week', month: 'month' }[data.gran] || 'month';
+  return (
+    <div className="panel sgc" data-signup-chart={n} data-signup-lines={on.join(',')} data-signup-mode={mode}>
+      <div className="sgc-head">
+        <div><span className="panel-head" style={{display:'inline'}}>Signups over time</span>
+          <span className="sgc-sub"> {totalAll.toLocaleString()} people {from || to ? 'signed up ' + signupWindowLabel(from, to) : 'on file'} · by {gword} · click a line to add or remove it{mode === 'daily' && data.open ? ' · dashed = ' + gword + ' still in progress' : ''}</span></div>
+        <div className="sgc-mode no-print">
+          <button type="button" className={mode === 'cumulative' ? 'on' : ''} data-signup-mode-btn="cumulative" onClick={function () { setMode('cumulative'); }}>Running total</button>
+          <button type="button" className={mode === 'daily' ? 'on' : ''} data-signup-mode-btn="daily" onClick={function () { setMode('daily'); }}>Per {gword}</button>
+        </div>
+      </div>
+      <div className="sgc-chips">
+        {SG_SERIES.map(function (d) {
+          var isOn = on.indexOf(d.key) >= 0;
+          var tot = (data.series[d.key] || []).reduce(function (a, b) { return a + b; }, 0);
+          return <button type="button" key={d.key} data-signup-chip={d.key} className={'sgc-chip' + (isOn ? ' on' : '')}
+            style={isOn ? { background: colorOf(d.key), borderColor: colorOf(d.key) } : null}
+            onClick={function () { toggle(d.key); }}><span className="dot" />{d.label} <b>{tot.toLocaleString()}</b></button>;
+        })}
+      </div>
+      {!n ? <div className="sgc-empty">No signup dates on file for this view.</div> : !active.length ? <div className="sgc-empty">Pick a line above to draw it.</div> : (
+        <div className="sgc-wrap" ref={wrapRef}>
+          <svg viewBox={'0 0 ' + W + ' ' + H} width={W} height={H} className="sgc-svg" onMouseMove={onMove} onMouseLeave={function () { setHover(null); }} role="img" aria-label="Signups over time">
+            {grid.map(function (v, k) { return (
+              <g key={k}><line x1={L} x2={W - R} y1={y(v)} y2={y(v)} stroke="#eef2f6" />
+                <text x={L - 8} y={y(v) + 4} textAnchor="end" className="sgc-tick">{(Math.round(v * 10) / 10).toLocaleString()}</text></g>); })}
+            {data.labels.map(function (lb, i) {
+              // The last label is anchored at its END so it cannot run into the
+              // line labels; a regular tick too close to it is dropped.
+              var last = i === n - 1;
+              if (!last && (i % tickEvery !== 0 || (n - 1 - i) < tickEvery / 2)) return null;
+              return <text key={i} x={x(i)} y={H - 8} textAnchor={last && n > 1 ? 'end' : i === 0 ? 'start' : 'middle'} className="sgc-tick">{lb}</text>; })}
+            {active.map(function (d) {
+              var v = valuesOf(d.key);
+              // Per-bucket mode: the unfinished last bucket is dashed, so the
+              // month in progress does not read as signups collapsing.
+              var dashLast = mode === 'daily' && data.open && n > 1;
+              return <g key={d.key}>
+                <path d={path(dashLast ? v.slice(0, n - 1) : v)} fill="none" stroke={colorOf(d.key)} strokeWidth="2.2" />
+                {dashLast && <path d={'M' + x(n - 2) + ',' + y(v[n - 2]) + 'L' + x(n - 1) + ',' + y(v[n - 1])} fill="none" stroke={colorOf(d.key)} strokeWidth="2.2" strokeDasharray="4 4" data-signup-open="1" />}
+              </g>; })}
+            {active.map(function (d) { var v = valuesOf(d.key); return <circle key={d.key} cx={x(n - 1)} cy={y(v[n - 1] || 0)} r="4" fill={colorOf(d.key)} />; })}
+            {ends.map(function (e) { return <text key={e.d.key} x={W - R + 12} y={e.y + 4} className="sgc-end"><tspan fill={colorOf(e.d.key)}>{'\u25CF'} </tspan>{e.d.label} <tspan fontWeight="700">{e.v.toLocaleString()}</tspan></text>; })}
+            {hover != null && <line x1={x(hover)} x2={x(hover)} y1={T} y2={H - B} stroke="#94a3b8" strokeDasharray="3 3" />}
+          </svg>
+          {hover != null && (
+            <div className="sgc-tip" style={{ left: (x(hover) / W * 100) + '%' }}>
+              <div className="sgc-tip-h">{data.labels[hover]}</div>
+              {active.map(function (d) { return <div key={d.key}><span className="dot" style={{ background: colorOf(d.key) }} />{d.label} <b>{(valuesOf(d.key)[hover] || 0).toLocaleString()}</b></div>; })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function FillRateChart({ sections, colors, selected }) {
@@ -545,7 +823,7 @@ function GenderChart({ gender, genderSpecified, total, colors }) {
 }
 
 /* ═══ compute() ═══ */
-function compute(rows) {
+function compute(rows, win) {
   var EXPECTED_KEYS=['Household ID','Role','HoH Name','Created At','Rec ID','First Name','Last Name','Email','Phone','Street Number','Street Name','City','State','Zip Code','Date of Birth','Age','Grade','Gender','Residency?','Gross Revenue','Refunds','Net Revenue','Items Purchased','First Transaction','Last Transaction','Program Revenue','Facility Revenue','Fee Revenue','Product Revenue'];
   rows = rows.map(function(r) {
     var o={};
@@ -684,11 +962,12 @@ function compute(rows) {
   // Signups
   var months=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   function parseDate(s){if(!s)return null;var d=new Date(s);return isNaN(d.getTime())?null:d;}
-  var mMap={};
-  rows.forEach(function(r){var d=parseDate(r['Created At']);if(d){var k=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');mMap[k]=(mMap[k]||0)+1;}});
-  var signups=Object.entries(mMap).sort(function(a,b){return a[0].localeCompare(b[0]);}).map(function(e){var p=e[0].split('-');return{month:months[parseInt(p[1])-1]+" '"+p[0].slice(2),count:e[1]};});
-  var running=0;
-  var cumulative=Object.entries(mMap).sort(function(a,b){return a[0].localeCompare(b[0]);}).map(function(e){running+=e[1];var p=e[0].split('-');return{month:months[parseInt(p[1])-1]+" '"+p[0].slice(2),cumulative:running};});
+  // One series builder for the graph and its running total, bucketed by the
+  // window's span (see signupSeries). The window arrives as `win`.
+  var sgSeries=signupSeries(rows,(win&&win.from)||'',(win&&win.to)||'');
+  var signups=sgSeries.points;
+  var cumulative=sgSeries.cumulative;
+  var signupGran=sgSeries.gran;
 
   // City
   var cMap={};
@@ -945,7 +1224,7 @@ function compute(rows) {
     badAges:badAges, ageDist:ageDist,
     gender:gender, genderSpecified:genderSpecified,
     gradeData:gradeData, withGrade:withGrade,
-    signups:signups, cumulative:cumulative,
+    signups:signups, cumulative:cumulative, signupGran:signupGran,
     cities:topCities, topCity:topCity, resByAge:resByAge,
     noAge:noAge, noGender:noGender, noZip:noZip, zipData:zipData,
     withPhone:withPhone, withEmergency:withEmergency, withPickup:withPickup, withConfirmed:withConfirmed,
@@ -1169,15 +1448,70 @@ function App() {
   // Defer heavy compute to next frame so the page shell renders instantly
   var [s, setS] = useState(null);
   var [computing, setComputing] = useState(false);
+
+  // ── Signup window (Needham) ─────────────────────────────────────────────
+  // Seeded from the URL so a shared link and the PDF open on the same window
+  // the reader was looking at; the print page has no toolbar and no state, so
+  // the URL is the only channel it has.
+  var [signFrom, setSignFrom] = useState(function(){ return signupParam(urlParams.get('signup_from')); });
+  var [signTo, setSignTo] = useState(function(){ return signupParam(urlParams.get('signup_to')); });
+  var windowOn = !!(signFrom || signTo);
+  // Per-viewer display preference, like the column toggles elsewhere. ON unless
+  // this browser switched it off; ?signup_chart=0 lets a link or the PDF say so.
+  var [showSignupChart, setShowSignupChartRaw] = useState(function(){
+    if (urlParams.get('signup_chart') === '0') return false;
+    if (urlParams.get('signup_chart') === '1') return true;
+    try { return localStorage.getItem('ci_signup_chart') !== '0'; } catch (e) { return true; }
+  });
+  function setShowSignupChart(v) { setShowSignupChartRaw(v); try { localStorage.setItem('ci_signup_chart', v ? '1' : '0'); } catch (e) {} }
+  // THE FILTER RUNS BEFORE compute(), so every tab, every KPI, every contact
+  // CSV and the Rec Insights payload read the same scoped set — one funnel, the
+  // rule the facility Summary learned the hard way.
+  var winRows = useMemo(function(){
+    if (!rows) return null;
+    if (!windowOn) return rows;
+    return rows.filter(function(r){ return signupInWindow(r && r['Created At'], signFrom, signTo); });
+  }, [rows, signFrom, signTo]);
+  var winUndated = useMemo(function(){
+    if (!rows || !windowOn) return 0;
+    return rows.filter(function(r){ return !signupYmd(r && r['Created At']); }).length;
+  }, [rows, signFrom, signTo]);
   useEffect(function(){
-    if (!rows) { setS(null); return; }
+    // Mutate only the two keys: ?token= and ?tab= ride on this URL.
+    try {
+      var q = new URLSearchParams(window.location.search);
+      if (signFrom) q.set('signup_from', signFrom); else q.delete('signup_from');
+      if (signTo) q.set('signup_to', signTo); else q.delete('signup_to');
+      var qs = q.toString();
+      window.history.replaceState(null, '', window.location.pathname + (qs ? '?' + qs : ''));
+    } catch (e) {}
+  }, [signFrom, signTo]);
+  // Slack: which window an org looked at, and what it held. Debounced here so
+  // typing a date one keystroke at a time is one look, not eight.
+  useEffect(function(){
+    if (!windowOn || !winRows || isPrint) return;
+    var id = setTimeout(function(){
+      try {
+        fetch(withToken('/' + orgSlug + '/' + reportType + '/api/log?event=intel-window&from='
+          + encodeURIComponent(signFrom) + '&to=' + encodeURIComponent(signTo) + '&n=' + winRows.length),
+          { method: 'POST', keepalive: true }).catch(function () {});
+      } catch (e) {}
+    }, 1500);
+    return function(){ clearTimeout(id); };
+  }, [signFrom, signTo, !!winRows]);
+
+  useEffect(function(){
+    if (!winRows) { setS(null); return; }
+    // An empty window is a real answer, not "no data returned": s stays null
+    // and the page renders the empty-window state with the controls still up.
+    if (!winRows.length) { setS(null); setComputing(false); return; }
     setComputing(true);
     var id = setTimeout(function(){
-      setS(compute(rows));
+      setS(compute(winRows, { from: signFrom, to: signTo }));
       setComputing(false);
     }, 0);
     return function(){ clearTimeout(id); };
-  }, [rows]);
+  }, [winRows]);
 
   var observations = useMemo(function(){return s?buildObs(s):[];}, [s]);
   var revObservations = useMemo(function(){return s?buildRevObs(s):[];}, [s]);
@@ -1360,7 +1694,11 @@ function App() {
   function downloadPdf() {
     // Opened in its own window rather than downloaded — a download started by a
     // sandboxed iframe is silently dropped. See open-pdf.js.
-    openReportPdf(withToken('/'+orgSlug+'/'+reportType+'/api/pdf'), { label: 'Users' });
+    var pq = [];
+    if (signFrom) pq.push('signup_from=' + encodeURIComponent(signFrom));
+    if (signTo) pq.push('signup_to=' + encodeURIComponent(signTo));
+    pq.push('signup_chart=' + (showSignupChart ? '1' : '0'));
+    openReportPdf(withToken('/'+orgSlug+'/'+reportType+'/api/pdf' + (pq.length ? '?' + pq.join('&') : '')), { label: 'Users' });
   }
 
   useEffect(function(){window.recShareLink=function(){return window.location.href;};}, []);
@@ -1404,17 +1742,34 @@ function App() {
     } catch (e) {}
   }
 
+  function setSignWindow(f, t) { setSignFrom(signupParam(f)); setSignTo(signupParam(t)); }
+  var signupControls = (
+    <div className="sg-ctl" data-signup-ctl="1">
+      <span className="sg-lbl">Signed up</span>
+      <input type="date" className="sg-date" data-signup-from="1" value={signFrom} max={signTo || undefined}
+        onChange={function(e){ setSignFrom(signupParam(e.target.value)); }} aria-label="Signed up from" />
+      <span className="sg-to">to</span>
+      <input type="date" className="sg-date" data-signup-to="1" value={signTo} min={signFrom || undefined}
+        onChange={function(e){ setSignTo(signupParam(e.target.value)); }} aria-label="Signed up to" />
+      <button type="button" className="sg-pre" data-signup-preset="30" onClick={function(){ setSignWindow(signupDaysAgo(29), signupToday()); }}>30d</button>
+      <button type="button" className="sg-pre" data-signup-preset="90" onClick={function(){ setSignWindow(signupDaysAgo(89), signupToday()); }}>90d</button>
+      <button type="button" className="sg-pre" data-signup-preset="ytd" onClick={function(){ setSignWindow(signupToday().slice(0,4) + '-01-01', signupToday()); }}>YTD</button>
+      {windowOn && <button type="button" className="sg-pre" data-signup-clear="1" onClick={function(){ setSignWindow('', ''); }}>All time</button>}
+    </div>
+  );
   var headerBar = (
     <div className="toolbar no-print">
       <h1>Community Intelligence</h1>
       <span className="pill" style={{background:'rgba(255,255,255,.12)',color:'#ddd'}}>{orgSlug.charAt(0).toUpperCase()+orgSlug.slice(1)}</span>
       {s&&<span className="pill" style={{background:'rgba(16,185,129,.15)',color:'#6ee7b7'}}>{s.hhCount} HH &middot; {s.total} people</span>}
+      {rows && signupControls}
       <div className="spacer"/>
     </div>
   );
 
   if(loading) return <React.Fragment>{headerBar}<ReportLoader /></React.Fragment>;
   if(error) return <React.Fragment>{headerBar}<div className="dash"><div className="error"><strong>Error:</strong> {error}</div></div></React.Fragment>;
+  if(!s && windowOn && winRows && !winRows.length && !computing) return <React.Fragment>{headerBar}<div className="dash"><div className="sg-empty" data-signup-empty="1">No accounts signed up {signupWindowLabel(signFrom, signTo)}.{winUndated ? ' ' + winUndated.toLocaleString() + ' account' + (winUndated === 1 ? ' has' : 's have') + ' no signup date on file and are left out of any window.' : ''} <button type="button" onClick={function(){ setSignWindow('', ''); }}>Show all time</button></div></div></React.Fragment>;
   if(!s) return <React.Fragment>{headerBar}{computing ? <ReportLoader label={'Crunching ' + ((rows&&rows.length)||0).toLocaleString() + ' records'} /> : <div className="loading"><div style={{color:'#888',fontSize:13}}>No data returned.</div></div>}</React.Fragment>;
 
   var TEAL='#0d9488',AMBER='#f59e0b',ROSE='#f43f5e',EMERALD='#10b981',INDIGO='#6366f1',PURPLE='#8b5cf6',SKY='#0ea5e9';
@@ -1488,6 +1843,7 @@ function App() {
         <h1>Community Intelligence</h1>
         <span className="pill" style={{background:'rgba(255,255,255,.12)',color:'#ddd'}}>{orgSlug.charAt(0).toUpperCase()+orgSlug.slice(1)}</span>
         <span className="pill" style={{background:'rgba(16,185,129,.15)',color:'#6ee7b7'}}>{s.hhCount} HH &middot; {s.total} people</span>
+        {signupControls}
         <div className="spacer"/>
         <div className="divider"/>
         <button onClick={function(){window.print();}}>{'\uD83D\uDDA8\uFE0F'} Print</button>
@@ -1518,6 +1874,15 @@ function App() {
             <div className="rh-meta">{s.resPct}% residents{s.medianAge!=null?' · median age '+s.medianAge:''}</div>
           </div>
         </div>
+
+        {/* The window is stated IN THE PAGE, not only in the toolbar — whoever
+            prints this has no toolbar to look at. */}
+        {windowOn && (
+          <div className="sg-scope" data-signup-scope={(signFrom||'') + '|' + (signTo||'')} data-signup-people={s.total}>
+            Showing the <strong>{s.total.toLocaleString()}</strong> {s.total === 1 ? 'person' : 'people'} who signed up <strong>{signupWindowLabel(signFrom, signTo)}</strong>, of {rows.length.toLocaleString()} on file. Every figure below is scoped to them; a household counts when at least one of its people signed up in the window.
+            {winUndated > 0 && <span> {winUndated.toLocaleString()} with no signup date on file are left out.</span>}
+          </div>
+        )}
 
         {/* Animated header — an afternoon in the park, people out using it. */}
         {!isPrint && (
@@ -1634,6 +1999,15 @@ function App() {
 
             {insightsBlock}
 
+            {/* The adoption-style signup chart, switchable per viewer (Dan: "toggleable
+                on or off"). Off leaves the two bar/line panels below as they were. */}
+            <div className="sgc-toggle no-print">
+              <button type="button" data-signup-chart-toggle={showSignupChart ? 'on' : 'off'} onClick={function(){ setShowSignupChart(!showSignupChart); }}>
+                {showSignupChart ? 'Hide signups chart' : '\uD83D\uDCC8 Show signups chart'}
+              </button>
+            </div>
+            {showSignupChart && <SignupsChart rows={winRows} from={signFrom} to={signTo} />}
+
             {/* Row 1: HH Size + Residency */}
             <div className="grid">
               <ChartPanel title="Household Size Distribution" note={s.multiHH+' multi-member'} desc="Number of households by member count. Includes all registered accounts." type="bar" data={s.hhSizeData} labelKey="size" dataKeys={[{key:'count',label:'Households'}]} colors={[INDIGO]} />
@@ -1657,8 +2031,8 @@ function App() {
 
             {/* Row 2: Signups + Growth */}
             <div className="grid">
-              <ChartPanel title="New Signups by Month" desc="New account registrations per month based on account creation date." data={s.signups} labelKey="month" dataKeys={[{key:'count',label:'Signups'}]} colors={[INDIGO]} />
-              <ChartPanel title="Cumulative Growth" desc="Running total of registered accounts over time." type="line" data={s.cumulative} labelKey="month" dataKeys={[{key:'cumulative',label:'Total'}]} colors={[INDIGO]} />
+              <ChartPanel title={'New Signups by ' + ({day:'Day',week:'Week',month:'Month'}[s.signupGran] || 'Month')} note={windowOn ? signupWindowLabel(signFrom, signTo) : null} desc={'New account registrations per ' + (s.signupGran || 'month') + ', by account creation date.' + (windowOn ? ' Empty ' + (s.signupGran || 'month') + 's are drawn as zero.' : '')} data={s.signups} labelKey="month" dataKeys={[{key:'count',label:'Signups'}]} colors={[INDIGO]} />
+              <ChartPanel title="Cumulative Growth" desc={windowOn ? 'Running total of signups within the selected window.' : 'Running total of registered accounts over time.'} type="line" data={s.cumulative} labelKey="month" dataKeys={[{key:'cumulative',label:'Total'}]} colors={[INDIGO]} />
             </div>
 
             {/* Row 3: Age by Role + Gender */}

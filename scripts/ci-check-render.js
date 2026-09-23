@@ -1425,13 +1425,15 @@ function intelRows() {
         "Age": "12", "Grade": "7th" }),
     // Signed up, never bought, household of one.
     r({ "Household ID": "hh-4", "First Name": "Ruby", "Last Name": "Solo",
-        "Email": "ruby@example.com", "Residency?": "No", "Last Transaction": "" }),
+        "Email": "ruby@example.com", "Residency?": "No", "Last Transaction": "",
+        // Recent signups, so a signup window has something to narrow to.
+        "Created At": ago(5) }),
     // Signed up, never bought, but a pair — so unbooked without being solo.
     r({ "Household ID": "hh-5", "First Name": "Blaise", "Last Name": "Pascal",
-        "Email": "blaise@example.com", "Last Transaction": "" }),
+        "Email": "blaise@example.com", "Last Transaction": "", "Created At": ago(3) }),
     r({ "Household ID": "hh-5", "Role": "Member", "First Name": "Etta",
         "Last Name": "Pascal", "Email": "etta@example.com", "Age": "7",
-        "Grade": "2nd", "Last Transaction": "" }),
+        "Grade": "2nd", "Last Transaction": "", "Created At": ago(3) }),
     // Both categories and a resident: the engaged segment, distinct from lapsing.
     r({ "Household ID": "hh-6", "First Name": "Katherine", "Last Name": "Johnson",
         "Email": "katherine@example.com", "Gross Revenue": "500",
@@ -6600,6 +6602,31 @@ const CASES = [
       await page.waitForFunction(
         () => /Summary/.test(document.querySelector(".tab.active")?.textContent || ""),
         { timeout: 45000 });
+    } },
+  /* Community Intel's signup window (Needham). Keyed on the scoped HEAD COUNT
+     and on the chart's bucket count: a window that filters nothing renders a
+     perfectly plausible page with all ten people, and a chart that ignores the
+     window draws months instead of 30 days. */
+  { name: "users · a signup window scopes the whole report",
+    path: (() => { const d = n => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
+      return "/{org}/users?signup_from=" + d(29) + "&signup_to=" + d(0); })(),
+    needs: '[data-signup-scope][data-signup-people="3"]',
+    also: ['[data-signup-chart="30"]', '.pill'] },
+  { name: "users · an empty signup window says so and offers a way back",
+    path: "/{org}/users?signup_from=2001-01-01&signup_to=2001-01-31",
+    needs: '[data-signup-empty="1"]' },
+  { name: "users · the signups chart toggles its lines and hides",
+    path: "/{org}/users",
+    needs: 'body[data-sgc-added="1"][data-sgc-hidden="1"]',
+    pre: async page => { await page.evaluateOnNewDocument(() => { try { localStorage.clear(); } catch (e) {} }); },
+    act: async page => {
+      await page.waitForSelector('[data-signup-chip="resident"]', { timeout: 45000 });
+      await page.click('[data-signup-chip="resident"]');
+      await page.waitForFunction(() => /resident/.test(document.querySelector('[data-signup-chart]')?.getAttribute('data-signup-lines') || ''), { timeout: 8000 });
+      await page.evaluate(() => document.body.setAttribute('data-sgc-added', '1'));
+      await page.click('[data-signup-chart-toggle]');
+      await page.waitForFunction(() => !document.querySelector('[data-signup-chart]'), { timeout: 8000 });
+      await page.evaluate(() => document.body.setAttribute('data-sgc-hidden', '1'));
     } },
   { name: "users · deep link lands on the tab", path: "/{org}/users?tab=strategy",
     needs: ".tab.active", act: async page => {
