@@ -2532,8 +2532,25 @@ function crEsc(s) {
   $("crFootOrg").textContent = (CFG.displayName || SLUG) + " — Cost Recovery";
   $("crFootRun").textContent = "Run " + new Date().toLocaleString("en-US",
     { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
-  $("startDate").value = defaultStart();
-  $("endDate").value   = todayISO();
+  /* THE DATES ARE THE FIFTH THING THAT DECIDES WHAT THIS REPORT CONTAINS, and
+     they were the one the URL carried and the page ignored. syncUrl has always
+     written them; nothing read them back, so a shared link opened on the
+     default two fiscal years and — worse — a PDF did too, silently, however
+     narrowly the reader had scoped the page before pressing the button. Gates
+     1, 2 and 4 passed and gate 3 failed, which is the shape all four earlier
+     instances took. Found by driving the real route rather than by review.
+
+     VALIDATED, never trusted: anything that is not YYYY-MM-DD falls back to the
+     default. A `date` input refuses a bad value and comes back EMPTY, and an
+     empty window asks Metabase for nothing and renders a report with no
+     programs in it — which reads as an org that runs none. */
+  var DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+  function urlDate(k, fallback) {
+    var v = Q.get(k);
+    return v && DATE_RE.test(v) ? v : fallback;
+  }
+  $("startDate").value = urlDate("start_date", defaultStart());
+  $("endDate").value   = urlDate("end_date", todayISO());
   load();
 })();
 </script>

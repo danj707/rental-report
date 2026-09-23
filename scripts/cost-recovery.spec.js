@@ -544,6 +544,29 @@ if (!process.env.SKIP_SOURCE) {
   ok(/if \(PRINT\) return;/.test(syncBlk),
      "…and the print page never writes one back: it is TOLD its state");
 
+  /* AND THE DATES, which syncUrl has ALWAYS written and the page never read
+     back. They decide which programs are loaded at all — and therefore which
+     seasons the period picker can even offer — so a PDF that ignores them
+     renders the default two fiscal years however narrowly the reader scoped
+     the page. Gates 1, 2 and 4 passed and gate 3 failed: the exact shape
+     `gl_codes`, `refunds`, `pii` and `sites` each took. Found by driving the
+     real route, not by review. */
+  ok(/q\.set\("start_date", \$\("startDate"\)\.value\);/.test(syncBlk)
+     && /q\.set\("end_date", \$\("endDate"\)\.value\);/.test(syncBlk),
+     "syncUrl writes the window to the URL");
+  ok(/\$\("startDate"\)\.value = urlDate\("start_date", defaultStart\(\)\);/.test(PAGE)
+     && /\$\("endDate"\)\.value   = urlDate\("end_date", todayISO\(\)\);/.test(PAGE),
+     "…and the page SEEDS both inputs back from it, or a shared link and every "
+     + "PDF open on the report's default window whatever the URL says");
+  const urlDateBlk = pslice("function urlDate(k, fallback)", "\n  }");
+  ok(urlDateBlk.length > 20, "urlDate was found — otherwise the next assertion is vacuous");
+  ok(/DATE_RE\.test\(v\)/.test(urlDateBlk) && /fallback/.test(urlDateBlk),
+     "…VALIDATED, never trusted: a `date` input refuses a malformed value and "
+     + "comes back EMPTY, and an empty window asks Metabase for nothing and "
+     + "draws a report with no programs in it — which reads as an org running none");
+  ok(/var DATE_RE = \/\^\\d\{4\}-\\d\{2\}-\\d\{2\}\$\//.test(PAGE),
+     "the date pattern is anchored at both ends, or `2024-07-01junk` is accepted");
+
   /* #report-ready IS WHAT generatePdf WAITS 120s FOR, and the failure path has
      to stamp it too or a report whose feed did not answer costs two minutes
      and then a 500. */
@@ -561,6 +584,22 @@ if (!process.env.SKIP_SOURCE) {
   const qsBlock = gp.slice(gp.indexOf("const qsObj = {"),
     gp.indexOf("const qs = new URLSearchParams(qsObj);") + "const qs = new URLSearchParams(qsObj);".length);
   ok(qsBlock.includes("forEach"), "the generatePdf query block was found and is liftable");
+
+  /* …AND NOTHING THAT LOGS THAT URL MAY PRINT THE TOKEN. Found by driving the
+     real route rather than by review: `[pdf] Generating for …` printed the raw
+     URL while `[pdf] navigating to …` sixty lines below it redacted the same
+     string, so the org's access token — the only thing in front of every report
+     that org has — has gone into the log on every PDF this platform has ever
+     generated. Half a rename, and this guard is PLATFORM-WIDE rather than about
+     cost recovery: it lives here because this spec already lifts generatePdf. */
+  const pdfLogs = (SERVER.match(/console\.log\(`\[pdf\][^`]*`\)/g) || []);
+  ok(pdfLogs.length >= 2, "the [pdf] log lines were found — otherwise this is vacuous");
+  pdfLogs.forEach(l => {
+    ok(!/\$\{url\}/.test(l),
+       "no [pdf] log line prints the raw URL, which carries the org token: " + l);
+  });
+  ok(/const redactToken = \(u\) => String\(u\)\.replace\(\/token=\[\^&\]\+\/g, "token=\*\*\*"\);/.test(SERVER),
+     "…through ONE redactor, because two copies is how one of them stopped redacting");
   const buildQs = new Function("startDate", "endDate", "orgTok", "filters",
     qsBlock + "\nreturn qs.toString();");
 

@@ -3852,6 +3852,46 @@ const CASES = [
         + " kpis=" + m.kpis + " banner=" + m.banner);
     } },
 
+  /* ── THE DATES ARE THE FIFTH THING THAT DECIDES WHAT THE REPORT HOLDS ──
+        syncUrl has always WRITTEN start_date/end_date; nothing read them back,
+        so a shared link opened on the default two fiscal years and a PDF —
+        which is exactly this URL — captured that window however narrowly the
+        reader had scoped the page. The four gates again, failing at the page.
+
+        Only the INPUT can see it: the stub answers whatever window it is
+        asked for, so a case keyed on the rows renders identically either way.
+        The second half is the guard that matters more than the first — a
+        `date` input refuses a malformed value and comes back EMPTY, and an
+        empty window asks for nothing and draws a report with no programs in
+        it, which reads as an org that runs none. */
+  { name: "cost-recovery · the window comes from the URL, and a bad one does not",
+    path: "/{org}/cost-recovery?start_date=2024-07-01&end_date=2024-12-31",
+    needs: 'body[data-rc-crdates-seen^="ok=1 "]',
+    act: async (page) => {
+      await page.waitForSelector("#startDate", { timeout: 25000 });
+      const good = await page.evaluate(() => ({
+        s: document.getElementById("startDate").value,
+        e: document.getElementById("endDate").value }));
+      /* Same page, a value a date input cannot hold. The existing params are
+         KEPT and only the two dates overwritten — the org token rides on this
+         URL, and replacing the whole search string 404s the second navigation
+         at the org-token middleware, which reads as the page being broken. */
+      const u = new URL(page.url());
+      u.searchParams.set("start_date", "undefined");
+      u.searchParams.set("end_date", "not-a-date");
+      await page.goto(u.toString(), { waitUntil: "domcontentloaded" });
+      await page.waitForSelector("#startDate", { timeout: 25000 });
+      const bad = await page.evaluate(() => ({
+        s: document.getElementById("startDate").value,
+        e: document.getElementById("endDate").value }));
+      const ok = good.s === "2024-07-01" && good.e === "2024-12-31"
+        && /^\d{4}-\d{2}-\d{2}$/.test(bad.s) && /^\d{4}-\d{2}-\d{2}$/.test(bad.e)
+        && bad.s !== "2024-07-01";
+      await page.evaluate(t => document.body.setAttribute("data-rc-crdates-seen", t),
+        (ok ? "ok=1 " : "ok=0 ") + "fromUrl=" + good.s + ".." + good.e
+        + " fromGarbage=" + (good.s === bad.s ? "STUCK " : "") + bad.s + ".." + bad.e);
+    } },
+
   /* ── LEAVING COMPARE HAS TO TAKE THE COMPARE PICKER WITH IT ──────────
         Dan: "Compare field doesn't clear if you move to another selection."
         It was never cleared because it was never HIDDEN: renderPeriods has

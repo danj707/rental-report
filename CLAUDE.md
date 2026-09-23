@@ -8896,6 +8896,50 @@ Both were in code that reads perfectly:
   failed. The fix is ordering — render first, then switch — and it was found by
   the case timing out.
 
+### THE WINDOW WAS THE FIFTH THING, AND IT FAILED THE SAME GATE
+
+Found by driving the real route rather than by reading the diff, which is the
+only reason it was found at all. **`syncUrl` has always WRITTEN
+`start_date`/`end_date` to the URL and the page never read them back** — the
+inputs were seeded from `defaultStart()` / `todayISO()` unconditionally. So a
+shared link opened on the default two fiscal years whatever it said, and **every
+PDF captured that window however narrowly the reader had scoped the page**.
+
+Gates 1, 2 and 4 passed and gate 3 — the page reading it — failed. That is the
+exact shape `gl_codes`, `refunds`, `pii` and `sites` each took, and it is worth
+saying that the harness built for those four cannot see this one: it derives its
+filter list from `getParams()`, and this page is vanilla JS with no `getParams`
+at all.
+
+**VALIDATED, never trusted.** Anything that is not `YYYY-MM-DD` falls back. A
+`date` input refuses a malformed value and comes back **EMPTY**, and an empty
+window asks Metabase for nothing and draws a report with no programs in it —
+which reads as an org that runs none. The pattern is anchored at both ends, or
+`2024-07-01junk` is accepted.
+
+**Only the INPUT can see it in a browser**: the stub answers whatever window it
+is asked for, so a case keyed on the rows renders identically either way.
+
+### THE PDF LOG HAD BEEN PRINTING THE ORG'S ACCESS TOKEN — platform-wide
+
+Also found by driving the route. `generatePdf` logged the URL twice, sixty
+lines apart:
+
+```
+[pdf] Generating for shrewsbury/cost-recovery: …&token=<the real one>  ← raw
+[pdf] navigating to …&token=***                                  ← redacted
+```
+
+So somebody decided that token does not belong in the log and fixed one of the
+two call sites. **This is not about cost recovery** — it is every PDF this
+platform has ever generated, for every org, and that token is the only thing
+standing in front of every report that org has. One `redactToken` now, because
+two copies is how one of them stopped redacting. The guard lives in
+`cost-recovery.spec.js` only because that spec already lifts `generatePdf`.
+
+**And it was a real leak into a real log**, not a theoretical one: the line above
+is copied from this sandbox's own boot while proving the PDF route works.
+
 **And the first load was discarding its own `?period=`.** The load branch
 cleared `period`/`periodB` unconditionally so `renderPeriods` could pick the
 busiest period after the dates move — right on a re-run, and wrong on the one
@@ -8928,8 +8972,10 @@ sends it, which is exactly how all four earlier instances shipped.
 button back on `window.print()` (the bug as Dan flagged it), the PDF URL
 dropping the on-screen filters, the two booleans folded into the truthy loop,
 the URL's view never applied (so a statement PDF captures the P&L),
-`?_print=1` never stamping `#report-ready`, and the print render keeping its
-chrome.
+`?_print=1` never stamping `#report-ready`, the print render keeping its
+chrome, **the window never read back from the URL** (the fifth gate above),
+`urlDate` dropping its validation, the date pattern unanchored, `syncUrl` no
+longer writing the window, and a `[pdf]` log line printing the raw URL.
 
 **ONE SURVIVOR IS GENUINELY BENIGN and is recorded as such rather than dressed
 up as caught.** Making the Statement button ask for no view (`openPdf(null)`)
@@ -8944,11 +8990,28 @@ that is named rather than implied: `"0"` is truthy in JS, so a VALUE test over
 the built query string cannot separate the two implementations — only reading
 the forwarding code can.
 
-Five `ci-check-render.js` cases, because none of this is visible in source: the
+Six `ci-check-render.js` cases, because none of this is visible in source: the
 statement printing alone and filling the page, the P&L keeping its summary,
 leaving compare clearing the compare picker, the PDF button opening a popup
-carrying the view, and the print render being ready, bare, and honouring the
-view it was asked for.
+carrying the view, the print render being ready, bare, and honouring the view it
+was asked for, and the window coming from the URL while a malformed one does not.
+
+**THE SECOND NAVIGATION IN A CASE MUST KEEP THE TOKEN.** That last case drives
+the same page twice and the first draft did `u.search = "?start_date=…"`, which
+drops the `?token=` the harness appended — so the org-token middleware 404s the
+second load and the case fails **waiting 25 seconds for `#startDate`**, which
+reads as the page being broken. Overwrite the parameters you mean and keep the
+rest.
+
+### PROVEN END TO END, against production data
+
+The route was driven rather than asserted, on a local boot with prewarm skipped:
+`GET /shrewsbury/cost-recovery/api/pdf?view=statement` → **HTTP 200,
+`application/pdf`, 41,824 bytes beginning `%PDF-`, in 43.1s** over Shrewsbury's
+real Programs feed. That is inside the route's 60s first try and it is the
+measurement that says the two-fiscal-year default window is affordable here.
+
+
 
 ## Working preferences (from Dan, dan@rec.us)
 

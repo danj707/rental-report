@@ -6672,6 +6672,11 @@ async function orgLogoDataUri(slug) {
 }
 
 // ── PDF generation ───────────────────────────────────────────────────
+// The PDF URL carries the org's access token, so nothing that logs it may print
+// it raw. One definition, because this was two call sites and only one of them
+// redacted — see the note at the first of them.
+const redactToken = (u) => String(u).replace(/token=[^&]+/g, "token=***");
+
 async function generatePdf(orgSlug, reportType, startDate, endDate, filters = {}) {
   const puppeteer = require("puppeteer");
   const orgTok = ORGS[orgSlug]?.token || "";
@@ -6758,7 +6763,13 @@ async function generatePdf(orgSlug, reportType, startDate, endDate, filters = {}
   // one wins rather than the reader getting a silently empty report.
   if (filters.q !== undefined) qs.set("q", Array.isArray(filters.q) ? filters.q[filters.q.length - 1] : filters.q);
   const url = `http://localhost:${PORT}/${orgSlug}/${reportType}?${qs}`;
-  console.log(`[pdf] Generating for ${orgSlug}/${reportType}: ${url}`);
+  // REDACTED — this URL carries the org's ACCESS TOKEN, the only thing standing
+  // in front of every report that org has. The line below ("navigating to")
+  // already redacted it and this one did not, so the token has been going into
+  // the log on every PDF this platform has ever generated. Half a rename, the
+  // pattern this repo keeps writing down. ONE redactor now, so the two cannot
+  // drift apart again.
+  console.log(`[pdf] Generating for ${orgSlug}/${reportType}: ${redactToken(url)}`);
 
   // Tyler turnover mode: the GL report re-rendered as the Munis treasurer
   // cover sheets — portrait Letter at normal scale, unlike the extra-wide GL.
@@ -6825,7 +6836,7 @@ async function generatePdf(orgSlug, reportType, startDate, endDate, filters = {}
         // Puppeteer waits on is the one that ends up on the page.
         ? { width: 1400, height: 900, deviceScaleFactor: 2 }
         : { width: 1100, height: 900, deviceScaleFactor: 1 });
-    console.log(`[pdf] navigating to ${url.replace(/token=[^&]+/, "token=***")}`);
+    console.log(`[pdf] navigating to ${redactToken(url)}`);
     const t0 = Date.now();
     await page.goto(url, { waitUntil: "networkidle0", timeout: 120000 });
     console.log(`[pdf] page loaded in ${((Date.now()-t0)/1000).toFixed(1)}s, waiting for #report-ready…`);
