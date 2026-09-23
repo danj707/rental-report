@@ -5674,7 +5674,8 @@ function notifySlack(rec) {
                   : rec.state === "booked" ? " \u2014 not available"
                   : rec.state === "blocked" ? " \u2014 wrong stay length"
                   : "";
-    text = `${meta.emoji} ${orgName} (\`${rec.org}\`) opened *${rec.site || "a campsite"}*${stay}${verdict}`;
+    const phone = rec.device === "mobile" ? " \u00B7 on a phone" : "";
+    text = `${meta.emoji} ${orgName} (\`${rec.org}\`) opened *${rec.site || "a campsite"}*${stay}${verdict}${phone}`;
   } else if (rec.event === "campmap-book") {
     // Two ways to leave for rec.us, and which one is taken is the interesting
     // part. `dated` carries the camper's nights over on the URL and lands on the
@@ -5683,7 +5684,8 @@ function notifySlack(rec) {
     // the 30-day cap in 2026-08-24 and no longer fires.)
     const stay = rec.nights ? ` for ${rec.nights} night${rec.nights === 1 ? "" : "s"}` : "";
     const where = rec.kind === "site-page" ? " \u2014 site page, dates not carried" : "";
-    text = `${meta.emoji} ${orgName} (\`${rec.org}\`) clicked *Book on rec.us* \u2014 ${rec.site || "a campsite"}${stay}${where}`;
+    const phone = rec.device === "mobile" ? " \u00B7 on a phone" : "";
+    text = `${meta.emoji} ${orgName} (\`${rec.org}\`) clicked *Book on rec.us* \u2014 ${rec.site || "a campsite"}${stay}${where}${phone}`;
   } else if (rec.event === "campmap-filter") {
     // "Filtered to all types" is someone clearing the filter — worth saying
     // plainly rather than as an empty type.
@@ -9426,6 +9428,9 @@ app.post("/:org/campmap/api/log", (req, res) => {
     amenities: clamp(req.query.amenities, 200),
     sites:  count(req.query.sites, 5000),
     open:   count(req.query.open, 5000),
+    // The phone layout (2026-09-23). A fixed value, never echoed: this route is
+    // un-tokened, so anything but the one known word is dropped.
+    device: req.query.device === "mobile" ? "mobile" : undefined,
   };
   logEvent(slug, "campmap", event, req, extra);
   res.json({ ok: true });
