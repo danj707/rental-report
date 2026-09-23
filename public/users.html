@@ -156,7 +156,8 @@
   .sgc-chip.on { color:#fff; } .sgc-chip.on .dot { background:#fff; }
   .sgc-chip b { font-weight:600; opacity:.8; }
   .sgc-wrap { position:relative; }
-  .sgc-svg { width:100%; height:300px; display:block; }
+  .sgc-svg { display:block; max-width:100%; }
+  .sgc-chip:focus { outline:none; } .sgc-chip:focus-visible { outline:2px solid #134e4a; outline-offset:2px; }
   .sgc-tick { font-size:11px; fill:#94a3b8; }
   .sgc-end { font-size:12px; fill:#334155; }
   .sgc-tip { position:absolute; top:6px; transform:translateX(-50%); background:#0f172a; color:#fff; padding:7px 10px; border-radius:6px; font-size:12px; pointer-events:none; white-space:nowrap; }
@@ -375,7 +376,10 @@ function signupSeries(rows, from, to) {
   var running = 0;
   var points = keys.map(function (k) { return { key: k, month: labelOf(k), count: counts[k] || 0 }; });
   var cumulative = points.map(function (p) { running += p.count; return { month: p.month, cumulative: running }; });
-  return { gran: gran, points: points, cumulative: cumulative };
+  // The bucket holding TODAY is not finished, so a per-bucket line always dives
+  // there. `open` lets the chart draw that last step as in progress.
+  var open = !!points.length && points[points.length - 1].key === keyOf(signupToday());
+  return { gran: gran, points: points, cumulative: cumulative, open: open };
 }
 function signupWindowLabel(from, to) {
   function f(y) { var p = y.split('-'); return SG_MON[+p[1] - 1] + ' ' + (+p[2]) + ', ' + p[0]; }
@@ -471,7 +475,7 @@ function signupChartSeries(rows, from, to) {
       return q ? q.count : 0;
     });
   });
-  return { gran: base.gran, labels: base.points.map(function (p) { return p.month; }), series: series };
+  return { gran: base.gran, open: !!base.open, labels: base.points.map(function (p) { return p.month; }), series: series };
 }
 function SignupsChart({ rows, from, to }) {
   var [on, setOn] = useState(function () {
@@ -480,6 +484,18 @@ function SignupsChart({ rows, from, to }) {
   });
   var [mode, setMode] = useState('cumulative');
   var [hover, setHover] = useState(null);
+  // Draw at the container's REAL width. A fixed viewBox stretched with
+  // a non-uniform aspect ratio distorts every label on the chart.
+  var wrapRef = useRef(null);
+  var [W, setW] = useState(1000);
+  useEffect(function () {
+    var el = wrapRef.current; if (!el) return;
+    function size() { var w = Math.round(el.getBoundingClientRect().width); if (w > 200) setW(w); }
+    size();
+    if (typeof ResizeObserver === 'undefined') { window.addEventListener('resize', size); return function () { window.removeEventListener('resize', size); }; }
+    var ro = new ResizeObserver(size); ro.observe(el);
+    return function () { ro.disconnect(); };
+  }, [on.length > 0, rows]);
   var data = useMemo(function () { return signupChartSeries(rows, from, to); }, [rows, from, to]);
   useEffect(function () { try { localStorage.setItem('ci_signup_lines', JSON.stringify(on)); } catch (e) {} }, [on]);
   var CAT = window.RECESS_CAT || ['#a855f7', '#0ea5e9', '#84cc16', '#ec4899', '#7e22ce'];
@@ -492,15 +508,19 @@ function SignupsChart({ rows, from, to }) {
   }
   function toggle(k) { setOn(function (prev) { return prev.indexOf(k) >= 0 ? prev.filter(function (x) { return x !== k; }) : prev.concat([k]); }); }
   var n = data.labels.length;
-  var W = 1000, H = 300, L = 44, R = 190, T = 14, B = 30;
+  var H = 300, L = 52, R = 200, T = 14, B = 30;
   var active = SG_SERIES.filter(function (d) { return on.indexOf(d.key) >= 0; });
   var maxY = 0;
   active.forEach(function (d) { valuesOf(d.key).forEach(function (v) { if (v > maxY) maxY = v; }); });
   maxY = Math.max(1, maxY);
-  // Four gridlines on round numbers: the tick is 1, 2 or 5 x 10^k.
+  // Round gridlines (1, 2, 2.5 or 5 x 10^k) and only as much headroom as the
+  // next one — a peak of 10,400 on a 20,000 axis wastes half the chart.
   var rawTick = Math.max(1, maxY / 4), mag = Math.pow(10, Math.floor(Math.log10(rawTick))), f = rawTick / mag;
-  var tick = (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * mag;
-  var niceMax = tick * 4;
+  var tick = (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * mag;
+  if (tick < 1) tick = 1;
+  var gridN = Math.max(1, Math.ceil(maxY / tick));
+  var niceMax = tick * gridN;
+  var grid = []; for (var gi = 0; gi <= gridN; gi++) grid.push(tick * gi);
   function x(i) { return L + (n <= 1 ? 0 : i * (W - L - R) / (n - 1)); }
   function y(v) { return T + (H - T - B) * (1 - v / niceMax); }
   function path(vals) {
@@ -512,12 +532,19 @@ function SignupsChart({ rows, from, to }) {
   // End labels, nudged apart so two lines that finish close together stay legible.
   var ends = active.map(function (d) { var v = valuesOf(d.key); var last = v.length ? v[v.length - 1] : 0; return { d: d, v: last, y: y(last) }; })
     .sort(function (a, b) { return a.y - b.y; });
-  for (var i = 1; i < ends.length; i++) if (ends[i].y - ends[i - 1].y < 15) ends[i].y = ends[i - 1].y + 15;
+  // Nudge apart, then pull the stack back up if it ran past the plot floor —
+  // pushing only downward is how the lowest label fell off the chart.
+  var GAP = 15, floor = H - B + 4;
+  for (var i = 1; i < ends.length; i++) if (ends[i].y - ends[i - 1].y < GAP) ends[i].y = ends[i - 1].y + GAP;
+  if (ends.length && ends[ends.length - 1].y > floor) {
+    ends[ends.length - 1].y = floor;
+    for (var j = ends.length - 2; j >= 0; j--) if (ends[j + 1].y - ends[j].y < GAP) ends[j].y = ends[j + 1].y - GAP;
+  }
   var tickEvery = Math.max(1, Math.ceil(n / 7));
   var totalAll = (data.series.all || []).reduce(function (a, b) { return a + b; }, 0);
   function onMove(e) {
     var box = e.currentTarget.getBoundingClientRect();
-    var px = (e.clientX - box.left) / box.width * W;
+    var px = e.clientX - box.left;
     var idx = n <= 1 ? 0 : Math.round((px - L) / ((W - L - R) / (n - 1)));
     setHover(Math.max(0, Math.min(n - 1, idx)));
   }
@@ -526,7 +553,7 @@ function SignupsChart({ rows, from, to }) {
     <div className="panel sgc" data-signup-chart={n} data-signup-lines={on.join(',')} data-signup-mode={mode}>
       <div className="sgc-head">
         <div><span className="panel-head" style={{display:'inline'}}>Signups over time</span>
-          <span className="sgc-sub"> {totalAll.toLocaleString()} people {from || to ? 'signed up ' + signupWindowLabel(from, to) : 'on file'} · by {gword} · click a line to add or remove it</span></div>
+          <span className="sgc-sub"> {totalAll.toLocaleString()} people {from || to ? 'signed up ' + signupWindowLabel(from, to) : 'on file'} · by {gword} · click a line to add or remove it{mode === 'daily' && data.open ? ' · dashed = ' + gword + ' still in progress' : ''}</span></div>
         <div className="sgc-mode no-print">
           <button type="button" className={mode === 'cumulative' ? 'on' : ''} data-signup-mode-btn="cumulative" onClick={function () { setMode('cumulative'); }}>Running total</button>
           <button type="button" className={mode === 'daily' ? 'on' : ''} data-signup-mode-btn="daily" onClick={function () { setMode('daily'); }}>Per {gword}</button>
@@ -542,15 +569,28 @@ function SignupsChart({ rows, from, to }) {
         })}
       </div>
       {!n ? <div className="sgc-empty">No signup dates on file for this view.</div> : !active.length ? <div className="sgc-empty">Pick a line above to draw it.</div> : (
-        <div className="sgc-wrap">
-          <svg viewBox={'0 0 ' + W + ' ' + H} preserveAspectRatio="none" className="sgc-svg" onMouseMove={onMove} onMouseLeave={function () { setHover(null); }} role="img" aria-label="Signups over time">
-            {[0, 1, 2, 3, 4].map(function (k) { var v = niceMax * k / 4; return (
+        <div className="sgc-wrap" ref={wrapRef}>
+          <svg viewBox={'0 0 ' + W + ' ' + H} width={W} height={H} className="sgc-svg" onMouseMove={onMove} onMouseLeave={function () { setHover(null); }} role="img" aria-label="Signups over time">
+            {grid.map(function (v, k) { return (
               <g key={k}><line x1={L} x2={W - R} y1={y(v)} y2={y(v)} stroke="#eef2f6" />
-                <text x={L - 8} y={y(v) + 4} textAnchor="end" className="sgc-tick">{Math.round(v).toLocaleString()}</text></g>); })}
-            {data.labels.map(function (lb, i) { return (i % tickEvery === 0 || i === n - 1) ? <text key={i} x={x(i)} y={H - 8} textAnchor="middle" className="sgc-tick">{lb}</text> : null; })}
-            {active.map(function (d) { return <path key={d.key} d={path(valuesOf(d.key))} fill="none" stroke={colorOf(d.key)} strokeWidth="2.2" vectorEffect="non-scaling-stroke" />; })}
+                <text x={L - 8} y={y(v) + 4} textAnchor="end" className="sgc-tick">{(Math.round(v * 10) / 10).toLocaleString()}</text></g>); })}
+            {data.labels.map(function (lb, i) {
+              // The last label is anchored at its END so it cannot run into the
+              // line labels; a regular tick too close to it is dropped.
+              var last = i === n - 1;
+              if (!last && (i % tickEvery !== 0 || (n - 1 - i) < tickEvery / 2)) return null;
+              return <text key={i} x={x(i)} y={H - 8} textAnchor={last && n > 1 ? 'end' : i === 0 ? 'start' : 'middle'} className="sgc-tick">{lb}</text>; })}
+            {active.map(function (d) {
+              var v = valuesOf(d.key);
+              // Per-bucket mode: the unfinished last bucket is dashed, so the
+              // month in progress does not read as signups collapsing.
+              var dashLast = mode === 'daily' && data.open && n > 1;
+              return <g key={d.key}>
+                <path d={path(dashLast ? v.slice(0, n - 1) : v)} fill="none" stroke={colorOf(d.key)} strokeWidth="2.2" />
+                {dashLast && <path d={'M' + x(n - 2) + ',' + y(v[n - 2]) + 'L' + x(n - 1) + ',' + y(v[n - 1])} fill="none" stroke={colorOf(d.key)} strokeWidth="2.2" strokeDasharray="4 4" data-signup-open="1" />}
+              </g>; })}
             {active.map(function (d) { var v = valuesOf(d.key); return <circle key={d.key} cx={x(n - 1)} cy={y(v[n - 1] || 0)} r="4" fill={colorOf(d.key)} />; })}
-            {ends.map(function (e) { return <text key={e.d.key} x={W - R + 12} y={e.y + 4} className="sgc-end">{e.d.label} <tspan fontWeight="700">{e.v.toLocaleString()}</tspan></text>; })}
+            {ends.map(function (e) { return <text key={e.d.key} x={W - R + 12} y={e.y + 4} className="sgc-end"><tspan fill={colorOf(e.d.key)}>{'\u25CF'} </tspan>{e.d.label} <tspan fontWeight="700">{e.v.toLocaleString()}</tspan></text>; })}
             {hover != null && <line x1={x(hover)} x2={x(hover)} y1={T} y2={H - B} stroke="#94a3b8" strokeDasharray="3 3" />}
           </svg>
           {hover != null && (

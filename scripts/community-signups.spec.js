@@ -76,6 +76,14 @@ t("a cohort with nobody in it is a flat line, not a missing one", () => {
   const c = H.signupChartSeries(rows.slice(0, 1), "2026-09-01", "2026-09-03");
   assert.deepStrictEqual(c.series.member, [0, 0, 0]);
 });
+t("the bucket holding today is flagged open, a closed window is not", () => {
+  const d = new Date(), ymd = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  assert.strictEqual(H.signupSeries([{ "Created At": ymd }], "", "").open, true);
+  assert.strictEqual(H.signupSeries(rows, "2026-09-01", "2026-09-07").open, false);
+});
+t("per-bucket mode dashes the open bucket", () => assert.match(page, /dashLast = mode === 'daily' && data\.open/));
+t("the chart draws at its real width, never a stretched viewBox", () => assert.ok(!/preserveAspectRatio="none"/.test(page.slice(page.indexOf("function SignupsChart(")))));
+t("end labels are pulled back above the floor", () => assert.match(page, /ends\[ends\.length - 1\]\.y > floor/));
 t("the label reads as a sentence", () => assert.strictEqual(H.signupWindowLabel("2026-09-01", "2026-09-23"), "Sep 1, 2026 – Sep 23, 2026"));
 
 // Wiring
