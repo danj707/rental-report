@@ -11723,14 +11723,35 @@ async function inventoryParamDefs() {
 
 // Echoes the card's OWN registered parameter types, like the permits and Munis
 // feeds, so an API save that resets the tags to Text cannot break it.
+//
+// ONE VALUE PER SLUG. An API save leaves the card registering each tag TWICE
+// (the old entry plus a new `string/=` one for the same slug) until a human
+// re-saves it, and sending both answers "An error occurred." — measured
+// 2026-09-23 on card 22144 right after the Sold Day push. The entry listed
+// LAST is the tag as it now exists, so that set goes first; the first-listed
+// set is the fallback for whatever order Metabase settles on after a re-save.
+function inventoryParamSets(defs, vals) {
+  const known = defs.filter(p => vals[p.slug] !== undefined);
+  const pick = (fromEnd) => {
+    const bySlug = new Map();
+    (fromEnd ? known.slice().reverse() : known).forEach(p => { if (!bySlug.has(p.slug)) bySlug.set(p.slug, p); });
+    return Array.from(bySlug.values()).map(p => ({ id: p.id, type: p.type, target: p.target, slug: p.slug, value: vals[p.slug] }));
+  };
+  const last = pick(true), first = pick(false);
+  const same = JSON.stringify(last.map(p => p.id).sort()) === JSON.stringify(first.map(p => p.id).sort());
+  return same ? [last] : [last, first];
+}
+
 async function fetchInventoryFeed(orgId, sinceYmd) {
   const vals = { org_id: orgId, since: sinceYmd };
-  const params = (await inventoryParamDefs())
-    .filter(p => vals[p.slug] !== undefined)
-    .map(p => ({ id: p.id, type: p.type, target: p.target, slug: p.slug, value: vals[p.slug] }));
-  if (params.length < 2) throw new Error("inventory card is missing its org_id / since parameters");
-  const url = `${METABASE_URL}/api/public/card/${INVENTORY_UUID}/query/json?parameters=${encodeURIComponent(JSON.stringify(params))}`;
-  const resp = await fetch(url, { signal: AbortSignal.timeout(90000) });
+  const sets = inventoryParamSets(await inventoryParamDefs(), vals);
+  if (sets[0].length < 2) throw new Error("inventory card is missing its org_id / since parameters");
+  let resp;
+  for (const params of sets) {
+    const url = `${METABASE_URL}/api/public/card/${INVENTORY_UUID}/query/json?parameters=${encodeURIComponent(JSON.stringify(params))}`;
+    resp = await fetch(url, { signal: AbortSignal.timeout(90000) });
+    if (resp.status !== 400) break;
+  }
   if (!resp.ok) throw new Error(`Metabase HTTP ${resp.status}`);
   const rows = await resp.json();
   if (!Array.isArray(rows)) throw new Error("Metabase returned an error for the inventory card");
@@ -11945,6 +11966,30 @@ app.post("/:org/inventory/api/item", express.json(), (req, res) => {
   writeInventory(slug, st);
   if (event) logEvent(slug, "inventory", event, req, extra);
   res.json(inventoryPayload(slug));
+});
+
+// One switch for a whole item's variants — tracking fifty candy bars one
+// checkbox at a time is the chore this saves. It only ever touches variants
+// Rec says the org CARRIES: switching "Race Tee" on must not start tracking
+// the Heather Gray / XL nobody stocks.
+app.post("/:org/inventory/api/group", express.json(), (req, res) => {
+  const slug = req.params.org;
+  if (!ORGS[slug]) return res.status(404).json({ ok: false, error: "Unknown org" });
+  const b = req.body || {};
+  const pid = String(b.parentId || "");
+  if (typeof b.track !== "boolean") return res.status(400).json({ ok: false, error: "track must be true or false" });
+  const st = readInventory(slug);
+  const kids = Object.values(st.items).filter(it => it.parentId === pid && it.live);
+  if (!pid || !kids.length) return res.status(404).json({ ok: false, error: "No such item" });
+  let changed = 0;
+  for (const it of kids) {
+    if (it.carried === false) continue;
+    if (!!it.track !== b.track) { it.track = b.track; changed++; }
+  }
+  INVENTORY.reorderCrossings(st);
+  writeInventory(slug, st);
+  if (changed) logEvent(slug, "inventory", "inv-track", req, { item: String(kids[0].parentName || "").slice(0, 80) + ` (${changed} variants)`, track: b.track });
+  res.json({ ...inventoryPayload(slug), changed });
 });
 
 app.post("/:org/inventory/api/prefs", express.json(), (req, res) => {

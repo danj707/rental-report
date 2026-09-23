@@ -82,9 +82,79 @@ detection** — a broken read must not put a day's sales back on the shelf.
 - Slack: `inv-count` (with the variance and reason), `inv-receive`, `inv-link`,
   `inv-track`, `inv-reorder`, keyed per item.
 
+### VARIANTS, SPARKLINES AND VELOCITY (2026-09-23)
+
+Dan, with Rec's item-variants screenshot (Race Tee → Navy / S … Heather Gray / XL,
+"Not carried"): *"Such as candy bar as a 'top level' item, then 50 types of candy
+bars underneath. We'd need to support such a system … importing the inventory from
+Rec's items."* Then: *"we need charts and graphs … a sparkline on each item row …
+another tab showing the hottest moving products, slowest moving, and a line chart
+where I can add in products and see their relative velocity."*
+
+**REC HAS NO VARIANT SCHEMA YET, measured.** `information_schema` on the read replica
+(2026-09-23) shows nothing variant-shaped — only `order_item.parent_order_item_id`.
+So the card cannot emit variants, and the build is against a **contract** written
+into `inventory-feed.sql`'s header: item rows gain `Variant ID`, `Variant Name`,
+`SKU`, `UPC`, `Variant Price Cents`, `Carried` (one row per variant, no product row);
+movement rows gain `Variant ID`. When product ships the table, the card grows those
+columns and the page lights up on the next sync with no deploy.
+
+- **THE VARIANT IS THE STOCK UNIT; the item is only a grouping.** Nobody counts
+  "candy bars", they count Snickers. `unitIdOf(r)` = Variant ID, else Product ID, so
+  **a feed without the columns ingests byte for byte as before** (spec'd).
+- **A product that splits into variants keeps its history** (`split: true`, not
+  archived), and a pre-variant sale still lands on it rather than on a variant.
+- **"Not carried" comes in switched off and reads `notcarried`, never out/low**, so
+  it never emails. The item-level switch (`POST /api/group`) **skips** not-carried
+  variants — switching "Race Tee" on must not start tracking the XL nobody stocks.
+- **A Rec-supplied UPC is adopted only into an item with none, and never one another
+  item holds.** A barcode a person linked wins.
+- **The family roll-up sums COUNTED variants and says how many are uncounted** —
+  "12 Snickers + an uncounted Twix" is not "12 candy bars". Computed in
+  `groupsOf()`, so the page still does no stock arithmetic.
+
+**VELOCITY HAS ITS OWN DAILY TALLY, apart from the ledger.** The ledger only moves
+after the last count (rule 2); "how fast does this sell" is true before anyone has
+counted, and a line that starts on count day reads as a product launch. `daily` is
+net units per day — sales in, voids out of the day the sale was, refunds out of the
+day of the refund, a reappearing sale back in once — kept `DAILY_KEEP_DAYS` (120).
+
+**THE DAY IS THE ORG'S LOCAL DAY.** Card 22144 now emits `Sold Day` /
+`Refunded Day` off `datetime_at_primary_timezone` (already local). Measured at
+Madison since Aug 20: **7,617 sales, every one with a day, 12 on a different day
+from their UTC date** — the evening shift, which a UTC bucket files under tomorrow.
+
+**THE API PUSH DUPLICATED THE PARAMETERS AND BROKE THE SYNC — the note above saying
+"an API save never needs a Date flip" was wrong.** After the push the card registered
+**four** parameters (the old pair plus a new `string/=` pair) and sending all four
+answered `An error occurred.` Measured: the LAST-listed pair answers (314 rows in
+0.8s); the first-listed does not. `inventoryParamSets()` now sends one value per
+slug, last-listed first and the first-listed as a 400 fallback, so a re-save in any
+order keeps working. *The echo-the-card's-types trick survives a type reset; it does
+not survive duplication.*
+
+**Sparkline** = on hand over 30 days, a STEP line replayed from the ledger by
+`onHandSeries()` (its last point IS the on-hand figure), dashed reorder line, ink
+only — status colour stays on the chip. **Movement tab**: Hottest (units, vs the
+prior equal period), Slowest (tracked items selling least, most stock first), and a
+velocity chart — units/day, 7-day average past a week — with chips to add up to 8
+lines, whole families as their own series. **Colours come from `window.RECESS_CAT`
+(open-pdf.js), assigned by SLOT when added and held until removed**, so adding a line
+never repaints the others. Direct labels at the line ends (two of the eight hues sit
+under 3:1 on white), a crosshair tooltip, and the chips double as the legend.
+
+**A pre-existing bug fixed on the way: every Track switch rendered as a bare knob.**
+`.toggle` is a `<label>` — inline — so its width and height were ignored. Live since
+the restyle in #247.
+
+**Not done:** the variant columns on the card (no schema to read); a stand-in
+render check (verified by driving a real browser against a stand-in feed, not in
+`ci-check-render.js`); per-variant reorder emails already work, but a *family-level*
+reorder point ("reorder when all candy bars total 50") does not exist.
+
 ### Guards
 
-`scripts/inventory.spec.js` (**73 assertions, in CI**): the unit half RUNS
+`scripts/inventory.spec.js` (**112 assertions, in CI**): the unit half RUNS
 `lib/inventory.js`; the live half boots the real server against a stand-in
 Metabase and drives count → item → sync → re-sync. Mutation-tested seven ways,
 all caught by name: double-counting on a re-read, passes tracked by default, the
