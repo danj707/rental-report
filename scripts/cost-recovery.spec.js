@@ -449,10 +449,62 @@ if (!process.env.SKIP_SOURCE) {
   // default all new reports should be hidden unless I say otherwise."
   const dh = slice("const DEFAULT_HIDDEN_REPORTS", ";");
   ok(dh.length > 10, "DEFAULT_HIDDEN_REPORTS was found — otherwise the next assertion is vacuous");
-  ok(/"cost-recovery"/.test(dh), "cost-recovery ships HIDDEN on every org dashboard");
+  ok(/"cost-recovery"/.test(dh), "cost-recovery ships HIDDEN wherever it is offered");
 
   ok(/const REPORT_TYPES = \[[^\]]*"cost-recovery"/.test(SERVER),
      "cost-recovery is a real report type, so the admin toggle accepts it");
+
+  /* ── TWO GATES, AND THEY ANSWER DIFFERENT QUESTIONS ────────────────────
+     Dan, 2026-09-23: "add these two reports to shrewsbury and windham's org
+     dashboard pages only, but keep them hidden, i'll toggle them on."
+
+     COST_RECOVERY_ORGS decides which orgs get an EYE; DEFAULT_HIDDEN_REPORTS
+     decides what that eye starts on. Asserting only the first would pass on a
+     build that shipped the pilot orgs VISIBLE, and asserting only the second
+     would pass on a build that put the card on all 29 dashboards — which is
+     why both are pinned, and pinned together. */
+  const cro = slice("const COST_RECOVERY_ORGS", ";");
+  ok(cro.length > 10, "COST_RECOVERY_ORGS was found — otherwise the next assertions are vacuous");
+  ok(/"shrewsbury"/.test(cro) && /"windham"/.test(cro), "the pilot is Shrewsbury and Windham");
+  const croSlugs = (cro.match(/"[a-z0-9-]+"/g) || []);
+  ok(croSlugs.length === 2, "…and ONLY those two — a third slug is a decision somebody has to justify");
+
+  /* THE EYE STILL GOVERNS. Both gates on the org dashboard, in one condition:
+     drop the second and the pilot orgs get a card they never asked to see. */
+  ok(/if \(costRecoveryEnabled\(slug\) && !reportHiddenForOrg\(slug, 'cost-recovery'\)\) available\.push\('cost-recovery'\);/.test(SERVER),
+     "the org dashboard needs BOTH the pilot gate and the inverted visibility gate");
+
+  /* THE EYE HIDES, IT DOES NOT LOCK — the standing rule, and the one the first
+     Opportunities build got wrong. The page route must NOT read either gate, or
+     Dan cannot open his own admin card for an org he has not switched on. */
+  const pageRoute = slice('app.get("/:org/cost-recovery"', "\n});");
+  ok(pageRoute.length > 50, "the page route was found");
+  ok(!/costRecoveryEnabled|reportHiddenForOrg/.test(pageRoute),
+     "the PAGE is gated on neither — hiding a card must not lock the report");
+
+  // The admin grid card that carries the toggle. Without it there is no eye and
+  // the report cannot be turned on for anybody from the dashboard.
+  ok(/toggleVis\('\$\{slug\}','cost-recovery'/.test(SERVER),
+     "the admin grid renders a visibility toggle for it");
+  ok(/const crHidden = reportHiddenForOrg\(slug, 'cost-recovery'\)/.test(SERVER),
+     "…reading the inverted default, so a fresh org draws it as hidden");
+  ok(/if \(costRecoveryEnabled\(slug\)\) \{\s*\n\s*const crHidden/.test(SERVER),
+     "…and only for the pilot orgs, so the other 27 grow no row they can never use");
+
+  /* THE CROSS-PROJECT API HAS TO AGREE. A card the org page never draws,
+     reported visible to rec-dashboard, is the town-of-shrewsbury 404 in a new
+     costume — so the entry is gated on the same pilot set. */
+  const vis = slice('app.get("/api/org-visibility/:slug"', "\n});");
+  ok(vis.length > 50, "the visibility API was found");
+  ok(/costRecoveryEnabled\(slug\)/.test(vis) && /type: "cost-recovery"/.test(vis),
+     "the visibility API reports cost-recovery, and only for the pilot orgs");
+
+  /* INVENTORY IS DELIBERATELY NOT SCOPED THE SAME WAY, and that is not an
+     oversight. Its seed is keyed on Madison's ORGID and Madison is not
+     onboarded here yet, so a slug allowlist would let the seed apply and the
+     card still never render — silently undoing the report it was built for. */
+  ok(!/INVENTORY_ORGS|inventoryReportOrgs/.test(SERVER),
+     "inventory keeps the every-org-hidden shape, so Madison's orgId seed still lands");
 
   // NO CARD OF ITS OWN. It reads the programs card through the programs feed,
   // so a second health probe of the same card is the doubled load this file
@@ -466,8 +518,7 @@ if (!process.env.SKIP_SOURCE) {
   ok(/\/programs\/api\/data/.test(PAGE), "the page reads the PROGRAMS feed, sharing its cache entry");
 
   // The page route gates on the programs card, since that is what it reads.
-  const route = slice('app.get("/:org/cost-recovery"', "\n});");
-  ok(route.length > 50, "the page route was found");
+  const route = pageRoute;
   ok(/SHARED_UUIDS\.programs/.test(route), "the page route gates on the PROGRAMS card, which is what it needs");
   ok(/logEvent\(slug, "cost-recovery", "view"/.test(route), "opening the report is recorded");
 

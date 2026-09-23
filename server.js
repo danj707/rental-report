@@ -3005,6 +3005,24 @@ const RENTAL_CALENDAR_ORGS = new Set(["watertown", "norman", "niagarafalls"]);
 const LESSONS_REPORT_ORGS = new Set(["san-francisco-rec-park"]);
 const lessonsReportEnabled = (slug) => LESSONS_REPORT_ORGS.has(slug);
 
+/* Cost Recovery — a per-org pilot, and deliberately NOT on every dashboard the
+   way Opportunities and Inventory are. Dan, 2026-09-23: "add these two reports
+   to shrewsbury and windham's org dashboard pages only, but keep them hidden,
+   i'll toggle them on."
+
+   TWO GATES, AND THEY ANSWER DIFFERENT QUESTIONS. This set decides which orgs
+   get an EYE at all; DEFAULT_HIDDEN_REPORTS still decides what that eye starts
+   on. So adding a slug here surfaces the toggle in the admin grid and changes
+   nothing an org can see until Dan flips it — the same shape as
+   LESSONS_REPORT_ORGS and RENTAL_CALENDAR_ORGS.
+
+   IT DOES NOT LOCK THE PAGE, and that is the standing rule rather than an
+   oversight: `/:org/cost-recovery` gates on the PROGRAMS card and stays open
+   for every org, so Dan can still click into his own admin card. The eye hides
+   a report from the org; it has never been an authorization boundary. */
+const COST_RECOVERY_ORGS = new Set(["shrewsbury", "windham"]);
+const costRecoveryEnabled = (slug) => COST_RECOVERY_ORGS.has(slug) && !!ORGS[slug];
+
 const DIRECTORS_REPORT_ALL_ORGS = true;
 const DIRECTORS_REPORT_ORGS = new Set(["watertown"]);
 const DIRECTORS_REPORT_EXCLUDED = new Set(["apex"]); // per Dan 2026-08-04 — everyone except Apex
@@ -4127,6 +4145,7 @@ function visibleReportsForOrg(slug) {
   if (opportunitiesEnabled(slug) && !hidden.has("opportunities")) out.push("opportunities");
   if (inventoryEnabled(slug) && !hidden.has("inventory")) out.push("inventory");
   if (lessonsReportEnabled(slug) && !hidden.has("lessons")) out.push("lessons");
+  if (costRecoveryEnabled(slug) && !hidden.has("cost-recovery")) out.push("cost-recovery");
   customReportsForOrg(slug).forEach(k => { if (!hidden.has(k)) out.push(k); });
   if ((org.gl?.mbUuid || SHARED_UUIDS.gl) && !hidden.has("qoq")) out.push("qoq");
   if (!reportHiddenForOrg(slug, "facilities")) out.push("facilities");
@@ -6266,6 +6285,7 @@ function buildMetrics(org, daysBack) {
   if (opportunitiesEnabled(org)) configuredReports.push('opportunities');
   if (inventoryEnabled(org)) configuredReports.push('inventory');
   if (lessonsReportEnabled(org)) configuredReports.push('lessons');
+  if (costRecoveryEnabled(org)) configuredReports.push('cost-recovery');
   customReportsForOrg(org).forEach(k => configuredReports.push(k));
   return { summary, daily, subCounts, subByCadence, totalSubscribers: allSubs.length, insights, configuredReports };
 }
@@ -8633,6 +8653,13 @@ app.get("/api/org-visibility/:slug", (req, res) => {
   }
   // Default-hidden WIP reports use inverted visibility semantics
   available.push({ type: "facilities", visible: !reportHiddenForOrg(slug, "facilities") });
+  /* Cost Recovery is in REPORT_TYPES but has no card of its own, so the loop
+     above skips it. It is reported only for the orgs that can actually render
+     it: telling rec-dashboard a report is visible for an org whose dashboard
+     never draws it is the town-of-shrewsbury 404 in a new costume. */
+  if (costRecoveryEnabled(slug)) {
+    available.push({ type: "cost-recovery", visible: !reportHiddenForOrg(slug, "cost-recovery") });
+  }
   res.json({ slug, available, hiddenCount: hidden.size });
 });
 
@@ -18237,6 +18264,12 @@ app.get("/:org", async (req, res, next) => {
   if (!reportHiddenForOrg(slug, 'opportunities')) available.push('opportunities');
   // Inventory — same shape: on every dashboard, hidden until turned on per org.
   if (!reportHiddenForOrg(slug, 'inventory')) available.push('inventory');
+  /* Cost Recovery — a per-org pilot, so it needs BOTH gates: the org has to be
+     in COST_RECOVERY_ORGS to get a card at all, and the eye still decides
+     whether that card renders. It is absent from `allAvailable` above by
+     construction — it has no card of its own, so no SHARED_UUIDS entry — which
+     is why this push cannot duplicate one. */
+  if (costRecoveryEnabled(slug) && !reportHiddenForOrg(slug, 'cost-recovery')) available.push('cost-recovery');
   // Instructor Lessons — programs-pipeline report, per-org pilot (SF)
   if (lessonsReportEnabled(slug) && !orgHidden.has('lessons')) available.push('lessons');
   // Custom data reports — per-org (El Segundo aquatics); see CUSTOM_REPORTS.
@@ -20217,6 +20250,25 @@ app.get("/", (req, res) => {
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="display:${invHidden ? 'block' : 'none'}"><path d="M8 3C3 3 1 8 1 8s2 5 7 5 7-5 7-5-2-5-7-5z" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.5" fill="none"/><line x1="2" y1="14" x2="14" y2="2" stroke="currentColor" stroke-width="1.5"/></svg>
           </button>
         </a>`);
+      /* Cost Recovery — HIDDEN by default like the two above, but only for the
+         orgs in COST_RECOVERY_ORGS. Without this block there is no eye, so the
+         report could not be turned on for anybody from here. */
+      if (costRecoveryEnabled(slug)) {
+        const crHidden = reportHiddenForOrg(slug, 'cost-recovery');
+        const crDim = crHidden ? ' report-card-hidden' : '';
+        cards.push(`
+        <a href="/${slug}/cost-recovery${tokenQS}" class="report-card${crDim}" style="border-left:3px solid #0f766e" data-org="${slug}" data-report="cost-recovery">
+          <span class="report-icon">\u2696\uFE0F</span>
+          <div class="report-body">
+            <div class="report-label">Cost Recovery <span class="ai-pill-inline" style="background:#ccfbf1;color:#134e4a">NEW</span></div>
+            <div class="report-desc">Enter what each program costs to run, then read the profit and loss by season, quarter or fiscal year</div>
+          </div>
+          <button type="button" class="vis-toggle" onclick="event.preventDefault();event.stopPropagation();toggleVis('${slug}','cost-recovery',this)" title="${crHidden ? 'Hidden from org page' : 'Visible on org page'}">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="display:${crHidden ? 'none' : 'block'}"><path d="M8 3C3 3 1 8 1 8s2 5 7 5 7-5 7-5-2-5-7-5z" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="display:${crHidden ? 'block' : 'none'}"><path d="M8 3C3 3 1 8 1 8s2 5 7 5 7-5 7-5-2-5-7-5z" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.5" fill="none"/><line x1="2" y1="14" x2="14" y2="2" stroke="currentColor" stroke-width="1.5"/></svg>
+          </button>
+        </a>`);
+      }
       // Facilities hub — new WIP report, HIDDEN by default (inverted semantics)
       const facHidden = reportHiddenForOrg(slug, 'facilities');
       const facDim = facHidden ? ' report-card-hidden' : '';

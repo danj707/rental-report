@@ -8648,8 +8648,92 @@ does not apply has not tested anything, and it reads as a hole* — the runner
 asserts the file actually changed and counts the anchor's occurrences against
 what it expects.
 
+### THE PILOT IS TWO ORGS, AND THAT IS A SECOND GATE (2026-09-23)
+
+Dan, the morning after the merge: *"add these two reports to shrewsbury and
+windham's org dashboard pages only, but keep them hidden, i'll toggle them
+on."*
+
+**HALF THE ASK WAS ALREADY DONE AND HALF COULD NOT HAPPEN AT ALL, and the two
+reports needed opposite work.** Inventory is pushed to every org's dashboard
+behind `reportHiddenForOrg` and has a hand-written row in the admin grid, so
+its eye already existed for both orgs. **Cost Recovery had no eye anywhere**:
+`allAvailable` is `REPORT_TYPES` filtered on `org[r]?.mbUuid || SHARED_UUIDS[r]`,
+and the whole point of that report is that it has **no card of its own** — it
+reads card 17295 through the Programs feed. So it was in `REPORT_TYPES`, in
+`DEFAULT_HIDDEN_REPORTS`, in `REPORT_DIRECTORY` and in both `reportMeta` maps,
+and still could not be surfaced for anybody.
+
+*Generalise it: a report with no `SHARED_UUIDS` entry is invisible to every
+availability filter on the platform, however completely it is registered
+everywhere else.*
+
+**TWO GATES, ANSWERING DIFFERENT QUESTIONS.** `COST_RECOVERY_ORGS` decides
+which orgs get an EYE; `DEFAULT_HIDDEN_REPORTS` decides what that eye starts
+on. Adding a slug surfaces the toggle and changes nothing an org can see. Same
+shape as `LESSONS_REPORT_ORGS` and `RENTAL_CALENDAR_ORGS`, and it does **not**
+contradict the standing *"he turns it on one org at a time from the admin
+grid"* rule — that rule is about never editing `DEFAULT_HIDDEN_REPORTS` or
+`MAY_BE_VISIBLE`, which are untouched.
+
+**THE EYE STILL DOES NOT LOCK THE PAGE.** `/:org/cost-recovery` gates on the
+Programs card and stays open for all 29 orgs, so Dan can click his own admin
+card for an org he has not switched on — the rule the first Opportunities build
+got wrong. The spec asserts the page route reads **neither** gate, and the live
+half catches that mutation independently with a 404 on a fixture org.
+
+**INVENTORY IS DELIBERATELY NOT SCOPED THE SAME WAY**, and refusing to honour
+*"only"* there is the load-bearing decision rather than an oversight. Its seed
+`inventory:2026-09-22-madison` is keyed on Madison's **orgId** because Madison
+is not onboarded here; under a slug allowlist that seed would apply, mark
+itself, and the card would still never render — silently undoing the report
+#246 was built for, with no symptom. A slug allowlist would also have had to
+guess the name Madison is given when it is added, which is the `town-of-danvers`
+trap one report over. The spec fails if an `INVENTORY_ORGS` set appears.
+
+**FOUR SURFACES, and each reads correctly alone** — which is why this needed
+assertions rather than a diff: the org dashboard's push, the admin grid's card,
+`visibleReportsForOrg` (what the update composer targets) and
+`/api/org-visibility/:slug` (what rec-dashboard links from). The last one is
+gated on the pilot set for the reason that route already records: a card the
+org page never draws, reported visible, is the `town-of-shrewsbury` 404 in a
+new costume.
+
+### Guards
+
+`scripts/cost-recovery.spec.js` 216 → **227 assertions**, in CI.
+**Mutation-tested ten ways, all ten caught by an assertion that NAMES the
+defect**: the pilot widened to a third org, the report shipped visible, the
+dashboard push losing **either** gate (two separate mutations — one alone
+passes on the other's assertion), the admin grid block ungated, the grid
+reading raw list membership instead of the inverted default, the PAGE gated on
+the pilot set, the visibility API reporting it for every org, that entry
+dropped, and inventory scoped to a slug allowlist.
+
+**Verified live rather than asserted**, because no source assertion can see
+four code paths agreeing: a real boot on a scratch store, then per org — the
+card absent while hidden, the eye present for shrewsbury and windham and
+**absent for watertown**, the visibility API answering for the pilot orgs and
+omitting the others, and `/watertown/cost-recovery` still serving **200** with
+the eye nowhere. Toggled on for both pilot orgs and back off: the card appears,
+the grid's eye redraws open, the visibility API flips, and it returns to hidden.
+
+93 specs run from `ci.yml`, 93 pass, 0 fail, 0 skipped. 17 `org landing` and 23
+`cost-recovery` render cases green.
+
 ### NOT DONE
 
+- **No seed.** Dan said he would toggle them, so neither report is switched on
+  in code — `REPORT_VISIBILITY_SEEDS` is untouched.
+- **A third org is a one-line diff and a deploy**, which is the accepted cost of
+  reading *"only"* literally. If that becomes annoying, the alternative is the
+  Opportunities/Inventory shape: an eye on all 29 grids, still hidden.
+- **Toggling cost-recovery for a NON-pilot org is accepted by the API and
+  inert.** `POST /api/admin/toggle-report` takes it because it is in
+  `REPORT_TYPES`, and the store entry then changes nothing, because every
+  reader gates on the pilot set. Refusing it is the opposite mistake already
+  recorded for the custom reports — a state the platform can be in and cannot
+  be moved out of through its own API.
 - **No PDF route and no email subscription**, unchanged. The statement prints
   from the browser; the two CSVs are the file exports.
 - **The amber surplus is unproven in a browser**, for the fixture reason above.
