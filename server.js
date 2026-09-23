@@ -5258,7 +5258,7 @@ setTimeout(() => { checkCardParamTypes().catch(() => {}); }, 150 * 1000).unref?.
 // Inert if the env var is unset. Fire-and-forget — never blocks or breaks logging.
 // To change what pings Slack, edit SLACK_NOTIFY. High-frequency events (view/fetch)
 // are debounced per org+report so Slack isn't a firehose.
-const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "campmap-filter", "campmap-amenity", "pdf", "excel", "print", "summary", "game", "map", "outdoor", "fields", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email", "checkin-loc", "checkin-member", "checkin-failed", "form-open", "epact", "settings-open", "settings-unlock", "settings-locked", "settings-save", "settings-reset", "deadlink", "generate", "wizard-save", "mb-autorenew", "mb-salesmix", "ft-export", "panel-csv", "intel-csv", "wizard-feedback", "roster-open", "report-csv", "survey-response", "insights-listen", "opp-drill", "opp-print", "opp-csv", "backup-failed", "org-synced", "fee-alloc", "inv-count", "inv-receive", "inv-link", "inv-track", "inv-reorder", "cost-save", "cost-csv"]);
+const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "campmap-filter", "campmap-amenity", "pdf", "excel", "print", "summary", "game", "map", "outdoor", "fields", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email", "checkin-loc", "checkin-member", "checkin-failed", "form-open", "epact", "settings-open", "settings-unlock", "settings-locked", "settings-save", "settings-reset", "deadlink", "generate", "wizard-save", "mb-autorenew", "mb-salesmix", "ft-export", "panel-csv", "intel-csv", "wizard-feedback", "roster-open", "report-csv", "survey-response", "insights-listen", "opp-drill", "opp-print", "opp-csv", "backup-failed", "org-synced", "fee-alloc", "inv-count", "inv-receive", "inv-link", "inv-track", "inv-archive", "inv-reorder", "cost-save", "cost-csv"]);
 const SLACK_DEBOUNCE_MS = { view: 30 * 60 * 1000, fetch: 30 * 60 * 1000,
   // A broken report stays broken. The health check only reports NEW failures,
   // but a flapping card would otherwise post every hour.
@@ -5354,6 +5354,7 @@ const SLACK_EVENT_META = {
   "inv-receive": { emoji: "\u{1F4E6}", verb: "received stock on" },
   "inv-link":    { emoji: "\u{1F3F7}\uFE0F", verb: "linked a barcode on" },
   "inv-track":   { emoji: "\u{1F4CA}", verb: "changed what is tracked on" },
+  "inv-archive": { emoji: "\u{1F5C3}\uFE0F", verb: "archived or restored" },
   "inv-reorder": { emoji: "\u{1F6D2}", verb: "hit a reorder point on" },
   // An org typing what a program COSTS is the highest-signal thing on this
   // platform: it is the one number Rec does not hold, so every one of them is
@@ -5466,7 +5467,7 @@ function notifySlack(rec) {
       ? `${rec.org}|opportunities|opp-drill|${rec.finding || ""}`
     // Per ITEM: counting the Snickers and then the Gatorade is two counts, and
     // a reorder email for two different items is two things to order.
-    : (rec.event === "inv-count" || rec.event === "inv-receive" || rec.event === "inv-link" || rec.event === "inv-track" || rec.event === "inv-reorder")
+    : (rec.event === "inv-count" || rec.event === "inv-receive" || rec.event === "inv-link" || rec.event === "inv-track" || rec.event === "inv-archive" || rec.event === "inv-reorder")
       ? `${rec.org}|inventory|${rec.event}|${rec.item || ""}`
     // Per FINDING again: pulling the dormant list and then the member list is
     // two audiences to work, and the default key would keep only the first.
@@ -5724,6 +5725,7 @@ function notifySlack(rec) {
       : rec.event === "inv-receive" ? ` \u2014 +${rec.qty}, now ${rec.onHand} on hand`
       : rec.event === "inv-link"    ? ` \u2014 UPC ${rec.upc}`
       : rec.event === "inv-track"   ? ` \u2014 ${rec.track ? "now tracked" : "no longer tracked"}`
+      : rec.event === "inv-archive" ? ` \u2014 ${rec.archived ? "archived, hidden from the report" : "restored to the report"}`
       : rec.event === "inv-reorder" ? ` \u2014 ${rec.onHand} left, reorder at ${rec.reorder}${rec.emailed ? " \u00B7 email sent" : " \u00B7 no email address set"}`
       : "";
     text = `${meta.emoji} ${orgName} (\`${rec.org}\`) ${meta.verb} ${what} in *inventory*${detail}`;
@@ -11767,7 +11769,7 @@ async function sendReorderEmail(slug, st, crossedIds) {
   const resend = getResendClient();
   const org = ORGS[slug] || {};
   const name = org.displayName || slug;
-  const low = Object.values(st.items).filter(it => it.track && it.live && ["low", "out"].includes(INVENTORY.statusOf(it)) && it.reorder !== null);
+  const low = Object.values(st.items).filter(it => it.track && it.live && !it.archived && ["low", "out"].includes(INVENTORY.statusOf(it)) && it.reorder !== null);
   const esc = (x) => String(x == null ? "" : x).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
   const rows = low.map(it => `<tr><td style="padding:6px 10px;border-bottom:1px solid #e7e5e4">${esc(it.name)}</td><td style="padding:6px 10px;border-bottom:1px solid #e7e5e4;text-align:right">${INVENTORY.onHand(it)}</td><td style="padding:6px 10px;border-bottom:1px solid #e7e5e4;text-align:right">${it.reorder}</td><td style="padding:6px 10px;border-bottom:1px solid #e7e5e4;text-align:right"><b>${INVENTORY.orderToPar(it) ?? "—"}</b></td></tr>`).join("");
   const link = `${BASE_URL}/${slug}/inventory${org.token ? "?token=" + encodeURIComponent(org.token) : ""}`;
@@ -11843,7 +11845,7 @@ async function inventoryHourlyJob() {
   if (!INVENTORY_UUID) return;
   for (const slug of Object.keys(ORGS)) {
     const st = readInventory(slug);
-    const live = Object.values(st.items).some(it => it.track && INVENTORY.lastCount(it));
+    const live = Object.values(st.items).some(it => it.track && !it.archived && INVENTORY.lastCount(it));
     if (!live) continue;
     try { await syncInventory(slug, { reason: "hourly" }); }
     catch (e) { console.warn(`[inventory] hourly sync failed for ${slug}: ${e.message}`); }
@@ -11908,6 +11910,7 @@ app.post("/:org/inventory/api/count", express.json(), (req, res) => {
   if (!ORGS[slug]) return res.status(404).json({ ok: false, error: "Unknown org" });
   const got = invItemOr404(slug, req.body && req.body.id, res); if (!got) return;
   const { st, it } = got;
+  if (it.archived) return res.status(409).json({ ok: false, error: "This item is archived — restore it before counting it" });
   const qty = invInt(req.body.qty, 0, 1000000);
   if (qty === null) return res.status(400).json({ ok: false, error: "Enter how many are on the shelf (0 or more)" });
   const expected = INVENTORY.onHand(it);
@@ -11983,13 +11986,35 @@ app.post("/:org/inventory/api/group", express.json(), (req, res) => {
   if (!pid || !kids.length) return res.status(404).json({ ok: false, error: "No such item" });
   let changed = 0;
   for (const it of kids) {
-    if (it.carried === false) continue;
+    // Nor one somebody archived as not stock: a family switch is not a restore.
+    if (it.carried === false || it.archived) continue;
     if (!!it.track !== b.track) { it.track = b.track; changed++; }
   }
   INVENTORY.reorderCrossings(st);
   writeInventory(slug, st);
   if (changed) logEvent(slug, "inventory", "inv-track", req, { item: String(kids[0].parentName || "").slice(0, 80) + ` (${changed} variants)`, track: b.track });
   res.json({ ...inventoryPayload(slug), changed });
+});
+
+// Archive: "this is not inventory" (a pass Rec types as a product) or "we no
+// longer carry it". It HIDES the item — off the Stock table, the KPIs, the
+// Scan list and the reorder email — and deliberately leaves `track` and the
+// ledger alone, so a restore comes back exactly where it was, with a balance
+// that kept moving while it was hidden. Reversible by design; the page asks
+// for confirmation only because the row then disappears.
+app.post("/:org/inventory/api/archive", express.json(), (req, res) => {
+  const slug = req.params.org;
+  if (!ORGS[slug]) return res.status(404).json({ ok: false, error: "Unknown org" });
+  const got = invItemOr404(slug, req.body && req.body.id, res); if (!got) return;
+  const { st, it } = got;
+  if (typeof req.body.archived !== "boolean") return res.status(400).json({ ok: false, error: "archived must be true or false" });
+  const was = !!it.archived;
+  it.archived = req.body.archived;
+  it.archivedAt = it.archived ? (was ? it.archivedAt : new Date().toISOString()) : null;
+  INVENTORY.reorderCrossings(st);
+  writeInventory(slug, st);
+  if (was !== it.archived) logEvent(slug, "inventory", "inv-archive", req, { item: it.name.slice(0, 80), archived: it.archived });
+  res.json(inventoryPayload(slug));
 });
 
 app.post("/:org/inventory/api/prefs", express.json(), (req, res) => {

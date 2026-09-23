@@ -152,9 +152,28 @@ render check (verified by driving a real browser against a stand-in feed, not in
 `ci-check-render.js`); per-variant reorder emails already work, but a *family-level*
 reorder point ("reorder when all candy bars total 50") does not exist.
 
+### ARCHIVE, and on-hand on Items from Rec (2026-09-23)
+
+Dan, on Pawnee: passes Rec types as `product` (Rec Swim, Casting Fee, a game
+ticket) were sitting on the Stock table as "Needs a count" — *"an 'x' with a
+confirmation box, that archives and hides them… offer a way to show archived
+items (also for things that are no longer carried)."* And: *"don't I need to
+know what the CURRENT stock is in order to set the reorder point?"*
+
+- **`POST /api/archive {id, archived}`** sets a flag and NOTHING ELSE — `track`
+  and the ledger are untouched, so a restore comes back exactly where it was,
+  with a balance that kept moving meanwhile. Archived items leave `tracked()`
+  (Stock, KPIs, Scan), Movement, Items from Rec, the reorder email and its
+  crossing, and the hourly job's org gate. Counting one is 409; the family
+  switch skips it. Slack: `inv-archive`.
+- **"Show archived (N)"** lists everything the table is not showing, with the
+  reason: archived (Restore), not carried in Rec, or no longer in Rec. The last
+  two are Rec's own state, so they carry no button.
+- **Items from Rec gained an On hand column**, left of Reorder at.
+
 ### Guards
 
-`scripts/inventory.spec.js` (**112 assertions, in CI**): the unit half RUNS
+`scripts/inventory.spec.js` (**130 assertions, in CI**): the unit half RUNS
 `lib/inventory.js`; the live half boots the real server against a stand-in
 Metabase and drives count → item → sync → re-sync. Mutation-tested seven ways,
 all caught by name: double-counting on a re-read, passes tracked by default, the
