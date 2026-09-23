@@ -154,6 +154,9 @@ guard("reorder", () => {
   ok(INV.reorderCrossings(st).join() === "snk", "…so the next dip alerts again");
   const noPoint = counted(0, T0); noPoint.items.snk.reorder = null;
   ok(INV.reorderCrossings(noPoint).length === 0, "an item with no reorder point set never emails");
+  const arch = counted(0, T0); arch.items.snk.archived = true;
+  ok(INV.reorderCrossings(arch).length === 0, "an archived item never emails, even at zero");
+  ok(INV.view(arch, T0).items.find(i => i.id === "snk").status === "archived", "the page is told an archived item is archived");
   ok(INV.orderToPar(st.items.snk) === 45, "order-to-par is par minus on hand (48 − 3)");
 });
 
@@ -287,7 +290,13 @@ if (!process.env.SKIP_SOURCE) {
     ok(one.length === 1, "a clean card is asked once");
   } catch (e) { failures.push("inventoryParamSets THREW: " + e.message); }
   const grp = srv.slice(srv.indexOf('app.post("/:org/inventory/api/group"'), srv.indexOf('app.post("/:org/inventory/api/prefs"'));
-  ok(/it\.carried === false\) continue/.test(grp), "the whole-item switch never starts tracking a variant Rec says is not carried");
+  ok(/it\.carried === false[^)]*\) continue/.test(grp), "the whole-item switch never starts tracking a variant Rec says is not carried");
+  ok(/it\.archived\) continue/.test(grp), "…nor restores an archived one — a family switch is not a restore");
+  const arch = srv.slice(srv.indexOf('app.post("/:org/inventory/api/archive"'), srv.indexOf('app.post("/:org/inventory/api/prefs"'));
+  ok(arch.length > 50 && !/it\.track\s*=/.test(arch) && !/ledger/.test(arch), "archiving leaves track and the ledger alone, so a restore comes back where it was");
+  ok(/"inv-archive"/.test(srv.slice(srv.indexOf("const SLACK_NOTIFY"), srv.indexOf("const SLACK_NOTIFY") + 4000).split("]);")[0]), "inv-archive posts to Slack");
+  const emailLow = srv.slice(srv.indexOf("const low = Object.values(st.items)"), srv.indexOf("const low = Object.values(st.items)") + 200);
+  ok(/!it\.archived/.test(emailLow), "the reorder email's shopping list leaves archived items out");
   ok(/Sold Day/.test(sql) && /to_char\(mv\.sold_lts/.test(sql), "the card emits each sale's LOCAL day");
   const page = fs.readFileSync(path.join(__dirname, "..", "public", "inventory.html"), "utf8");
   ok(!/onHand\s*[-+]=/.test(page) && !/ledger\.reduce/.test(page), "the page does no stock arithmetic of its own — lib/inventory.js is the one definition");
@@ -295,6 +304,10 @@ if (!process.env.SKIP_SOURCE) {
   ok(/window\.RECESS_CAT/.test(page) && /src="\/open-pdf\.js"/.test(page), "the velocity chart reads the ONE shared categorical palette");
   ok(/S\.mvSlot\[id\]/.test(page), "a line's colour follows the product, not its rank");
   const setup = page.slice(page.indexOf("function renderSetup("), page.indexOf("function render()"));
+  ok(/function tracked\(\)\{[^}]*!i\.archived/.test(page), "an archived item leaves every surface that reads tracked()");
+  ok(/!i\.archived && \(i\.type === 'product'/.test(setup), "Items from Rec hides archived items too");
+  ok(/<th class="r">On hand<\/th><th>Reorder at<\/th>/.test(setup) && /data-setup-onhand=/.test(setup), "Items from Rec shows on-hand directly left of Reorder at");
+  ok(/function openArchive\(/.test(page) && /data-arch-confirm=/.test(page), "the x asks before archiving");
   const alerts = page.slice(page.indexOf("function renderAlerts("), page.indexOf("function renderSetup("));
   ok(/i\.type === 'product' \|\| i\.track/.test(setup), "Items from Rec lists products only (plus anything already switched on, so it can be switched off)");
   ok(!/id="rcpt"/.test(setup) && /id="rcpt"/.test(alerts) && /id="saveRcpt"/.test(alerts), "the reorder-email address lives on the Reorder emails tab, and only there");
@@ -388,6 +401,16 @@ async function live() {
     const gx = (on.json.items || []).find(i => i.id === "tee-x") || {};
     ok(on.json.changed === 1 && gx.track === false, "switching it on never starts tracking the variant Rec says is not carried");
     ok((await req_("POST", "/spec-inv/inventory/api/group" + q, { parentId: "nope", track: true })).status === 404, "an unknown item 404s");
+    // Archive: hidden, never on a shopping list, not countable, and restorable.
+    const a1 = await req_("POST", "/spec-inv/inventory/api/archive" + q, { id: "snk", archived: true });
+    ok(a1.status === 200 && snk(a1.json).archived === true && snk(a1.json).status === "archived", "archiving marks the item and its status says so");
+    ok(snk(a1.json).track === true && snk(a1.json).onHand === 11, "…without touching track or the balance");
+    ok((await req_("POST", "/spec-inv/inventory/api/count" + q, { id: "snk", qty: 3 })).status === 409, "an archived item cannot be counted");
+    ok((await req_("POST", "/spec-inv/inventory/api/archive" + q, { id: "snk" })).status === 400, "archive needs an explicit true/false");
+    const stA = inventoryReadState(dataDir);
+    ok(stA.items.snk.alerted === false, "archiving clears the item's reorder crossing, so it is off the shopping list");
+    const a2 = await req_("POST", "/spec-inv/inventory/api/archive" + q, { id: "snk", archived: false });
+    ok(snk(a2.json).archived === false && snk(a2.json).status === "low" && snk(a2.json).onHand === 11, "restore brings it back exactly where it was");
     const onDisk = inventoryReadState(dataDir);
     ok(onDisk && onDisk.items && onDisk.items.snk && onDisk.items.snk.upc === "040000424314", "state is persisted through the store");
   } finally {

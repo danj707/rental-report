@@ -193,6 +193,13 @@ tr.svrow td:nth-child(2){padding-left:30px}
 tr.vrow .iname{font-weight:500}
 .nc .iname{text-decoration:line-through;color:var(--ink3)}
 .chip.notcarried{background:var(--line);color:var(--ink2)}
+.chip.archived{background:var(--line);color:var(--ink2)}
+.chip.gone{background:var(--line);color:var(--ink2)}
+/* ── Archive: an x on the row, and the hidden items behind a toggle ─── */
+.btn.x{width:28px;padding:5px 0;color:var(--ink3)}
+.btn.x:hover{color:var(--bad);border-color:var(--bad)}
+.showarch{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--ink2);cursor:pointer;white-space:nowrap}
+tr.arow .iname{color:var(--ink2)}
 /* ── Sparkline: on hand over 30 days, one quiet ink line ──────────────── */
 .spark{display:block}
 .spark .ln{fill:none;stroke:var(--ink2);stroke-width:1.5;stroke-linejoin:round}
@@ -289,7 +296,7 @@ var SLUG = CFG.slug || location.pathname.split('/').filter(Boolean)[0] || '';
 var $ = function(s){ return document.querySelector(s); };
 var esc = function(s){ return String(s == null ? '' : s).replace(/[&<>"]/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]; }); };
 var money = function(n){ return n == null ? '—' : '$' + Number(n).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); };
-var STATUS_LABEL = { ok:'In stock', low:'Reorder', out:'Out', uncounted:'Needs a count', untracked:'Not tracked', notcarried:'Not carried' };
+var STATUS_LABEL = { ok:'In stock', low:'Reorder', out:'Out', uncounted:'Needs a count', untracked:'Not tracked', notcarried:'Not carried', archived:'Archived' };
 
 function api(path, body){
   var u = '/' + SLUG + '/inventory/api/' + path + '?token=' + encodeURIComponent(TOKEN);
@@ -302,7 +309,7 @@ function api(path, body){
   });
 }
 
-var S = { data:null, tab:'stock', filter:'all', q:'', scan:null, err:'', open:{}, mvDays:30, mvSel:null, mvQ:'', mvMore:false };
+var S = { data:null, tab:'stock', filter:'all', q:'', scan:null, err:'', open:{}, mvDays:30, mvSel:null, mvQ:'', mvMore:false, showArch:false };
 try { var t = localStorage.getItem('inv-tab'); if (t) S.tab = t; } catch(e){}
 if (Q.get('tab')) S.tab = Q.get('tab');
 // Who is doing the counting, remembered per browser. It goes on the ledger
@@ -311,7 +318,17 @@ var BY = ''; try { BY = localStorage.getItem('inv-by') || ''; } catch(e){}
 
 function toast(msg){ var r=$('#toastRoot'); r.innerHTML='<div class="toast" role="status">'+esc(msg)+'</div>'; clearTimeout(toast._t); toast._t=setTimeout(function(){ r.innerHTML=''; },2800); }
 function items(){ return (S.data && S.data.items) || []; }
-function tracked(){ return items().filter(function(i){ return i.track && i.live && i.carried !== false; }); }
+// An ARCHIVED item is one somebody said is not stock (a pass Rec types as a
+// product). It leaves every surface below — Stock, the KPIs, Scan, Movement's
+// slowest list and the reorder email — and comes back only behind "Show archived".
+function tracked(){ return items().filter(function(i){ return i.track && i.live && i.carried !== false && !i.archived; }); }
+// Everything the Stock table is NOT showing, with the reason: archived by a
+// person, marked not carried in Rec, or no longer in Rec's catalogue at all.
+function hiddenItems(){
+  return items().filter(function(i){ return i.archived || (i.track && (i.carried === false || (!i.live && !i.split))); })
+    .map(function(i){ return { item:i, why: i.archived ? 'archived' : !i.live ? 'gone' : 'notcarried' }; })
+    .sort(function(a,b){ return a.item.name.localeCompare(b.item.name); });
+}
 function byId(id){ return items().find(function(i){ return i.id === id; }); }
 function when(ts){ if (!ts) return ''; var d=new Date(ts); return d.toLocaleDateString(undefined,{month:'short',day:'numeric'})+' · '+d.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'}).toLowerCase(); }
 
@@ -347,7 +364,7 @@ function renderChrome(){
   var units = tr.reduce(function(a,i){ return a + i.sold7; },0);
   var rev = tr.reduce(function(a,i){ return a + i.sold7*(i.price||0); },0);
   $('#kpis').innerHTML =
-    '<div class="kpi"><div class="l">Items tracked</div><div class="v">'+tr.length+'</div><div class="s">'+(need.length ? need.length+' still need a first count' : 'of '+items().filter(function(i){return i.live && i.type==='product';}).length+' Rec store products')+'</div></div>'+
+    '<div class="kpi"><div class="l">Items tracked</div><div class="v">'+tr.length+'</div><div class="s">'+(need.length ? need.length+' still need a first count' : 'of '+items().filter(function(i){return i.live && !i.archived && i.type==='product';}).length+' Rec store products')+'</div></div>'+
     '<button type="button" class="kpi alert" data-go="low"><div class="l">At reorder point</div><div class="v">'+low.length+'</div><div class="s">Show them →</div></button>'+
     '<button type="button" class="kpi bad" data-go="out"><div class="l">Out of stock</div><div class="v">'+out.length+'</div><div class="s">Show them →</div></button>'+
     '<div class="kpi"><div class="l">Stock on hand, at cost</div><div class="v num">'+(withCost.length ? money(value) : '—')+'</div><div class="s">'+(withCost.length < counted.length ? withCost.length+' of '+counted.length+' items have a unit cost' : 'what’s on the shelf now')+'</div></div>'+
@@ -416,7 +433,7 @@ function stockRow(i, isVariant){
     '<td><span class="chip '+i.status+'">'+STATUS_LABEL[i.status]+'</span></td>'+
     '<td class="r num">'+i.sold7+'</td>'+
     '<td class="r num">'+(i.onHand===null ? '—' : i.onHand<=0 ? '<span style="color:var(--bad)">now</span>' : i.daysLeft===null ? '—' : i.daysLeft+' days')+'</td>'+
-    '<td><div class="acts"><button type="button" class="btn" data-hist="'+esc(i.id)+'">History</button><button type="button" class="btn'+(i.onHand===null?' pri':'')+'" data-count="'+esc(i.id)+'">Count</button>'+(i.onHand===null?'':'<button type="button" class="btn pri" data-recv="'+esc(i.id)+'">Receive</button>')+'</div></td>'+
+    '<td><div class="acts"><button type="button" class="btn" data-hist="'+esc(i.id)+'">History</button><button type="button" class="btn'+(i.onHand===null?' pri':'')+'" data-count="'+esc(i.id)+'">Count</button>'+(i.onHand===null?'':'<button type="button" class="btn pri" data-recv="'+esc(i.id)+'">Receive</button>')+'<button type="button" class="btn x" data-arch="'+esc(i.id)+'" title="Archive — not inventory, or no longer carried" aria-label="Archive '+esc(i.name)+'">&#10005;</button></div></td>'+
   '</tr>';
 }
 function groupRow(f, open){
@@ -433,6 +450,15 @@ function groupRow(f, open){
     '<td></td><td></td><td><span class="chip '+f.st+'">'+STATUS_LABEL[f.st]+'</span></td>'+
     '<td class="r num">'+sold+'</td><td></td><td></td></tr>';
 }
+var HIDDEN_WHY = { archived:['archived','Archived'], notcarried:['notcarried','Not carried in Rec'], gone:['gone','No longer in Rec'] };
+function hiddenRow(h){
+  var i = h.item, w = HIDDEN_WHY[h.why];
+  return '<tr class="arow" data-arch-row="'+esc(i.id)+'" data-why="'+h.why+'"><td><div class="iname">'+esc(i.name)+'</div><div class="isub">'+money(i.price)+(i.archivedAt?' · archived '+esc(when(i.archivedAt)):'')+'</div></td>'+
+    '<td>'+(i.upc ? '<span class="mono">'+esc(i.upc)+'</span>' : '<span class="isub">—</span>')+'</td>'+
+    '<td class="r num">'+(i.onHand===null ? '<span class="isub">—</span>' : i.onHand)+'</td><td></td><td class="r num">'+(i.reorder==null?'<span class="isub">—</span>':i.reorder)+'</td>'+
+    '<td><span class="chip '+w[0]+'">'+w[1]+'</span></td><td class="r num">'+i.sold7+'</td><td></td>'+
+    '<td><div class="acts">'+(h.why==='archived' ? '<button type="button" class="btn" data-restore="'+esc(i.id)+'">Restore</button>' : '<span class="isub">set in Rec</span>')+'</div></td></tr>';
+}
 function renderStock(){
   if (!S.data){ $('#v-stock').innerHTML='<div class="panel"><div class="empty">Loading…</div></div>'; return; }
   var q = S.q.toLowerCase();
@@ -446,20 +472,26 @@ function renderStock(){
     var open = narrowed || !!S.open[f.group.id];
     return groupRow(f, open) + (open ? f.kids.map(function(i){ return stockRow(i, true); }).join('') : '');
   }).join('');
+  var hidden = hiddenItems().filter(function(h){ return matches(h.item, q); });
+  if (S.showArch && hidden.length) body += '<tr class="grp"><td colspan="9"><span class="iname">Hidden from the report</span><span class="isub" style="margin-left:8px">'+hidden.length+' item'+(hidden.length===1?'':'s')+' · archived, not carried, or no longer in Rec</span></td></tr>'+hidden.map(hiddenRow).join('');
   var empty = !tracked().length ? 'No items are tracked yet. Turn on the ones you stock under <b>Items from Rec</b>.' : 'Nothing matches this filter.';
-  $('#v-stock').innerHTML = '<div class="panel"><div class="ph"><h2>On hand</h2><input type="search" id="q" placeholder="Search name, SKU or UPC" value="'+esc(S.q)+'" aria-label="Search items"><div class="seg">'+seg+'</div></div>'+
+  $('#v-stock').innerHTML = '<div class="panel"><div class="ph"><h2>On hand</h2><input type="search" id="q" placeholder="Search name, SKU or UPC" value="'+esc(S.q)+'" aria-label="Search items"><div class="seg">'+seg+'</div>'+
+    (hidden.length ? '<label class="showarch"><input type="checkbox" id="showArch" '+(S.showArch?'checked':'')+'> Show archived ('+hidden.length+')</label>' : '')+'</div>'+
     '<div class="tscroll"><table><thead><tr><th>Item</th><th>UPC</th><th class="r">On hand</th><th>Last 30 days</th><th class="r">Reorder at</th><th>Status</th><th class="r">Sold 7d</th><th class="r">Runs out in</th><th></th></tr></thead><tbody>'+
     (body || '<tr><td colspan="9"><div class="empty">'+empty+'</div></td></tr>')+'</tbody></table></div>'+
     '<div class="note">On hand = last physical count, minus sales from Rec’s item log, plus refunds, voids and deliveries received. "Runs out in" uses the last 7 days’ pace. An item with variants is counted per variant; its row adds up the counted ones.</div></div>';
   Array.prototype.forEach.call($('#v-stock').querySelectorAll('[data-f]'), function(b){ b.onclick=function(){ S.filter=b.dataset.f; render(); }; });
   Array.prototype.forEach.call($('#v-stock').querySelectorAll('[data-toggle]'), function(b){ b.onclick=function(){ var id=b.dataset.toggle; S.open[id]=!S.open[id]; renderStock(); }; });
   var qi = $('#q'); qi.oninput = function(){ S.q=qi.value; var p=qi.selectionStart; renderStock(); var n=$('#q'); n.focus(); n.setSelectionRange(p,p); };
+  var sa = $('#showArch'); if (sa) sa.onchange = function(){ S.showArch = sa.checked; renderStock(); };
   wireRowActions($('#v-stock'));
 }
 function wireRowActions(root){
   Array.prototype.forEach.call(root.querySelectorAll('[data-count]'), function(b){ b.onclick=function(){ openCount(byId(b.dataset.count)); }; });
   Array.prototype.forEach.call(root.querySelectorAll('[data-recv]'), function(b){ b.onclick=function(){ openReceive(byId(b.dataset.recv)); }; });
   Array.prototype.forEach.call(root.querySelectorAll('[data-hist]'), function(b){ b.onclick=function(){ openHistory(byId(b.dataset.hist)); }; });
+  Array.prototype.forEach.call(root.querySelectorAll('[data-arch]'), function(b){ b.onclick=function(){ openArchive(byId(b.dataset.arch)); }; });
+  Array.prototype.forEach.call(root.querySelectorAll('[data-restore]'), function(b){ b.onclick=function(){ var it=byId(b.dataset.restore); save('archive',{id:it.id,archived:false}, it.name+' is back on the report').catch(function(){}); }; });
 }
 
 /* ── Movement: what sells, what sits, and how fast ──────────────────── */
@@ -470,7 +502,7 @@ function wireRowActions(root){
 var MV_MAX = 8;
 function mvSeries(){
   var out = [], G = (S.data && S.data.groups) || {};
-  items().filter(function(i){ return i.live && i.type === 'product' && i.daily; }).forEach(function(i){
+  items().filter(function(i){ return i.live && !i.archived && i.type === 'product' && i.daily; }).forEach(function(i){
     out.push({ id:i.id, name:i.name, daily:i.daily, onHand:i.onHand, track:i.track && i.carried !== false, item:i });
   });
   Object.keys(G).forEach(function(pid){ var g = G[pid]; if (g.daily) out.push({ id:'g:'+pid, name:g.name+' (all variants)', daily:g.daily, onHand:g.onHand, family:true, track:g.tracked > 0 }); });
@@ -685,6 +717,14 @@ function openCount(it){
     save('count',{ id:it.id, qty:n, reason: $('#rs') ? $('#rs').value : '', by: readBy() }, function(){ var d = first ? 0 : n-exp; return it.name+' set to '+n+(first?'':d?' · '+(d>0?'+':'')+d+' variance logged':' · matched what we expected'); }).catch(function(){});
   };
 }
+// A confirmation, because the row disappears the moment it is archived. Nothing
+// is deleted: the item keeps its history and its count, and Restore undoes it.
+function openArchive(it){
+  modal('<div class="mh"><h3>Archive '+esc(it.name)+'?</h3><p>Use this for things that aren’t shelf inventory (passes, tickets, fees) or that you no longer carry. It comes off the Stock table, the counts above and the reorder email. Nothing is deleted — tick <b>Show archived</b> to see it again and restore it.</p></div>'+
+    '<div class="mf"><button type="button" class="btn" id="cx">Cancel</button><button type="button" class="btn pri" id="ok" data-arch-confirm="'+esc(it.id)+'">Archive</button></div>');
+  $('#cx').onclick = closeModal;
+  $('#ok').onclick = function(){ save('archive',{id:it.id,archived:true}, it.name+' archived').catch(function(){}); };
+}
 function openReceive(it){
   var sugg = Math.max(1, it.orderToPar || 12);
   modal('<div class="mh"><h3>Receive · '+esc(it.name)+'</h3><p>'+it.onHand+' on hand now.'+(it.par!=null?' Filling to par ('+it.par+') would take '+(it.orderToPar||0)+'.':'')+'</p></div>'+
@@ -733,13 +773,17 @@ function renderSetup(){
   // PRODUCTS ONLY. Passes, memberships, fees and gift cards are never stock,
   // and listing them buried the candy bars under ticket types. One an org had
   // already switched on stays listed, so it can still be switched off.
-  var list = items().filter(function(i){ return i.live && (i.type === 'product' || i.track); });
+  var list = items().filter(function(i){ return i.live && !i.archived && (i.type === 'product' || i.track); });
+  var nArch = items().filter(function(i){ return i.live && i.archived; }).length;
   var setupRow = function(i, isVariant){
     var tag = i.carried === false ? '<span class="chip notcarried">Not carried in Rec</span>'
       : i.type==='product' ? '<span class="chip ok">Merch</span>' : '<span class="chip pass">'+esc(TYPE_LABEL[i.type]||i.type)+' · not stock</span>';
     var label = isVariant ? (i.variantName || i.name) : i.name;
     return '<tr data-setup-row="'+esc(i.id)+'" class="'+(isVariant?'svrow':'')+(i.carried===false?' nc':'')+'"><td><span class="tgl"><label class="toggle"><input type="checkbox" data-tk="'+esc(i.id)+'" '+(i.track?'checked':'')+' aria-label="Track '+esc(i.name)+'"><span></span></label><span class="tw'+(i.track?' on':'')+'">'+(i.track?'On':'Off')+'</span></span></td>'+
       '<td><div class="iname">'+esc(label)+'</div><div class="isub">'+(isVariant && i.sku ? '<span class="mono">'+esc(i.sku)+'</span> · ' : '')+money(i.price)+(i.inStore?'':' · hidden from Rec store')+'</div></td><td>'+tag+'</td>'+
+      // What is on the shelf now, beside the box that sets when to reorder —
+      // a reorder point is set against a number, and it lived on another tab.
+      '<td class="r num" data-setup-onhand="'+(i.onHand===null?'':i.onHand)+'">'+(!i.track ? '<span class="isub">—</span>' : i.onHand===null ? '<span class="chip uncounted">Needs a count</span>' : '<b>'+i.onHand+'</b>')+'</td>'+
       '<td>'+(i.track?'<input class="qty" type="number" min="0" value="'+(i.reorder==null?'':i.reorder)+'" placeholder="—" data-ro="'+esc(i.id)+'" aria-label="Reorder point">':'<span class="isub">—</span>')+'</td>'+
       '<td>'+(i.track?'<input class="qty" type="number" min="0" value="'+(i.par==null?'':i.par)+'" placeholder="—" data-par="'+esc(i.id)+'" aria-label="Par level">':'<span class="isub">—</span>')+'</td>'+
       '<td>'+(i.track?'<input class="qty" type="number" min="0" step="0.01" value="'+(i.cost==null?'':i.cost)+'" placeholder="—" data-cost="'+esc(i.id)+'" aria-label="Unit cost">':'<span class="isub">—</span>')+'</td>'+
@@ -754,12 +798,12 @@ function renderSetup(){
     var carried = f.kids.filter(function(i){ return i.carried !== false; }), on = carried.filter(function(i){ return i.track; }).length;
     var open = !!S.open['s:'+f.group.id];
     return '<tr class="grp" data-setup-group="'+esc(f.group.id)+'"><td><span class="tgl"><label class="toggle" title="Track every variant Rec says you carry"><input type="checkbox" data-gtk="'+esc(f.group.id)+'" '+(on && on===carried.length?'checked':'')+' aria-label="Track all '+esc(f.name)+'"><span></span></label><span class="tw'+(on?' on':'')+'">'+(!on?'Off':on===carried.length?'On':'Some')+'</span></span></td>'+
-      '<td colspan="6"><button type="button" class="caret" data-stoggle="'+esc(f.group.id)+'" aria-expanded="'+open+'">'+(open?'&#9662;':'&#9656;')+'</button><span class="iname">'+esc(f.name)+'</span><span class="vct">'+f.kids.length+' variants</span>'+
+      '<td colspan="7"><button type="button" class="caret" data-stoggle="'+esc(f.group.id)+'" aria-expanded="'+open+'">'+(open?'&#9662;':'&#9656;')+'</button><span class="iname">'+esc(f.name)+'</span><span class="vct">'+f.kids.length+' variants</span>'+
       '<span class="isub" style="margin-left:8px">'+on+' of '+carried.length+' tracked'+(f.kids.length > carried.length ? ' · '+(f.kids.length-carried.length)+' not carried' : '')+'</span></td></tr>'+
       (open ? f.kids.map(function(i){ return setupRow(i, true); }).join('') : '');
   }).join('');
-  $('#v-setup').innerHTML = '<div class="panel"><div class="ph"><h2>Store items pulled from Rec</h2><span class="isub">'+list.length+' products</span></div>'+
-    '<div class="tscroll"><table style="min-width:760px"><thead><tr><th>Track</th><th>Item</th><th>Type</th><th>Reorder at</th><th>Par</th><th>Unit cost</th><th>UPC</th></tr></thead><tbody>'+(rows||'<tr><td colspan="7"><div class="empty">No store products came back from Rec yet.</div></td></tr>')+'</tbody></table></div>'+
+  $('#v-setup').innerHTML = '<div class="panel"><div class="ph"><h2>Store items pulled from Rec</h2><span class="isub">'+list.length+' products'+(nArch?' · '+nArch+' archived (Stock → Show archived)':'')+'</span></div>'+
+    '<div class="tscroll"><table style="min-width:820px"><thead><tr><th>Track</th><th>Item</th><th>Type</th><th class="r">On hand</th><th>Reorder at</th><th>Par</th><th>Unit cost</th><th>UPC</th></tr></thead><tbody>'+(rows||'<tr><td colspan="8"><div class="empty">No store products came back from Rec yet.</div></td></tr>')+'</tbody></table></div>'+
     '<div class="note">Only products are listed; passes, memberships, fees and gift cards are never stock. A variant Rec marks not carried comes in switched off, and an item’s own switch tracks every variant it carries. Turn on what you stock, count each once, set a reorder point, then scan each product to link its barcode. Unit cost is optional and only feeds the stock-value figure.</div></div>';
   var root = $('#v-setup');
   Array.prototype.forEach.call(root.querySelectorAll('[data-stoggle]'), function(b){ b.onclick=function(){ var k='s:'+b.dataset.stoggle; S.open[k]=!S.open[k]; renderSetup(); }; });
