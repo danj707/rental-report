@@ -422,6 +422,9 @@ jobs:
       - name: Cost Recovery (the parts sum to 1; on target means inside the band; PATCH keeps both edits)
         run: node scripts/cost-recovery.spec.js
 
+      - name: Clear all data (the typed word is a SERVER gate; both stores go; Slack always posts)
+        run: node scripts/clear-all-data.spec.js
+
       - name: Admin dashboard JS (inline blocks parse; every on*= handler resolves)
         run: node scripts/ci-check-admin-js.js
 

@@ -237,6 +237,7 @@ tr.arow .iname{color:var(--ink2)}
 </style>
 <link rel="stylesheet" href="/recess-tokens.css">
 <link rel="stylesheet" href="/recess-report.css">
+<script src="/clear-all.js"></script>
 </head>
 <body>
 <div class="toolbar">
@@ -244,6 +245,8 @@ tr.arow .iname{color:var(--ink2)}
   <div class="toolbar-spacer"></div>
   <div class="sync"><span class="dot" id="syncDot"></span><span id="syncTxt">Loading…</span></div>
   <button id="syncBtn" type="button" class="btn-run">&#8635; Sync with Rec now</button>
+  <!-- The nuclear option, last and on its own — see /clear-all.js. -->
+  <span id="clearAllSlot"></span>
 </div>
 <div class="page">
   <div class="report-header">
@@ -822,6 +825,43 @@ $('#syncBtn').onclick = function(){
     .catch(function(e){ toast('Sync failed: '+e.message); load(); })
     .then(function(){ b.disabled=false; b.innerHTML='&#8635; Sync with Rec now'; });
 };
+/* ── the nuclear option ───────────────────────────────────────────────
+   `describe` runs each time the dialog opens, so the counts are what is on
+   the page now. It counts what it can count EXACTLY: the items, and the
+   items carrying a physical count. It does NOT count ledger lines, because
+   `history` on each item is truncated by the view (the last 60) and a
+   confident undercount in a destruction dialog is worse than not saying —
+   the response reports the server's exact figure and that is what the toast
+   prints.
+
+   THE CATALOGUE COMES BACK; THE LEDGER DOES NOT. Items are ingested from Rec
+   on the next sync, so a wipe returns the org to first-open rather than to a
+   page that can never be used again. The counts, the deliveries and the
+   sold/refunded memory are the part that is gone for good, which is what the
+   note says out loud. */
+if (window.RecClearAll) {
+  window.RecClearAll.mount({
+    mount: $('#clearAllSlot'), report: 'inventory', label: 'Inventory',
+    slug: SLUG, token: TOKEN,
+    note: 'The item catalogue comes back from Rec on the next sync. What does not come back is the ledger \u2014 every physical count, delivery and sale this report has recorded \u2014 along with reorder points, UPCs and groups.',
+    describe: function () {
+      var its = items();
+      return [
+        { n: its.length, label: 'item' },
+        { n: its.filter(function (i) { return i.lastCountAt; }).length, label: 'counted item' }
+      ];
+    },
+    onCleared: function (d) {
+      try { sessionStorage.setItem('invCleared', d.what || 'everything'); } catch (e) {}
+      location.reload();
+    }
+  });
+  try {
+    var _cm = sessionStorage.getItem('invCleared');
+    if (_cm) { sessionStorage.removeItem('invCleared'); setTimeout(function () { toast('Cleared \u2014 ' + _cm + ' deleted'); }, 400); }
+  } catch (e) {}
+}
+
 setTab(S.tab);
 load();
 })();

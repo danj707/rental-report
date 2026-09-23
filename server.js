@@ -5286,7 +5286,7 @@ setTimeout(() => { checkCardParamTypes().catch(() => {}); }, 150 * 1000).unref?.
 // Inert if the env var is unset. Fire-and-forget — never blocks or breaks logging.
 // To change what pings Slack, edit SLACK_NOTIFY. High-frequency events (view/fetch)
 // are debounced per org+report so Slack isn't a firehose.
-const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "campmap-filter", "campmap-amenity", "pdf", "excel", "print", "summary", "game", "map", "outdoor", "fields", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email", "checkin-loc", "checkin-member", "checkin-failed", "form-open", "epact", "settings-open", "settings-unlock", "settings-locked", "settings-save", "settings-reset", "deadlink", "generate", "wizard-save", "mb-autorenew", "mb-salesmix", "ft-export", "panel-csv", "intel-csv", "wizard-feedback", "roster-open", "report-csv", "survey-response", "insights-listen", "opp-drill", "opp-print", "opp-csv", "backup-failed", "org-synced", "fee-alloc", "inv-count", "inv-receive", "inv-link", "inv-track", "inv-archive", "inv-reorder", "cost-save", "cost-csv"]);
+const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "campmap-filter", "campmap-amenity", "pdf", "excel", "print", "summary", "game", "map", "outdoor", "fields", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email", "checkin-loc", "checkin-member", "checkin-failed", "form-open", "epact", "settings-open", "settings-unlock", "settings-locked", "settings-save", "settings-reset", "deadlink", "generate", "wizard-save", "mb-autorenew", "mb-salesmix", "ft-export", "panel-csv", "intel-csv", "wizard-feedback", "roster-open", "report-csv", "survey-response", "insights-listen", "opp-drill", "opp-print", "opp-csv", "backup-failed", "org-synced", "fee-alloc", "inv-count", "inv-receive", "inv-link", "inv-track", "inv-archive", "inv-reorder", "cost-save", "cost-csv", "data-cleared"]);
 const SLACK_DEBOUNCE_MS = { view: 30 * 60 * 1000, fetch: 30 * 60 * 1000,
   // A broken report stays broken. The health check only reports NEW failures,
   // but a flapping card would otherwise post every hour.
@@ -5388,6 +5388,8 @@ const SLACK_EVENT_META = {
   // platform: it is the one number Rec does not hold, so every one of them is
   // somebody deciding this report is worth keeping up to date.
   "cost-save": { emoji: "\u2696\uFE0F", verb: "entered program costs on" },
+  // Its own branch below prints what was destroyed; this is the fallback.
+  "data-cleared": { emoji: "\u2622\uFE0F", verb: "CLEARED ALL DATA on" },
   "cost-csv":  { emoji: "\uD83D\uDCC4", verb: "exported the P&L from" },
   // FIVE WRONG ATTEMPTS. Not a typo — this is the one worth reading as a
   // security event, which is why only the lockout posts and single misses do not.
@@ -5488,6 +5490,13 @@ function notifySlack(rec) {
     // first one typed — which is the whole signal this event exists for.
     : rec.event === "cost-save"
       ? `${rec.org}|cost-recovery|cost-save|${rec.program || ""}`
+    // NEVER DEBOUNCED. Every other key here collapses a burst of one kind of
+    // activity into one line, which is right for a save and wrong for a
+    // destruction: two presses of a nuclear button are two events, and the
+    // second is the one that destroyed the data somebody re-entered. Keying on
+    // the record's own timestamp is how this event opts out.
+    : rec.event === "data-cleared"
+      ? `${rec.org}|${rec.report}|data-cleared|${rec.ts}`
     // Per FINDING: working down three opportunities in a morning is three
     // decisions, and the default org|report|event key would record only the
     // first one clicked — which is precisely the signal this event exists for.
@@ -5767,6 +5776,15 @@ function notifySlack(rec) {
                : gone     ? `${gone} cleared`
                : `${n} program${n === 1 ? "" : "s"}`;
     text = `${meta.emoji} ${orgName} (\`${rec.org}\`) ${meta.verb} *Cost Recovery*${prog} \u00B7 ${what}`;
+  } else if (rec.event === "data-cleared") {
+    // ITS OWN BRANCH, because the shared line would print the report type and
+    // never say what was destroyed — which is the entire content of this
+    // event. The report is NAMED rather than slugged, and the counts travel
+    // with it, so the post reads as a fact about the org's data rather than as
+    // a button press.
+    const label = (REPORT_DIRECTORY[rec.report] && REPORT_DIRECTORY[rec.report].label) || rec.report;
+    const what  = rec.what ? ` \u2014 ${rec.what} destroyed` : "";
+    text = `${meta.emoji} ${orgName} (\`${rec.org}\`) ${meta.verb} *${label}*${what}`;
   } else if (rec.event === "fee-alloc") {
     const fees  = rec.fees  ? ` \u00B7 $${rec.fees} in fees` : "";
     const txns  = rec.txns  ? ` over ${rec.txns} card transactions` : "";
@@ -13662,6 +13680,113 @@ app.put("/:org/cost-recovery/api/ledger", express.json({ limit: "512kb" }), (req
 
   res.json({ ok: true, saved: saved.length, removed: removed.length, dropped, count: Object.keys(cur).length });
 });
+
+// ── THE NUCLEAR OPTION: clear everything an org has typed into a report ──
+// Dan, 2026-09-23: *"we need a 'clear all data' nuclear option for each
+// report. Button option somewhere at the top, has a confirmation, 'type
+// DELETE to delete all data' type double confirmation box."*
+//
+// "EACH REPORT" IS TWO REPORTS, because two is how many write. Cost Recovery
+// holds the program costs and the overhead ledger; Inventory holds the count
+// and movement ledger. Every other report on this platform is read-only over a
+// Metabase card and has nothing of the org's own to clear — a button there
+// would be a control that cannot do anything.
+//
+// THE TYPED WORD IS CHECKED HERE, NOT ONLY IN THE DIALOG. A modal stops a
+// misclick; it cannot stop a stale tab replaying a POST, a script holding the
+// org token, or a build shipped with the dialog accidentally removed. So the
+// request carries `confirm: "DELETE"` and the route refuses without it. The
+// dialog and the gate are two different things, and only one of them is ours.
+//
+// IT IS GATED ON THE ORG TOKEN, like every other write on these two reports —
+// Dan's standing call (*"anyone with the report link can edit costs"*), and
+// the people who typed a pilot's test data are exactly the people who need to
+// clear it. What pays for it is the RECORD: the clear posts to Slack naming
+// the org, the report and how much was destroyed, and it is NEVER debounced
+// away (see the `data-cleared` key, which carries the timestamp).
+const CLEAR_WORD = "DELETE";
+
+// What each report's clear destroys, counted BEFORE it happens — the counts
+// are what the dialog shows, what the response reports and what Slack says, so
+// they come from one place and cannot disagree.
+// A label is PLURALISED BY ADDING "s", so pick labels that survive it: "ledger
+// line" rather than "ledger entry", which would print "7 ledger entrys". The
+// pluraliser is kept dumb on purpose — it is read by the dialog, the response
+// and the Slack line, and a clever one is a third thing that can disagree.
+const CLEARABLE = {
+  "cost-recovery": {
+    count(slug) {
+      const costs  = orgCosts(slug);
+      const ledger = readLedgerStore()[slug];
+      const rows   = ledger && typeof ledger === "object" ? ledger : {};
+      return {
+        // Named for the reader, not for the store: this is what the dialog and
+        // the Slack line print, so it has to read as the thing destroyed.
+        parts: [
+          { n: Object.keys(costs).length, label: "program cost" },
+          { n: Object.keys(rows).length,  label: "overhead & other row" },
+        ],
+      };
+    },
+    clear(slug) {
+      // Both stores, in one action. "Clear all data" has to mean all of it —
+      // one button per store would leave the reader doing arithmetic about
+      // what is still on the page after they pressed the nuclear option.
+      const costsAll = readCostStore();  delete costsAll[slug];  writeCostStore(costsAll);
+      const ledgAll  = readLedgerStore(); delete ledgAll[slug];  writeLedgerStore(ledgAll);
+    },
+  },
+  inventory: {
+    count(slug) {
+      const st = readInventory(slug);
+      const items = Object.values(st.items || {});
+      let events = 0;
+      for (const it of items) events += ((it && it.ledger) || []).length;
+      return {
+        parts: [
+          { n: items.length,  label: "item" },
+          { n: events,        label: "ledger line" },
+        ],
+      };
+    },
+    clear(slug) {
+      // The catalogue comes BACK on the next sync — it is ingested from Rec,
+      // not typed here — so a wipe returns the org to its first-open state
+      // rather than to a page that can never be used again. What does not come
+      // back is the ledger: the counts, the receipts and the sold/refunded
+      // memory. That asymmetry is exactly what the typed word is protecting.
+      writeInventory(slug, INVENTORY.emptyState());
+    },
+  },
+};
+
+function clearAllRoute(report) {
+  const spec = CLEARABLE[report];
+  return (req, res) => {
+    const slug = req.params.org;
+    if (!ORGS[slug]) return res.status(404).json({ ok: false, error: "Unknown org" });
+    const supplied = req.query.token || req.headers["x-token"] || (req.body && req.body.token) || "";
+    if (ORGS[slug].token && supplied !== ORGS[slug].token) return res.status(403).json({ ok: false, error: "Invalid token" });
+    if (String((req.body && req.body.confirm) || "") !== CLEAR_WORD) {
+      return res.status(400).json({ ok: false, error: `Type ${CLEAR_WORD} to confirm.` });
+    }
+
+    const before = spec.count(slug);
+    spec.clear(slug);
+    const destroyed = before.parts.reduce((a, p) => a + p.n, 0);
+    const what = before.parts.map(p => `${p.n} ${p.label}${p.n === 1 ? "" : "s"}`).join(" and ");
+
+    // ALWAYS posted, including a clear that destroyed nothing: the press of a
+    // nuclear button is the signal, and "somebody cleared and it did nothing"
+    // is worth seeing during a pilot.
+    logEvent(slug, report, "data-cleared", req, { destroyed, what });
+
+    res.json({ ok: true, destroyed, what, parts: before.parts });
+  };
+}
+
+app.post("/:org/cost-recovery/api/clear-all", express.json({ limit: "8kb" }), clearAllRoute("cost-recovery"));
+app.post("/:org/inventory/api/clear-all",     express.json({ limit: "8kb" }), clearAllRoute("inventory"));
 
 // ── Subscription API ─────────────────────────────────────────────────
 app.get("/:org/admin/reports", (req, res) => {

@@ -4135,6 +4135,63 @@ const CASES = [
       await page.emulateMediaType(null);
     } },
 
+  /* ── THE NUCLEAR OPTION ──────────────────────────────────────────────
+        Dan: "a 'clear all data' nuclear option for each report ... has a
+        confirmation, 'type DELETE to delete all data' type double
+        confirmation box."
+
+        ONLY A BROWSER CAN SEE THIS. A disabled button and a live one are the
+        same markup until something renders them, and the source assertion for
+        it SURVIVED its own mutation — `/go\.disabled = true/` also matches the
+        click handler's own line, so enabling the button from the start passed
+        the spec. This case is what fails on that, and it fails at the exact
+        step that matters: the wrong word must not arm the button.
+
+        It deliberately stops before pressing Delete. Every /api/ request here
+        is answered from STUBS, so a clear driven in this harness would never
+        reach the real route — clear-all-data.spec.js's live half boots a real
+        server for that. What this proves is the DIALOG. */
+  { name: "cost-recovery · the nuclear option asks twice",
+    path: "/{org}/cost-recovery",
+    needs: 'body[data-rc-clrgate-seen^="ok=1 "]',
+    act: async (page) => {
+      await page.waitForSelector('body[data-cr-seen*="mode=season"]', { timeout: 20000 });
+      await page.click("#clearAllBtn");
+      await page.waitForSelector("#clrGo", { timeout: 10000 });
+      const dis = () => page.$eval("#clrGo", b => b.disabled);
+      const atRest = await dis();
+      await page.type("#clrWord", "delete");           // what somebody types by reflex
+      const lower = await dis();
+      await page.$eval("#clrWord", i => { i.value = ""; });
+      await page.type("#clrWord", "DELETEX");          // close, and not the word
+      const near = await dis();
+      await page.$eval("#clrWord", i => { i.value = ""; });
+      await page.type("#clrWord", "DELETE");
+      const exact = await dis();
+      const ok = atRest === true && lower === true && near === true && exact === false;
+      await page.evaluate(t => document.body.setAttribute("data-rc-clrgate-seen", t),
+        (ok ? "ok=1 " : "ok=0 ") + "rest=" + atRest + " lower=" + lower + " near=" + near + " exact=" + exact);
+    } },
+
+  /* A dialog that says "Are you sure?" over an unnamed amount is one people
+     learn to click through; "3 program costs and 5 overhead & other rows" is
+     one they read. Keyed on the COUNTS, because a build that renders the box
+     and describes nothing renders a perfectly plausible dialog. */
+  { name: "cost-recovery · the clear dialog names what it will destroy",
+    path: "/{org}/cost-recovery",
+    needs: 'body[data-rc-clrwhat-seen^="ok=1 "]',
+    act: async (page) => {
+      await page.waitForSelector('body[data-cr-seen*="mode=season"]', { timeout: 20000 });
+      await page.click("#clearAllBtn");
+      await page.waitForSelector(".clr-what", { timeout: 10000 });
+      const txt = await page.$eval(".clr-what", n => n.textContent);
+      // The stub carries 3 costs and 5 ledger rows, and both halves have to be
+      // named — one alone is the version that quietly leaves a store behind.
+      const ok = /3 program costs/.test(txt) && /5 overhead & other rows/.test(txt);
+      await page.evaluate(t => document.body.setAttribute("data-rc-clrwhat-seen", t),
+        (ok ? "ok=1 " : "ok=0 ") + JSON.stringify(txt).slice(0, 120));
+    } },
+
   { name: "programs-schedule · six meetings, one section twice",
     path: "/{org}/programs-schedule",
     needs: "[data-ready='true'][data-ps-rows='6']" },
