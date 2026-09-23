@@ -5306,7 +5306,7 @@ setTimeout(() => { checkCardParamTypes().catch(() => {}); }, 150 * 1000).unref?.
 // Inert if the env var is unset. Fire-and-forget — never blocks or breaks logging.
 // To change what pings Slack, edit SLACK_NOTIFY. High-frequency events (view/fetch)
 // are debounced per org+report so Slack isn't a firehose.
-const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "campmap-filter", "campmap-amenity", "pdf", "excel", "print", "summary", "game", "map", "outdoor", "fields", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email", "checkin-loc", "checkin-member", "checkin-failed", "form-open", "epact", "settings-open", "settings-unlock", "settings-locked", "settings-save", "settings-reset", "deadlink", "generate", "wizard-save", "mb-autorenew", "mb-salesmix", "ft-export", "panel-csv", "intel-csv", "wizard-feedback", "roster-open", "report-csv", "survey-response", "insights-listen", "opp-drill", "opp-print", "opp-csv", "backup-failed", "org-synced", "fee-alloc", "inv-count", "inv-receive", "inv-link", "inv-track", "inv-archive", "inv-reorder", "cost-save", "cost-csv", "data-cleared"]);
+const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "campmap-filter", "campmap-amenity", "pdf", "excel", "print", "summary", "game", "map", "outdoor", "fields", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email", "checkin-loc", "checkin-member", "checkin-failed", "form-open", "epact", "settings-open", "settings-unlock", "settings-locked", "settings-save", "settings-reset", "deadlink", "generate", "wizard-save", "mb-autorenew", "mb-salesmix", "ft-export", "panel-csv", "intel-csv", "intel-window", "wizard-feedback", "roster-open", "report-csv", "survey-response", "insights-listen", "opp-drill", "opp-print", "opp-csv", "backup-failed", "org-synced", "fee-alloc", "inv-count", "inv-receive", "inv-link", "inv-track", "inv-archive", "inv-reorder", "cost-save", "cost-csv", "data-cleared"]);
 const SLACK_DEBOUNCE_MS = { view: 30 * 60 * 1000, fetch: 30 * 60 * 1000,
   // A broken report stays broken. The health check only reports NEW failures,
   // but a flapping card would otherwise post every hour.
@@ -5334,6 +5334,7 @@ const SLACK_EVENT_META = {
   "insights-listen": { emoji: "\u{1F50A}", verb: "listened to Rec Insights on" },
   // Deliberately a louder glyph than panel-csv: this one carries PII.
   "intel-csv":       { emoji: "\u{1F4C7}", verb: "downloaded a contact list from" },
+  "intel-window":    { emoji: "\u{1F4C6}", verb: "looked at signups by date on" },
   // A custom data report's own CSV. These reports exist BECAUSE the export is
   // the deliverable — Joseph files them monthly — so the download is the event
   // that says the report is being used, not the page view.
@@ -5500,6 +5501,9 @@ function notifySlack(rec) {
     // two different contact lists leaving, and each one should be on the record.
     : rec.event === "intel-csv"
       ? `${rec.org}|${rec.report}|intel-csv|${rec.segment || ""}`
+    // Per WINDOW: last month's signups and this year's are two questions.
+    : rec.event === "intel-window"
+      ? `${rec.org}|${rec.report}|intel-window|${rec.from || ""}|${rec.to || ""}`
     // Per SECTION: an admin working down a morning's classes is telling us
     // about each class, not about one click, and the default org|report|event
     // key would keep only the first roster they opened.
@@ -5880,6 +5884,12 @@ function notifySlack(rec) {
     const many = rows == null ? "" : ` — ${rows.toLocaleString()} row${rows === 1 ? "" : "s"}`;
     const panel = rec.panel ? `*${rec.panel}*` : "a chart";
     text = `${meta.emoji} ${orgName} (\`${rec.org}\`) downloaded ${panel} as CSV${many}`;
+  } else if (rec.event === "intel-window") {
+    // Which window, and how many signups it held — "filtered by date" says nothing.
+    const span = rec.from && rec.to ? `${rec.from} \u2192 ${rec.to}` : rec.from ? `since ${rec.from}` : rec.to ? `through ${rec.to}` : "all time";
+    const n = rec.signups;
+    const many = n == null ? "" : ` \u2014 ${n.toLocaleString()} signup${n === 1 ? "" : "s"}`;
+    text = `${meta.emoji} ${orgName} (\`${rec.org}\`) looked at Community Intel signups *${span}*${many}`;
   } else if (rec.event === "intel-csv") {
     // NAME THE SEGMENT AND THE COUNT. "Someone exported contacts" is not the
     // record this event exists to be — which list, and how many residents were
@@ -6743,7 +6753,7 @@ async function generatePdf(orgSlug, reportType, startDate, endDate, filters = {}
   // CLIENT gates (the page's getParams whitelist, its state, its export paths)
   // looks exactly like working — the screen and the browser's own Print are
   // both correct — and the SERVER-rendered PDF still carried the columns.
-  ["locations", "location", "sites", "location_name", "site_type", "desks", "methods", "by_desk", "by_item", "hide_zero", "chart_net", "metric", "programs", "closures", "hrs", "section_name", "section_id", "status", "questions", "cols", "search", "tab", "instructor", "split", "book_type", "addons", "musco", "participant", "view", "tyler", "glq", "gl_codes", "refunds", "fees", "quarter", "insights"].forEach(k => {
+  ["locations", "location", "sites", "location_name", "site_type", "desks", "methods", "by_desk", "by_item", "hide_zero", "chart_net", "metric", "programs", "closures", "hrs", "section_name", "section_id", "status", "questions", "cols", "search", "tab", "instructor", "split", "book_type", "addons", "musco", "participant", "view", "tyler", "glq", "gl_codes", "refunds", "fees", "quarter", "insights", "signup_from", "signup_to", "signup_chart"].forEach(k => {
     if (filters[k]) qsObj[k] = filters[k];
   });
   // `pii` CANNOT RIDE THE LOOP ABOVE, and that is the whole bug this line fixes.
@@ -9461,7 +9471,7 @@ app.post("/:org/:report/api/log", resolveOrg, (req, res) => {
   const { event, game, location, view } = req.query;
   // view-apply is events.jsonl-only by design — it is not in SLACK_NOTIFY, so
   // logEvent records it without pinging the feed (see the saved-views block).
-  const ALLOWED = ["excel", "print", "summary", "game", "map", "view-apply", "checkin-loc", "checkin-member", "checkin-failed", "form-open", "epact", "settings-open", "mb-autorenew", "mb-salesmix", "ft-export", "panel-csv", "intel-csv", "roster-open", "insights-listen", "fee-alloc", "cost-csv"];
+  const ALLOWED = ["excel", "print", "summary", "game", "map", "view-apply", "checkin-loc", "checkin-member", "checkin-failed", "form-open", "epact", "settings-open", "mb-autorenew", "mb-salesmix", "ft-export", "panel-csv", "intel-csv", "intel-window", "roster-open", "insights-listen", "fee-alloc", "cost-csv"];
   if (!ALLOWED.includes(event)) return res.status(400).json({ ok: false, error: "Unknown event" });
   const ciN = Number(req.query.n);
   const extra = event === "game" && game ? { game: String(game).slice(0, 60) }
@@ -9491,6 +9501,11 @@ app.post("/:org/:report/api/log", resolveOrg, (req, res) => {
               : event === "insights-listen"
                 ? { insights: Number.isFinite(ciN) && ciN >= 0 && ciN <= 99 ? Math.round(ciN) : undefined,
                     voice: req.query.voice === "rec" || req.query.voice === "browser" ? req.query.voice : undefined }
+              // WHICH signup window. Dates are validated, never echoed raw.
+              : event === "intel-window"
+                ? { from: /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.from || "")) ? String(req.query.from) : "",
+                    to: /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.to || "")) ? String(req.query.to) : "",
+                    signups: Number.isFinite(ciN) && ciN >= 0 && ciN <= 9999999 ? Math.round(ciN) : undefined }
               : event === "intel-csv"
                 ? { segment: String(req.query.segment || "").slice(0, 60),
                     contacts: Number.isFinite(ciN) && ciN >= 0 && ciN <= 9999999 ? Math.round(ciN) : undefined }
