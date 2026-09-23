@@ -642,12 +642,143 @@ if (!process.env.SKIP_SOURCE) {
   ok(/body\.is-print \.toolbar/.test(PAGE),
      "…and ?_print=1 drops the chrome before the capture, not only in @media print");
 
+  /* ── THE MASTHEAD COMES OFF THE PRINTED STATEMENT, AND PAGE ONE STOPS BEING
+        BLANK ────────────────────────────────────────────────────────────────
+     Dan: "pdf export page 1 is blank." #statementView is a .card, and print
+     gives every .card `break-inside: avoid` — so the statement was ATOMIC, it
+     could not fit under the ~60pt masthead, and the whole document jumped to
+     page two. Two halves, and each fixes the other's remainder: the banner is
+     redundant on a document that carries its own head (and printed the DATA
+     WINDOW beside the statement's own PERIOD, which is a different range), and
+     a document has to be allowed to flow whatever else is above it. */
+  const printBlk = PAGE.slice(PAGE.indexOf("@media print"), PAGE.indexOf("@page"));
+  ok(printBlk.length > 400, "the @media print block was found");
+  ok(/body\.printing-statement \.cr-banner \{ display: none/.test(printBlk),
+     "the report masthead comes off the printed statement — it repeats the org, "
+     + "near-repeats the title, prints a DIFFERENT date range beside the "
+     + "statement's own, and is what pushed the document onto page two");
+  ok(/body\.is-print\.printing-statement[\s\S]{0,240}\.cr-banner/.test(PAGE),
+     "…in the ?_print=1 render too, or the PDF capture happens over a page that "
+     + "still carries it");
+  ok(/#statementView \{ break-inside: auto; \}/.test(printBlk),
+     "the statement may FLOW across a page break — as a .card it inherited "
+     + "break-inside:avoid, which is what made it atomic and page one empty");
+  ok(/#statementView table\.stt \{ break-inside: avoid; \}/.test(printBlk)
+     && /#statementView h3 \{ break-after: avoid; \}/.test(printBlk),
+     "…while its own sections keep the avoid, so a table never splits and a "
+     + "heading never strands at the foot of a page");
+
+  /* ── THE WHITE PLATE ──────────────────────────────────────────────────────
+     Dan: "report width doesn't match any of the other reports, should be
+     consistent." Every other report puts its content on one — .report on
+     programs/gl/memberships/facility/fasttrack, .dash on users, .page on
+     waitlist — all of them 1400px, 16px auto, 24px 28px, white, shadow. This
+     page ran edge to edge on the sand instead. Pinned against a REAL SIBLING
+     rather than against a literal, so the two cannot drift apart. */
+  const plate = PAGE.slice(PAGE.indexOf("  .page {"), PAGE.indexOf("  .wrap {"));
+  ok(plate.length > 40, "the .page plate rule was found");
+  ok(/max-width: 1400px/.test(plate) && /margin: 16px auto/.test(plate)
+     && /padding: 24px 28px/.test(plate),
+     "the plate is the platform's own: 1400px wide, 16px auto, 24px 28px");
+  const sibling = fs.readFileSync(path.join(__dirname, "..", "public", "programs.html"), "utf8");
+  const sibPlate = sibling.slice(sibling.indexOf("    .page {"), sibling.indexOf("    .table-scroll"));
+  ok(/max-width: 1400px/.test(sibPlate) && /margin: 16px auto/.test(sibPlate)
+     && /padding: 24px 28px/.test(sibPlate),
+     "…and Programs still uses those same three, which is what makes it a convention");
+  ok(/<div class="page">[\s\S]{0,300}<div class="cr-banner">/.test(PAGE),
+     "the banner is INSIDE the plate, the way the Programs banner is — a masthead "
+     + "floating above the sheet is the inconsistency being fixed");
+  ok(/\.wrap \{ padding: 0; \}/.test(PAGE),
+     "…so .wrap no longer carries the page's own side padding");
+  ok(/body\.is-print \.page \{ max-width: none/.test(PAGE)
+     && /\.page \{ max-width: none; margin: 0; padding: 0;/.test(printBlk),
+     "the plate is flattened on paper — a white card on a white sheet, inset "
+     + "from margins the printer already applies");
+
+  /* ── THE MASTHEAD NAMES THE PERIOD, NOT THE DATA WINDOW ──────────────────
+     Dan, with "Fall '26" picked over a masthead reading "Jul 1, 2025 – Sep 23,
+     2026": "if we're selecting a season, then the cost recovery is applying to
+     the season, not the dates at the top, no?" A sub-line under the report
+     title is read as what the report covers, and it was naming the fetch. The
+     arithmetic was right and the label was the defect — the same shape as
+     "NET REVENUE" sitting lifetime beside a period figure on Programs. */
+  ok(/\$\("windowLabel"\)\.textContent = per\.t/.test(PAGE),
+     "the masthead sub-line is the PERIOD on screen, set from render() — which "
+     + "is the only place that knows which period that is");
+  ok(/dB && dB\.per \? "  vs  " \+ dB\.per\.t/.test(PAGE),
+     "…and names BOTH in compare mode, because the report genuinely covers two");
+  ok(!/\$\("windowLabel"\)\.textContent = fmtWindow/.test(PAGE),
+     "the data window is no longer written into the masthead — that is the bug");
+  ok(/\$\("crFootWin"\)\.textContent = "Programs loaded " \+ fmtWindow/.test(PAGE)
+     && /id="crFootWin"/.test(PAGE),
+     "…the window it was FETCHED over moves to the footer, beside which org and "
+     + "which run — excluded is never hidden");
+
+  /* ── THE DATE RANGE STOPS LEADING THE PAGE ───────────────────────────────
+     Dan: "no one wants to run cost recovery across a date range — it's a
+     season, quarter, etc." Right about what the report answers, and the dates
+     still decide which programs are fetched and therefore which seasons the
+     picker can offer at all — delete them and the report is capped at whatever
+     default we pick. So they are demoted, not removed: a disclosure at the END
+     of the row that states the window it holds. Both inputs stay in the DOM
+     whether it is open or shut, or the URL seeding, the PDF and every
+     deep-link guard break with them. */
+  const tbRow1 = PAGE.slice(PAGE.indexOf('<div class="toolbar">'), PAGE.indexOf('<div class="tb-row picks">'));
+  ok(tbRow1.length > 60, "the first toolbar row was found");
+  ok(!/id="startDate"|id="endDate"|id="runBtn"/.test(tbRow1),
+     "no date input leads the toolbar any more — the period controls do");
+  ok(/id="dataWinBtn"[\s\S]{0,400}id="dataWinBody"/.test(PAGE),
+     "the window is a labelled disclosure that names what it holds");
+  ok(/id="startDate"/.test(PAGE) && /id="endDate"/.test(PAGE) && /id="runBtn"/.test(PAGE),
+     "…and all three still exist, so ?start_date=/?end_date= and the PDF keep working");
+  ok(/<span class="dataWinBody" id="dataWinBody" hidden>/.test(PAGE),
+     "it starts shut");
+  ok(/\[hidden\] \{ display: none !important; \}/.test(PAGE),
+     "…and `hidden` actually hides it — .picks label sets display:flex, and any "
+     + "author display beats the UA default outright, which is the bug already "
+     + "recorded for the compare picker");
+
+  /* ── THE PDF FOOTER NAMED THE WRONG REPORT ───────────────────────────────
+     reportLabel's ladder ended in a LITERAL, so every report with no branch of
+     its own printed "rec.us — Facility Rental Schedule" in its own footer.
+     Every Cost Recovery PDF carried it. The last resort is the directory now,
+     which names the next registered report on the day it is registered. */
+  ok(/\(REPORT_DIRECTORY\[reportType\] && REPORT_DIRECTORY\[reportType\]\.label\)\s*\n?\s*\|\| "Facility Rental Schedule"/.test(SERVER),
+     "reportLabel falls back to REPORT_DIRECTORY before the literal — a hand-kept "
+     + "ladder is exactly what mislabelled this one");
+  const dir = slice("const REPORT_DIRECTORY = {", "\n};");
+  ok(/"cost-recovery":\s*\{ label: "Cost Recovery"/.test(dir),
+     "…and the directory already carries the right name, so nothing is transcribed");
+
   /* INVENTORY IS DELIBERATELY NOT SCOPED THE SAME WAY, and that is not an
      oversight. Its seed is keyed on Madison's ORGID and Madison is not
      onboarded here yet, so a slug allowlist would let the seed apply and the
      card still never render — silently undoing the report it was built for. */
   ok(!/INVENTORY_ORGS|inventoryReportOrgs/.test(SERVER),
      "inventory keeps the every-org-hidden shape, so Madison's orgId seed still lands");
+
+  /* ── AND THEREFORE IT IS NOT "ADDABLE" ───────────────────────────────────
+     Dan, on the admin dashboard: "why is it asking me to add this, should be
+     on Shrews and Windham automatically." The "+ Add report" dialog builds its
+     list from REPORT_TYPES minus NON_ADDABLE_REPORTS minus anything that
+     already has a uuid — so a report with no card of its own reads as
+     PERMANENTLY MISSING, is offered, and then refuses itself with "Could not
+     find a valid UUID for cost-recovery". The dialog writes a per-org Metabase
+     uuid into orgs.json; there is no uuid to write. Same treatment as `qoq`,
+     which is derived from the GL card for the same reason. */
+  const nonAdd = slice("const NON_ADDABLE_REPORTS = new Set(", ");");
+  ok(/"cost-recovery"/.test(nonAdd),
+     "cost-recovery is NON-ADDABLE — it has no card of its own, so the Add "
+     + "report dialog can only ever offer a form it cannot satisfy");
+  ok(/"qoq"/.test(nonAdd),
+     "…beside qoq, which is the same shape: derived from another report's card");
+  // It still reaches its pilot orgs, which is the half the fix must not break:
+  // both availability builders PUSH it explicitly rather than filtering it in.
+  ok(/costRecoveryEnabled\(slug\) && !hidden\.has\("cost-recovery"\)/.test(SERVER),
+     "…and visibleReportsForOrg still pushes it for a pilot org, so making it "
+     + "non-addable does not take the eye away");
+  ok(/COST_RECOVERY_ORGS\.has\(slug\)/.test(SERVER),
+     "…gated on the pilot set, not on a uuid it does not have");
 
   // NO CARD OF ITS OWN. It reads the programs card through the programs feed,
   // so a second health probe of the same card is the doubled load this file

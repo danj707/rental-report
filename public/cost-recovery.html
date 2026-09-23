@@ -96,7 +96,7 @@
      first screenshot of a report that is still fetching should still say
      which report it is. That is the ProgBanner lesson. */
   .cr-banner {
-    margin: 14px 20px 12px; border-radius: 14px; overflow: hidden;
+    margin: 0 0 16px; border-radius: 14px; overflow: hidden;
     background: linear-gradient(135deg, var(--rec-brand-pine, #14532d) 0%, var(--rec-brand-grass, #16a34a) 100%);
     color: #fff; padding: 15px 18px;
     display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
@@ -124,9 +124,25 @@
   .tabs button[aria-pressed="true"] { color: var(--rec-brand-pine, #14532d); font-weight: 700;
                                       border-bottom-color: var(--rec-brand-pine, #14532d); }
 
-  .wrap { padding: 0 20px 10px; }
+  /* THE WHITE PLATE. Every other report on the platform puts its content on
+     one of these --- .report on programs/gl/memberships/facility/fasttrack,
+     .dash on users, .page on waitlist --- all of them the same
+     max-width:1400px, 16px auto, 24px 28px, white, shadow. This page ran edge
+     to edge on the sand ground instead, which is exactly what Dan means by
+     "the report width doesn't match any of the other reports". The banner and
+     the loader live INSIDE it, the way the Programs banner lives inside .page
+     there, so the masthead is the top of the sheet rather than a separate
+     floating bar. */
+  .page {
+    max-width: 1400px; margin: 16px auto; padding: 24px 28px;
+    background: var(--rec-bg-primary, #fff);
+    border-radius: var(--rec-radius-lg, 12px);
+    box-shadow: var(--rec-shadow-surface-md, 0 1px 4px rgba(0,0,0,.08));
+  }
+  .wrap { padding: 0; }
   .report-foot { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap;
-                 padding: 10px 20px 34px; font-size: 11px; color: var(--rec-text-secondary, #6a6a6a); }
+                 max-width: 1400px; margin: 0 auto;
+                 padding: 2px 28px 34px; font-size: 11px; color: var(--rec-text-secondary, #6a6a6a); }
 
   /* ── Mode segment ── */
   .seg { display: inline-flex; border: 1px solid var(--rec-border, #d9d5cf); border-radius: 8px; overflow: hidden; background: var(--rec-bg-primary, #fff); }
@@ -155,6 +171,24 @@
   .toolbar .seg button:hover { background: #333; color: #eee; }
   .toolbar .seg button[aria-pressed="true"] { background: var(--rec-brand-grass, #16a34a); color: #fff; }
   .tb-hint { font-size: 10.5px; color: #8e8e8e; align-self: center; }
+
+  /* The data-window disclosure. It sits at the END of the row and reads as a
+     statement of fact with a way in, rather than as a control competing with
+     the period picker for "what is this report about". */
+  .datawin { margin-left: auto; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .datawin > button#dataWinBtn {
+    font: inherit; font-size: 11.5px; color: #9a9a9a; background: transparent;
+    border: 1px solid transparent; border-radius: 6px; padding: 4px 8px; cursor: pointer;
+  }
+  .datawin > button#dataWinBtn:hover { color: #e6e6e6; border-color: #4a4a4a; background: #1c1c1c; }
+  .datawin > button#dataWinBtn b { color: #d8d8d8; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .datawin > button#dataWinBtn[aria-expanded="true"] { color: #e6e6e6; border-color: #4a4a4a; background: #1c1c1c; }
+  .datawin > button#dataWinBtn[aria-expanded="true"] .caret { display: inline-block; transform: rotate(180deg); }
+  .dataWinBody { display: flex; align-items: flex-end; gap: 8px; flex-wrap: wrap; }
+  /* `hidden` is a UA-stylesheet default, and .picks label sets display:flex —
+     any author display beats it outright, which is the bug already recorded
+     for the compare picker. The global [hidden] rule at the top of this sheet
+     is what keeps this closed. */
 
   /* ── The basis note. An entered figure must never look like a measured
         one, so the page says in words where every number came from. ── */
@@ -390,8 +424,13 @@
   body.is-print .linebox, body.is-print #exportCsv, body.is-print .stmtbar,
   body.is-print .rowcount, body.is-print .report-foot { display: none !important; }
   body.is-print { background: #fff; }
+  /* The plate is screen furniture: on paper it is a white card on a white
+     sheet, inset from margins the printer already applies. */
+  body.is-print .page { max-width: none; margin: 0; padding: 0;
+                        background: none; box-shadow: none; border-radius: 0; }
   body.is-print.printing-statement .sum-cards,
   body.is-print.printing-statement .basis,
+  body.is-print.printing-statement .cr-banner,
   body.is-print.printing-statement .cr-pills { display: none !important; }
   body.is-print #statementView { border: 0; padding: 0; margin: 0; background: none; }
   body.is-print #statementView .st { max-width: none; width: 100%; }
@@ -402,6 +441,8 @@
     body { background: #fff; }
     .card, .basis { break-inside: avoid; }
     .wrap { padding: 0; }
+    .page { max-width: none; margin: 0; padding: 0;
+            background: none; box-shadow: none; border-radius: 0; }
     /* The masthead prints, because a page that has left the screen has to say
        whose it is — flat rather than a gradient, so a printer that drops
        backgrounds still leaves readable ink. */
@@ -418,6 +459,25 @@
     body.printing-statement .sum-cards,
     body.printing-statement .basis,
     body.printing-statement .cr-pills { display: none !important; }
+    /* AND THE REPORT MASTHEAD COMES OFF TOO, which is what made page one of
+       every statement PDF blank. The statement carries its own head --- "<Org>
+       - Cost recovery statement", with the PERIOD it covers --- so the banner
+       above it repeated the org, near-repeated the title, and printed the DATA
+       WINDOW beside it, which is a different range and reads as a
+       contradiction on a document somebody files. It also cost ~60pt at the
+       top of the sheet, which is what tipped the statement past one page. */
+    body.printing-statement .cr-banner { display: none !important; }
+
+    /* A DOCUMENT HAS TO BE ALLOWED TO FLOW. #statementView is a .card, so the
+       rule above made the whole statement atomic: it could not fit under the
+       masthead, so the entire thing jumped to page two and page one printed
+       empty --- Dan's "pdf export page 1 is blank". Its own sections keep the
+       avoid, so a table still never splits and a heading never strands at the
+       foot of a page. */
+    #statementView { break-inside: auto; }
+    #statementView table.stt { break-inside: avoid; }
+    #statementView h3 { break-after: avoid; }
+    #statementView .st-head { break-after: avoid; }
 
     /* FILL THE SHEET. The card chrome is screen furniture; on paper it is a
        border around 40% of the page. */
@@ -430,7 +490,8 @@
   @page { margin: 12mm; }
 
   @media (max-width: 720px) {
-    .wrap { padding: 0 16px 32px; }
+    .page { margin: 10px; padding: 16px; }
+    .report-foot { padding: 2px 16px 32px; }
     .tier { grid-template-columns: 1fr; gap: 5px; }
     .tier .fig { text-align: left; }
     .tier .step { display: none; }
@@ -450,16 +511,6 @@
 <div class="toolbar">
   <div class="tb-row">
     <span class="toolbar-title">⚖️ Cost Recovery</span>
-    <!-- THE DATES ARE THE DATA WINDOW, NOT A SECOND PERIOD PICKER. Dan: "the
-         date range picker at the top feels redundant, no? If we're choosing a
-         season, what is the date picker for?" — they decide which programs are
-         LOADED, and therefore which seasons the picker below can offer; the
-         period then slices within them. Labelled as that, and sitting in the
-         same bar as the period controls, so the relationship is visible rather
-         than inferred. -->
-    <label title="Which programs are loaded from Rec. The period below slices within this window.">Data from<input type="date" id="startDate"></label>
-    <label title="Which programs are loaded from Rec. The period below slices within this window.">Data to<input type="date" id="endDate"></label>
-    <button id="runBtn" class="primary" type="button">Run report</button>
     <span class="toolbar-spacer"></span>
     <span class="savepill" id="savePill">All costs saved</span>
     <button id="carryBtn" type="button" title="Copy each program's most recent earlier season into any season that has no cost yet">Carry costs forward</button>
@@ -493,9 +544,36 @@
     </select></label>
     <label class="chk"><input type="checkbox" id="hideBlank"> Only programs with a cost</label>
     <label class="chk" title="Hides programs that took no money AND have no cost entered. A free program you HAVE costed is kept — that is a subsidy, and it is the most interesting line on the page."><input type="checkbox" id="hideFree"> Hide free programs</label>
+
+    <!-- THE DATA WINDOW IS PLUMBING, AND IT USED TO LEAD THE PAGE. Dan: "no one
+         wants to run cost recovery across a date range — it's a season,
+         quarter, etc." He is right about what the report ANSWERS, and the two
+         dates still have a job: they decide which programs are fetched from
+         Rec, and therefore which seasons the picker to the left can offer at
+         all. Deleting them caps the report at whatever default we pick.
+
+         So they stay and stop competing. The period controls lead; this is a
+         quiet disclosure at the end of the row that names the window it holds,
+         and the inputs stay in the DOM either way so a shared link, a PDF
+         request and the deep-link guards all keep working. -->
+    <span class="datawin">
+      <button type="button" id="dataWinBtn" aria-expanded="false" aria-controls="dataWinBody"
+              title="Which programs are loaded from Rec. The period picker slices within this window.">
+        Data loaded: <b id="dataWinLab">—</b> <span class="caret" aria-hidden="true">▾</span>
+      </button>
+      <span class="dataWinBody" id="dataWinBody" hidden>
+        <label>From<input type="date" id="startDate"></label>
+        <label>To<input type="date" id="endDate"></label>
+        <button id="runBtn" class="primary" type="button">Run report</button>
+      </span>
+    </span>
   </div>
 </div>
 
+<!-- ONE WHITE SHEET, like every other report. The banner, the loading bar and
+     the report body all sit inside .page, so the masthead is the top of the
+     sheet rather than a bar floating above it. -->
+<div class="page">
 <div class="cr-banner">
   <span class="plate" id="orgPlate" hidden><img id="orgLogo" alt="" onerror="this.parentNode.hidden=true"></span>
   <div>
@@ -627,11 +705,15 @@
   </div>
 </div>
 
+</div><!-- /.page -->
+
 <!-- The footer every other report carries: who this is for, and when it was
      run. On a printed P&L "which org, which day" is the first thing anyone
-     asks of a page that has left the screen. -->
+     asks of a page that has left the screen. It sits OUTSIDE the plate, on the
+     sand, aligned to the plate's own width. -->
 <div class="report-foot">
   <span id="crFootOrg"></span>
+  <span id="crFootWin"></span>
   <span id="crFootRun"></span>
 </div>
 
@@ -1055,7 +1137,20 @@ function crEsc(s) {
   var LOADER_SHOW_DELAY_MS = 350, loadStart = 0, loadTick = null, loadShown = false;
   function startLoader() {
     loadStart = Date.now(); loadShown = false;
-    var est = (window.loaderReadEstimate ? window.loaderReadEstimate(CFG) : null) || { ms: 25000, basis: "default" };
+    var est = (window.loaderReadEstimate ? window.loaderReadEstimate() : null) || { ms: 25000, basis: "default" };
+    /* EVERY SHARED HELPER TAKES MILLISECONDS, and this handed fmtSecs seconds.
+       fmtSecs divides by 1000 itself, so the clock read "0s" for the first
+       eight minutes of every load while the bar crept along beside it --- a
+       bar that advances against a timer that never moves reads as stalled,
+       which is what Dan saw. Same unit slip already recorded for loaderProgress
+       on the other vanilla bar; the sweep that caught THAT one never covered
+       fmtSecs, and now does.
+
+       The "usually about" wording goes through loaderEstimateNote rather than
+       being spelled out again here: one copy of the sentence, and the
+       no-history guard (basis "default" claims nothing) cannot be forgotten by
+       the second person to write it. */
+    var note = (window.loaderEstimateNote && window.loaderEstimateNote(est.ms, est.basis)) || "";
     clearInterval(loadTick);
     loadTick = setInterval(function () {
       var el = Date.now() - loadStart;
@@ -1065,9 +1160,8 @@ function crEsc(s) {
       }
       var pct = window.loaderProgress ? window.loaderProgress(el, est.ms) : Math.min(95, el / est.ms * 80);
       $("loaderBar").style.width = pct + "%";
-      var secs = window.loaderFmtSecs ? window.loaderFmtSecs(el / 1000) : Math.round(el / 1000) + "s";
-      $("loaderMeta").textContent = "Loading programs… " + secs
-        + (est.basis !== "default" && window.loaderFmtSecs ? " · usually about " + window.loaderFmtSecs(est.ms / 1000) : "");
+      var secs = window.loaderFmtSecs ? window.loaderFmtSecs(el) : Math.round(el / 1000) + "s";
+      $("loaderMeta").textContent = "Loading programs… " + secs + (note ? " · " + note : "");
     }, 200);
   }
   function stopLoader() { clearInterval(loadTick); loadTick = null; $("loader").style.display = "none"; }
@@ -1120,11 +1214,20 @@ function crEsc(s) {
         if (p.end   && (!maxD || p.end   > maxD)) maxD = p.end;
       });
       seasons.sort();
-      $("windowLabel").textContent = fmtWindow(sd, ed);
+      /* THE MASTHEAD NAMES THE PERIOD, NOT THE DATA WINDOW, and render() sets
+         it because only render() knows which period is on screen. Dan, with
+         "Fall '26" selected over a masthead reading "Jul 1, 2025 - Sep 23,
+         2026": "if we're selecting a season, then the cost recovery is
+         applying to the season, not the dates at the top, no?" — exactly, and
+         a sub-line under the report title is read as what the report covers.
+         The window it was FETCHED over is a fact about the fetch; it is on the
+         disclosure that sets it and in the footer, which is where "which org,
+         which run" already lives. */
+      $("dataWinLab").textContent = fmtWindow(sd, ed);
+      $("crFootWin").textContent = "Programs loaded " + fmtWindow(sd, ed);
       /* The pills are computed, and only once the rows have landed — a count
          of zero beside a spinner is a claim about the org rather than about
-         the load. The window line renders from the start, because a report
-         still fetching should still say which window it is fetching. */
+         the load. */
       $("crPills").innerHTML = [
         progs.length + " program" + (progs.length === 1 ? "" : "s"),
         rows.length + " section" + (rows.length === 1 ? "" : "s"),
@@ -2092,6 +2195,9 @@ function crEsc(s) {
     } else if ($("errSlot").firstChild && /nothing to compare/.test($("errSlot").textContent)) {
       $("errSlot").innerHTML = "";
     }
+    /* The sub-line IS the period. In compare mode it is both, because the
+       report genuinely covers two. */
+    $("windowLabel").textContent = per.t + (dB && dB.per ? "  vs  " + dB.per.t : "");
     renderBasis(d, dB); renderKpis(d, dB); renderTiers(d); renderTable(d, dB);
     if (view === "ledger") renderLedger();
     if (view === "statement") renderStatement(d);
@@ -2210,6 +2316,11 @@ function crEsc(s) {
     mode = b.dataset.mode; period = null; periodB = null;
     [].forEach.call(this.querySelectorAll("button"), function (x) { x.setAttribute("aria-pressed", String(x === b)); });
     render();
+  });
+  $("dataWinBtn").addEventListener("click", function () {
+    var open = $("dataWinBody").hidden;
+    $("dataWinBody").hidden = !open;
+    this.setAttribute("aria-expanded", String(open));
   });
   $("periodSel").addEventListener("change", function () { period = this.value; render(); });
   $("periodBSel").addEventListener("change", function () { periodB = this.value; render(); });

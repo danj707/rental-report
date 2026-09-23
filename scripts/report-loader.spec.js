@@ -290,6 +290,18 @@ ok(!/window\.ORG_CONFIG=\$\{JSON\.stringify\(orgConfig\)\}/.test(server),
       ok(!/\/\s*1000/.test(m[1]),
          f + ": loaderProgress is fed MILLISECONDS — dividing by 1000 flattens the bar to ~0%");
     }
+    // AND fmtSecs, which this sweep did not cover and which cost-recovery.html
+    // then got wrong in exactly the same way: it divided by 1000 first, and
+    // fmtSecs divides by 1000 itself, so the elapsed clock read "0s" for the
+    // first eight minutes of every load while the bar crept along beside it.
+    // A guard that names one of two helpers taking the same unit is not a
+    // guard against the unit.
+    for (const m of src.matchAll(/loaderFmtSecs\s*\(([^)]*)\)/g)) {
+      const args = m[1].trim();
+      if (!args || args === "ms") continue;              // the definition/alias
+      ok(!/\/\s*1000/.test(args),
+         f + ": loaderFmtSecs is fed MILLISECONDS — dividing by 1000 first prints 0s for the first eight minutes");
+    }
   }
 
   // (e) BEHAVIOURAL: lift the page's OWN startLoader and read what it writes.

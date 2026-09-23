@@ -3842,9 +3842,16 @@ const CASES = [
                  // a history entry on a page nobody is navigating.
                  url: location.search };
       });
+      /* `banner === "none"` REVERSES what this used to require. The old
+         version pinned the bug: the report masthead on a statement render cost
+         ~60pt at the top of the sheet, and #statementView inherits .card's
+         break-inside:avoid, so the document could not fit under it and jumped
+         whole to page two — Dan's "pdf export page 1 is blank". The statement
+         has its own head, so the banner was also saying the org twice and
+         printing the DATA WINDOW next to the statement's own PERIOD. */
       const ok = m.ready && m.isPrint && m.stmtFlag && m.statementShown
         && m.toolbar === "none" && m.tabs === "none" && m.stmtbar === "none"
-        && m.kpis === "none" && m.banner !== "none";
+        && m.kpis === "none" && m.banner === "none";
       await page.evaluate(t => document.body.setAttribute("data-rc-crprintmode-seen", t),
         (ok ? "ok=1 " : "ok=0 ") + "ready=" + m.ready + " isPrint=" + m.isPrint
         + " statementFlag=" + m.stmtFlag + " statementShown=" + m.statementShown
@@ -3941,6 +3948,107 @@ const CASES = [
         because the class is what that button is for and a case that sets it by
         hand passes on a button wired to nothing. window.print is stubbed, or
         the run blocks on a print dialog. */
+  /* THE REPORT SITS ON THE SAME SHEET AS EVERY OTHER REPORT. Dan: "report width
+     doesn't match any of the other reports, should be consistent." This page
+     ran edge to edge on the sand while .report / .dash / .page on the other
+     seven all cap at 1400px on a white plate. Only a browser can settle it —
+     the stylesheet reads plausibly either way, and what regressed is a
+     COMPUTED box — so the case measures the plate, requires it to be narrower
+     than the viewport it is centred in, and requires the masthead to be inside
+     it rather than floating above. */
+  /* THE MASTHEAD SAYS WHAT THE REPORT COVERS. Dan sent a screenshot of "Fall
+     '26" selected over a sub-line reading "Jul 1, 2025 – Sep 23, 2026" and
+     asked the obvious question. No source assertion can settle what a reader
+     sees here — the label is written at render time from whichever period is
+     live — so the case picks a different period and requires the masthead to
+     follow it, and requires the fetch window to be somewhere else entirely. */
+  { name: "cost-recovery · the masthead names the period, not the fetch window",
+    path: "/{org}/cost-recovery",
+    needs: 'body[data-rc-crlabel-seen^="ok=1 "]',
+    act: async (page) => {
+      await page.waitForSelector('body[data-cr-seen*="mode=season"]', { timeout: 20000 });
+      const read = () => page.evaluate(() => ({
+        sub: (document.getElementById("windowLabel").textContent || "").trim(),
+        sel: (() => { const s = document.getElementById("periodSel");
+                      return s && s.selectedIndex >= 0 ? s.options[s.selectedIndex].text.trim() : ""; })(),
+        opts: [].map.call(document.getElementById("periodSel").options, o => o.text.trim()),
+        dates: (document.getElementById("startDate").value || "") + ".." + (document.getElementById("endDate").value || ""),
+        win: (document.getElementById("dataWinLab").textContent || "").trim(),
+        foot: (document.getElementById("crFootWin").textContent || "").trim(),
+        bodyHidden: document.getElementById("dataWinBody").hidden,
+        bodyDisp: getComputedStyle(document.getElementById("dataWinBody")).display,
+      }));
+      const a = await read();
+      // Switch to a DIFFERENT season, or "the masthead matches" proves nothing.
+      let b = a;
+      if (a.opts.length > 1) {
+        const other = a.opts.find(t => t !== a.sel);
+        await page.select("#periodSel", await page.evaluate(t => {
+          const s = document.getElementById("periodSel");
+          return [].find.call(s.options, o => o.text.trim() === t).value;
+        }, other));
+        await page.waitForFunction(t => (document.getElementById("windowLabel").textContent || "").trim() === t,
+          { timeout: 8000 }, other).catch(() => {});
+        b = await read();
+      }
+      // The window lives on the disclosure and in the footer, and nowhere in
+      // the masthead — a year-long range under the title is the bug.
+      const moved = a.win.length > 0 && /Programs loaded/.test(a.foot)
+        && !/2025|2026|2027/.test(a.sub);
+      const follows = a.sub === a.sel && b.sub === b.sel && (a.opts.length < 2 || a.sub !== b.sub);
+      const shut = a.bodyHidden && a.bodyDisp === "none";
+      const ok = moved && follows && shut;
+      await page.evaluate(t => document.body.setAttribute("data-rc-crlabel-seen", t),
+        (ok ? "ok=1 " : "ok=0 ") + "sub=" + JSON.stringify(a.sub) + " sel=" + JSON.stringify(a.sel)
+        + " then sub=" + JSON.stringify(b.sub) + " sel=" + JSON.stringify(b.sel)
+        + " opts=" + a.opts.length + " win=" + JSON.stringify(a.win)
+        + " foot=" + JSON.stringify(a.foot) + " dates=" + a.dates
+        + " disclosure=" + (shut ? "shut" : a.bodyDisp));
+    } },
+
+  { name: "cost-recovery · the report sits on a plate, like every other report",
+    path: "/{org}/cost-recovery",
+    needs: 'body[data-rc-crplate-seen^="ok=1 "]',
+    viewport: { width: 1600, height: 1000 },
+    act: async (page) => {
+      await page.waitForSelector('body[data-cr-seen*="mode=season"]', { timeout: 20000 });
+      const m = await page.evaluate(() => {
+        const plate = document.querySelector(".page");
+        const banner = document.querySelector(".cr-banner");
+        const cs = plate ? getComputedStyle(plate) : null;
+        const r = plate ? plate.getBoundingClientRect() : null;
+        return {
+          found: !!plate,
+          width: r ? Math.round(r.width) : 0,
+          left: r ? Math.round(r.left) : 0,
+          vw: Math.round(document.documentElement.clientWidth),
+          bg: cs ? cs.backgroundColor : "",
+          shadow: cs ? cs.boxShadow : "",
+          bannerInside: !!(plate && banner && plate.contains(banner)),
+          // The banner must span the plate's own inner width — a masthead
+          // inset inside an inset reads as a card on a card.
+          bannerWidth: banner ? Math.round(banner.getBoundingClientRect().width) : 0,
+          innerWidth: (plate && cs)
+            ? Math.round(r.width - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)) : -1,
+        };
+      });
+      // Centred, capped, opaque, and carrying a shadow — the four things that
+      // make it read as the same sheet as Programs.
+      const capped = m.width > 0 && m.width < m.vw - 40;
+      const centred = Math.abs(m.left - (m.vw - m.width) / 2) <= 2;
+      const opaque = /rgb\(255,\s*255,\s*255\)/.test(m.bg);
+      const lifted = m.shadow && m.shadow !== "none";
+      const spans = Math.abs(m.bannerWidth - m.innerWidth) <= 2;
+      const ok = m.found && capped && centred && opaque && lifted
+        && m.bannerInside && spans;
+      await page.evaluate(t => document.body.setAttribute("data-rc-crplate-seen", t),
+        (ok ? "ok=1 " : "ok=0 ") + "plate=" + m.width + "px of " + m.vw
+        + " left=" + m.left + " capped=" + capped + " centred=" + centred
+        + " bg=" + m.bg + " shadow=" + (lifted ? "yes" : "none")
+        + " bannerInside=" + m.bannerInside
+        + " banner=" + m.bannerWidth + " inner=" + m.innerWidth);
+    } },
+
   { name: "cost-recovery · the statement prints alone, and fills the page",
     path: "/{org}/cost-recovery",
     needs: 'body[data-rc-crprint-seen^="ok=1 "]',
@@ -3969,22 +4077,32 @@ const CASES = [
           pageWidth: Math.round(document.documentElement.clientWidth),
           // …and the card chrome around it is screen furniture.
           cardBorder: getComputedStyle(document.getElementById("statementView")).borderTopWidth,
-          // The masthead still prints — a page that has left the screen has to
-          // say whose it is — but its PILLS do not, because they describe the
-          // whole window rather than the period this statement is for.
+          // A DOCUMENT HAS TO BE ALLOWED TO FLOW. Inherited from .card this
+          // reads "avoid", which is atomic — the whole reason it jumped a page.
+          breakInside: getComputedStyle(document.getElementById("statementView")).breakInside,
+          // THE MASTHEAD COMES OFF, and this assertion used to require the
+          // opposite. That requirement is what made page one of every
+          // statement PDF blank: #statementView is a .card, print gives every
+          // .card break-inside:avoid, so the statement was atomic and could not
+          // fit under ~60pt of banner. It is also redundant — the statement
+          // carries its own head, and the banner printed the DATA WINDOW beside
+          // the statement's own PERIOD, two different ranges on one document.
+          // The P&L control case below is what keeps this about the statement.
           banner: disp(".cr-banner"), pills: disp(".cr-pills"),
         };
       });
       const fills = m.stWidth >= m.pageWidth * 0.9;
       const ok = m.flagged && m.kpis === "none" && m.basis === "none"
         && m.toolbar === "none" && m.tabs === "none" && m.stmtbar === "none"
-        && m.banner !== "none" && m.pills === "none"
+        && m.banner === "none" && m.pills === "none"
+        && m.breakInside !== "avoid"
         && fills && parseFloat(m.cardBorder) === 0;
       await page.evaluate(t => document.body.setAttribute("data-rc-crprint-seen", t),
         (ok ? "ok=1 " : "ok=0 ") + "flagged=" + m.flagged
         + " kpis=" + m.kpis + " basis=" + m.basis + " toolbar=" + m.toolbar
         + " tabs=" + m.tabs + " stmtbar=" + m.stmtbar
         + " banner=" + m.banner + " pills=" + m.pills
+        + " breakInside=" + m.breakInside
         + " statement=" + m.stWidth + "px of " + m.pageWidth + "px (fills=" + fills + ")"
         + " cardBorder=" + m.cardBorder);
       await page.emulateMediaType(null);
@@ -4005,11 +4123,15 @@ const CASES = [
         flagged: document.body.classList.contains("printing-statement"),
         kpis: getComputedStyle(document.querySelector(".sum-cards")).display,
         toolbar: getComputedStyle(document.querySelector(".toolbar")).display,
+        // …and the masthead is still here, which is what makes dropping it on
+        // the STATEMENT a statement rule rather than a print rule.
+        banner: getComputedStyle(document.querySelector(".cr-banner")).display,
       }));
-      const ok = !m.flagged && m.kpis !== "none" && m.toolbar === "none";
+      const ok = !m.flagged && m.kpis !== "none" && m.toolbar === "none"
+        && m.banner !== "none";
       await page.evaluate(t => document.body.setAttribute("data-rc-crplprint-seen", t),
         (ok ? "ok=1 " : "ok=0 ") + "flagged=" + m.flagged
-        + " kpis=" + m.kpis + " toolbar=" + m.toolbar);
+        + " kpis=" + m.kpis + " toolbar=" + m.toolbar + " banner=" + m.banner);
       await page.emulateMediaType(null);
     } },
 

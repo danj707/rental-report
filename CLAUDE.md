@@ -8849,7 +8849,186 @@ changing anything.*
   question the report answers, so it is not shareable — the same line the tier
   filter draws.
 
-### THE PDF BUTTON WOULD HAVE DONE NOTHING IN THE IFRAME (2026-09-23)
+### FOUR THINGS DAN COULD SEE AND NO ASSERTION COULD (2026-09-23)
+
+Dan, with a screenshot of the toolbar mid-load and an exported PDF: *"report
+width doesn't match any of the other reports, should be consistent / loading
+programs bar doesn't seem right / pdf export page 1 is blank"*, then *"if we're
+selecting a season, then the cost recovery is applying to the season, not the
+dates at the top, no? I'm not loving the date range selector at the top tbh. No
+one wants to run cost recovery across a date range — it's a season, quarter,
+etc."*, then *"why is it asking me to add this, should be on Shrews and Windham
+automatically."*
+
+**EVERY ONE OF THE FIVE WAS INVISIBLE TO THE 297 ASSERTIONS AND THE 31 RENDER
+CASES ALREADY ON THIS REPORT**, and the reasons are five different shapes of the
+same thing: they are about what a reader SEES, and the page computed everything
+correctly.
+
+### THE WIDTH: a convention that is unanimous and was not written down
+
+Every other report puts its content on a white plate — `max-width: 1400px;
+margin: 16px auto; padding: 24px 28px; background: #fff; box-shadow: …` — under
+three different class names (`.report` on programs/gl/memberships/facility/
+fasttrack, `.dash` on users, `.page` on waitlist). Cost Recovery's `.wrap` was
+`padding: 0 20px 10px` and ran edge to edge on the sand.
+
+**MY OWN NOT-DONE LIST ALREADY NAMED IT** — *"The content does not sit on a white
+plate the way Programs' does… the plate is a layout change with no hook
+coverage."* Written down as a deliberate omission, and it is the first thing Dan
+said. *A known gap recorded in a NOT DONE list is still a gap, and the reader
+does not read the list.*
+
+**The spec pins it against a REAL SIBLING**, not against the three literals:
+`programs.html`'s own `.page` is re-read and required to carry the same three
+values, so the day the convention moves, the two move together or the guard
+fails. The render case measures the COMPUTED box — capped, centred, opaque,
+lifted, with the masthead inside it — because a stylesheet reads plausibly
+either way.
+
+### THE LOADING BAR: the recorded unit slip, one helper over
+
+The bar crept along while the clock beside it read **"0s"**. `loaderFmtSecs`
+takes MILLISECONDS and divides by 1000 itself; the page divided by 1000 first,
+so `fmtSecs(40)` is `Math.round(40/1000)` = **0** — and it reads 0s for the
+first eight minutes of every load. A bar that advances against a timer that
+never moves reads as stalled, which is exactly what Dan saw.
+
+**THE SWEEP THAT EXISTS FOR THIS COVERED `loaderProgress` AND NOT `loaderFmtSecs`.**
+That sweep was written after the *same slip* on the other vanilla bar
+(`programs-schedule.html`, the `NaN` incident). *A guard that names one of two
+helpers taking the same unit is not a guard against the unit.* It covers both
+now, and the mutation fails reading the page's own name.
+
+The hand-rolled *"· usually about Ns"* went with it: it is `loaderEstimateNote`
+now, so the sentence has one copy and the no-history guard (basis `default`
+claims nothing) cannot be forgotten by the second person to write it.
+
+### THE BLANK PAGE ONE: a .card rule made the document atomic
+
+`#statementView` is a `.card`, and print gives every `.card`
+`break-inside: avoid`. So the statement was **atomic**: it could not fit under
+the ~60pt masthead, the whole document jumped to page two, and page one printed
+a masthead and a footer and nothing else.
+
+Two halves, and each fixes the other's remainder:
+
+- **The masthead comes off the printed statement.** The statement carries its
+  own head — *"<Org> · Cost recovery statement"* with the PERIOD it covers — so
+  the banner repeated the org, near-repeated the title, and printed the **DATA
+  WINDOW** beside the statement's own period: two different ranges on one
+  document somebody files.
+- **A document has to be allowed to flow.** `break-inside: auto` on the
+  statement, with `avoid` kept on its own tables and `break-after: avoid` on its
+  headings, so a table still never splits and a heading never strands.
+
+**TWO RENDER CASES WERE PINNING THE BUG AS THE REQUIREMENT** — both asserted
+`banner !== "none"`, with a comment explaining why the masthead must print.
+Third instance of this exact shape (`report-settings.spec.js` requiring
+`disabled` on the gear; the fee worksheet priced off `displayRows`). Both were
+**reversed with the reasoning in the assertion**, and the P&L control case —
+which now requires the banner to SURVIVE there — is what keeps this a statement
+rule rather than a print rule.
+
+Measured, against Shrewsbury's real data: **2 pages with page 1 blank → 1 page,
+content from the top.**
+
+### AND THE FOOTER NAMED A DIFFERENT REPORT
+
+Every Cost Recovery PDF carried **"rec.us — Facility Rental Schedule"**.
+`reportLabel`'s CASE ladder ends in that literal, and a report with no branch of
+its own falls all the way through. The `CUSTOM_REPORTS` lookup at the top of that
+ladder exists because the same thing happened to the four data reports, with a
+comment saying so — and the fix was made lookup-shaped for them and left as a
+ladder for everyone else.
+
+The last resort is `REPORT_DIRECTORY` now, which already held *"Cost Recovery"*.
+**The overrides above it stay**, because they are not all redundant: `historic`
+is genuinely named differently in the ladder (*"Facility Reservations by Date"*)
+than in the directory, so a blanket swap would silently rename another report's
+footer.
+
+### THE LABEL WAS THE DEFECT, AND THE CONTROL WAS IN THE WAY
+
+Dan's screenshot: **Fall '26** picked, over a masthead reading
+**Jul 1, 2025 – Sep 23, 2026**. A sub-line under the report title is read as
+what the report covers, and it was naming the FETCH. Same shape as *"NET
+REVENUE"* sitting lifetime beside a period figure on the Programs summary — the
+arithmetic was right and the label was the bug.
+
+The masthead is the PERIOD now (both, in compare mode), set from `render()`
+because that is the only place that knows which period is live. The window it was
+fetched over moves to the footer, beside which org and which run.
+
+**AND THE DATE PICKERS STOP LEADING THE PAGE.** I defended them once already, in
+a comment quoting his earlier *"the date range picker at the top feels redundant,
+no?"* — he has now said it twice, which is his decision. They are not deleted,
+because they do something structural: they decide which programs are FETCHED,
+and therefore which seasons the picker can offer at all, so removing them caps
+the report at whatever default we pick. They are **demoted** to a shut
+disclosure at the end of the second row that states the window it holds, with
+both inputs still in the DOM so the URL seeding, the PDF and every deep-link
+guard keep working.
+
+*Generalise it: when a control cannot be removed but is answering the wrong
+question, the fix is its ALTITUDE, not its existence.*
+
+### "WHY IS IT ASKING ME TO ADD THIS"
+
+The admin dashboard's **+ Add report** dialog offered Cost Recovery and then
+refused itself: *"Could not find a valid UUID for cost-recovery."*
+
+That dialog builds its list as *REPORT_TYPES minus NON_ADDABLE minus anything
+that already has a uuid* — so a report with **no card of its own** reads as
+PERMANENTLY MISSING for all 29 orgs. It reads the Programs card through the
+Programs feed; there is no uuid to write. `qoq` is the same shape and was already
+in `NON_ADDABLE_REPORTS`; this now is too.
+
+**IT CHANGES THE DIALOG AND NOTHING ELSE**, which is why it is safe: every other
+reader of that Set also requires `mbUuid || SHARED_UUIDS[r]`, which this report
+already fails — and its two pilot orgs get it by being **PUSHED** onto their
+dashboard, not filtered in. Verified on a real boot: **0 of 29 orgs** still
+offered it in the dialog, the eye present for shrewsbury and windham and absent
+for watertown.
+
+### Guards
+
+`cost-recovery.spec.js` 270 → **297 assertions**, in CI. **Mutation-tested
+sixteen ways, all sixteen caught by an assertion that NAMES the defect**: the
+banner back on the printed statement and on the `?_print` render, the statement
+atomic again, a table allowed to split, the plate narrowed off-convention, the
+banner back outside the plate, the plate printed as a plate, `reportLabel` back
+to the literal, the masthead back to the data window, compare naming only one
+period, the window dropped from the footer, the dates back at the front of the
+toolbar, the disclosure open by default, `[hidden]` no longer winning,
+cost-recovery addable again, and the pilot push removed.
+
+`report-loader.spec.js` 67 → **68**, and the new assertion fails reading
+`cost-recovery.html: loaderFmtSecs is fed MILLISECONDS — dividing by 1000 first
+prints 0s for the first eight minutes`, which is Dan's screenshot in the
+assertion's own words.
+
+**Two new `ci-check-render` cases, both browser-mutation-tested and each failing
+EXACTLY the case that names it** while the other thirty keep passing: the plate
+reverted to edge-to-edge, and the masthead back to the fetch window — that one
+reproduces the screenshot verbatim,
+`sub="Jul 1, 2025 – Sep 23, 2026" sel="Fall '26"`.
+
+**Proven end to end against production data**, on a local boot with prewarm
+skipped: the statement PDF **200, `application/pdf`, 1 page** (was 2 with the
+first blank), footer *"rec.us — Cost Recovery"*, and the token redacted in both
+`[pdf]` log lines. 93 specs pass, 0 fail, 0 skipped.
+
+### NOT DONE
+
+- **The disclosure is not remembered.** Open it, run a report, and it stays open
+  for that session only — it is not in the URL and not in localStorage, because
+  which controls you had expanded is not part of the question the report answers.
+- **The data window still has to be a window.** A period-first version would ask
+  Rec for "every program in Fall '26" directly, which needs the season on the
+  card rather than a date range; that is a card change, not a layout one.
+
+## THE PDF BUTTON WOULD HAVE DONE NOTHING IN THE IFRAME (2026-09-23)
 
 Dan, before clicking anything: *"don't forget about the pdf printing issue for
 reports inside an iframe sandbox. we had to adjust the way pdf's print (check

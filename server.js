@@ -2987,7 +2987,16 @@ const AMENITY_TAGS = {
 
 // Report types that are valid system-wide but should NOT be offered in the
 // dashboard "+ Add report" flow (e.g. not yet ready for self-serve onboarding).
-const NON_ADDABLE_REPORTS = new Set(["program-demographics", "retention", "annual-report", "section-detail", "qoq", "checkins", "program-checkins", "selfservice", "programs-monthly"]);
+// `cost-recovery` is here for the same reason `qoq` is: it has NO CARD OF ITS
+// OWN. It reads the Programs card through the Programs feed, so the "+ Add
+// report" dialog -- which exists to write a per-org Metabase uuid into
+// orgs.json -- offered a form it can never satisfy and answered "Could not find
+// a valid UUID for cost-recovery". It reaches its two pilot orgs the way every
+// gated report does, by being PUSHED onto their dashboard hidden with an eye to
+// toggle, never by being added by hand. Note the readers of this Set that build
+// availability all also require `mbUuid || SHARED_UUIDS[r]`, which this report
+// already fails, so this entry changes the dialog and nothing else.
+const NON_ADDABLE_REPORTS = new Set(["program-demographics", "retention", "annual-report", "section-detail", "qoq", "checkins", "program-checkins", "selfservice", "programs-monthly", "cost-recovery"]);
 // Reports that require extra params (e.g. section_id) and cannot be health-checked with org_id alone
 // How many consecutive failed probes before a report is called down. One is
 // load; two in a row is a report. See the flap note in checkOne().
@@ -6816,7 +6825,15 @@ async function generatePdf(orgSlug, reportType, startDate, endDate, filters = {}
           ? "Class Roster"
           : reportType === "ice-calendar"
         ? "Ice Participant Calendar"
-        : "Facility Rental Schedule";
+        // THE LAST RESORT IS THE DIRECTORY, NOT A LITERAL. Every branch above
+        // is an override -- `historic` really is named differently here than
+        // in the directory -- but a report that needs no override used to fall
+        // past all of them and print "Facility Rental Schedule" in its own
+        // footer. That is what every Cost Recovery PDF carried. Reading the
+        // registry names the next registered report on the day it is
+        // registered, exactly as the CUSTOM_REPORTS lookup at the top does.
+        : (REPORT_DIRECTORY[reportType] && REPORT_DIRECTORY[reportType].label)
+          || "Facility Rental Schedule";
 
   const browser = await puppeteer.launch({
     headless: true,
