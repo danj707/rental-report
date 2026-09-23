@@ -3970,12 +3970,21 @@ function App() {
     // Site tags: one per location + site with a permitted stay in view, which
     // is what permitSiteTags() in server.js prints. Change one, change both.
     if (scheduleSettings().permitLayout === 'siteTag') {
+      // A site whose only stays check out on the window's first day gets no
+      // tag (nobody arrives) — the same rule as the server's windowStart.
       const norm = v => String(v == null ? '' : v).replace(/\s+/g, ' ').trim().toLowerCase();
+      const first = loadedStart || '';
+      const keep = new Set();
       for (const r of rows) {
         if (!(r.resId && permits[r.resId]) || !r.date) continue;
-        seen.add(norm(r.location) + '|' + norm(r.site));
+        const k = norm(r.location) + '|' + norm(r.site);
+        seen.add(k);
+        const num = parseInt(r.multiDayNum, 10), days = parseInt(r.multiDayDays, 10);
+        const d = String(r.date).slice(0, 10);
+        const checkoutOnly = first && days > 1 && num === days && d === first && num > 1;
+        if (!checkoutOnly) keep.add(k);
       }
-      return seen.size;
+      return first ? keep.size : seen.size;
     }
     const arrivalOnly = scheduleSettings().multiDayDisplay === 'endpoints';
     for (const r of rows) {
@@ -4002,6 +4011,9 @@ function App() {
     setPermitLoading(Array.isArray(rows) && rows[0] ? rows[0].resId : 'all');
     const parts = window.location.pathname.split('/').filter(Boolean);
     const payload = { rows: src.filter(r => r.resId && permits && permits[r.resId]).map(permitRowPayload) };
+    // The whole view knows its first day; a single row's chip does not send it,
+    // so clicking a check-out row still prints that tag.
+    if (!Array.isArray(rows) && loadedStart) payload.windowStart = loadedStart;
     fetch(withToken(`/${parts[0]}/facility/permits.pdf`), {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
     })

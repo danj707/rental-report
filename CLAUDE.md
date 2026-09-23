@@ -75,7 +75,13 @@ a big number, then the holder and "Sep 18 - Sep 20, 2026", or MULTIPLE
 RESERVATIONS listing every stay when the site turns over (that IS the "next
 rental under the current one"). `permitSiteTags()` in server.js folds each row
 back to its whole stay from Day# and Days, and runs BEFORE the arrival-only skip,
-because a stay that arrived before the window still occupies the site. Still one
+because a stay that arrived before the window still occupies the site. **A site
+whose only stays CHECK OUT on the export's first day gets no tag** (Dan,
+2026-09-23: nobody arrives, so the sign would go up on an emptying site) — but a
+TURNOVER site keeps the leaving stay beside the arriving one, exactly as
+Douglas's mockup lists James Baurley (Sep 17-18) over Karla Rodriguez. The
+whole-view export sends `windowStart`; a single row's chip does not, so clicking
+a check-out row still prints its tag. `permitSheetCount` mirrors the rule. Still one
 permit required per stay; QR only when `permitQr` is on AND the site holds one
 stay. Guarded in the same spec (52 assertions, the grouping lifted and run).
 
