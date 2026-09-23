@@ -1272,6 +1272,18 @@
     .view-toast button:hover { color: #fff; }
     @media print { .view-wrap, .view-toast, .view-warn { display: none !important; } }
     body.print-mode .view-wrap, body.print-mode .view-toast, body.print-mode .view-warn { display: none !important; }
+    .toolbar .btn-settings {
+      background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.18);
+      color: #e5e7eb; border-radius: 6px; cursor: pointer;
+      font-size: 12px; line-height: 1.3; padding: 5px 9px; white-space: nowrap;
+    }
+    .toolbar .btn-settings:hover { background: rgba(255,255,255,.18); }
+    .toolbar .btn-settings.is-off { opacity: .4; cursor: not-allowed; }
+    .fsrs-body { padding: 14px 22px; display: flex; flex-direction: column; gap: 10px; }
+    .fsrs-body h4 { margin: 0; font-size: 13px; font-weight: 650; }
+    .fsrs-opt { display: flex; gap: 10px; align-items: flex-start; font-size: 13px; color: #111;
+                text-transform: none; cursor: pointer; }
+    .fsrs-opt input { margin-top: 3px; }
   </style>
   <!-- The Recess layer. recess-tokens.css carries the VALUES; recess-report.css
        is the report treatment built from them. Linked AFTER this page's own
@@ -1281,6 +1293,7 @@
        MORE specific (an accent bar, a value colour) are deleted. -->
   <link rel="stylesheet" href="/recess-tokens.css">
   <link rel="stylesheet" href="/recess-report.css">
+  <link rel="stylesheet" href="/report-settings.css">
   <script>
     // ── Token auth (injected) ────────────────────────────────────────
     const URL_TOKEN = new URLSearchParams(window.location.search).get('token') || '';
@@ -1437,6 +1450,68 @@ function multiDayRange(r) {
   end.setDate(end.getDate() + (days - 1));
   const fmt = x => `${x.getMonth() + 1}/${x.getDate()}`;
   return `${fmt(start)}-${fmt(end)}`;
+}
+
+// ── Per-org schedule settings (REPORT_SETTINGS_SCHEMA.facility) ──────────────
+// Injected server-side into ORG_CONFIG, so the screen and the ?_print=1 PDF read
+// the same values. Defaults mirror the schema: an org nobody configured renders
+// exactly as the report always has.
+function scheduleSettings() {
+  const s = (typeof window !== 'undefined' && window.ORG_CONFIG && window.ORG_CONFIG.settings) || {};
+  return {
+    multiDayDisplay: s.multiDayDisplay === 'endpoints' ? 'endpoints' : 'every',
+    siteOrder: s.siteOrder === 'site' ? 'site' : 'time',
+    permitQr: s.permitQr !== false,
+    permitLayout: s.permitLayout === 'siteTag' ? 'siteTag' : 'sheet',
+  };
+}
+
+// Where a row sits in its stay. Card 17294 emits one row per calendar day of a
+// multi-day booking, the CHECKOUT day included, with Multi-Day Day# counting
+// from 1. A single-day booking carries neither field.
+function stayRole(r) {
+  const days = parseInt(r.multiDayDays, 10), num = parseInt(r.multiDayNum, 10);
+  if (!(days > 1) || !(num >= 1)) return 'single';
+  if (num === 1) return 'arrival';
+  if (num >= days) return 'departure';
+  return 'middle';
+}
+
+// "Arrivals and departures only" (Douglas County, 2026-09-23: "we need to know
+// when the parties are showing up on what day and what day they're leaving
+// without all the repeats"). Middle days are dropped.
+//
+// ONE EXCEPTION, and it is the load-bearing half: a stay that arrived BEFORE the
+// window and leaves AFTER it has no endpoint in view, so dropping its middle
+// days would make an occupied site look empty. Its first row in view is kept
+// and marked `_midStay`, so the site still reads as taken and says since when.
+// Keyed per reservation per site — one booking can hold two sites.
+function scheduleEndpointRows(rows) {
+  if (!Array.isArray(rows)) return rows;
+  const hasEnd = new Set(), firstMid = new Map();
+  const key = r => String(r.resId || '') + '|' + String(r.site || '');
+  rows.forEach(r => {
+    const role = stayRole(r);
+    if (role === 'arrival' || role === 'departure') hasEnd.add(key(r));
+    else if (role === 'middle') {
+      const k = key(r), prev = firstMid.get(k);
+      if (!prev || String(r.date) < String(prev.date)) firstMid.set(k, r);
+    }
+  });
+  const out = [];
+  rows.forEach(r => {
+    const role = stayRole(r);
+    if (role !== 'middle') { out.push(r); return; }
+    const k = key(r);
+    if (!hasEnd.has(k) && firstMid.get(k) === r) out.push(Object.assign({}, r, { _midStay: true }));
+  });
+  return out;
+}
+
+// Natural site order — "Site 9" before "Site 10", which a plain string sort
+// gets wrong and which is how a campground crew walks the loop.
+function siteCompare(a, b) {
+  return String(a || '').localeCompare(String(b || ''), undefined, { numeric: true, sensitivity: 'base' });
 }
 
 function formatMoney(v) {
@@ -2514,6 +2589,150 @@ function facViewMisses(available, requested) {
   if (!requested) return [];
   const have = new Set(Array.isArray(available) ? available : []);
   return requested.filter(v => !have.has(v));
+}
+
+// ── Schedule settings gear ──────────────────────────────────────────────────
+// The same three states as the Class Roster's and the Aquatics tab's gear: a
+// working gear for a proven super-admin, a LOCKED one that asks for the admin
+// dashboard password, and a disabled one when the reportSettings flag is off.
+// THE PROMPT IS NOT THE GATE — the settings routes still require the key.
+// Stored under the `facility` report, shared with the Aquatics scope, and the
+// PUT is a patch, so saving here cannot touch that setting.
+function ScheduleSettings() {
+  const cfg = window.ORG_CONFIG || {};
+  const cur = scheduleSettings();
+  const [open, setOpen] = useState(false);
+  const [unlock, setUnlock] = useState(false);
+  const [pw, setPw] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState(null);
+  const [multi, setMulti] = useState(cur.multiDayDisplay);
+  const [order, setOrder] = useState(cur.siteOrder);
+  const [qr, setQr] = useState(cur.permitQr);
+  const [layout, setLayout] = useState(cur.permitLayout);
+
+  const slug = cfg.slug || window.location.pathname.split('/').filter(Boolean)[0] || '';
+  const q = (extra) => {
+    const parts = [];
+    if (URL_TOKEN) parts.push('token=' + encodeURIComponent(URL_TOKEN));
+    if (extra) parts.push(extra);
+    return parts.length ? '?' + parts.join('&') : '';
+  };
+  const portal = node => (window.ReactDOM && ReactDOM.createPortal) ? ReactDOM.createPortal(node, document.body) : node;
+
+  const gear = cfg.settingsAdmin
+    ? <button className="btn-settings" data-fsrs-open onClick={() => { setOpen(true); setErr(null); }}
+        title="Schedule settings for this organization">⚙</button>
+    : cfg.settingsLockable
+    ? <button className="btn-settings" data-fsrs-locked onClick={() => { setUnlock(true); setErr(null); }}
+        title="Schedule settings — admin password required">⚙</button>
+    : cfg.settingsFlagOff
+    ? <button className="btn-settings is-off" data-fsrs-flagoff disabled
+        title="Report settings are switched off for this deployment. Turn on Report settings in the admin dashboard's Feature Flags.">⚙</button>
+    : null;
+  if (!gear) return null;
+
+  async function submitUnlock(ev) {
+    ev.preventDefault();
+    setBusy(true); setErr(null);
+    try {
+      const resp = await fetch('/' + slug + '/facility/api/settings-unlock' + q(), {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: pw }),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok || !data.ok) { setErr(data.error || 'That password was not accepted.'); return; }
+      window.location.reload();
+    } catch (ex) { setErr(String((ex && ex.message) || ex)); }
+    finally { setBusy(false); }
+  }
+
+  async function save() {
+    setBusy(true); setErr(null);
+    try {
+      const resp = await fetch('/' + slug + '/facility/api/settings'
+          + q(cfg.adminKey ? 'admin=' + encodeURIComponent(cfg.adminKey) : ''), {
+        method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ multiDayDisplay: multi, siteOrder: order, permitQr: qr, permitLayout: layout }),
+      });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) { setErr(data.error || 'Could not save the settings.'); return; }
+      if (Array.isArray(data.dropped) && data.dropped.length) { setErr('Not saved: ' + data.dropped.join(', ')); return; }
+      // The settings decide which rows the first render draws, so reload rather
+      // than half-apply them to a page already on screen.
+      window.location.reload();
+    } catch (ex) { setErr('Could not save the settings: ' + (ex.message || ex)); }
+    finally { setBusy(false); }
+  }
+
+  if (unlock) return <span>{gear}{portal(
+    <div className="rs-back" onClick={ev => { if (ev.target === ev.currentTarget && !busy) setUnlock(false); }}>
+      <form className="rs-sheet" role="dialog" aria-label="Admin password required" data-fsrs-unlock onSubmit={submitUnlock}>
+        <div className="rs-head">
+          <h3>🔓 Admin password</h3>
+          <span className="rs-who">The admin dashboard password</span>
+          <button type="button" className="rs-x" onClick={() => !busy && setUnlock(false)} aria-label="Close">✕</button>
+        </div>
+        <div className="rs-grp fsrs-body">
+          <p className="rs-hint">These settings change the rental schedule for everyone with this report's link.</p>
+          <input type="password" value={pw} autoFocus data-fsrs-pw onChange={ev => setPw(ev.target.value)}
+            style={{ width: '100%', padding: '8px 10px', fontSize: 13, marginTop: 8 }} />
+        </div>
+        {err && <div className="rs-err" data-fsrs-err>{err}</div>}
+        <div className="rs-foot">
+          <button type="submit" className="rs-save" disabled={busy || !pw}>{busy ? 'Checking…' : 'Unlock'}</button>
+        </div>
+      </form>
+    </div>)}</span>;
+
+  if (!open) return gear;
+
+  const dirty = multi !== cur.multiDayDisplay || order !== cur.siteOrder || qr !== cur.permitQr || layout !== cur.permitLayout;
+  const opt = (name, val, now, set, label, hint) => (
+    <label className="fsrs-opt" data-fsrs-opt={name + ':' + val}>
+      <input type="radio" name={name} checked={now === val} onChange={() => set(val)} />
+      <span><b>{label}</b><br /><span className="rs-hint">{hint}</span></span>
+    </label>
+  );
+
+  return <span>{gear}{portal(
+    <div className="rs-back" onClick={ev => { if (ev.target === ev.currentTarget && !busy) setOpen(false); }}>
+      <div className="rs-sheet" role="dialog" aria-label="Schedule settings" data-fsrs-sheet>
+        <div className="rs-head">
+          <h3>⚙ Rental schedule settings</h3>
+          <span className="rs-who">Applies to everyone with this report's link</span>
+          <button className="rs-x" onClick={() => !busy && setOpen(false)} aria-label="Close">✕</button>
+        </div>
+        <div className="rs-grp fsrs-body">
+          <h4>Multi-day rentals</h4>
+          {opt('multi', 'every', multi, setMulti, 'Show every day of the stay',
+               'One row per day, marked "Day 2 of 4". Shows who is on a site today.')}
+          {opt('multi', 'endpoints', multi, setMulti, 'Arrivals and departures only',
+               'A row on the check-in day and the check-out day. A stay that spans the whole window still shows once, as "Staying through". Permits print on arrival only.')}
+        </div>
+        <div className="rs-grp fsrs-body">
+          <h4>Order within a location</h4>
+          {opt('order', 'time', order, setOrder, 'By start time', 'Right for hourly rentals.')}
+          {opt('order', 'site', order, setOrder, 'By site number', 'Site 1, 2 … 41, the way a crew walks a campground loop.')}
+        </div>
+        <div className="rs-grp fsrs-body">
+          <h4>Permit posting sheets</h4>
+          {opt('layout', 'sheet', layout, setLayout, 'One full-page sheet per permit',
+               'Holder, dates, times and add-ons. Right for a pavilion or a field.')}
+          {opt('layout', 'siteTag', layout, setLayout, 'Site tags, two to a page',
+               'One half-page tag per site with every reservation on it, and a cut line. Built from Douglas County\u2019s own campsite tags.')}
+          <label className="fsrs-opt" data-fsrs-opt="qr">
+            <input type="checkbox" checked={qr} onChange={ev => setQr(ev.target.checked)} />
+            <span><b>Print a QR code</b><br /><span className="rs-hint">It opens the public permit page, which shows the permit holder's details to anyone who scans a posted sheet.</span></span>
+          </label>
+        </div>
+        {err && <div className="rs-err" data-fsrs-err>{err}</div>}
+        <div className="rs-foot">
+          <button className="rs-save" data-fsrs-save disabled={busy || !dirty} onClick={save}>{busy ? 'Saving…' : 'Save'}</button>
+          <span className="rs-footnote">{dirty ? 'Save applies this to everyone, and reloads the page.' : 'Nothing to save — change something first.'}</span>
+        </div>
+      </div>
+    </div>)}</span>;
 }
 
 function App() {
@@ -3612,6 +3831,10 @@ function App() {
       // filter instead.
       result = result.filter(muscoLit);
     }
+    // Last, so a stay's "does it have an endpoint in view" is asked of the rows
+    // that survived every other filter. Everything downstream — the row count,
+    // Excel, the PDF and the permit export — reads filteredRows, so they agree.
+    if (scheduleSettings().multiDayDisplay === 'endpoints') result = scheduleEndpointRows(result);
     return result;
   }, [rows, selectedLocations, allLocations, selectedSites, allSites, selectedSiteTypes, allSiteTypes,
       bookTypeFilter, selectedAddOns, allAddOns, filterLighting]);
@@ -3634,7 +3857,11 @@ function App() {
     });
     Object.values(byDate).forEach(dg => {
       Object.values(dg.locations).forEach(locRows => {
-        locRows.sort((a, b) => timeToMinutes(a.start) - timeToMinutes(b.start));
+        if (scheduleSettings().siteOrder === 'site') {
+          locRows.sort((a, b) => siteCompare(a.site, b.site) || timeToMinutes(a.start) - timeToMinutes(b.start));
+        } else {
+          locRows.sort((a, b) => timeToMinutes(a.start) - timeToMinutes(b.start));
+        }
       });
     });
     return byDate;
@@ -3723,6 +3950,11 @@ function App() {
       resId: r.resId, title: r.resName || '', reservee: r.reservee || '',
       site: r.site || '', location: r.location || '',
       date: r.date, begin: r.start, end: r.end, headcount: r.headCount || '',
+      // The server prints on ARRIVAL only for an org showing arrivals and
+      // departures; it needs the row's place in the stay to know which is which.
+      dayNum: r.multiDayNum || null,
+      // Site tags fold every row back to its whole stay, which needs the length.
+      days: r.multiDayDays || null,
     };
   }
 
@@ -3735,9 +3967,21 @@ function App() {
     if (!rows || !permits) return 0;
     const seen = new Set();
     let n = 0;
+    // Site tags: one per location + site with a permitted stay in view, which
+    // is what permitSiteTags() in server.js prints. Change one, change both.
+    if (scheduleSettings().permitLayout === 'siteTag') {
+      const norm = v => String(v == null ? '' : v).replace(/\s+/g, ' ').trim().toLowerCase();
+      for (const r of rows) {
+        if (!(r.resId && permits[r.resId]) || !r.date) continue;
+        seen.add(norm(r.location) + '|' + norm(r.site));
+      }
+      return seen.size;
+    }
+    const arrivalOnly = scheduleSettings().multiDayDisplay === 'endpoints';
     for (const r of rows) {
       const p = r.resId && permits[r.resId];
       if (!p) continue;
+      if (arrivalOnly && parseInt(r.multiDayNum, 10) > 1) continue;   // mirrors permits.pdf
       if (p.multi) {
         const key = (p.id || p.code) + '|' + String(r.site || '').replace(/\s+/g, ' ').trim().toLowerCase();
         if (seen.has(key)) continue;
@@ -4299,13 +4543,17 @@ function App() {
           if (!permits || !filteredRows || !filteredRows.length) return null;
           const n = permitSheetCount(filteredRows);
           if (!n) return null;   // nothing to print → no button, rather than a dead one
+          const tags = scheduleSettings().permitLayout === 'siteTag';
           return (
             <button
               onClick={() => exportPermits()}
               disabled={permitLoading === 'all'}
-              title="Print one posting sheet per rental with an issued permit, for the rentals shown"
+              data-permit-layout={tags ? 'siteTag' : 'sheet'}
+              title={tags
+                ? 'Print one reservation tag per site, two to a page, for the rentals shown'
+                : 'Print one posting sheet per rental with an issued permit, for the rentals shown'}
               style={{background:'#7c3aed',color:'#fff',borderColor:'#7c3aed'}}
-            >{permitLoading === 'all' ? 'Building…' : `📋 Export Permits (${n})`}</button>
+            >{permitLoading === 'all' ? 'Building…' : (tags ? `📋 Site Tags (${n})` : `📋 Export Permits (${n})`)}</button>
           );
         })()}
         <button
@@ -4322,6 +4570,7 @@ function App() {
           </button>
         )}
 
+        <ScheduleSettings />
       </div>
     );
   }
@@ -4556,7 +4805,11 @@ function App() {
                                     their position. */}
                                 {r.multiDayDays && <span style={{display:'block',fontSize:'10px',fontWeight:700,color:'#d97706',marginTop:2}}>
                                   Multi-Day Rental ({r.multiDayDays} days){multiDayRange(r) ? ` ${multiDayRange(r)}` : ''}
-                                  {r.multiDayNum > 1 ? ` \u00b7 Day ${r.multiDayNum} of ${r.multiDayDays}` : ''}
+                                  {scheduleSettings().multiDayDisplay === 'endpoints'
+                                    ? (r._midStay ? ' \u00b7 Staying through'
+                                      : stayRole(r) === 'arrival' ? ' \u00b7 Check-in'
+                                      : stayRole(r) === 'departure' ? ' \u00b7 Check-out' : '')
+                                    : (r.multiDayNum > 1 ? ` \u00b7 Day ${r.multiDayNum} of ${r.multiDayDays}` : '')}
                                 </span>}
                               </span>
                               <span className="cell col-reservee">{r.reservee}</span>

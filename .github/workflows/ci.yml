@@ -193,6 +193,11 @@ jobs:
       - name: Aquatics scope (pools by default; extra site types are configured, never guessed)
         run: node scripts/aquatics-scope.spec.js
 
+      # Douglas County's schedule settings: arrivals/departures only, site-number
+      # order, and the posting sheet's QR as a per-org switch.
+      - name: Facility schedule settings (multi-day display, site order, permit QR)
+        run: node scripts/facility-schedule-settings.spec.js
+
       - name: Chart data is downloadable (panel CSV + workbook sheets)
         run: node scripts/panel-csv.spec.js
 

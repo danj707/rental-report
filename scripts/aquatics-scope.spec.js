@@ -327,8 +327,14 @@ if (R) {
   const d = R.reportSettingsDefaults("facility");
   eq(JSON.stringify(d.aquaticsScope), "[]",
      "THE DEFAULT IS POOLS ONLY — an unconfigured org sees exactly what it saw before any of this existed");
-  eq(Object.keys(R.REPORT_SETTINGS_SCHEMA.facility).join(","), "aquaticsScope",
-     "the scope is the ONLY facility setting: `aquaticsExtraTypes` is gone, and a registered setting nothing reads is the dead end this repo keeps writing down");
+  // The facility record also carries the rental schedule's own settings
+  // (multiDayDisplay, siteOrder, permitQr — each read by facility.html). What
+  // this pins is that the retired type list stays retired, and that the scope
+  // is the only AQUATICS setting.
+  ok(!("aquaticsExtraTypes" in R.REPORT_SETTINGS_SCHEMA.facility),
+     "`aquaticsExtraTypes` is gone, and a registered setting nothing reads is the dead end this repo keeps writing down");
+  eq(Object.keys(R.REPORT_SETTINGS_SCHEMA.facility).filter(k => /^aquatics/.test(k)).join(","), "aquaticsScope",
+     "the scope is the ONLY aquatics setting");
 
   const n = (body) => R.normalizeReportSettings("facility", body);
   ok(n({ aquaticsExtraTypes: ["court"] }).dropped.length === 1,

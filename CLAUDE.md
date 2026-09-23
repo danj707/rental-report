@@ -1,5 +1,54 @@
 # Project notes for Claude
 
+## DOUGLAS COUNTY'S SCHEDULE SETTINGS (2026-09-23)
+
+From the Douglas County reporting sync (Fireflies `01M32RZDSWRPQPQ67EJ10P73KD`):
+*"We need to know when the parties are showing up on what day and what day
+they're leaving without all the repeats"*, sites in order 1 to 41, and the
+posting sheet's QR code *"giving too much personal information about the camper
+for anyone to scan"*. Dan: settings, not hardcoding — *"other orgs want it"*.
+
+Three fields on `REPORT_SETTINGS_SCHEMA.facility` (shared with `aquaticsScope`;
+the PUT is a patch, so neither panel can clobber the other), all defaulting to
+today's behaviour, seeded for `douglas-county-nv` by
+`facility-schedule:2026-09-23-douglas`:
+
+| field | values | effect |
+|---|---|---|
+| `multiDayDisplay` | `every` / `endpoints` | endpoints keeps the check-in and check-out rows only, and permits print on ARRIVAL only (server-side, in `permits.pdf`, off the row's `dayNum`) |
+| `siteOrder` | `time` / `site` | natural site-number order within a location (Site 9 before Site 10) |
+| `permitQr` | bool, default true | off ⇒ no QR and no right-hand column on the sheet |
+
+- **Display only — card 17294 is untouched**, so no push, no flip, no other org's
+  feed moves. The filter runs LAST in `filteredRows`, so the row count, Excel,
+  the PDF and the permit export all agree.
+- **A stay spanning the whole window keeps ONE row**, its first in view, marked
+  `_midStay` ("Staying through"). Dropping it would make an occupied site read
+  empty. Keyed per reservation AND site.
+- **The QR opens the PUBLIC permit page**, not the admin view as was said on the
+  call — that page is what shows the holder's details.
+- Gear on facility.html is the last toolbar item, same three states as the roster
+  and aquatics gears, behind the `reportSettings` flag.
+- Topaz Lake's map address corrected to **3700** Topaz Park Rd.
+- Guard: `scripts/facility-schedule-settings.spec.js` (34 assertions, in CI),
+  lifting and RUNNING the row helpers; mutation-tested seven ways, all caught.
+
+**SITE TAGS, built off Douglas County's own mockup** (`Topaz_Lake_Site_Tags_Sep_18_2026.pdf`,
+which replaced the "two-up landscape + next rental" ask): a fourth setting,
+`permitLayout` `sheet` / `siteTag` (default `sheet`, seeded `siteTag` for Douglas
+by a NEW key `facility-schedule:2026-09-23-douglas-tags`). One half-page tag PER
+SITE, two to a portrait Letter sheet with a cut line — area, RESERVED, SITE and
+a big number, then the holder and "Sep 18 - Sep 20, 2026", or MULTIPLE
+RESERVATIONS listing every stay when the site turns over (that IS the "next
+rental under the current one"). `permitSiteTags()` in server.js folds each row
+back to its whole stay from Day# and Days, and runs BEFORE the arrival-only skip,
+because a stay that arrived before the window still occupies the site. Still one
+permit required per stay; QR only when `permitQr` is on AND the site holds one
+stay. Guarded in the same spec (52 assertions, the grouping lifted and run).
+
+**NOT DONE:** No "Open" tag for an empty site (Dan: skip for now). Mobile view
+scoped, not built.
+
 ## INVENTORY — the first report whose numbers we own (2026-09-22)
 
 Dan: *"how much work to vibecode an inventory management system for Rec?"* —
