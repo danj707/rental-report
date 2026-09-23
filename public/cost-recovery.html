@@ -25,6 +25,13 @@
      ───────────────────────────────────────────────────────────────── */
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+  /* THE `hidden` ATTRIBUTE LOSES TO ANY AUTHOR `display`, and that is not a
+     specificity tie — author styles beat the UA sheet outright, so one
+     `.picks label { display: flex }` was enough to keep #periodBWrap on screen
+     for good. Dan: "Compare field doesn't clear if you move to another
+     selection." It was never cleared; it was never hidden. */
+  [hidden] { display: none !important; }
+
   body {
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
     font-size: 13px;
@@ -37,11 +44,16 @@
   /* ── Toolbar ── */
   .toolbar {
     position: sticky; top: var(--rec-banner-h, 0px); z-index: 100;
-    display: flex; align-items: center; gap: 10px;
+    display: flex; flex-direction: column; gap: 7px;
     padding: 8px 20px;
     background: #2c2c2c; color: #eee;
-    font-size: 13px; flex-wrap: wrap;
+    font-size: 13px;
   }
+  /* TWO ROWS, LIKE EVERY OTHER REPORT. Dan: "make this report look like the
+     others, right now it has a completely different look and feel." The
+     filters belong in the dark bar — they were the one thing this page kept
+     on the sand ground, which is most of why it read as a different product. */
+  .tb-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .toolbar-title { font-weight: 600; margin-right: 4px; }
   .toolbar-spacer { flex: 1; }
   .toolbar label {
@@ -73,19 +85,50 @@
   .savepill.busy  { border-color: #6b5a2a; background: #2e2716; color: #e3c06a; }
   .savepill.error { border-color: #7a3b3b; background: #331b1b; color: #f0a0a0; }
 
-  /* ── Header ── */
-  .report-header {
-    display: flex; align-items: center; gap: 14px;
-    padding: 16px 20px 10px;
-  }
-  .report-header-logo { height: 42px; max-width: 140px; object-fit: contain; }
-  .report-header h1 { font-size: 19px; font-weight: 700; letter-spacing: -.01em; }
-  .report-header .sub { font-size: 12px; color: var(--rec-text-secondary, #5b5b5b); margin-top: 2px; }
+  /* ── Masthead ──────────────────────────────────────────────────────
+     The pine-to-grass band every other report opens on, with the org's own
+     mark on a WHITE PLATE — logoUrl is an arbitrary full-colour PNG with its
+     own background, and a municipal seal dropped straight onto a dark green
+     band looks broken. Recorded once for the Programs banner; the same rule
+     applies here.
 
-  .wrap { padding: 0 20px 40px; }
+     It renders in EVERY branch — loading, error and loaded — because the
+     first screenshot of a report that is still fetching should still say
+     which report it is. That is the ProgBanner lesson. */
+  .cr-banner {
+    margin: 14px 20px 12px; border-radius: 14px; overflow: hidden;
+    background: linear-gradient(135deg, var(--rec-brand-pine, #14532d) 0%, var(--rec-brand-grass, #16a34a) 100%);
+    color: #fff; padding: 15px 18px;
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  }
+  .cr-banner .plate { background: #fff; border-radius: 9px; padding: 5px 7px; display: flex; flex: none; }
+  .cr-banner .plate img { height: 34px; max-width: 120px; object-fit: contain; display: block; }
+  .cr-banner .eyebrow { font-size: 10px; text-transform: uppercase; letter-spacing: .09em; opacity: .78; }
+  .cr-banner h1 { font-size: 23px; font-weight: 700; letter-spacing: -.02em; line-height: 1.15; }
+  .cr-banner .sub { font-size: 12px; opacity: .88; margin-top: 3px; }
+  .cr-banner .grow { flex: 1; }
+  /* No pills before the figures land: a count of zero beside a spinner is a
+     claim about the org rather than about the load. */
+  .cr-pills { display: flex; gap: 7px; flex-wrap: wrap; }
+  .cr-pills span { font-size: 11.5px; font-weight: 600; padding: 4px 11px; border-radius: 99px;
+                   background: rgba(255,255,255,.17); white-space: nowrap; }
+
+  /* ── The view strip, as an underlined tab row rather than pill buttons ── */
+  .tabs { display: flex; gap: 4px; flex-wrap: wrap; border-bottom: 1px solid var(--rec-border, #d9d5cf); margin-bottom: 13px; }
+  .tabs button {
+    font: inherit; font-size: 13px; font-weight: 500; padding: 8px 13px; cursor: pointer;
+    border: 0; border-bottom: 2px solid transparent; background: transparent;
+    color: var(--rec-text-secondary, #5b5b5b); margin-bottom: -1px;
+  }
+  .tabs button:hover { color: var(--rec-text-primary, #1a1a1a); }
+  .tabs button[aria-pressed="true"] { color: var(--rec-brand-pine, #14532d); font-weight: 700;
+                                      border-bottom-color: var(--rec-brand-pine, #14532d); }
+
+  .wrap { padding: 0 20px 10px; }
+  .report-foot { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+                 padding: 10px 20px 34px; font-size: 11px; color: var(--rec-text-secondary, #6a6a6a); }
 
   /* ── Mode segment ── */
-  .modebar { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin: 4px 0 12px; }
   .seg { display: inline-flex; border: 1px solid var(--rec-border, #d9d5cf); border-radius: 8px; overflow: hidden; background: var(--rec-bg-primary, #fff); }
   .seg button {
     font: inherit; font-size: 12px; font-weight: 500; padding: 6px 13px;
@@ -95,15 +138,23 @@
   .seg button:last-child { border-right: 0; }
   .seg button[aria-pressed="true"] { background: var(--rec-brand-pine, #14532d); color: #fff; }
 
-  .picks { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 12px; }
-  .picks label { display: flex; flex-direction: column; gap: 3px; font-size: 10px; text-transform: uppercase; letter-spacing: .04em; color: var(--rec-text-secondary, #5b5b5b); }
+  .picks { align-items: flex-end; }
+  .picks label { display: flex; flex-direction: column; gap: 3px; font-size: 10px; text-transform: uppercase; letter-spacing: .04em; color: #aaa; }
   .picks select {
-    font: inherit; font-size: 12px; padding: 5px 8px;
-    border: 1px solid var(--rec-border, #d9d5cf); border-radius: 6px;
-    background: var(--rec-bg-primary, #fff); color: var(--rec-text-primary, #1a1a1a);
+    font: inherit; font-size: 12px; padding: 4px 7px;
+    border: 1px solid #555; border-radius: 5px;
+    background: #1c1c1c; color: #eee;
     max-width: 280px;
   }
-  .picks .chk { flex-direction: row; align-items: center; gap: 6px; text-transform: none; font-size: 12px; letter-spacing: 0; }
+  .picks .chk { flex-direction: row; align-items: center; gap: 6px; text-transform: none; font-size: 12px; letter-spacing: 0; color: #ccc; }
+  /* The period segment sits on the dark ground with the pickers it drives —
+     which is also the answer to "if we're choosing a season, what is the date
+     picker for": the dates load the programs, this slices them. */
+  .toolbar .seg { border-color: #555; background: #1c1c1c; align-self: center; }
+  .toolbar .seg button { color: #bbb; border-right-color: #555; padding: 5px 11px; }
+  .toolbar .seg button:hover { background: #333; color: #eee; }
+  .toolbar .seg button[aria-pressed="true"] { background: var(--rec-brand-grass, #16a34a); color: #fff; }
+  .tb-hint { font-size: 10.5px; color: #8e8e8e; align-self: center; }
 
   /* ── The basis note. An entered figure must never look like a measured
         one, so the page says in words where every number came from. ── */
@@ -134,7 +185,19 @@
   .tier .track { position: relative; height: 15px; border-radius: 99px; background: var(--rec-bg-secondary, #f0eee9); overflow: hidden; }
   .tier .fillbar { position: absolute; inset: 0 auto 0 0; background: var(--rec-success-ink, #15803d); border-radius: 99px; }
   .tier .fillbar.under { background: var(--rec-warning-ink, #b45309); }
-  .tier .tick { position: absolute; top: -2px; bottom: -2px; width: 2px; background: var(--rec-text-primary, #1a1a1a); opacity: .55; }
+  /* AND THE BLACK LINE HAD TO SAY WHAT IT WAS. Dan: "the black lines...what
+     are those for?" They are each tier's target, and an unlabelled 2px rule
+     across a green bar reads as damage. It carries its own number now — which
+     also means the track can stop clipping, since the label sits outside it. */
+  .tier .track { overflow: visible; }
+  .tier .fillbar { overflow: hidden; }
+  .tier .tick { position: absolute; top: -3px; bottom: -3px; width: 2px;
+                background: var(--rec-text-primary, #1a1a1a); opacity: .5; border-radius: 2px; }
+  .tier .tick b { position: absolute; left: 50%; top: 100%; transform: translateX(-50%);
+                  margin-top: 2px; font-size: 9px; font-weight: 600; line-height: 1;
+                  color: var(--rec-text-secondary, #6a6a6a); white-space: nowrap; }
+  .tier { padding-bottom: 14px; }
+  .tierlegend { font-size: 11px; color: var(--rec-text-secondary, #6a6a6a); margin-top: 9px; }
   .tier .fig { text-align: right; font-size: 11.5px; }
   .tier .fig b { font-size: 14px; }
   .tier .fig span { color: var(--rec-text-secondary, #6a6a6a); }
@@ -240,13 +303,22 @@
         the ladder runs 4 at the top down to 1, and the wedge on the left steps
         out as it descends. It is decoration that carries the model: a reader
         who has never heard of the pyramid can see what it claims. ── */
+  /* THE WEDGE HAD TO SAY WHAT IT WAS. Dan: "the left side bar has a strange
+     grey box" — it was a 13-to-54px slab of 15%-opacity pine with nothing in
+     it, so the four steps read as a rendering fault rather than as a pyramid.
+     It carries its tier number now and steps out in real ink, so the shape is
+     legible at a glance and self-explaining on hover. */
   .tier .step { display: flex; align-items: center; }
-  .tier .step i { display: block; height: 22px; border-radius: 3px;
-                  background: var(--rec-brand-pine, #14532d); opacity: .15; }
-  .tier[data-cr-tier="4"] .step i { width: 25%; }
-  .tier[data-cr-tier="3"] .step i { width: 50%; }
-  .tier[data-cr-tier="2"] .step i { width: 75%; }
-  .tier[data-cr-tier="1"] .step i { width: 100%; }
+  .tier .step i {
+    display: flex; align-items: center; justify-content: center;
+    height: 24px; border-radius: 4px; font-style: normal;
+    font-size: 11.5px; font-weight: 700; color: #fff;
+    background: var(--rec-brand-pine, #14532d);
+  }
+  .tier[data-cr-tier="4"] .step i { width: 40%; opacity: .45; }
+  .tier[data-cr-tier="3"] .step i { width: 60%; opacity: .60; }
+  .tier[data-cr-tier="2"] .step i { width: 80%; opacity: .78; }
+  .tier[data-cr-tier="1"] .step i { width: 100%; opacity: 1; }
   .tier .fig em { font-style: normal; }
   .tier .fig em.inband { color: var(--rec-success-ink, #15803d); font-weight: 600; }
   .tier .fig em.above  { color: var(--rec-text-secondary, #6a6a6a); }
@@ -268,6 +340,19 @@
   .lgdel { color: var(--rec-text-tertiary, #9a9a9a); }
   .lgdel:hover { background: #fee2e2; border-color: #fca5a5; color: #7f1d1d; }
 
+  /* ── The statement bar. Its own controls, because `.exp` is a 20px square. ── */
+  .stmtbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 13px; }
+  .stbtn {
+    font: inherit; font-size: 12px; line-height: 1.2; padding: 7px 13px; cursor: pointer;
+    border: 1px solid var(--rec-border, #d9d5cf); border-radius: 6px;
+    background: var(--rec-bg-primary, #fff); color: var(--rec-text-primary, #1a1a1a);
+  }
+  .stbtn:hover { background: var(--rec-bg-secondary, #faf9f7); }
+  .stbtn.primary { background: var(--rec-brand-pine, #14532d); border-color: var(--rec-brand-pine, #14532d);
+                   color: #fff; font-weight: 600; }
+  .stbtn.primary:hover { background: #0f3f22; }
+  .sthint { font-size: 11.5px; color: var(--rec-text-secondary, #6a6a6a); line-height: 1.2; }
+
   /* ── The statement. What all this data entry is FOR. ── */
   #statementView .st { max-width: 780px; }
   #statementView .st-head { border-bottom: 2px solid var(--rec-brand-pine, #14532d);
@@ -287,11 +372,47 @@
   #statementView .st-foot { font-size: 11px; color: var(--rec-text-secondary, #6a6a6a);
                             margin-top: 18px; line-height: 1.55; border-top: 1px solid var(--rec-border-subtle, #eceae6); padding-top: 9px; }
 
+  /* ── PRINT ─────────────────────────────────────────────────────────
+     Dan, with the PDF: "the printed/pdf version has the top metrics bars and
+     the page is very cut off, fix the pdf alignment."
+
+     Both halves were the same omission. The statement is rendered inside the
+     ordinary `.card` plate with `max-width: 780px`, so on a landscape sheet it
+     sat in the left 40% of the page with a card border running the full width
+     — and the KPI strip and the basis note live OUTSIDE the view divs, so they
+     printed on top of a document whose own bar promises they will not. */
   @media print {
-    .toolbar, .modebar, .picks, .exp, .costin, .tiersel, .linebox, #exportCsv, .stmtbar { display: none !important; }
+    .toolbar, .tabs, .picks, .exp, .costin, .tiersel, .linebox,
+    #exportCsv, .stmtbar, .rowcount, .report-foot { display: none !important; }
     body { background: #fff; }
     .card, .basis { break-inside: avoid; }
+    .wrap { padding: 0; }
+    /* The masthead prints, because a page that has left the screen has to say
+       whose it is — flat rather than a gradient, so a printer that drops
+       backgrounds still leaves readable ink. */
+    .cr-banner { margin: 0 0 12px; border-radius: 0; background: none !important;
+                 color: #000; padding: 0 0 8px; border-bottom: 2px solid #14532d; }
+    .cr-banner .plate { padding: 0; }
+    .cr-banner .eyebrow { color: #555; }
+    .cr-pills span { background: none !important; border: 1px solid #ccc; color: #333; }
+
+    /* THE STATEMENT PRINTS ALONE, which is what its own bar says it does.
+       `body.printing-statement` is set from the Print / save as PDF button, so
+       the strip and the note come off for the document and stay on for the
+       P&L, where they are the summary somebody wants on paper. */
+    body.printing-statement .sum-cards,
+    body.printing-statement .basis,
+    body.printing-statement .cr-pills { display: none !important; }
+
+    /* FILL THE SHEET. The card chrome is screen furniture; on paper it is a
+       border around 40% of the page. */
+    #statementView { border: 0; padding: 0; margin: 0; background: none; }
+    #statementView .st { max-width: none; width: 100%; }
+    #statementView table.stt td + td { width: 22%; }
+    .sum-cards { break-inside: avoid; }
   }
+
+  @page { margin: 12mm; }
 
   @media (max-width: 720px) {
     .wrap { padding: 0 16px 32px; }
@@ -312,42 +433,25 @@
 <body>
 
 <div class="toolbar">
-  <span class="toolbar-title">⚖️ Cost Recovery</span>
-  <label>Start<input type="date" id="startDate"></label>
-  <label>End<input type="date" id="endDate"></label>
-  <button id="runBtn" class="primary" type="button">Run report</button>
-  <span class="toolbar-spacer"></span>
-  <span class="savepill" id="savePill">All costs saved</span>
-  <button id="carryBtn" type="button" title="Copy each program's most recent earlier season into any season that has no cost yet">Carry costs forward</button>
-  <button id="exportCsv" type="button">⬇ CSV</button>
-  <button id="printBtn" type="button">Print</button>
-</div>
-
-<div class="report-header">
-  <img class="report-header-logo" id="orgLogo" alt="" hidden>
-  <div>
-    <h1 id="orgTitle">Cost Recovery</h1>
-    <div class="sub" id="windowLabel"></div>
+  <div class="tb-row">
+    <span class="toolbar-title">⚖️ Cost Recovery</span>
+    <!-- THE DATES ARE THE DATA WINDOW, NOT A SECOND PERIOD PICKER. Dan: "the
+         date range picker at the top feels redundant, no? If we're choosing a
+         season, what is the date picker for?" — they decide which programs are
+         LOADED, and therefore which seasons the picker below can offer; the
+         period then slices within them. Labelled as that, and sitting in the
+         same bar as the period controls, so the relationship is visible rather
+         than inferred. -->
+    <label title="Which programs are loaded from Rec. The period below slices within this window.">Data from<input type="date" id="startDate"></label>
+    <label title="Which programs are loaded from Rec. The period below slices within this window.">Data to<input type="date" id="endDate"></label>
+    <button id="runBtn" class="primary" type="button">Run report</button>
+    <span class="toolbar-spacer"></span>
+    <span class="savepill" id="savePill">All costs saved</span>
+    <button id="carryBtn" type="button" title="Copy each program's most recent earlier season into any season that has no cost yet">Carry costs forward</button>
+    <button id="exportCsv" type="button">⬇ CSV</button>
+    <button id="printBtn" type="button">Print</button>
   </div>
-</div>
-
-<div id="loader">
-  <div class="track"><div class="bar" id="loaderBar"></div></div>
-  <div class="meta" id="loaderMeta">Loading programs…</div>
-</div>
-
-<div class="wrap" id="wrap" hidden>
-  <div id="errSlot"></div>
-
-  <div class="modebar" id="viewTabs" role="group" aria-label="View">
-    <div class="seg">
-      <button type="button" data-view="pl"      aria-pressed="true">P&amp;L</button>
-      <button type="button" data-view="ledger"  aria-pressed="false">Overhead &amp; other</button>
-      <button type="button" data-view="statement" aria-pressed="false">Statement</button>
-    </div>
-  </div>
-
-  <div class="modebar">
+  <div class="tb-row picks">
     <div class="seg" id="modeSeg" role="group" aria-label="Period type">
       <button type="button" data-mode="season"  aria-pressed="true">Season</button>
       <button type="button" data-mode="fy"      aria-pressed="false">Fiscal year</button>
@@ -355,9 +459,6 @@
       <button type="button" data-mode="month"   aria-pressed="false">Month</button>
       <button type="button" data-mode="compare" aria-pressed="false">Compare</button>
     </div>
-  </div>
-
-  <div class="picks">
     <label id="periodWrap"><span id="periodLab">Season</span><select id="periodSel"></select></label>
     <label id="periodBWrap" hidden>Compare with<select id="periodBSel"></select></label>
     <label>Tier<select id="tierSel">
@@ -370,6 +471,32 @@
     </select></label>
     <label class="chk"><input type="checkbox" id="hideBlank"> Only programs with a cost</label>
     <label class="chk" title="Hides programs that took no money AND have no cost entered. A free program you HAVE costed is kept — that is a subsidy, and it is the most interesting line on the page."><input type="checkbox" id="hideFree"> Hide free programs</label>
+  </div>
+</div>
+
+<div class="cr-banner">
+  <span class="plate" id="orgPlate" hidden><img id="orgLogo" alt="" onerror="this.parentNode.hidden=true"></span>
+  <div>
+    <div class="eyebrow" id="orgEyebrow"></div>
+    <h1 id="orgTitle">Cost Recovery</h1>
+    <div class="sub" id="windowLabel"></div>
+  </div>
+  <span class="grow"></span>
+  <div class="cr-pills" id="crPills"></div>
+</div>
+
+<div id="loader">
+  <div class="track"><div class="bar" id="loaderBar"></div></div>
+  <div class="meta" id="loaderMeta">Loading programs…</div>
+</div>
+
+<div class="wrap" id="wrap" hidden>
+  <div id="errSlot"></div>
+
+  <div class="tabs" id="viewTabs" role="group" aria-label="View">
+    <button type="button" data-view="pl"      aria-pressed="true">P&amp;L</button>
+    <button type="button" data-view="ledger"  aria-pressed="false">Overhead &amp; other</button>
+    <button type="button" data-view="statement" aria-pressed="false">Statement</button>
   </div>
 
   <div class="basis" id="basisNote"></div>
@@ -462,13 +589,27 @@
        right: the report took entry and gave back a screen, which is the
        dead-end pattern this repo keeps recording. This is the document. -->
   <div class="card" id="statementView" hidden>
-    <div class="stmtbar" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px">
-      <button type="button" id="printStmt" class="exp" style="width:auto;padding:6px 13px;font-weight:600">⎙ Print / save as PDF</button>
-      <button type="button" id="stmtCsv" class="exp" style="width:auto;padding:6px 13px">↓ Statement CSV</button>
-      <span class="hint" style="margin:0">Prints on its own — the toolbar, the pickers and every input are left off the page.</span>
+    <!-- THEY WERE `.exp`, WHICH IS A 20px SQUARE ICON BUTTON. The inline style
+         widened them and set padding and never touched `height: 20px`, so the
+         text overflowed a 20px box and sat off-centre against the note beside
+         it. Dan: "slight misalignment on the print/pdf option." Their own
+         class now, so nothing is inherited from a control of a different
+         shape. -->
+    <div class="stmtbar">
+      <button type="button" id="printStmt" class="stbtn primary">⎙ Print / save as PDF</button>
+      <button type="button" id="stmtCsv" class="stbtn">↓ Statement CSV</button>
+      <span class="sthint">Prints on its own — the toolbar, the pickers and every input are left off the page.</span>
     </div>
     <div class="st" id="stmtBody"></div>
   </div>
+</div>
+
+<!-- The footer every other report carries: who this is for, and when it was
+     run. On a printed P&L "which org, which day" is the first thing anyone
+     asks of a page that has left the screen. -->
+<div class="report-foot">
+  <span id="crFootOrg"></span>
+  <span id="crFootRun"></span>
 </div>
 
 <script>
@@ -935,8 +1076,16 @@ function crEsc(s) {
         if (p.end   && (!maxD || p.end   > maxD)) maxD = p.end;
       });
       seasons.sort();
-      $("windowLabel").textContent = fmtWindow(sd, ed) + " · " + progs.length
-        + " program" + (progs.length === 1 ? "" : "s") + " across " + rows.length + " sections";
+      $("windowLabel").textContent = fmtWindow(sd, ed);
+      /* The pills are computed, and only once the rows have landed — a count
+         of zero beside a spinner is a claim about the org rather than about
+         the load. The window line renders from the start, because a report
+         still fetching should still say which window it is fetching. */
+      $("crPills").innerHTML = [
+        progs.length + " program" + (progs.length === 1 ? "" : "s"),
+        rows.length + " section" + (rows.length === 1 ? "" : "s"),
+        seasons.length + " season" + (seasons.length === 1 ? "" : "s")
+      ].map(function (t) { return "<span>" + crEsc(t) + "</span>"; }).join("");
       $("wrap").hidden = false;
       period = null; periodB = null;
       render();
@@ -1295,12 +1444,13 @@ function crEsc(s) {
       if (rec !== null && Number.isFinite(rec)) { judged++; if (v[0] === "inband") inBand++; }
       return '<div class="tier" data-cr-tier="' + t + '" data-cr-tier-rec="' + (rec === null ? "" : Math.round(rec)) + '"'
         + ' data-cr-tier-band="' + v[0] + '">'
-        + '<div class="step" aria-hidden="true"><i></i></div>'
+        + '<div class="step" title="The pyramid: tier 1 is its base (community benefit), tier 4 its apex (individual benefit)."><i>' + t + '</i></div>'
         + '<div class="nm"><b>Tier ' + t + " · " + crEsc(T.name) + "</b><br><i>" + crEsc(T.eg)
         + " — " + a.n + " program" + (a.n === 1 ? "" : "s")
         + (a.costed < a.n ? " · " + a.costed + " costed" : "") + "</i></div>"
-        + '<div class="track"><div class="fillbar' + (under ? " under" : "") + '" style="width:' + w + '%"></div>'
-        + '<div class="tick" style="left:' + tick + '%" title="target ' + T.tgt + '%"></div></div>'
+        + '<div class="track" title="Recovery against this tier\u2019s band. The marker is the tier target, ' + T.tgt + '%.">'
+        + '<div class="fillbar' + (under ? " under" : "") + '" style="width:' + w + '%"></div>'
+        + '<div class="tick" style="left:' + tick + '%"><b>' + T.tgt + '%</b></div></div>'
         + '<div class="fig">' + (rec === null ? "<b>—</b> <span>not costed</span>"
             : '<b class="num">' + crPctText(rec) + '</b><br><em class="' + v[0] + '">' + v[1] + "</em>") + "</div></div>";
     }).join("");
@@ -1327,7 +1477,9 @@ function crEsc(s) {
     $("pyVerdict").innerHTML = pv;
 
     var untiered = d.rows.filter(function (r) { return !r.tier; }).length;
-    $("tiers").innerHTML = (any ? html : "")
+    /* The marker says what it is ON the bar; this says it once in words, for a
+       reader who has not hovered anything. Only where there IS a ladder. */
+    $("tiers").innerHTML = (any ? html + '<div class="tierlegend">The bar is what each tier recovered. The marker on it is that tier\u2019s target, and the step on the left is where the tier sits in the pyramid.</div>' : "")
       + (untiered ? '<p class="hint" style="margin:' + (any ? "10px 0 0" : "0") + '" data-cr-untiered="' + untiered + '">'
           + untiered + " program" + (untiered === 1 ? " has" : "s have") + " no tier yet, so "
           + (untiered === 1 ? "it is" : "they are") + " not in the ladder above. Set one in the Tier column."
@@ -1963,7 +2115,17 @@ function crEsc(s) {
   $("hideFree").addEventListener("change", function () { hideFree = this.checked; render(); });
   $("runBtn").addEventListener("click", load);
   $("printBtn").addEventListener("click", function () { window.print(); });
-  $("printStmt").addEventListener("click", function () { window.print(); });
+  /* The statement prints as a document of its own. The class is removed on
+     `afterprint` rather than left on the body: Chrome fires it for a cancelled
+     dialog too, and a body that stayed flagged would silently drop the KPI
+     strip from the NEXT print of the P&L. */
+  $("printStmt").addEventListener("click", function () {
+    document.body.classList.add("printing-statement");
+    window.print();
+  });
+  window.addEventListener("afterprint", function () {
+    document.body.classList.remove("printing-statement");
+  });
 
   /* SORT BY A COLUMN. A second click on the same column reverses it; a third
      column press starts that column at the direction its own data reads best
@@ -2221,8 +2383,12 @@ function crEsc(s) {
   });
 
   // ── boot ────────────────────────────────────────────────────────────
-  if (CFG.logoUrl) { $("orgLogo").src = CFG.logoUrl; $("orgLogo").hidden = false; }
-  $("orgTitle").textContent = (CFG.displayName || SLUG) + " · Cost Recovery";
+  if (CFG.logoUrl) { $("orgLogo").src = CFG.logoUrl; $("orgPlate").hidden = false; }
+  $("orgEyebrow").textContent = SLUG;
+  $("orgTitle").textContent = "Cost Recovery";
+  $("crFootOrg").textContent = (CFG.displayName || SLUG) + " — Cost Recovery";
+  $("crFootRun").textContent = "Run " + new Date().toLocaleString("en-US",
+    { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
   $("startDate").value = defaultStart();
   $("endDate").value   = todayISO();
   load();

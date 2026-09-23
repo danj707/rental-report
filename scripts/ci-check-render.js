@@ -3766,6 +3766,127 @@ const CASES = [
         { timeout: 20000 });
     } },
 
+  /* ── LEAVING COMPARE HAS TO TAKE THE COMPARE PICKER WITH IT ──────────
+        Dan: "Compare field doesn't clear if you move to another selection."
+        It was never cleared because it was never HIDDEN: renderPeriods has
+        always set `.hidden = !cmp`, and `.picks label { display: flex }` beat
+        the attribute — author styles beat the UA sheet outright, so any author
+        `display` silently disables `hidden`.
+
+        NO SOURCE ASSERTION CAN SEE THAT. The JS reads correctly and the
+        attribute really is set; what regressed is what the cascade resolves
+        the element to. So this reads the COMPUTED display, and it requires the
+        picker to have been SHOWN in compare mode first — without that half it
+        passes on a build where the control never appears at all. */
+  { name: "cost-recovery · leaving compare clears the compare picker",
+    path: "/{org}/cost-recovery",
+    needs: 'body[data-rc-crcmp-seen^="ok=1 "]',
+    act: async (page) => {
+      await page.waitForSelector('body[data-cr-seen*="mode=season"]', { timeout: 20000 });
+      const disp = () => page.evaluate(() =>
+        getComputedStyle(document.getElementById("periodBWrap")).display);
+      const atSeason = await disp();
+      await page.click('#modeSeg button[data-mode="compare"]');
+      await page.waitForFunction(() => /mode=compare/.test(document.body.getAttribute("data-cr-seen") || ""),
+        { timeout: 20000 });
+      const inCompare = await disp();
+      await page.click('#modeSeg button[data-mode="season"]');
+      await page.waitForFunction(() => /mode=season/.test(document.body.getAttribute("data-cr-seen") || ""),
+        { timeout: 20000 });
+      const backToSeason = await disp();
+      const ok = atSeason === "none" && inCompare !== "none" && backToSeason === "none";
+      await page.evaluate(t => document.body.setAttribute("data-rc-crcmp-seen", t),
+        (ok ? "ok=1 " : "ok=0 ") + "onOpen=" + atSeason
+        + " inCompare=" + inCompare + " afterLeaving=" + backToSeason);
+    } },
+
+  /* ── THE PRINTED STATEMENT, which had NO coverage at all — which is why it
+        shipped with the KPI strip on it and squeezed into the left 40% of the
+        sheet. Dan, with the PDF: "the printed/pdf version has the top metrics
+        bars and the page is very cut off."
+
+        NO SOURCE ASSERTION CAN SEE THIS. An @media print block reads perfectly
+        whichever way it is written, and the page is identical on screen; what
+        regressed is what a second, print-only cascade resolves to. So the case
+        emulates print media and reads the COMPUTED display and the measured
+        width of the statement against the page.
+
+        It clicks the report's own Print button rather than setting the class,
+        because the class is what that button is for and a case that sets it by
+        hand passes on a button wired to nothing. window.print is stubbed, or
+        the run blocks on a print dialog. */
+  { name: "cost-recovery · the statement prints alone, and fills the page",
+    path: "/{org}/cost-recovery",
+    needs: 'body[data-rc-crprint-seen^="ok=1 "]',
+    pre: async (page) => {
+      await page.evaluateOnNewDocument(() => { window.print = function () {}; });
+    },
+    act: async (page) => {
+      await page.waitForSelector('body[data-cr-seen*="mode=season"]', { timeout: 20000 });
+      await page.click('#viewTabs button[data-view="statement"]');
+      await page.waitForFunction(() => !document.getElementById("statementView").hidden,
+        { timeout: 20000 });
+      await page.click("#printStmt");
+      await page.emulateMediaType("print");
+      const m = await page.evaluate(() => {
+        const disp = (sel) => { const el = document.querySelector(sel);
+          return el ? getComputedStyle(el).display : "absent"; };
+        const st = document.querySelector("#statementView .st");
+        const body = document.body;
+        return {
+          flagged: body.classList.contains("printing-statement"),
+          kpis: disp(".sum-cards"), basis: disp(".basis"),
+          toolbar: disp(".toolbar"), tabs: disp(".tabs"), stmtbar: disp(".stmtbar"),
+          // The statement has to USE the page. It was capped at 780px inside a
+          // bordered card, which on a landscape sheet is the left 40%.
+          stWidth: Math.round(st.getBoundingClientRect().width),
+          pageWidth: Math.round(document.documentElement.clientWidth),
+          // …and the card chrome around it is screen furniture.
+          cardBorder: getComputedStyle(document.getElementById("statementView")).borderTopWidth,
+          // The masthead still prints — a page that has left the screen has to
+          // say whose it is — but its PILLS do not, because they describe the
+          // whole window rather than the period this statement is for.
+          banner: disp(".cr-banner"), pills: disp(".cr-pills"),
+        };
+      });
+      const fills = m.stWidth >= m.pageWidth * 0.9;
+      const ok = m.flagged && m.kpis === "none" && m.basis === "none"
+        && m.toolbar === "none" && m.tabs === "none" && m.stmtbar === "none"
+        && m.banner !== "none" && m.pills === "none"
+        && fills && parseFloat(m.cardBorder) === 0;
+      await page.evaluate(t => document.body.setAttribute("data-rc-crprint-seen", t),
+        (ok ? "ok=1 " : "ok=0 ") + "flagged=" + m.flagged
+        + " kpis=" + m.kpis + " basis=" + m.basis + " toolbar=" + m.toolbar
+        + " tabs=" + m.tabs + " stmtbar=" + m.stmtbar
+        + " banner=" + m.banner + " pills=" + m.pills
+        + " statement=" + m.stWidth + "px of " + m.pageWidth + "px (fills=" + fills + ")"
+        + " cardBorder=" + m.cardBorder);
+      await page.emulateMediaType(null);
+    } },
+
+  /* …and the P&L keeps its summary on paper. Hiding the strip outright is the
+     tempting one-line version of the fix above and it is wrong: on the P&L
+     those five figures ARE what somebody prints the page for. This is the
+     control that makes the case above about the statement rather than about
+     print. */
+  { name: "cost-recovery · printing the P&L keeps its summary",
+    path: "/{org}/cost-recovery",
+    needs: 'body[data-rc-crplprint-seen^="ok=1 "]',
+    act: async (page) => {
+      await page.waitForSelector('body[data-cr-seen*="mode=season"]', { timeout: 20000 });
+      await page.emulateMediaType("print");
+      const m = await page.evaluate(() => ({
+        flagged: document.body.classList.contains("printing-statement"),
+        kpis: getComputedStyle(document.querySelector(".sum-cards")).display,
+        toolbar: getComputedStyle(document.querySelector(".toolbar")).display,
+      }));
+      const ok = !m.flagged && m.kpis !== "none" && m.toolbar === "none";
+      await page.evaluate(t => document.body.setAttribute("data-rc-crplprint-seen", t),
+        (ok ? "ok=1 " : "ok=0 ") + "flagged=" + m.flagged
+        + " kpis=" + m.kpis + " toolbar=" + m.toolbar);
+      await page.emulateMediaType(null);
+    } },
+
   { name: "programs-schedule · six meetings, one section twice",
     path: "/{org}/programs-schedule",
     needs: "[data-ready='true'][data-ps-rows='6']" },

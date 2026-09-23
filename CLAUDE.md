@@ -8721,8 +8721,106 @@ the grid's eye redraws open, the visibility API flips, and it returns to hidden.
 93 specs run from `ci.yml`, 93 pass, 0 fail, 0 skipped. 17 `org landing` and 23
 `cost-recovery` render cases green.
 
+### SIX POLISH ITEMS, AND TWO OF THEM WERE THE CASCADE (2026-09-23)
+
+Dan, with a printed PDF and three screenshots: *"getting real close, looking
+good. some more polish."*
+
+**1. *"Make this report look like the others, right now it has a completely
+different look and feel."*** Shot side by side with Programs, the difference
+was structural rather than a matter of taste: this page put its **filters on
+the sand ground below the dark bar**, opened on a line of plain text where
+every other report opens on the pine→grass masthead, used segmented pill
+buttons where the others use an underlined tab strip, and carried no footer.
+The dark toolbar is two rows now and holds the period controls and the
+pickers; the masthead carries the org's mark on a white plate (a municipal
+seal on a dark band looks broken — the recorded ProgBanner rule), the eyebrow,
+the window and three computed pills; the view switch is a `.tabs` strip.
+
+**NOT ONE HOOK MOVED.** Every id and every `data-cr-*` attribute the 23 render
+cases key on is untouched, which is the whole point — *a restyle that moves a
+hook is indistinguishable from a regression.*
+
+**2. THE STATEMENT'S BUTTONS WERE `.exp`, WHICH IS A 20px SQUARE.** *"Slight
+misalignment on the print/pdf option."* The inline style widened them and set
+`padding: 6px 13px` and never touched `height: 20px`, so the text overflowed a
+20px box and sat off-centre against the note beside it. Their own class now:
+*a control that borrows a class built for a different shape inherits the
+dimension nobody remembered to override.*
+
+**3. THE PRINTED STATEMENT CARRIED THE KPI STRIP AND USED 40% OF THE SHEET.**
+Both halves were the same omission. `.sum-cards` and `.basis` live OUTSIDE the
+three view divs, so they printed on top of a document whose own bar promises
+*"the toolbar, the pickers and every input are left off the page"*; and the
+statement renders inside the ordinary `.card` plate at `max-width: 780px`, so
+on a landscape sheet it sat in the left 40% with a card border running the full
+width. `body.printing-statement` is set by the Print button and **removed on
+`afterprint`** — Chrome fires that for a cancelled dialog too, and a body left
+flagged would silently drop the strip from the next print of the P&L.
+
+**THE ONE-LINE VERSION OF THAT FIX IS WRONG, and there is a case that says so.**
+Hiding `.sum-cards` in `@media print` outright is tempting and costs the P&L
+the five figures somebody prints the page FOR. The control case is what makes
+the first case about the statement rather than about print.
+
+**4. THE BANDS WERE TWO UNLABELLED MARKS.** *"The left side bar has a strange
+grey box, and the black lines...what are those for?"* The box is the pyramid
+step — 13-to-54px of 15%-opacity pine with nothing in it, so four of them read
+as a rendering fault. It carries its tier number in real ink now and steps out
+as it descends. The black line is each tier's target, and an unlabelled 2px
+rule across a green bar reads as damage; it carries its own percentage, and a
+legend says both in words once, for a reader who has not hovered anything.
+
+**5. *"Compare field doesn't clear if you move to another selection."* IT WAS
+NEVER CLEARED, BECAUSE IT WAS NEVER HIDDEN.** `renderPeriods` has always set
+`$("periodBWrap").hidden = !cmp` — and `.picks label { display: flex }` beat
+it. That is not a specificity tie: **author styles beat the UA sheet outright**,
+so any author `display` on an element defeats its `hidden` attribute. One
+`[hidden] { display: none !important }` at the top of the sheet.
+
+*Generalise it: `hidden` is a UA-stylesheet default, not a property. Any page
+that styles `display` on a class an element also carries has silently disabled
+it, and the symptom is a control that "won't clear" rather than one that looks
+broken.*
+
+**6. *"The date range picker at the top feels redundant, no? If we're choosing
+a season, what is the date picker for?"*** It is not redundant and it read that
+way because nothing said what it was: the dates decide which programs are
+LOADED, and therefore which seasons the picker below can offer at all; the
+period then slices within them. They are labelled **Data from / Data to**, they
+sit in the same bar as the period controls, and both carry the sentence. **Not
+removed** — dropping them caps the report at whatever default we pick, and the
+season list is built from what is loaded.
+
+### Guards
+
+Two `ci-check-render.js` cases, and **the printed statement had no coverage at
+all**, which is why it shipped wrong: an `@media print` block reads perfectly
+whichever way it is written and the page is identical on screen, so the cases
+emulate print media and read the COMPUTED display plus the statement's measured
+width against the page. They click the report's own Print button rather than
+setting the class, or they pass on a button wired to nothing.
+Mutation-tested four ways, each failing the case that names it: the shipped
+print block restored, the statement left capped inside its card, the button no
+longer flagging the body, and the strip hidden on every print (which fails only
+the P&L control).
+
+**A SCREENSHOT SCARE THAT WAS THE HARNESS, ruled out rather than patched
+around.** The full-page shot showed the new masthead clipped, its rounded
+corners and eyebrow gone. Reproduced with `position: static` on the toolbar and
+the banner rendered perfectly — it is the **sticky** toolbar painting over the
+banner in a stitched full-page capture, which is also what a reader sees on
+purpose when they scroll. `programs.html`'s toolbar is sticky too. *Prove a
+layout fault against the same page with the suspect property removed before
+changing anything.*
+
 ### NOT DONE
 
+- **The content does not sit on a white plate** the way Programs' does. The
+  page is recognisably in-family without it (dark toolbar, masthead, tabs, sand
+  ground, white cards), and the plate is a layout change with no hook coverage.
+- **The tier legend is prose, not a key.** Two marks, two sentences; a legend
+  block for two things is more furniture than it saves.
 - **No seed.** Dan said he would toggle them, so neither report is switched on
   in code — `REPORT_VISIBILITY_SEEDS` is untouched.
 - **A third org is a one-line diff and a deploy**, which is the accepted cost of
