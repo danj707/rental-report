@@ -14483,7 +14483,12 @@ app.get("/:org/facility/api/permits", async (req, res) => {
 // Site tags for the permits.pdf route (permitLayout "siteTag"). Pure over the
 // posted rows and the permit map, so the spec can run it. One entry per
 // location + site, in natural site order; each lists its stays by check-in.
-function permitSiteTags(rows, byRes) {
+// `windowStart` (the export's first day, YYYY-MM-DD) drops a site whose ONLY
+// stays check out that morning: nobody arrives, so the tag would go up on a
+// site that is emptying. A turnover site keeps the leaving stay beside the
+// arriving one, as Douglas County's own mockup does (Sep 17-18 over Sep 18-20).
+// Omitted (a single row's chip), nothing is dropped — they asked for that tag.
+function permitSiteTags(rows, byRes, windowStart) {
   const norm = v => String(v == null ? "" : v).replace(/\s+/g, " ").trim();
   const addDays = (iso, n) => {
     const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ""));
@@ -14511,7 +14516,10 @@ function permitSiteTags(rows, byRes) {
     else { if (start < prev.start) prev.start = start; if (end > prev.end) prev.end = end; }
   }
   const cmp = (a, b) => String(a || "").localeCompare(String(b || ""), undefined, { numeric: true, sensitivity: "base" });
+  const first = /^\d{4}-\d{2}-\d{2}$/.test(String(windowStart || "")) ? String(windowStart) : "";
+  const leaving = st => !!first && st.start < first && st.end <= first;
   return Array.from(bySite.values())
+    .filter(t => !first || Array.from(t.stays.values()).some(st => !leaving(st)))
     .map(t => {
       const reservations = Array.from(t.stays.values())
         .sort((a, b) => (a.start < b.start ? -1 : a.start > b.start ? 1 : cmp(a.name, b.name)));
@@ -14568,9 +14576,10 @@ app.post("/:org/facility/permits.pdf", express.json({ limit: "2mb" }), async (re
     // (Day# and Days put the check-in and check-out either side of the row's
     // date), so a departure row and an arrival row of one booking are one line.
     if (fset.permitLayout === "siteTag") {
-      const tags = permitSiteTags(rows, byRes);
+      const tags = permitSiteTags(rows, byRes, req.body && req.body.windowStart);
       if (!tags.length) {
-        return res.status(404).type("text/plain").send("None of the rentals in this view have an issued permit.");
+        return res.status(404).type("text/plain").send(
+          "No site tags to print — every permitted stay in this view either has no issued permit or checks out on the first day.");
       }
       for (const t of tags) {
         t.qr = (fset.permitQr !== false && t.reservations.length === 1 && t.url)

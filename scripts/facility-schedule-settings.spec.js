@@ -133,8 +133,10 @@ ok(/permitLayout:\s*\{ kind: "enum", values: \["sheet", "siteTag"\], def: "sheet
    "permitLayout defaults to the full-page sheet — no other org's export changes");
 ok(/"facility-schedule:2026-09-23-douglas-tags"[\s\S]*permitLayout: "siteTag"/.test(seeds),
    "Douglas County gets site tags through a NEW seed key, not an edit to an applied one");
-ok(/permitLayout === "siteTag"[\s\S]*permitSiteTags\(rows, byRes\)[\s\S]*tagsToHtml/.test(pdf),
-   "permits.pdf prints site tags when the org chose them");
+ok(/permitLayout === "siteTag"[\s\S]*permitSiteTags\(rows, byRes, req\.body && req\.body\.windowStart\)[\s\S]*tagsToHtml/.test(pdf),
+   "permits.pdf prints site tags when the org chose them, passing the export's first day");
+ok(/if \(!Array\.isArray\(rows\) && loadedStart\) payload\.windowStart = loadedStart;/.test(page),
+   "the whole-view export sends its first day; a single row's chip does not");
 ok(pdf.indexOf('permitLayout === "siteTag"') < pdf.indexOf("arrivalOnly && Number(r.dayNum) > 1"),
    "site tags are built BEFORE the arrival-only skip — a stay that arrived before the window still occupies its site");
 const ta = server.indexOf("function permitSiteTags(");
@@ -165,6 +167,23 @@ if (permitSiteTags) {
      "a turnover site lists both stays, each folded back to its whole check-in → check-out");
   eq(t14.url, "", "a site with two stays carries no single permit link, so no QR");
   eq((tags[0] || {}).url, "u3", "a site with one stay keeps its permit link for the optional QR");
+  // windowStart = 9/18: Site 20's only stay checks out that morning, so no tag;
+  // Site 14 is a turnover and keeps the leaving stay, as Douglas's mockup does.
+  const withLeave = rows.concat([
+    { resId: "r1", site: "Site 20", location: L, date: "2026-09-18", dayNum: "3", days: "3" }]);
+  const w = guard(permitSiteTags, withLeave, P, "2026-09-18") || [];
+  eq(w.map(t => t.site), ["Site 01", "Site 14"],
+     "a site whose only stay checks out on the window's first day gets no tag");
+  eq(((w[1] || {}).reservations || []).map(r => r.name), ["James Baurley", "Karla Rodriguez"],
+     "…but a turnover site still lists the stay that is leaving");
+  eq((guard(permitSiteTags, withLeave, P) || []).map(t => t.site), ["Site 01", "Site 14", "Site 20"],
+     "no windowStart (a single row's chip) drops nothing");
+  const mid = guard(permitSiteTags, [
+    { resId: "r1", site: "Site 21", location: L, date: "2026-09-20", dayNum: "3", days: "3" }], P, "2026-09-18") || [];
+  eq(mid.map(t => t.site), ["Site 21"], "a stay that checks out LATER in the window still occupies its site");
+  const oneDay = guard(permitSiteTags, [
+    { resId: "r3", site: "Pavilion", location: L, date: "2026-09-18" }], P, "2026-09-18") || [];
+  eq(oneDay.map(t => t.site), ["Pavilion"], "a single-day booking ON the first day is an arrival, not a check-out");
   const nine = guard(permitSiteTags, [
     { resId: "r1", site: "Site 10", location: L, date: "2026-09-18" },
     { resId: "r2", site: "Site 9", location: L, date: "2026-09-18" }], P) || [];
