@@ -44,7 +44,7 @@ const openpdf = fs.readFileSync(path.join(ROOT, "public/open-pdf.js"), "utf8");
    DECISION: the three public customer pages, the retired reports and the QBR
    are deliberately off it, and a glob would quietly sweep them in. */
 const LAYER = ["cost-recovery", "court-utilization", "custom-report", "directors-report", "facilities",
-  "facility", "fasttrack", "gl", "historic", "instructor-payout", "lessons",
+  "facility", "fasttrack", "gl", "historic", "instructor-payout", "inventory", "lessons",
   "memberships", "opportunities", "products", "programs-schedule", "programs",
   "qoq", "roster", "users", "waitlist"];
 const pageSrc = Object.fromEntries(LAYER.map(n =>
