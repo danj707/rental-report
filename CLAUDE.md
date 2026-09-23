@@ -8375,10 +8375,10 @@ it says so rather than rendering a comparison with nothing in it.
   two FYs is ~35–45s cold and inside the 60s first try. **Apex would time out**,
   and apex is already parked on card 17295 — the report ships hidden, so only
   orgs Dan switches on are affected, and the reader can narrow the window.
-- **Costs do not reach the PDF, the emailed report or a saved view.** This
-  report has no PDF route and is not in `EMAIL_SUBSCRIBABLE_REPORTS`; the CSV is
-  the export and it honours the mode, the period, the tier filter and the
-  hide-blank toggle.
+- **~~Costs do not reach the PDF~~ — REVERSED 2026-09-23, there is a PDF route
+  now** (read *"THE PDF BUTTON WOULD HAVE DONE NOTHING IN THE IFRAME"* below).
+  The report is still not in `EMAIL_SUBSCRIBABLE_REPORTS`, and the CSV still
+  honours the mode, the period, the tier filter and the hide-blank toggle.
 - **No per-org cost categories for the PROGRAM table.** The five (instructors,
   staff, supplies, facility, other) are fixed, because a per-org list makes two
   orgs' reports incomparable and turns a roll-up into a union of whatever anyone
@@ -8682,11 +8682,18 @@ those five fields were typed, summed and never read apart again), overhead by
 account, the surplus direct and after overhead, cost recovery against the
 blended target, and a tier-by-tier reading against the pyramid.
 
-- **A VIEW, NOT A PDF ROUTE.** The page already holds every figure and a print
-  stylesheet already strips the chrome, so *"Print / save as PDF"* is a button the
-  reader's own browser answers. A Puppeteer route would need its own endpoint, a
-  `#report-ready` marker and every filter written into the URL, and buys the
-  reader nothing they cannot already get.
+- **~~A VIEW, NOT A PDF ROUTE~~ — WRONG, and REVERSED on 2026-09-23.** The
+  reasoning was that the page holds every figure and a print stylesheet already
+  strips the chrome, so *"Print / save as PDF"* is a button the reader's own
+  browser answers. **It assumed the reader's browser can open a print dialog,
+  and inside a sandboxed iframe it cannot** — the modal is blocked with no
+  error, so the button did nothing at all. The list of what a Puppeteer route
+  would cost was accurate (its own endpoint, a `#report-ready` marker, and every
+  filter written into the URL) and all three were paid; what was wrong is the
+  last clause, *"buys the reader nothing they cannot already get"*. It buys them
+  the only thing that works where the report is actually read.
+  *Generalise it: before deciding a feature is redundant with the browser's own,
+  check the browser is allowed to do it here.*
 - **THE ASSERTION IS THAT IT TIES.** Every figure comes from the same reducers
   the screen uses — `totals`, `crCostByCat`, `crLedgerBreakdown` — so the render
   case requires the statement's stamp AND the strip's to agree on the same four
@@ -8737,16 +8744,549 @@ does not apply has not tested anything, and it reads as a hole* — the runner
 asserts the file actually changed and counts the anchor's occurrences against
 what it expects.
 
+### THE PILOT IS TWO ORGS, AND THAT IS A SECOND GATE (2026-09-23)
+
+Dan, the morning after the merge: *"add these two reports to shrewsbury and
+windham's org dashboard pages only, but keep them hidden, i'll toggle them
+on."*
+
+**HALF THE ASK WAS ALREADY DONE AND HALF COULD NOT HAPPEN AT ALL, and the two
+reports needed opposite work.** Inventory is pushed to every org's dashboard
+behind `reportHiddenForOrg` and has a hand-written row in the admin grid, so
+its eye already existed for both orgs. **Cost Recovery had no eye anywhere**:
+`allAvailable` is `REPORT_TYPES` filtered on `org[r]?.mbUuid || SHARED_UUIDS[r]`,
+and the whole point of that report is that it has **no card of its own** — it
+reads card 17295 through the Programs feed. So it was in `REPORT_TYPES`, in
+`DEFAULT_HIDDEN_REPORTS`, in `REPORT_DIRECTORY` and in both `reportMeta` maps,
+and still could not be surfaced for anybody.
+
+*Generalise it: a report with no `SHARED_UUIDS` entry is invisible to every
+availability filter on the platform, however completely it is registered
+everywhere else.*
+
+**TWO GATES, ANSWERING DIFFERENT QUESTIONS.** `COST_RECOVERY_ORGS` decides
+which orgs get an EYE; `DEFAULT_HIDDEN_REPORTS` decides what that eye starts
+on. Adding a slug surfaces the toggle and changes nothing an org can see. Same
+shape as `LESSONS_REPORT_ORGS` and `RENTAL_CALENDAR_ORGS`, and it does **not**
+contradict the standing *"he turns it on one org at a time from the admin
+grid"* rule — that rule is about never editing `DEFAULT_HIDDEN_REPORTS` or
+`MAY_BE_VISIBLE`, which are untouched.
+
+**THE EYE STILL DOES NOT LOCK THE PAGE.** `/:org/cost-recovery` gates on the
+Programs card and stays open for all 29 orgs, so Dan can click his own admin
+card for an org he has not switched on — the rule the first Opportunities build
+got wrong. The spec asserts the page route reads **neither** gate, and the live
+half catches that mutation independently with a 404 on a fixture org.
+
+**INVENTORY IS DELIBERATELY NOT SCOPED THE SAME WAY**, and refusing to honour
+*"only"* there is the load-bearing decision rather than an oversight. Its seed
+`inventory:2026-09-22-madison` is keyed on Madison's **orgId** because Madison
+is not onboarded here; under a slug allowlist that seed would apply, mark
+itself, and the card would still never render — silently undoing the report
+#246 was built for, with no symptom. A slug allowlist would also have had to
+guess the name Madison is given when it is added, which is the `town-of-danvers`
+trap one report over. The spec fails if an `INVENTORY_ORGS` set appears.
+
+**FOUR SURFACES, and each reads correctly alone** — which is why this needed
+assertions rather than a diff: the org dashboard's push, the admin grid's card,
+`visibleReportsForOrg` (what the update composer targets) and
+`/api/org-visibility/:slug` (what rec-dashboard links from). The last one is
+gated on the pilot set for the reason that route already records: a card the
+org page never draws, reported visible, is the `town-of-shrewsbury` 404 in a
+new costume.
+
+### Guards
+
+`scripts/cost-recovery.spec.js` 216 → **227 assertions**, in CI.
+**Mutation-tested ten ways, all ten caught by an assertion that NAMES the
+defect**: the pilot widened to a third org, the report shipped visible, the
+dashboard push losing **either** gate (two separate mutations — one alone
+passes on the other's assertion), the admin grid block ungated, the grid
+reading raw list membership instead of the inverted default, the PAGE gated on
+the pilot set, the visibility API reporting it for every org, that entry
+dropped, and inventory scoped to a slug allowlist.
+
+**Verified live rather than asserted**, because no source assertion can see
+four code paths agreeing: a real boot on a scratch store, then per org — the
+card absent while hidden, the eye present for shrewsbury and windham and
+**absent for watertown**, the visibility API answering for the pilot orgs and
+omitting the others, and `/watertown/cost-recovery` still serving **200** with
+the eye nowhere. Toggled on for both pilot orgs and back off: the card appears,
+the grid's eye redraws open, the visibility API flips, and it returns to hidden.
+
+93 specs run from `ci.yml`, 93 pass, 0 fail, 0 skipped. 17 `org landing` and 23
+`cost-recovery` render cases green.
+
+### SIX POLISH ITEMS, AND TWO OF THEM WERE THE CASCADE (2026-09-23)
+
+Dan, with a printed PDF and three screenshots: *"getting real close, looking
+good. some more polish."*
+
+**1. *"Make this report look like the others, right now it has a completely
+different look and feel."*** Shot side by side with Programs, the difference
+was structural rather than a matter of taste: this page put its **filters on
+the sand ground below the dark bar**, opened on a line of plain text where
+every other report opens on the pine→grass masthead, used segmented pill
+buttons where the others use an underlined tab strip, and carried no footer.
+The dark toolbar is two rows now and holds the period controls and the
+pickers; the masthead carries the org's mark on a white plate (a municipal
+seal on a dark band looks broken — the recorded ProgBanner rule), the eyebrow,
+the window and three computed pills; the view switch is a `.tabs` strip.
+
+**NOT ONE HOOK MOVED.** Every id and every `data-cr-*` attribute the 23 render
+cases key on is untouched, which is the whole point — *a restyle that moves a
+hook is indistinguishable from a regression.*
+
+**2. THE STATEMENT'S BUTTONS WERE `.exp`, WHICH IS A 20px SQUARE.** *"Slight
+misalignment on the print/pdf option."* The inline style widened them and set
+`padding: 6px 13px` and never touched `height: 20px`, so the text overflowed a
+20px box and sat off-centre against the note beside it. Their own class now:
+*a control that borrows a class built for a different shape inherits the
+dimension nobody remembered to override.*
+
+**3. THE PRINTED STATEMENT CARRIED THE KPI STRIP AND USED 40% OF THE SHEET.**
+Both halves were the same omission. `.sum-cards` and `.basis` live OUTSIDE the
+three view divs, so they printed on top of a document whose own bar promises
+*"the toolbar, the pickers and every input are left off the page"*; and the
+statement renders inside the ordinary `.card` plate at `max-width: 780px`, so
+on a landscape sheet it sat in the left 40% with a card border running the full
+width. `body.printing-statement` is set by the Print button and **removed on
+`afterprint`** — Chrome fires that for a cancelled dialog too, and a body left
+flagged would silently drop the strip from the next print of the P&L.
+
+**THE ONE-LINE VERSION OF THAT FIX IS WRONG, and there is a case that says so.**
+Hiding `.sum-cards` in `@media print` outright is tempting and costs the P&L
+the five figures somebody prints the page FOR. The control case is what makes
+the first case about the statement rather than about print.
+
+**4. THE BANDS WERE TWO UNLABELLED MARKS.** *"The left side bar has a strange
+grey box, and the black lines...what are those for?"* The box is the pyramid
+step — 13-to-54px of 15%-opacity pine with nothing in it, so four of them read
+as a rendering fault. It carries its tier number in real ink now and steps out
+as it descends. The black line is each tier's target, and an unlabelled 2px
+rule across a green bar reads as damage; it carries its own percentage, and a
+legend says both in words once, for a reader who has not hovered anything.
+
+**5. *"Compare field doesn't clear if you move to another selection."* IT WAS
+NEVER CLEARED, BECAUSE IT WAS NEVER HIDDEN.** `renderPeriods` has always set
+`$("periodBWrap").hidden = !cmp` — and `.picks label { display: flex }` beat
+it. That is not a specificity tie: **author styles beat the UA sheet outright**,
+so any author `display` on an element defeats its `hidden` attribute. One
+`[hidden] { display: none !important }` at the top of the sheet.
+
+*Generalise it: `hidden` is a UA-stylesheet default, not a property. Any page
+that styles `display` on a class an element also carries has silently disabled
+it, and the symptom is a control that "won't clear" rather than one that looks
+broken.*
+
+**6. *"The date range picker at the top feels redundant, no? If we're choosing
+a season, what is the date picker for?"*** It is not redundant and it read that
+way because nothing said what it was: the dates decide which programs are
+LOADED, and therefore which seasons the picker below can offer at all; the
+period then slices within them. They are labelled **Data from / Data to**, they
+sit in the same bar as the period controls, and both carry the sentence. **Not
+removed** — dropping them caps the report at whatever default we pick, and the
+season list is built from what is loaded.
+
+### Guards
+
+Two `ci-check-render.js` cases, and **the printed statement had no coverage at
+all**, which is why it shipped wrong: an `@media print` block reads perfectly
+whichever way it is written and the page is identical on screen, so the cases
+emulate print media and read the COMPUTED display plus the statement's measured
+width against the page. They click the report's own Print button rather than
+setting the class, or they pass on a button wired to nothing.
+Mutation-tested four ways, each failing the case that names it: the shipped
+print block restored, the statement left capped inside its card, the button no
+longer flagging the body, and the strip hidden on every print (which fails only
+the P&L control).
+
+**A SCREENSHOT SCARE THAT WAS THE HARNESS, ruled out rather than patched
+around.** The full-page shot showed the new masthead clipped, its rounded
+corners and eyebrow gone. Reproduced with `position: static` on the toolbar and
+the banner rendered perfectly — it is the **sticky** toolbar painting over the
+banner in a stitched full-page capture, which is also what a reader sees on
+purpose when they scroll. `programs.html`'s toolbar is sticky too. *Prove a
+layout fault against the same page with the suspect property removed before
+changing anything.*
+
 ### NOT DONE
 
-- **No PDF route and no email subscription**, unchanged. The statement prints
-  from the browser; the two CSVs are the file exports.
+- **The content does not sit on a white plate** the way Programs' does. The
+  page is recognisably in-family without it (dark toolbar, masthead, tabs, sand
+  ground, white cards), and the plate is a layout change with no hook coverage.
+- **The tier legend is prose, not a key.** Two marks, two sentences; a legend
+  block for two things is more furniture than it saves.
+- **No seed.** Dan said he would toggle them, so neither report is switched on
+  in code — `REPORT_VISIBILITY_SEEDS` is untouched.
+- **A third org is a one-line diff and a deploy**, which is the accepted cost of
+  reading *"only"* literally. If that becomes annoying, the alternative is the
+  Opportunities/Inventory shape: an eye on all 29 grids, still hidden.
+- **Toggling cost-recovery for a NON-pilot org is accepted by the API and
+  inert.** `POST /api/admin/toggle-report` takes it because it is in
+  `REPORT_TYPES`, and the store entry then changes nothing, because every
+  reader gates on the pilot set. Refusing it is the opposite mistake already
+  recorded for the custom reports — a state the platform can be in and cannot
+  be moved out of through its own API.
+- **No email subscription**, unchanged — the report is not in
+  `EMAIL_SUBSCRIBABLE_REPORTS`. (There IS a PDF route now; see the section
+  below.)
 - **The amber surplus is unproven in a browser**, for the fixture reason above.
   A period that turns a profit would show it; inventing one to paint a tile is a
   fixture written for a test.
 - **Sorting is not in the URL.** Which column you sorted by is not part of the
   question the report answers, so it is not shareable — the same line the tier
   filter draws.
+
+### FOUR THINGS DAN COULD SEE AND NO ASSERTION COULD (2026-09-23)
+
+Dan, with a screenshot of the toolbar mid-load and an exported PDF: *"report
+width doesn't match any of the other reports, should be consistent / loading
+programs bar doesn't seem right / pdf export page 1 is blank"*, then *"if we're
+selecting a season, then the cost recovery is applying to the season, not the
+dates at the top, no? I'm not loving the date range selector at the top tbh. No
+one wants to run cost recovery across a date range — it's a season, quarter,
+etc."*, then *"why is it asking me to add this, should be on Shrews and Windham
+automatically."*
+
+**EVERY ONE OF THE FIVE WAS INVISIBLE TO THE 297 ASSERTIONS AND THE 31 RENDER
+CASES ALREADY ON THIS REPORT**, and the reasons are five different shapes of the
+same thing: they are about what a reader SEES, and the page computed everything
+correctly.
+
+### THE WIDTH: a convention that is unanimous and was not written down
+
+Every other report puts its content on a white plate — `max-width: 1400px;
+margin: 16px auto; padding: 24px 28px; background: #fff; box-shadow: …` — under
+three different class names (`.report` on programs/gl/memberships/facility/
+fasttrack, `.dash` on users, `.page` on waitlist). Cost Recovery's `.wrap` was
+`padding: 0 20px 10px` and ran edge to edge on the sand.
+
+**MY OWN NOT-DONE LIST ALREADY NAMED IT** — *"The content does not sit on a white
+plate the way Programs' does… the plate is a layout change with no hook
+coverage."* Written down as a deliberate omission, and it is the first thing Dan
+said. *A known gap recorded in a NOT DONE list is still a gap, and the reader
+does not read the list.*
+
+**The spec pins it against a REAL SIBLING**, not against the three literals:
+`programs.html`'s own `.page` is re-read and required to carry the same three
+values, so the day the convention moves, the two move together or the guard
+fails. The render case measures the COMPUTED box — capped, centred, opaque,
+lifted, with the masthead inside it — because a stylesheet reads plausibly
+either way.
+
+### THE LOADING BAR: the recorded unit slip, one helper over
+
+The bar crept along while the clock beside it read **"0s"**. `loaderFmtSecs`
+takes MILLISECONDS and divides by 1000 itself; the page divided by 1000 first,
+so `fmtSecs(40)` is `Math.round(40/1000)` = **0** — and it reads 0s for the
+first eight minutes of every load. A bar that advances against a timer that
+never moves reads as stalled, which is exactly what Dan saw.
+
+**THE SWEEP THAT EXISTS FOR THIS COVERED `loaderProgress` AND NOT `loaderFmtSecs`.**
+That sweep was written after the *same slip* on the other vanilla bar
+(`programs-schedule.html`, the `NaN` incident). *A guard that names one of two
+helpers taking the same unit is not a guard against the unit.* It covers both
+now, and the mutation fails reading the page's own name.
+
+The hand-rolled *"· usually about Ns"* went with it: it is `loaderEstimateNote`
+now, so the sentence has one copy and the no-history guard (basis `default`
+claims nothing) cannot be forgotten by the second person to write it.
+
+### THE BLANK PAGE ONE: a .card rule made the document atomic
+
+`#statementView` is a `.card`, and print gives every `.card`
+`break-inside: avoid`. So the statement was **atomic**: it could not fit under
+the ~60pt masthead, the whole document jumped to page two, and page one printed
+a masthead and a footer and nothing else.
+
+Two halves, and each fixes the other's remainder:
+
+- **The masthead comes off the printed statement.** The statement carries its
+  own head — *"<Org> · Cost recovery statement"* with the PERIOD it covers — so
+  the banner repeated the org, near-repeated the title, and printed the **DATA
+  WINDOW** beside the statement's own period: two different ranges on one
+  document somebody files.
+- **A document has to be allowed to flow.** `break-inside: auto` on the
+  statement, with `avoid` kept on its own tables and `break-after: avoid` on its
+  headings, so a table still never splits and a heading never strands.
+
+**TWO RENDER CASES WERE PINNING THE BUG AS THE REQUIREMENT** — both asserted
+`banner !== "none"`, with a comment explaining why the masthead must print.
+Third instance of this exact shape (`report-settings.spec.js` requiring
+`disabled` on the gear; the fee worksheet priced off `displayRows`). Both were
+**reversed with the reasoning in the assertion**, and the P&L control case —
+which now requires the banner to SURVIVE there — is what keeps this a statement
+rule rather than a print rule.
+
+Measured, against Shrewsbury's real data: **2 pages with page 1 blank → 1 page,
+content from the top.**
+
+### AND THE FOOTER NAMED A DIFFERENT REPORT
+
+Every Cost Recovery PDF carried **"rec.us — Facility Rental Schedule"**.
+`reportLabel`'s CASE ladder ends in that literal, and a report with no branch of
+its own falls all the way through. The `CUSTOM_REPORTS` lookup at the top of that
+ladder exists because the same thing happened to the four data reports, with a
+comment saying so — and the fix was made lookup-shaped for them and left as a
+ladder for everyone else.
+
+The last resort is `REPORT_DIRECTORY` now, which already held *"Cost Recovery"*.
+**The overrides above it stay**, because they are not all redundant: `historic`
+is genuinely named differently in the ladder (*"Facility Reservations by Date"*)
+than in the directory, so a blanket swap would silently rename another report's
+footer.
+
+### THE LABEL WAS THE DEFECT, AND THE CONTROL WAS IN THE WAY
+
+Dan's screenshot: **Fall '26** picked, over a masthead reading
+**Jul 1, 2025 – Sep 23, 2026**. A sub-line under the report title is read as
+what the report covers, and it was naming the FETCH. Same shape as *"NET
+REVENUE"* sitting lifetime beside a period figure on the Programs summary — the
+arithmetic was right and the label was the bug.
+
+The masthead is the PERIOD now (both, in compare mode), set from `render()`
+because that is the only place that knows which period is live. The window it was
+fetched over moves to the footer, beside which org and which run.
+
+**AND THE DATE PICKERS STOP LEADING THE PAGE.** I defended them once already, in
+a comment quoting his earlier *"the date range picker at the top feels redundant,
+no?"* — he has now said it twice, which is his decision. They are not deleted,
+because they do something structural: they decide which programs are FETCHED,
+and therefore which seasons the picker can offer at all, so removing them caps
+the report at whatever default we pick. They are **demoted** to a shut
+disclosure at the end of the second row that states the window it holds, with
+both inputs still in the DOM so the URL seeding, the PDF and every deep-link
+guard keep working.
+
+*Generalise it: when a control cannot be removed but is answering the wrong
+question, the fix is its ALTITUDE, not its existence.*
+
+### "WHY IS IT ASKING ME TO ADD THIS"
+
+The admin dashboard's **+ Add report** dialog offered Cost Recovery and then
+refused itself: *"Could not find a valid UUID for cost-recovery."*
+
+That dialog builds its list as *REPORT_TYPES minus NON_ADDABLE minus anything
+that already has a uuid* — so a report with **no card of its own** reads as
+PERMANENTLY MISSING for all 29 orgs. It reads the Programs card through the
+Programs feed; there is no uuid to write. `qoq` is the same shape and was already
+in `NON_ADDABLE_REPORTS`; this now is too.
+
+**IT CHANGES THE DIALOG AND NOTHING ELSE**, which is why it is safe: every other
+reader of that Set also requires `mbUuid || SHARED_UUIDS[r]`, which this report
+already fails — and its two pilot orgs get it by being **PUSHED** onto their
+dashboard, not filtered in. Verified on a real boot: **0 of 29 orgs** still
+offered it in the dialog, the eye present for shrewsbury and windham and absent
+for watertown.
+
+### Guards
+
+`cost-recovery.spec.js` 270 → **297 assertions**, in CI. **Mutation-tested
+sixteen ways, all sixteen caught by an assertion that NAMES the defect**: the
+banner back on the printed statement and on the `?_print` render, the statement
+atomic again, a table allowed to split, the plate narrowed off-convention, the
+banner back outside the plate, the plate printed as a plate, `reportLabel` back
+to the literal, the masthead back to the data window, compare naming only one
+period, the window dropped from the footer, the dates back at the front of the
+toolbar, the disclosure open by default, `[hidden]` no longer winning,
+cost-recovery addable again, and the pilot push removed.
+
+`report-loader.spec.js` 67 → **68**, and the new assertion fails reading
+`cost-recovery.html: loaderFmtSecs is fed MILLISECONDS — dividing by 1000 first
+prints 0s for the first eight minutes`, which is Dan's screenshot in the
+assertion's own words.
+
+**Two new `ci-check-render` cases, both browser-mutation-tested and each failing
+EXACTLY the case that names it** while the other thirty keep passing: the plate
+reverted to edge-to-edge, and the masthead back to the fetch window — that one
+reproduces the screenshot verbatim,
+`sub="Jul 1, 2025 – Sep 23, 2026" sel="Fall '26"`.
+
+**Proven end to end against production data**, on a local boot with prewarm
+skipped: the statement PDF **200, `application/pdf`, 1 page** (was 2 with the
+first blank), footer *"rec.us — Cost Recovery"*, and the token redacted in both
+`[pdf]` log lines. 93 specs pass, 0 fail, 0 skipped.
+
+### NOT DONE
+
+- **The disclosure is not remembered.** Open it, run a report, and it stays open
+  for that session only — it is not in the URL and not in localStorage, because
+  which controls you had expanded is not part of the question the report answers.
+- **The data window still has to be a window.** A period-first version would ask
+  Rec for "every program in Fall '26" directly, which needs the season on the
+  card rather than a date range; that is a card change, not a layout one.
+
+## THE PDF BUTTON WOULD HAVE DONE NOTHING IN THE IFRAME (2026-09-23)
+
+Dan, before clicking anything: *"don't forget about the pdf printing issue for
+reports inside an iframe sandbox. we had to adjust the way pdf's print (check
+the facility rental schedule or gl code report as an example of how we
+implemented that, it should be written into your memory). I suspect the way
+you've implemented printing or pdfs here in this cost recovery report won't
+work."*
+
+**He is right, and it is worse than he suspected: there was no PDF at all.**
+Both buttons — the toolbar's and the statement's — called `window.print()`, and
+**a report page runs inside a sandboxed iframe where a modal the frame opens is
+blocked with no error.** So the control did nothing, silently, which is the
+failure mode this file already records for a beacon that 404s.
+
+### THE URL IS THE ONLY CHANNEL, WHICH IS WHY A ROUTE ALONE WAS WORTH NOTHING
+
+`generatePdf` drives Puppeteer at `/:org/:report?_print=1&…` in a browser that
+has **never seen the reader's session and has an empty localStorage**. Every
+piece of this report's state — the mode, the period, the compare period, the
+tier filter, the two hide toggles and **which of the three views is open** —
+was in-memory only. So wiring the route first would have produced a PDF of the
+report's DEFAULT view every time, on a page whose whole point is the period you
+chose.
+
+Nine values now ride the query string, read at boot and written back with
+`history.replaceState`, and they clear the four gates this file keeps writing
+down: `getParams`-equivalent parsing here, the page's own state, the client
+export paths, and **`generatePdf`'s forward list** — the gate `gl_codes`,
+`refunds`, `pii` and `sites` each failed while their authors were reading the
+comment about the last one.
+
+- **`hide_blank` and `hide_free` ride on PRESENCE, not truthiness.** Both
+  default OFF, so `"0"` has to survive as a real answer — folded into the
+  truthy loop, an explicit *"no, show them"* is dropped and the render falls
+  back to the default. Same rule `pii` needed twice.
+- **The route needed no server work.** `/:org/:report/api/pdf` already serves
+  any report in `REPORT_TYPES`, and `reportLabel`'s ladder already names this
+  one, so the whole server change is six lines of forwarding.
+
+### TWO REAL BUGS THE PRINT RENDER CASE FOUND, AND NOTHING ELSE COULD HAVE
+
+Both were in code that reads perfectly:
+
+- **`view` was parsed from the URL and never APPLIED.** The markup opens on the
+  P&L, so `?view=statement` — which is exactly what the Statement PDF requests
+  — rendered the P&L under a statement's filename. The case measured
+  `statementShown=false`.
+- **`#report-ready` was never stamped on a view switch**, because `setView`
+  flips the three view divs and re-renders only the one it opens; it does not
+  call `render()`. So the PDF route waited its **full 120 seconds** and then
+  failed. The fix is ordering — render first, then switch — and it was found by
+  the case timing out.
+
+### THE WINDOW WAS THE FIFTH THING, AND IT FAILED THE SAME GATE
+
+Found by driving the real route rather than by reading the diff, which is the
+only reason it was found at all. **`syncUrl` has always WRITTEN
+`start_date`/`end_date` to the URL and the page never read them back** — the
+inputs were seeded from `defaultStart()` / `todayISO()` unconditionally. So a
+shared link opened on the default two fiscal years whatever it said, and **every
+PDF captured that window however narrowly the reader had scoped the page**.
+
+Gates 1, 2 and 4 passed and gate 3 — the page reading it — failed. That is the
+exact shape `gl_codes`, `refunds`, `pii` and `sites` each took, and it is worth
+saying that the harness built for those four cannot see this one: it derives its
+filter list from `getParams()`, and this page is vanilla JS with no `getParams`
+at all.
+
+**VALIDATED, never trusted.** Anything that is not `YYYY-MM-DD` falls back. A
+`date` input refuses a malformed value and comes back **EMPTY**, and an empty
+window asks Metabase for nothing and draws a report with no programs in it —
+which reads as an org that runs none. The pattern is anchored at both ends, or
+`2024-07-01junk` is accepted.
+
+**Only the INPUT can see it in a browser**: the stub answers whatever window it
+is asked for, so a case keyed on the rows renders identically either way.
+
+### THE PDF LOG HAD BEEN PRINTING THE ORG'S ACCESS TOKEN — platform-wide
+
+Also found by driving the route. `generatePdf` logged the URL twice, sixty
+lines apart:
+
+```
+[pdf] Generating for shrewsbury/cost-recovery: …&token=<the real one>  ← raw
+[pdf] navigating to …&token=***                                  ← redacted
+```
+
+So somebody decided that token does not belong in the log and fixed one of the
+two call sites. **This is not about cost recovery** — it is every PDF this
+platform has ever generated, for every org, and that token is the only thing
+standing in front of every report that org has. One `redactToken` now, because
+two copies is how one of them stopped redacting. The guard lives in
+`cost-recovery.spec.js` only because that spec already lifts `generatePdf`.
+
+**And it was a real leak into a real log**, not a theoretical one: the line above
+is copied from this sandbox's own boot while proving the PDF route works.
+
+**And the first load was discarding its own `?period=`.** The load branch
+cleared `period`/`periodB` unconditionally so `renderPeriods` could pick the
+busiest period after the dates move — right on a re-run, and wrong on the one
+load where a link or a PDF request has just told it which period to open.
+Gated on `!firstLoad`.
+
+### A DEAD BUTTON IS WORSE THAN A MISSING ONE
+
+`openPdf()` falls back to `window.print()` when `window.openReportPdf` is
+absent. That is not defensive decoration: the helper lives in
+`public/open-pdf.js`, and a page that failed to load it would otherwise carry a
+button that does nothing at all — which is the state this whole section exists
+to fix. **Print stays beside PDF** for the same reason it does on every other
+report: standing alone in its own tab, the reader's own print dialog is the
+faster path, and it is the only one that works if the PDF route is down.
+
+**`openReportPdf` must be called STRAIGHT from the click handler.** Behind an
+`await` or a `.then()` the user gesture is spent and the popup is blocked —
+recorded already, and the reason `pdfUrl()` builds its string synchronously
+rather than asking the server anything first.
+
+### Guards
+
+`scripts/cost-recovery.spec.js` 227 → **270 assertions**, in CI, which LIFTS
+AND RUNS `generatePdf`'s query builder — a render case at `?_print=1&period=…`
+proves the PAGE reads the parameter and says nothing about whether the SERVER
+sends it, which is exactly how all four earlier instances shipped.
+
+**Mutation-tested, all failing by an assertion that names the defect**: the
+button back on `window.print()` (the bug as Dan flagged it), the PDF URL
+dropping the on-screen filters, the two booleans folded into the truthy loop,
+the URL's view never applied (so a statement PDF captures the P&L),
+`?_print=1` never stamping `#report-ready`, the print render keeping its
+chrome, **the window never read back from the URL** (the fifth gate above),
+`urlDate` dropping its validation, the date pattern unanchored, `syncUrl` no
+longer writing the window, and a `[pdf]` log line printing the raw URL.
+
+**ONE SURVIVOR IS GENUINELY BENIGN and is recorded as such rather than dressed
+up as caught.** Making the Statement button ask for no view (`openPdf(null)`)
+changes nothing, because `#pdfStmt` only exists INSIDE `#statementView` — the
+current `view` is always `"statement"` when that button is clickable, so both
+spellings build the same URL. *A mutation that cannot reproduce a bug has not
+tested the guard*, and the explicit argument is kept because it stops being a
+no-op the day that button is rendered anywhere else.
+
+**The truthy-loop mutation is caught by a `[source]`-labelled assertion**, and
+that is named rather than implied: `"0"` is truthy in JS, so a VALUE test over
+the built query string cannot separate the two implementations — only reading
+the forwarding code can.
+
+Six `ci-check-render.js` cases, because none of this is visible in source: the
+statement printing alone and filling the page, the P&L keeping its summary,
+leaving compare clearing the compare picker, the PDF button opening a popup
+carrying the view, the print render being ready, bare, and honouring the view it
+was asked for, and the window coming from the URL while a malformed one does not.
+
+**THE SECOND NAVIGATION IN A CASE MUST KEEP THE TOKEN.** That last case drives
+the same page twice and the first draft did `u.search = "?start_date=…"`, which
+drops the `?token=` the harness appended — so the org-token middleware 404s the
+second load and the case fails **waiting 25 seconds for `#startDate`**, which
+reads as the page being broken. Overwrite the parameters you mean and keep the
+rest.
+
+### PROVEN END TO END, against production data
+
+The route was driven rather than asserted, on a local boot with prewarm skipped:
+`GET /shrewsbury/cost-recovery/api/pdf?view=statement` → **HTTP 200,
+`application/pdf`, 41,824 bytes beginning `%PDF-`, in 43.1s** over Shrewsbury's
+real Programs feed. That is inside the route's 60s first try and it is the
+measurement that says the two-fiscal-year default window is affordable here.
+
+
 
 ## Working preferences (from Dan, dan@rec.us)
 

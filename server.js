@@ -2987,7 +2987,16 @@ const AMENITY_TAGS = {
 
 // Report types that are valid system-wide but should NOT be offered in the
 // dashboard "+ Add report" flow (e.g. not yet ready for self-serve onboarding).
-const NON_ADDABLE_REPORTS = new Set(["program-demographics", "retention", "annual-report", "section-detail", "qoq", "checkins", "program-checkins", "selfservice", "programs-monthly"]);
+// `cost-recovery` is here for the same reason `qoq` is: it has NO CARD OF ITS
+// OWN. It reads the Programs card through the Programs feed, so the "+ Add
+// report" dialog -- which exists to write a per-org Metabase uuid into
+// orgs.json -- offered a form it can never satisfy and answered "Could not find
+// a valid UUID for cost-recovery". It reaches its two pilot orgs the way every
+// gated report does, by being PUSHED onto their dashboard hidden with an eye to
+// toggle, never by being added by hand. Note the readers of this Set that build
+// availability all also require `mbUuid || SHARED_UUIDS[r]`, which this report
+// already fails, so this entry changes the dialog and nothing else.
+const NON_ADDABLE_REPORTS = new Set(["program-demographics", "retention", "annual-report", "section-detail", "qoq", "checkins", "program-checkins", "selfservice", "programs-monthly", "cost-recovery"]);
 // Reports that require extra params (e.g. section_id) and cannot be health-checked with org_id alone
 // How many consecutive failed probes before a report is called down. One is
 // load; two in a row is a report. See the flap note in checkOne().
@@ -3004,6 +3013,24 @@ const RENTAL_CALENDAR_ORGS = new Set(["watertown", "norman", "niagarafalls"]);
 // instructor-payout feed has lesson registrations.
 const LESSONS_REPORT_ORGS = new Set(["san-francisco-rec-park"]);
 const lessonsReportEnabled = (slug) => LESSONS_REPORT_ORGS.has(slug);
+
+/* Cost Recovery — a per-org pilot, and deliberately NOT on every dashboard the
+   way Opportunities and Inventory are. Dan, 2026-09-23: "add these two reports
+   to shrewsbury and windham's org dashboard pages only, but keep them hidden,
+   i'll toggle them on."
+
+   TWO GATES, AND THEY ANSWER DIFFERENT QUESTIONS. This set decides which orgs
+   get an EYE at all; DEFAULT_HIDDEN_REPORTS still decides what that eye starts
+   on. So adding a slug here surfaces the toggle in the admin grid and changes
+   nothing an org can see until Dan flips it — the same shape as
+   LESSONS_REPORT_ORGS and RENTAL_CALENDAR_ORGS.
+
+   IT DOES NOT LOCK THE PAGE, and that is the standing rule rather than an
+   oversight: `/:org/cost-recovery` gates on the PROGRAMS card and stays open
+   for every org, so Dan can still click into his own admin card. The eye hides
+   a report from the org; it has never been an authorization boundary. */
+const COST_RECOVERY_ORGS = new Set(["shrewsbury", "windham"]);
+const costRecoveryEnabled = (slug) => COST_RECOVERY_ORGS.has(slug) && !!ORGS[slug];
 
 const DIRECTORS_REPORT_ALL_ORGS = true;
 const DIRECTORS_REPORT_ORGS = new Set(["watertown"]);
@@ -4127,6 +4154,7 @@ function visibleReportsForOrg(slug) {
   if (opportunitiesEnabled(slug) && !hidden.has("opportunities")) out.push("opportunities");
   if (inventoryEnabled(slug) && !hidden.has("inventory")) out.push("inventory");
   if (lessonsReportEnabled(slug) && !hidden.has("lessons")) out.push("lessons");
+  if (costRecoveryEnabled(slug) && !hidden.has("cost-recovery")) out.push("cost-recovery");
   customReportsForOrg(slug).forEach(k => { if (!hidden.has(k)) out.push(k); });
   if ((org.gl?.mbUuid || SHARED_UUIDS.gl) && !hidden.has("qoq")) out.push("qoq");
   if (!reportHiddenForOrg(slug, "facilities")) out.push("facilities");
@@ -6268,6 +6296,7 @@ function buildMetrics(org, daysBack) {
   if (opportunitiesEnabled(org)) configuredReports.push('opportunities');
   if (inventoryEnabled(org)) configuredReports.push('inventory');
   if (lessonsReportEnabled(org)) configuredReports.push('lessons');
+  if (costRecoveryEnabled(org)) configuredReports.push('cost-recovery');
   customReportsForOrg(org).forEach(k => configuredReports.push(k));
   return { summary, daily, subCounts, subByCadence, totalSubscribers: allSubs.length, insights, configuredReports };
 }
@@ -6654,6 +6683,11 @@ async function orgLogoDataUri(slug) {
 }
 
 // ── PDF generation ───────────────────────────────────────────────────
+// The PDF URL carries the org's access token, so nothing that logs it may print
+// it raw. One definition, because this was two call sites and only one of them
+// redacted — see the note at the first of them.
+const redactToken = (u) => String(u).replace(/token=[^&]+/g, "token=***");
+
 async function generatePdf(orgSlug, reportType, startDate, endDate, filters = {}) {
   const puppeteer = require("puppeteer");
   const orgTok = ORGS[orgSlug]?.token || "";
@@ -6696,6 +6730,20 @@ async function generatePdf(orgSlug, reportType, startDate, endDate, filters = {}
   // Absent still means "the caller is not speaking about this".
   if (filters.site_types !== undefined) qsObj.site_types = filters.site_types;
   if (filters.sitetype !== undefined) qsObj.sitetype = filters.sitetype;
+  /* ── Cost Recovery ────────────────────────────────────────────────────
+     `view` already rides the loop above. `mode`, `period`, `period_b` and
+     `tier` are single values whose empty string IS their default (all tiers,
+     the report's own period), so truthiness is the right test for them.
+
+     SIXTH AND SEVENTH INSTANCE of the `pii` rule: `hide_blank` and `hide_free`
+     are BOOLEANS spelled "1"/"0", and "0" is a real answer. The truthy loop
+     drops it, the print page then finds no parameter and falls back to its
+     own default — which is OFF, so today they would survive by luck. A
+     parameter that works by accident of its encoding is one rename from
+     breaking silently, which is exactly what `sitetype` above records. */
+  ["mode", "period", "period_b", "tier"].forEach(k => { if (filters[k]) qsObj[k] = filters[k]; });
+  if (filters.hide_blank !== undefined) qsObj.hide_blank = filters.hide_blank;
+  if (filters.hide_free !== undefined) qsObj.hide_free = filters.hide_free;
   if (orgTok) qsObj.token = orgTok;
   const qs = new URLSearchParams(qsObj);
   // ── The custom data reports' own filter vocabulary ──
@@ -6726,7 +6774,13 @@ async function generatePdf(orgSlug, reportType, startDate, endDate, filters = {}
   // one wins rather than the reader getting a silently empty report.
   if (filters.q !== undefined) qs.set("q", Array.isArray(filters.q) ? filters.q[filters.q.length - 1] : filters.q);
   const url = `http://localhost:${PORT}/${orgSlug}/${reportType}?${qs}`;
-  console.log(`[pdf] Generating for ${orgSlug}/${reportType}: ${url}`);
+  // REDACTED — this URL carries the org's ACCESS TOKEN, the only thing standing
+  // in front of every report that org has. The line below ("navigating to")
+  // already redacted it and this one did not, so the token has been going into
+  // the log on every PDF this platform has ever generated. Half a rename, the
+  // pattern this repo keeps writing down. ONE redactor now, so the two cannot
+  // drift apart again.
+  console.log(`[pdf] Generating for ${orgSlug}/${reportType}: ${redactToken(url)}`);
 
   // Tyler turnover mode: the GL report re-rendered as the Munis treasurer
   // cover sheets — portrait Letter at normal scale, unlike the extra-wide GL.
@@ -6773,7 +6827,15 @@ async function generatePdf(orgSlug, reportType, startDate, endDate, filters = {}
           ? "Class Roster"
           : reportType === "ice-calendar"
         ? "Ice Participant Calendar"
-        : "Facility Rental Schedule";
+        // THE LAST RESORT IS THE DIRECTORY, NOT A LITERAL. Every branch above
+        // is an override -- `historic` really is named differently here than
+        // in the directory -- but a report that needs no override used to fall
+        // past all of them and print "Facility Rental Schedule" in its own
+        // footer. That is what every Cost Recovery PDF carried. Reading the
+        // registry names the next registered report on the day it is
+        // registered, exactly as the CUSTOM_REPORTS lookup at the top does.
+        : (REPORT_DIRECTORY[reportType] && REPORT_DIRECTORY[reportType].label)
+          || "Facility Rental Schedule";
 
   const browser = await puppeteer.launch({
     headless: true,
@@ -6793,7 +6855,7 @@ async function generatePdf(orgSlug, reportType, startDate, endDate, filters = {}
         // Puppeteer waits on is the one that ends up on the page.
         ? { width: 1400, height: 900, deviceScaleFactor: 2 }
         : { width: 1100, height: 900, deviceScaleFactor: 1 });
-    console.log(`[pdf] navigating to ${url.replace(/token=[^&]+/, "token=***")}`);
+    console.log(`[pdf] navigating to ${redactToken(url)}`);
     const t0 = Date.now();
     await page.goto(url, { waitUntil: "networkidle0", timeout: 120000 });
     console.log(`[pdf] page loaded in ${((Date.now()-t0)/1000).toFixed(1)}s, waiting for #report-ready…`);
@@ -8635,6 +8697,13 @@ app.get("/api/org-visibility/:slug", (req, res) => {
   }
   // Default-hidden WIP reports use inverted visibility semantics
   available.push({ type: "facilities", visible: !reportHiddenForOrg(slug, "facilities") });
+  /* Cost Recovery is in REPORT_TYPES but has no card of its own, so the loop
+     above skips it. It is reported only for the orgs that can actually render
+     it: telling rec-dashboard a report is visible for an org whose dashboard
+     never draws it is the town-of-shrewsbury 404 in a new costume. */
+  if (costRecoveryEnabled(slug)) {
+    available.push({ type: "cost-recovery", visible: !reportHiddenForOrg(slug, "cost-recovery") });
+  }
   res.json({ slug, available, hiddenCount: hidden.size });
 });
 
@@ -18307,6 +18376,12 @@ app.get("/:org", async (req, res, next) => {
   if (!reportHiddenForOrg(slug, 'opportunities')) available.push('opportunities');
   // Inventory — same shape: on every dashboard, hidden until turned on per org.
   if (!reportHiddenForOrg(slug, 'inventory')) available.push('inventory');
+  /* Cost Recovery — a per-org pilot, so it needs BOTH gates: the org has to be
+     in COST_RECOVERY_ORGS to get a card at all, and the eye still decides
+     whether that card renders. It is absent from `allAvailable` above by
+     construction — it has no card of its own, so no SHARED_UUIDS entry — which
+     is why this push cannot duplicate one. */
+  if (costRecoveryEnabled(slug) && !reportHiddenForOrg(slug, 'cost-recovery')) available.push('cost-recovery');
   // Instructor Lessons — programs-pipeline report, per-org pilot (SF)
   if (lessonsReportEnabled(slug) && !orgHidden.has('lessons')) available.push('lessons');
   // Custom data reports — per-org (El Segundo aquatics); see CUSTOM_REPORTS.
@@ -20287,6 +20362,25 @@ app.get("/", (req, res) => {
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="display:${invHidden ? 'block' : 'none'}"><path d="M8 3C3 3 1 8 1 8s2 5 7 5 7-5 7-5-2-5-7-5z" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.5" fill="none"/><line x1="2" y1="14" x2="14" y2="2" stroke="currentColor" stroke-width="1.5"/></svg>
           </button>
         </a>`);
+      /* Cost Recovery — HIDDEN by default like the two above, but only for the
+         orgs in COST_RECOVERY_ORGS. Without this block there is no eye, so the
+         report could not be turned on for anybody from here. */
+      if (costRecoveryEnabled(slug)) {
+        const crHidden = reportHiddenForOrg(slug, 'cost-recovery');
+        const crDim = crHidden ? ' report-card-hidden' : '';
+        cards.push(`
+        <a href="/${slug}/cost-recovery${tokenQS}" class="report-card${crDim}" style="border-left:3px solid #0f766e" data-org="${slug}" data-report="cost-recovery">
+          <span class="report-icon">\u2696\uFE0F</span>
+          <div class="report-body">
+            <div class="report-label">Cost Recovery <span class="ai-pill-inline" style="background:#ccfbf1;color:#134e4a">NEW</span></div>
+            <div class="report-desc">Enter what each program costs to run, then read the profit and loss by season, quarter or fiscal year</div>
+          </div>
+          <button type="button" class="vis-toggle" onclick="event.preventDefault();event.stopPropagation();toggleVis('${slug}','cost-recovery',this)" title="${crHidden ? 'Hidden from org page' : 'Visible on org page'}">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="display:${crHidden ? 'none' : 'block'}"><path d="M8 3C3 3 1 8 1 8s2 5 7 5 7-5 7-5-2-5-7-5z" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="display:${crHidden ? 'block' : 'none'}"><path d="M8 3C3 3 1 8 1 8s2 5 7 5 7-5 7-5-2-5-7-5z" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.5" fill="none"/><line x1="2" y1="14" x2="14" y2="2" stroke="currentColor" stroke-width="1.5"/></svg>
+          </button>
+        </a>`);
+      }
       // Facilities hub — new WIP report, HIDDEN by default (inverted semantics)
       const facHidden = reportHiddenForOrg(slug, 'facilities');
       const facDim = facHidden ? ' report-card-hidden' : '';

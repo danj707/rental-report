@@ -3766,6 +3766,375 @@ const CASES = [
         { timeout: 20000 });
     } },
 
+  /* ── THE PDF PATH, WHICH A SANDBOXED IFRAME IS THE WHOLE POINT OF ────
+        Dan: "don't forget about the pdf printing issue for reports inside an
+        iframe sandbox ... I suspect the way you've implemented printing or
+        pdfs here won't work." Both buttons called window.print(), and a modal
+        opened by a sandboxed frame is blocked with no error and no event.
+
+        This is the PAGE half: the button opens a popup through openReportPdf
+        and the URL it hands over carries the state the reader is looking at.
+        It says NOTHING about whether generatePdf forwards those keys — that is
+        the server gate, and it is the one gl_codes, refunds, pii and sites each
+        failed while three client gates passed. cost-recovery.spec.js lifts and
+        RUNS the query builder for it. */
+  { name: "cost-recovery · the PDF button opens a popup carrying the view",
+    path: "/{org}/cost-recovery?mode=quarter&tier=2",
+    needs: 'body[data-rc-crpdf-seen^="ok=1 "]',
+    pre: async (page) => {
+      await page.evaluateOnNewDocument(() => {
+        window.__pdfOpened = [];
+        // Stubbed at the helper, not at window.open: what is under test is the
+        // URL the page hands over, and a real popup cannot be read from here.
+        window.openReportPdf = function (u) { window.__pdfOpened.push(u); return true; };
+        window.print = function () { window.__printed = true; };
+      });
+    },
+    act: async (page) => {
+      await page.waitForSelector('body[data-cr-seen*="mode=quarter"]', { timeout: 20000 });
+      await page.click("#pdfBtn");
+      await page.click('#viewTabs button[data-view="statement"]');
+      await page.waitForFunction(() => !document.getElementById("statementView").hidden,
+        { timeout: 20000 });
+      await page.click("#pdfStmt");
+      const m = await page.evaluate(() => ({
+        urls: window.__pdfOpened || [], printed: !!window.__printed,
+      }));
+      const [main, stmt] = m.urls;
+      // `location` does not exist in NODE scope — this runs in the harness, not
+       // in the page. Recorded trap, hit again; parse the query string by hand.
+      const has = (u, k, v) => !!u
+        && new URLSearchParams(String(u).split("?")[1] || "").get(k) === v;
+      const ok = m.urls.length === 2 && !m.printed
+        && /\/cost-recovery\/api\/pdf\?/.test(main)
+        // The toolbar button asks for the view on screen…
+        && has(main, "mode", "quarter") && has(main, "tier", "2")
+        // …the booleans ride as an explicit value, never as an absence…
+        && has(main, "hide_blank", "0") && has(main, "hide_free", "0")
+        // …and the Statement button asks for the statement WITHOUT the reader
+        // having to be on it, which is the whole reason it takes an argument.
+        && has(stmt, "view", "statement") && has(stmt, "mode", "quarter");
+      await page.evaluate(t => document.body.setAttribute("data-rc-crpdf-seen", t),
+        (ok ? "ok=1 " : "ok=0 ") + "opened=" + m.urls.length
+        + " printed=" + m.printed + " main=" + JSON.stringify(main || null)
+        + " statement=" + JSON.stringify(stmt || null));
+    } },
+
+  /* …and the other end of that URL: the page Puppeteer actually captures. It
+     has to drop the chrome and stamp #report-ready, and a ?view=statement
+     render has to print the statement ALONE without anyone clicking Print —
+     which is the bug one surface over arriving by the other door. */
+  { name: "cost-recovery · the print render is ready, bare, and honours the view",
+    path: "/{org}/cost-recovery?_print=1&view=statement&mode=season",
+    needs: 'body[data-rc-crprintmode-seen^="ok=1 "]',
+    act: async (page) => {
+      await page.waitForSelector("#report-ready", { timeout: 25000 });
+      const m = await page.evaluate(() => {
+        const d = (sel) => { const el = document.querySelector(sel);
+          return el ? getComputedStyle(el).display : "absent"; };
+        return { ready: !!document.getElementById("report-ready"),
+                 isPrint: document.body.classList.contains("is-print"),
+                 stmtFlag: document.body.classList.contains("printing-statement"),
+                 toolbar: d(".toolbar"), tabs: d(".tabs"), stmtbar: d(".stmtbar"),
+                 kpis: d(".sum-cards"), banner: d(".cr-banner"),
+                 statementShown: !document.getElementById("statementView").hidden,
+                 // The print page is TOLD its state; writing one back would put
+                 // a history entry on a page nobody is navigating.
+                 url: location.search };
+      });
+      /* `banner === "none"` REVERSES what this used to require. The old
+         version pinned the bug: the report masthead on a statement render cost
+         ~60pt at the top of the sheet, and #statementView inherits .card's
+         break-inside:avoid, so the document could not fit under it and jumped
+         whole to page two — Dan's "pdf export page 1 is blank". The statement
+         has its own head, so the banner was also saying the org twice and
+         printing the DATA WINDOW next to the statement's own PERIOD. */
+      const ok = m.ready && m.isPrint && m.stmtFlag && m.statementShown
+        && m.toolbar === "none" && m.tabs === "none" && m.stmtbar === "none"
+        && m.kpis === "none" && m.banner === "none";
+      await page.evaluate(t => document.body.setAttribute("data-rc-crprintmode-seen", t),
+        (ok ? "ok=1 " : "ok=0 ") + "ready=" + m.ready + " isPrint=" + m.isPrint
+        + " statementFlag=" + m.stmtFlag + " statementShown=" + m.statementShown
+        + " toolbar=" + m.toolbar + " tabs=" + m.tabs + " stmtbar=" + m.stmtbar
+        + " kpis=" + m.kpis + " banner=" + m.banner);
+    } },
+
+  /* ── THE DATES ARE THE FIFTH THING THAT DECIDES WHAT THE REPORT HOLDS ──
+        syncUrl has always WRITTEN start_date/end_date; nothing read them back,
+        so a shared link opened on the default two fiscal years and a PDF —
+        which is exactly this URL — captured that window however narrowly the
+        reader had scoped the page. The four gates again, failing at the page.
+
+        Only the INPUT can see it: the stub answers whatever window it is
+        asked for, so a case keyed on the rows renders identically either way.
+        The second half is the guard that matters more than the first — a
+        `date` input refuses a malformed value and comes back EMPTY, and an
+        empty window asks for nothing and draws a report with no programs in
+        it, which reads as an org that runs none. */
+  { name: "cost-recovery · the window comes from the URL, and a bad one does not",
+    path: "/{org}/cost-recovery?start_date=2024-07-01&end_date=2024-12-31",
+    needs: 'body[data-rc-crdates-seen^="ok=1 "]',
+    act: async (page) => {
+      await page.waitForSelector("#startDate", { timeout: 25000 });
+      const good = await page.evaluate(() => ({
+        s: document.getElementById("startDate").value,
+        e: document.getElementById("endDate").value }));
+      /* Same page, a value a date input cannot hold. The existing params are
+         KEPT and only the two dates overwritten — the org token rides on this
+         URL, and replacing the whole search string 404s the second navigation
+         at the org-token middleware, which reads as the page being broken. */
+      const u = new URL(page.url());
+      u.searchParams.set("start_date", "undefined");
+      u.searchParams.set("end_date", "not-a-date");
+      await page.goto(u.toString(), { waitUntil: "domcontentloaded" });
+      await page.waitForSelector("#startDate", { timeout: 25000 });
+      const bad = await page.evaluate(() => ({
+        s: document.getElementById("startDate").value,
+        e: document.getElementById("endDate").value }));
+      const ok = good.s === "2024-07-01" && good.e === "2024-12-31"
+        && /^\d{4}-\d{2}-\d{2}$/.test(bad.s) && /^\d{4}-\d{2}-\d{2}$/.test(bad.e)
+        && bad.s !== "2024-07-01";
+      await page.evaluate(t => document.body.setAttribute("data-rc-crdates-seen", t),
+        (ok ? "ok=1 " : "ok=0 ") + "fromUrl=" + good.s + ".." + good.e
+        + " fromGarbage=" + (good.s === bad.s ? "STUCK " : "") + bad.s + ".." + bad.e);
+    } },
+
+  /* ── LEAVING COMPARE HAS TO TAKE THE COMPARE PICKER WITH IT ──────────
+        Dan: "Compare field doesn't clear if you move to another selection."
+        It was never cleared because it was never HIDDEN: renderPeriods has
+        always set `.hidden = !cmp`, and `.picks label { display: flex }` beat
+        the attribute — author styles beat the UA sheet outright, so any author
+        `display` silently disables `hidden`.
+
+        NO SOURCE ASSERTION CAN SEE THAT. The JS reads correctly and the
+        attribute really is set; what regressed is what the cascade resolves
+        the element to. So this reads the COMPUTED display, and it requires the
+        picker to have been SHOWN in compare mode first — without that half it
+        passes on a build where the control never appears at all. */
+  { name: "cost-recovery · leaving compare clears the compare picker",
+    path: "/{org}/cost-recovery",
+    needs: 'body[data-rc-crcmp-seen^="ok=1 "]',
+    act: async (page) => {
+      await page.waitForSelector('body[data-cr-seen*="mode=season"]', { timeout: 20000 });
+      const disp = () => page.evaluate(() =>
+        getComputedStyle(document.getElementById("periodBWrap")).display);
+      const atSeason = await disp();
+      await page.click('#modeSeg button[data-mode="compare"]');
+      await page.waitForFunction(() => /mode=compare/.test(document.body.getAttribute("data-cr-seen") || ""),
+        { timeout: 20000 });
+      const inCompare = await disp();
+      await page.click('#modeSeg button[data-mode="season"]');
+      await page.waitForFunction(() => /mode=season/.test(document.body.getAttribute("data-cr-seen") || ""),
+        { timeout: 20000 });
+      const backToSeason = await disp();
+      const ok = atSeason === "none" && inCompare !== "none" && backToSeason === "none";
+      await page.evaluate(t => document.body.setAttribute("data-rc-crcmp-seen", t),
+        (ok ? "ok=1 " : "ok=0 ") + "onOpen=" + atSeason
+        + " inCompare=" + inCompare + " afterLeaving=" + backToSeason);
+    } },
+
+  /* ── THE PRINTED STATEMENT, which had NO coverage at all — which is why it
+        shipped with the KPI strip on it and squeezed into the left 40% of the
+        sheet. Dan, with the PDF: "the printed/pdf version has the top metrics
+        bars and the page is very cut off."
+
+        NO SOURCE ASSERTION CAN SEE THIS. An @media print block reads perfectly
+        whichever way it is written, and the page is identical on screen; what
+        regressed is what a second, print-only cascade resolves to. So the case
+        emulates print media and reads the COMPUTED display and the measured
+        width of the statement against the page.
+
+        It clicks the report's own Print button rather than setting the class,
+        because the class is what that button is for and a case that sets it by
+        hand passes on a button wired to nothing. window.print is stubbed, or
+        the run blocks on a print dialog. */
+  /* THE REPORT SITS ON THE SAME SHEET AS EVERY OTHER REPORT. Dan: "report width
+     doesn't match any of the other reports, should be consistent." This page
+     ran edge to edge on the sand while .report / .dash / .page on the other
+     seven all cap at 1400px on a white plate. Only a browser can settle it —
+     the stylesheet reads plausibly either way, and what regressed is a
+     COMPUTED box — so the case measures the plate, requires it to be narrower
+     than the viewport it is centred in, and requires the masthead to be inside
+     it rather than floating above. */
+  /* THE MASTHEAD SAYS WHAT THE REPORT COVERS. Dan sent a screenshot of "Fall
+     '26" selected over a sub-line reading "Jul 1, 2025 – Sep 23, 2026" and
+     asked the obvious question. No source assertion can settle what a reader
+     sees here — the label is written at render time from whichever period is
+     live — so the case picks a different period and requires the masthead to
+     follow it, and requires the fetch window to be somewhere else entirely. */
+  { name: "cost-recovery · the masthead names the period, not the fetch window",
+    path: "/{org}/cost-recovery",
+    needs: 'body[data-rc-crlabel-seen^="ok=1 "]',
+    act: async (page) => {
+      await page.waitForSelector('body[data-cr-seen*="mode=season"]', { timeout: 20000 });
+      const read = () => page.evaluate(() => ({
+        sub: (document.getElementById("windowLabel").textContent || "").trim(),
+        sel: (() => { const s = document.getElementById("periodSel");
+                      return s && s.selectedIndex >= 0 ? s.options[s.selectedIndex].text.trim() : ""; })(),
+        opts: [].map.call(document.getElementById("periodSel").options, o => o.text.trim()),
+        dates: (document.getElementById("startDate").value || "") + ".." + (document.getElementById("endDate").value || ""),
+        win: (document.getElementById("dataWinLab").textContent || "").trim(),
+        foot: (document.getElementById("crFootWin").textContent || "").trim(),
+        bodyHidden: document.getElementById("dataWinBody").hidden,
+        bodyDisp: getComputedStyle(document.getElementById("dataWinBody")).display,
+      }));
+      const a = await read();
+      // Switch to a DIFFERENT season, or "the masthead matches" proves nothing.
+      let b = a;
+      if (a.opts.length > 1) {
+        const other = a.opts.find(t => t !== a.sel);
+        await page.select("#periodSel", await page.evaluate(t => {
+          const s = document.getElementById("periodSel");
+          return [].find.call(s.options, o => o.text.trim() === t).value;
+        }, other));
+        await page.waitForFunction(t => (document.getElementById("windowLabel").textContent || "").trim() === t,
+          { timeout: 8000 }, other).catch(() => {});
+        b = await read();
+      }
+      // The window lives on the disclosure and in the footer, and nowhere in
+      // the masthead — a year-long range under the title is the bug.
+      const moved = a.win.length > 0 && /Programs loaded/.test(a.foot)
+        && !/2025|2026|2027/.test(a.sub);
+      const follows = a.sub === a.sel && b.sub === b.sel && (a.opts.length < 2 || a.sub !== b.sub);
+      const shut = a.bodyHidden && a.bodyDisp === "none";
+      const ok = moved && follows && shut;
+      await page.evaluate(t => document.body.setAttribute("data-rc-crlabel-seen", t),
+        (ok ? "ok=1 " : "ok=0 ") + "sub=" + JSON.stringify(a.sub) + " sel=" + JSON.stringify(a.sel)
+        + " then sub=" + JSON.stringify(b.sub) + " sel=" + JSON.stringify(b.sel)
+        + " opts=" + a.opts.length + " win=" + JSON.stringify(a.win)
+        + " foot=" + JSON.stringify(a.foot) + " dates=" + a.dates
+        + " disclosure=" + (shut ? "shut" : a.bodyDisp));
+    } },
+
+  { name: "cost-recovery · the report sits on a plate, like every other report",
+    path: "/{org}/cost-recovery",
+    needs: 'body[data-rc-crplate-seen^="ok=1 "]',
+    viewport: { width: 1600, height: 1000 },
+    act: async (page) => {
+      await page.waitForSelector('body[data-cr-seen*="mode=season"]', { timeout: 20000 });
+      const m = await page.evaluate(() => {
+        const plate = document.querySelector(".page");
+        const banner = document.querySelector(".cr-banner");
+        const cs = plate ? getComputedStyle(plate) : null;
+        const r = plate ? plate.getBoundingClientRect() : null;
+        return {
+          found: !!plate,
+          width: r ? Math.round(r.width) : 0,
+          left: r ? Math.round(r.left) : 0,
+          vw: Math.round(document.documentElement.clientWidth),
+          bg: cs ? cs.backgroundColor : "",
+          shadow: cs ? cs.boxShadow : "",
+          bannerInside: !!(plate && banner && plate.contains(banner)),
+          // The banner must span the plate's own inner width — a masthead
+          // inset inside an inset reads as a card on a card.
+          bannerWidth: banner ? Math.round(banner.getBoundingClientRect().width) : 0,
+          innerWidth: (plate && cs)
+            ? Math.round(r.width - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)) : -1,
+        };
+      });
+      // Centred, capped, opaque, and carrying a shadow — the four things that
+      // make it read as the same sheet as Programs.
+      const capped = m.width > 0 && m.width < m.vw - 40;
+      const centred = Math.abs(m.left - (m.vw - m.width) / 2) <= 2;
+      const opaque = /rgb\(255,\s*255,\s*255\)/.test(m.bg);
+      const lifted = m.shadow && m.shadow !== "none";
+      const spans = Math.abs(m.bannerWidth - m.innerWidth) <= 2;
+      const ok = m.found && capped && centred && opaque && lifted
+        && m.bannerInside && spans;
+      await page.evaluate(t => document.body.setAttribute("data-rc-crplate-seen", t),
+        (ok ? "ok=1 " : "ok=0 ") + "plate=" + m.width + "px of " + m.vw
+        + " left=" + m.left + " capped=" + capped + " centred=" + centred
+        + " bg=" + m.bg + " shadow=" + (lifted ? "yes" : "none")
+        + " bannerInside=" + m.bannerInside
+        + " banner=" + m.bannerWidth + " inner=" + m.innerWidth);
+    } },
+
+  { name: "cost-recovery · the statement prints alone, and fills the page",
+    path: "/{org}/cost-recovery",
+    needs: 'body[data-rc-crprint-seen^="ok=1 "]',
+    pre: async (page) => {
+      await page.evaluateOnNewDocument(() => { window.print = function () {}; });
+    },
+    act: async (page) => {
+      await page.waitForSelector('body[data-cr-seen*="mode=season"]', { timeout: 20000 });
+      await page.click('#viewTabs button[data-view="statement"]');
+      await page.waitForFunction(() => !document.getElementById("statementView").hidden,
+        { timeout: 20000 });
+      await page.click("#printStmt");
+      await page.emulateMediaType("print");
+      const m = await page.evaluate(() => {
+        const disp = (sel) => { const el = document.querySelector(sel);
+          return el ? getComputedStyle(el).display : "absent"; };
+        const st = document.querySelector("#statementView .st");
+        const body = document.body;
+        return {
+          flagged: body.classList.contains("printing-statement"),
+          kpis: disp(".sum-cards"), basis: disp(".basis"),
+          toolbar: disp(".toolbar"), tabs: disp(".tabs"), stmtbar: disp(".stmtbar"),
+          // The statement has to USE the page. It was capped at 780px inside a
+          // bordered card, which on a landscape sheet is the left 40%.
+          stWidth: Math.round(st.getBoundingClientRect().width),
+          pageWidth: Math.round(document.documentElement.clientWidth),
+          // …and the card chrome around it is screen furniture.
+          cardBorder: getComputedStyle(document.getElementById("statementView")).borderTopWidth,
+          // A DOCUMENT HAS TO BE ALLOWED TO FLOW. Inherited from .card this
+          // reads "avoid", which is atomic — the whole reason it jumped a page.
+          breakInside: getComputedStyle(document.getElementById("statementView")).breakInside,
+          // THE MASTHEAD COMES OFF, and this assertion used to require the
+          // opposite. That requirement is what made page one of every
+          // statement PDF blank: #statementView is a .card, print gives every
+          // .card break-inside:avoid, so the statement was atomic and could not
+          // fit under ~60pt of banner. It is also redundant — the statement
+          // carries its own head, and the banner printed the DATA WINDOW beside
+          // the statement's own PERIOD, two different ranges on one document.
+          // The P&L control case below is what keeps this about the statement.
+          banner: disp(".cr-banner"), pills: disp(".cr-pills"),
+        };
+      });
+      const fills = m.stWidth >= m.pageWidth * 0.9;
+      const ok = m.flagged && m.kpis === "none" && m.basis === "none"
+        && m.toolbar === "none" && m.tabs === "none" && m.stmtbar === "none"
+        && m.banner === "none" && m.pills === "none"
+        && m.breakInside !== "avoid"
+        && fills && parseFloat(m.cardBorder) === 0;
+      await page.evaluate(t => document.body.setAttribute("data-rc-crprint-seen", t),
+        (ok ? "ok=1 " : "ok=0 ") + "flagged=" + m.flagged
+        + " kpis=" + m.kpis + " basis=" + m.basis + " toolbar=" + m.toolbar
+        + " tabs=" + m.tabs + " stmtbar=" + m.stmtbar
+        + " banner=" + m.banner + " pills=" + m.pills
+        + " breakInside=" + m.breakInside
+        + " statement=" + m.stWidth + "px of " + m.pageWidth + "px (fills=" + fills + ")"
+        + " cardBorder=" + m.cardBorder);
+      await page.emulateMediaType(null);
+    } },
+
+  /* …and the P&L keeps its summary on paper. Hiding the strip outright is the
+     tempting one-line version of the fix above and it is wrong: on the P&L
+     those five figures ARE what somebody prints the page for. This is the
+     control that makes the case above about the statement rather than about
+     print. */
+  { name: "cost-recovery · printing the P&L keeps its summary",
+    path: "/{org}/cost-recovery",
+    needs: 'body[data-rc-crplprint-seen^="ok=1 "]',
+    act: async (page) => {
+      await page.waitForSelector('body[data-cr-seen*="mode=season"]', { timeout: 20000 });
+      await page.emulateMediaType("print");
+      const m = await page.evaluate(() => ({
+        flagged: document.body.classList.contains("printing-statement"),
+        kpis: getComputedStyle(document.querySelector(".sum-cards")).display,
+        toolbar: getComputedStyle(document.querySelector(".toolbar")).display,
+        // …and the masthead is still here, which is what makes dropping it on
+        // the STATEMENT a statement rule rather than a print rule.
+        banner: getComputedStyle(document.querySelector(".cr-banner")).display,
+      }));
+      const ok = !m.flagged && m.kpis !== "none" && m.toolbar === "none"
+        && m.banner !== "none";
+      await page.evaluate(t => document.body.setAttribute("data-rc-crplprint-seen", t),
+        (ok ? "ok=1 " : "ok=0 ") + "flagged=" + m.flagged
+        + " kpis=" + m.kpis + " toolbar=" + m.toolbar + " banner=" + m.banner);
+      await page.emulateMediaType(null);
+    } },
+
   { name: "programs-schedule · six meetings, one section twice",
     path: "/{org}/programs-schedule",
     needs: "[data-ready='true'][data-ps-rows='6']" },

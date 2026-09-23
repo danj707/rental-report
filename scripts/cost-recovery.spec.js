@@ -444,15 +444,341 @@ if (!process.env.SKIP_SOURCE) {
     const a = SERVER.indexOf(from); if (a < 0) return "";
     const b = SERVER.indexOf(to, a); return b < 0 ? SERVER.slice(a) : SERVER.slice(a, b);
   };
+  /* `slice` is SERVER-scoped. The PDF assertions below are about the PAGE, and
+     a slice taken from the wrong file returns "" and passes every "must not
+     contain" test vacuously — so they get their own, with a was-it-found
+     assertion on each use. */
+  const pslice = (from, to) => {
+    const a = PAGE.indexOf(from); if (a < 0) return "";
+    const b = PAGE.indexOf(to, a); return b < 0 ? PAGE.slice(a) : PAGE.slice(a, b);
+  };
 
   // THE STANDING RULE: every new report ships HIDDEN. Dan, 2026-09-14: "by
   // default all new reports should be hidden unless I say otherwise."
   const dh = slice("const DEFAULT_HIDDEN_REPORTS", ";");
   ok(dh.length > 10, "DEFAULT_HIDDEN_REPORTS was found — otherwise the next assertion is vacuous");
-  ok(/"cost-recovery"/.test(dh), "cost-recovery ships HIDDEN on every org dashboard");
+  ok(/"cost-recovery"/.test(dh), "cost-recovery ships HIDDEN wherever it is offered");
 
   ok(/const REPORT_TYPES = \[[^\]]*"cost-recovery"/.test(SERVER),
      "cost-recovery is a real report type, so the admin toggle accepts it");
+
+  /* ── TWO GATES, AND THEY ANSWER DIFFERENT QUESTIONS ────────────────────
+     Dan, 2026-09-23: "add these two reports to shrewsbury and windham's org
+     dashboard pages only, but keep them hidden, i'll toggle them on."
+
+     COST_RECOVERY_ORGS decides which orgs get an EYE; DEFAULT_HIDDEN_REPORTS
+     decides what that eye starts on. Asserting only the first would pass on a
+     build that shipped the pilot orgs VISIBLE, and asserting only the second
+     would pass on a build that put the card on all 29 dashboards — which is
+     why both are pinned, and pinned together. */
+  const cro = slice("const COST_RECOVERY_ORGS", ";");
+  ok(cro.length > 10, "COST_RECOVERY_ORGS was found — otherwise the next assertions are vacuous");
+  ok(/"shrewsbury"/.test(cro) && /"windham"/.test(cro), "the pilot is Shrewsbury and Windham");
+  const croSlugs = (cro.match(/"[a-z0-9-]+"/g) || []);
+  ok(croSlugs.length === 2, "…and ONLY those two — a third slug is a decision somebody has to justify");
+
+  /* THE EYE STILL GOVERNS. Both gates on the org dashboard, in one condition:
+     drop the second and the pilot orgs get a card they never asked to see. */
+  ok(/if \(costRecoveryEnabled\(slug\) && !reportHiddenForOrg\(slug, 'cost-recovery'\)\) available\.push\('cost-recovery'\);/.test(SERVER),
+     "the org dashboard needs BOTH the pilot gate and the inverted visibility gate");
+
+  /* THE EYE HIDES, IT DOES NOT LOCK — the standing rule, and the one the first
+     Opportunities build got wrong. The page route must NOT read either gate, or
+     Dan cannot open his own admin card for an org he has not switched on. */
+  const pageRoute = slice('app.get("/:org/cost-recovery"', "\n});");
+  ok(pageRoute.length > 50, "the page route was found");
+  ok(!/costRecoveryEnabled|reportHiddenForOrg/.test(pageRoute),
+     "the PAGE is gated on neither — hiding a card must not lock the report");
+
+  // The admin grid card that carries the toggle. Without it there is no eye and
+  // the report cannot be turned on for anybody from the dashboard.
+  ok(/toggleVis\('\$\{slug\}','cost-recovery'/.test(SERVER),
+     "the admin grid renders a visibility toggle for it");
+  ok(/const crHidden = reportHiddenForOrg\(slug, 'cost-recovery'\)/.test(SERVER),
+     "…reading the inverted default, so a fresh org draws it as hidden");
+  ok(/if \(costRecoveryEnabled\(slug\)\) \{\s*\n\s*const crHidden/.test(SERVER),
+     "…and only for the pilot orgs, so the other 27 grow no row they can never use");
+
+  /* THE CROSS-PROJECT API HAS TO AGREE. A card the org page never draws,
+     reported visible to rec-dashboard, is the town-of-shrewsbury 404 in a new
+     costume — so the entry is gated on the same pilot set. */
+  const vis = slice('app.get("/api/org-visibility/:slug"', "\n});");
+  ok(vis.length > 50, "the visibility API was found");
+  ok(/costRecoveryEnabled\(slug\)/.test(vis) && /type: "cost-recovery"/.test(vis),
+     "the visibility API reports cost-recovery, and only for the pilot orgs");
+
+  /* ── THE PDF HAS TO SURVIVE A SANDBOXED IFRAME ────────────────────────
+     Dan: "don't forget about the pdf printing issue for reports inside an
+     iframe sandbox. I suspect the way you've implemented printing or pdfs
+     here won't work." He was right — both buttons called window.print(), and
+     a modal opened by a sandboxed frame is blocked with no error and no
+     event. The house pattern is `openReportPdf`: a TOP-LEVEL POPUP navigating
+     to a server-rendered PDF, which is never a download for the sandbox to
+     refuse. Print stays beside it as the reader's own escape hatch when the
+     page stands alone. */
+  ok(/openReportPdf/.test(PAGE), "the PDF goes through openReportPdf, not window.print");
+  ok(/<script src="\/open-pdf\.js">/.test(PAGE), "…and the page loads the file that defines it");
+  /* SYNCHRONOUS, FROM THE CLICK HANDLER. Behind an await or a .then() the user
+     gesture is gone and the browser blocks the popup — the rule open-pdf.js
+     states at the top of itself. */
+  const pdfClick = pslice('$("pdfBtn").addEventListener', "});");
+  ok(pdfClick.length > 20, "the PDF click handler was found — otherwise the next assertion is vacuous");
+  ok(/openPdf\(/.test(pdfClick) && !/await|\.then\(/.test(pdfClick),
+     "the PDF button opens the popup straight from the click, with no await before it");
+  ok(/if \(!window\.openReportPdf\) \{ window\.print\(\); return; \}/.test(PAGE),
+     "…and falls back to print rather than being a dead button if the helper is absent");
+
+  /* THE URL IS THE ONLY CHANNEL. A Puppeteer render opens this page fresh with
+     an empty localStorage, so anything the PDF needs has to be in the query
+     string — which is why a PDF route was worth nothing until the report's
+     state lived there. */
+  ["mode", "period", "tier", "view", "hide_blank", "hide_free"].forEach(k => {
+    ok(new RegExp('Q\\.(get|has)\\("' + k.replace("_", "_") + '"\\)').test(PAGE)
+       || new RegExp('q\\.set\\("' + k + '"').test(PAGE),
+       "the page reads/writes `" + k + "` on the URL, or the PDF cannot carry it");
+  });
+  ok(/history\.replaceState/.test(PAGE) && !/history\.pushState/.test(PAGE),
+     "the URL is REPLACED, not pushed — every keystroke in a cost box re-renders");
+  const syncBlk = pslice("function syncUrl()", "\n  }");
+  ok(syncBlk.length > 20, "syncUrl was found");
+  ok(/if \(PRINT\) return;/.test(syncBlk),
+     "…and the print page never writes one back: it is TOLD its state");
+
+  /* AND THE DATES, which syncUrl has ALWAYS written and the page never read
+     back. They decide which programs are loaded at all — and therefore which
+     seasons the period picker can even offer — so a PDF that ignores them
+     renders the default two fiscal years however narrowly the reader scoped
+     the page. Gates 1, 2 and 4 passed and gate 3 failed: the exact shape
+     `gl_codes`, `refunds`, `pii` and `sites` each took. Found by driving the
+     real route, not by review. */
+  ok(/q\.set\("start_date", \$\("startDate"\)\.value\);/.test(syncBlk)
+     && /q\.set\("end_date", \$\("endDate"\)\.value\);/.test(syncBlk),
+     "syncUrl writes the window to the URL");
+  ok(/\$\("startDate"\)\.value = urlDate\("start_date", defaultStart\(\)\);/.test(PAGE)
+     && /\$\("endDate"\)\.value   = urlDate\("end_date", todayISO\(\)\);/.test(PAGE),
+     "…and the page SEEDS both inputs back from it, or a shared link and every "
+     + "PDF open on the report's default window whatever the URL says");
+  const urlDateBlk = pslice("function urlDate(k, fallback)", "\n  }");
+  ok(urlDateBlk.length > 20, "urlDate was found — otherwise the next assertion is vacuous");
+  ok(/DATE_RE\.test\(v\)/.test(urlDateBlk) && /fallback/.test(urlDateBlk),
+     "…VALIDATED, never trusted: a `date` input refuses a malformed value and "
+     + "comes back EMPTY, and an empty window asks Metabase for nothing and "
+     + "draws a report with no programs in it — which reads as an org running none");
+  ok(/var DATE_RE = \/\^\\d\{4\}-\\d\{2\}-\\d\{2\}\$\//.test(PAGE),
+     "the date pattern is anchored at both ends, or `2024-07-01junk` is accepted");
+
+  /* #report-ready IS WHAT generatePdf WAITS 120s FOR, and the failure path has
+     to stamp it too or a report whose feed did not answer costs two minutes
+     and then a 500. */
+  ok(/id = "report-ready"/.test(PAGE), "the page stamps #report-ready");
+  const failBranch = pslice("showError(String(e && e.message || e));", "});");
+  ok(failBranch.length > 20, "the failed-feed branch was found");
+  ok(/markReady\(\)/.test(failBranch),
+     "…on the FAILED-feed branch as well, or the PDF route hangs for two minutes");
+
+  /* THE SERVER HALF. A render case at ?_print=1 proves the PAGE reads a
+     parameter and says NOTHING about whether generatePdf sends it — which is
+     exactly how gl_codes, refunds, pii and sites each shipped reaching the
+     screen and not the PDF. So the query builder is LIFTED AND RUN. */
+  const gp = SERVER.slice(SERVER.indexOf("async function generatePdf("));
+  const qsBlock = gp.slice(gp.indexOf("const qsObj = {"),
+    gp.indexOf("const qs = new URLSearchParams(qsObj);") + "const qs = new URLSearchParams(qsObj);".length);
+  ok(qsBlock.includes("forEach"), "the generatePdf query block was found and is liftable");
+
+  /* …AND NOTHING THAT LOGS THAT URL MAY PRINT THE TOKEN. Found by driving the
+     real route rather than by review: `[pdf] Generating for …` printed the raw
+     URL while `[pdf] navigating to …` sixty lines below it redacted the same
+     string, so the org's access token — the only thing in front of every report
+     that org has — has gone into the log on every PDF this platform has ever
+     generated. Half a rename, and this guard is PLATFORM-WIDE rather than about
+     cost recovery: it lives here because this spec already lifts generatePdf. */
+  const pdfLogs = (SERVER.match(/console\.log\(`\[pdf\][^`]*`\)/g) || []);
+  ok(pdfLogs.length >= 2, "the [pdf] log lines were found — otherwise this is vacuous");
+  pdfLogs.forEach(l => {
+    ok(!/\$\{url\}/.test(l),
+       "no [pdf] log line prints the raw URL, which carries the org token: " + l);
+  });
+  ok(/const redactToken = \(u\) => String\(u\)\.replace\(\/token=\[\^&\]\+\/g, "token=\*\*\*"\);/.test(SERVER),
+     "…through ONE redactor, because two copies is how one of them stopped redacting");
+  const buildQs = new Function("startDate", "endDate", "orgTok", "filters",
+    qsBlock + "\nreturn qs.toString();");
+
+  const full = buildQs("2026-07-01", "2026-09-23", "tok",
+    { mode: "quarter", period: "FY2026 Q1", period_b: "FY2025 Q1", tier: "2",
+      view: "statement", hide_blank: "1", hide_free: "1" });
+  ["mode=quarter", "period=FY2026+Q1", "period_b=FY2025+Q1", "tier=2",
+   "view=statement", "hide_blank=1", "hide_free=1"].forEach(want => {
+    ok(full.indexOf(want) >= 0, "generatePdf forwards " + want + ". Got: " + full);
+  });
+
+  /* THE BOOLEANS TRAVEL ON PRESENCE — and a VALUE test cannot prove that,
+     which is worth writing down rather than dressing up. The page spells them
+     "1"/"0", and the string "0" is TRUTHY in JS, so folding them into the
+     truthy loop passes this assertion and every one above it. Measured by
+     mutation, not assumed: that fold SURVIVED until the source assertion below
+     was added. It is the same thing `sitetype` already records one block up —
+     a parameter that works by accident of its encoding is one rename from
+     breaking silently, and the rename here is "0" -> "". */
+  const off = buildQs("2026-07-01", "2026-09-23", "tok", { hide_blank: "0", hide_free: "0" });
+  ok(/(^|&)hide_blank=0(&|$)/.test(off) && /(^|&)hide_free=0(&|$)/.test(off),
+     "an explicit OFF must survive — dropped, the print page falls back to its "
+     + "own default instead of the answer the reader gave. Got: " + off);
+  // [source] The guard that actually holds the shape, because the value test above cannot.
+  ok(/if \(filters\.hide_blank !== undefined\) qsObj\.hide_blank = filters\.hide_blank;/.test(SERVER)
+     && /if \(filters\.hide_free !== undefined\) qsObj\.hide_free = filters\.hide_free;/.test(SERVER),
+     "both booleans are forwarded on PRESENCE (!== undefined), never by the truthy "
+     + "loop — which would keep working only while they are spelled \"0\" rather than \"\"");
+  const none = buildQs("2026-07-01", "2026-09-23", "tok", {});
+  ok(!/hide_blank=|hide_free=/.test(none),
+     "…while ABSENT is not invented as a value: absent means the caller is not "
+     + "speaking about it at all. Got: " + none);
+
+  /* PRINT MODE COMES FROM THE REQUESTED VIEW, because Puppeteer never clicks
+     the Print button that sets the class on screen. Without this the statement
+     PDF carries the KPI strip — the bug one surface over, arriving by the
+     other door. */
+  ok(/if \(view === "statement"\) document\.body\.classList\.add\("printing-statement"\)/.test(PAGE),
+     "a ?view=statement render prints the statement alone, with no click involved");
+  ok(/body\.is-print \.toolbar/.test(PAGE),
+     "…and ?_print=1 drops the chrome before the capture, not only in @media print");
+
+  /* ── THE MASTHEAD COMES OFF THE PRINTED STATEMENT, AND PAGE ONE STOPS BEING
+        BLANK ────────────────────────────────────────────────────────────────
+     Dan: "pdf export page 1 is blank." #statementView is a .card, and print
+     gives every .card `break-inside: avoid` — so the statement was ATOMIC, it
+     could not fit under the ~60pt masthead, and the whole document jumped to
+     page two. Two halves, and each fixes the other's remainder: the banner is
+     redundant on a document that carries its own head (and printed the DATA
+     WINDOW beside the statement's own PERIOD, which is a different range), and
+     a document has to be allowed to flow whatever else is above it. */
+  const printBlk = PAGE.slice(PAGE.indexOf("@media print"), PAGE.indexOf("@page"));
+  ok(printBlk.length > 400, "the @media print block was found");
+  ok(/body\.printing-statement \.cr-banner \{ display: none/.test(printBlk),
+     "the report masthead comes off the printed statement — it repeats the org, "
+     + "near-repeats the title, prints a DIFFERENT date range beside the "
+     + "statement's own, and is what pushed the document onto page two");
+  ok(/body\.is-print\.printing-statement[\s\S]{0,240}\.cr-banner/.test(PAGE),
+     "…in the ?_print=1 render too, or the PDF capture happens over a page that "
+     + "still carries it");
+  ok(/#statementView \{ break-inside: auto; \}/.test(printBlk),
+     "the statement may FLOW across a page break — as a .card it inherited "
+     + "break-inside:avoid, which is what made it atomic and page one empty");
+  ok(/#statementView table\.stt \{ break-inside: avoid; \}/.test(printBlk)
+     && /#statementView h3 \{ break-after: avoid; \}/.test(printBlk),
+     "…while its own sections keep the avoid, so a table never splits and a "
+     + "heading never strands at the foot of a page");
+
+  /* ── THE WHITE PLATE ──────────────────────────────────────────────────────
+     Dan: "report width doesn't match any of the other reports, should be
+     consistent." Every other report puts its content on one — .report on
+     programs/gl/memberships/facility/fasttrack, .dash on users, .page on
+     waitlist — all of them 1400px, 16px auto, 24px 28px, white, shadow. This
+     page ran edge to edge on the sand instead. Pinned against a REAL SIBLING
+     rather than against a literal, so the two cannot drift apart. */
+  const plate = PAGE.slice(PAGE.indexOf("  .page {"), PAGE.indexOf("  .wrap {"));
+  ok(plate.length > 40, "the .page plate rule was found");
+  ok(/max-width: 1400px/.test(plate) && /margin: 16px auto/.test(plate)
+     && /padding: 24px 28px/.test(plate),
+     "the plate is the platform's own: 1400px wide, 16px auto, 24px 28px");
+  const sibling = fs.readFileSync(path.join(__dirname, "..", "public", "programs.html"), "utf8");
+  const sibPlate = sibling.slice(sibling.indexOf("    .page {"), sibling.indexOf("    .table-scroll"));
+  ok(/max-width: 1400px/.test(sibPlate) && /margin: 16px auto/.test(sibPlate)
+     && /padding: 24px 28px/.test(sibPlate),
+     "…and Programs still uses those same three, which is what makes it a convention");
+  ok(/<div class="page">[\s\S]{0,300}<div class="cr-banner">/.test(PAGE),
+     "the banner is INSIDE the plate, the way the Programs banner is — a masthead "
+     + "floating above the sheet is the inconsistency being fixed");
+  ok(/\.wrap \{ padding: 0; \}/.test(PAGE),
+     "…so .wrap no longer carries the page's own side padding");
+  ok(/body\.is-print \.page \{ max-width: none/.test(PAGE)
+     && /\.page \{ max-width: none; margin: 0; padding: 0;/.test(printBlk),
+     "the plate is flattened on paper — a white card on a white sheet, inset "
+     + "from margins the printer already applies");
+
+  /* ── THE MASTHEAD NAMES THE PERIOD, NOT THE DATA WINDOW ──────────────────
+     Dan, with "Fall '26" picked over a masthead reading "Jul 1, 2025 – Sep 23,
+     2026": "if we're selecting a season, then the cost recovery is applying to
+     the season, not the dates at the top, no?" A sub-line under the report
+     title is read as what the report covers, and it was naming the fetch. The
+     arithmetic was right and the label was the defect — the same shape as
+     "NET REVENUE" sitting lifetime beside a period figure on Programs. */
+  ok(/\$\("windowLabel"\)\.textContent = per\.t/.test(PAGE),
+     "the masthead sub-line is the PERIOD on screen, set from render() — which "
+     + "is the only place that knows which period that is");
+  ok(/dB && dB\.per \? "  vs  " \+ dB\.per\.t/.test(PAGE),
+     "…and names BOTH in compare mode, because the report genuinely covers two");
+  ok(!/\$\("windowLabel"\)\.textContent = fmtWindow/.test(PAGE),
+     "the data window is no longer written into the masthead — that is the bug");
+  ok(/\$\("crFootWin"\)\.textContent = "Programs loaded " \+ fmtWindow/.test(PAGE)
+     && /id="crFootWin"/.test(PAGE),
+     "…the window it was FETCHED over moves to the footer, beside which org and "
+     + "which run — excluded is never hidden");
+
+  /* ── THE DATE RANGE STOPS LEADING THE PAGE ───────────────────────────────
+     Dan: "no one wants to run cost recovery across a date range — it's a
+     season, quarter, etc." Right about what the report answers, and the dates
+     still decide which programs are fetched and therefore which seasons the
+     picker can offer at all — delete them and the report is capped at whatever
+     default we pick. So they are demoted, not removed: a disclosure at the END
+     of the row that states the window it holds. Both inputs stay in the DOM
+     whether it is open or shut, or the URL seeding, the PDF and every
+     deep-link guard break with them. */
+  const tbRow1 = PAGE.slice(PAGE.indexOf('<div class="toolbar">'), PAGE.indexOf('<div class="tb-row picks">'));
+  ok(tbRow1.length > 60, "the first toolbar row was found");
+  ok(!/id="startDate"|id="endDate"|id="runBtn"/.test(tbRow1),
+     "no date input leads the toolbar any more — the period controls do");
+  ok(/id="dataWinBtn"[\s\S]{0,400}id="dataWinBody"/.test(PAGE),
+     "the window is a labelled disclosure that names what it holds");
+  ok(/id="startDate"/.test(PAGE) && /id="endDate"/.test(PAGE) && /id="runBtn"/.test(PAGE),
+     "…and all three still exist, so ?start_date=/?end_date= and the PDF keep working");
+  ok(/<span class="dataWinBody" id="dataWinBody" hidden>/.test(PAGE),
+     "it starts shut");
+  ok(/\[hidden\] \{ display: none !important; \}/.test(PAGE),
+     "…and `hidden` actually hides it — .picks label sets display:flex, and any "
+     + "author display beats the UA default outright, which is the bug already "
+     + "recorded for the compare picker");
+
+  /* ── THE PDF FOOTER NAMED THE WRONG REPORT ───────────────────────────────
+     reportLabel's ladder ended in a LITERAL, so every report with no branch of
+     its own printed "rec.us — Facility Rental Schedule" in its own footer.
+     Every Cost Recovery PDF carried it. The last resort is the directory now,
+     which names the next registered report on the day it is registered. */
+  ok(/\(REPORT_DIRECTORY\[reportType\] && REPORT_DIRECTORY\[reportType\]\.label\)\s*\n?\s*\|\| "Facility Rental Schedule"/.test(SERVER),
+     "reportLabel falls back to REPORT_DIRECTORY before the literal — a hand-kept "
+     + "ladder is exactly what mislabelled this one");
+  const dir = slice("const REPORT_DIRECTORY = {", "\n};");
+  ok(/"cost-recovery":\s*\{ label: "Cost Recovery"/.test(dir),
+     "…and the directory already carries the right name, so nothing is transcribed");
+
+  /* INVENTORY IS DELIBERATELY NOT SCOPED THE SAME WAY, and that is not an
+     oversight. Its seed is keyed on Madison's ORGID and Madison is not
+     onboarded here yet, so a slug allowlist would let the seed apply and the
+     card still never render — silently undoing the report it was built for. */
+  ok(!/INVENTORY_ORGS|inventoryReportOrgs/.test(SERVER),
+     "inventory keeps the every-org-hidden shape, so Madison's orgId seed still lands");
+
+  /* ── AND THEREFORE IT IS NOT "ADDABLE" ───────────────────────────────────
+     Dan, on the admin dashboard: "why is it asking me to add this, should be
+     on Shrews and Windham automatically." The "+ Add report" dialog builds its
+     list from REPORT_TYPES minus NON_ADDABLE_REPORTS minus anything that
+     already has a uuid — so a report with no card of its own reads as
+     PERMANENTLY MISSING, is offered, and then refuses itself with "Could not
+     find a valid UUID for cost-recovery". The dialog writes a per-org Metabase
+     uuid into orgs.json; there is no uuid to write. Same treatment as `qoq`,
+     which is derived from the GL card for the same reason. */
+  const nonAdd = slice("const NON_ADDABLE_REPORTS = new Set(", ");");
+  ok(/"cost-recovery"/.test(nonAdd),
+     "cost-recovery is NON-ADDABLE — it has no card of its own, so the Add "
+     + "report dialog can only ever offer a form it cannot satisfy");
+  ok(/"qoq"/.test(nonAdd),
+     "…beside qoq, which is the same shape: derived from another report's card");
+  // It still reaches its pilot orgs, which is the half the fix must not break:
+  // both availability builders PUSH it explicitly rather than filtering it in.
+  ok(/costRecoveryEnabled\(slug\) && !hidden\.has\("cost-recovery"\)/.test(SERVER),
+     "…and visibleReportsForOrg still pushes it for a pilot org, so making it "
+     + "non-addable does not take the eye away");
+  ok(/COST_RECOVERY_ORGS\.has\(slug\)/.test(SERVER),
+     "…gated on the pilot set, not on a uuid it does not have");
 
   // NO CARD OF ITS OWN. It reads the programs card through the programs feed,
   // so a second health probe of the same card is the doubled load this file
@@ -466,8 +792,7 @@ if (!process.env.SKIP_SOURCE) {
   ok(/\/programs\/api\/data/.test(PAGE), "the page reads the PROGRAMS feed, sharing its cache entry");
 
   // The page route gates on the programs card, since that is what it reads.
-  const route = slice('app.get("/:org/cost-recovery"', "\n});");
-  ok(route.length > 50, "the page route was found");
+  const route = pageRoute;
   ok(/SHARED_UUIDS\.programs/.test(route), "the page route gates on the PROGRAMS card, which is what it needs");
   ok(/logEvent\(slug, "cost-recovery", "view"/.test(route), "opening the report is recorded");
 
