@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Inventory</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --sand:#f4f2ef; --card:#ffffff; --card2:#fafaf9; --line:#e7e5e4; --line2:#d6d3d1;
+  --ink:#1c1917; --ink2:#57534e; --ink3:#7c7570;
+  --pine:#132219; --grass:#1b9849; --grass-ink:#157a3a;
+  --bar:#23231f; --bar-ink:#f4f2ef; --bar-dim:#a8a29e;
+  --ok:#15803d; --ok-bg:#e7fdef; --warn:#9a3412; --warn-bg:#fff3e2; --bad:#b91c1c; --bad-bg:#ffebeb;
+  --info:#1d4ed8; --info-bg:#e6f1ff; --pass:#7e22ce; --pass-bg:#f3e8ff;
+  --shadow:0 1px 2px rgba(28,25,23,.06),0 2px 8px rgba(28,25,23,.05);
+  --r:12px; --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  color-scheme:dark;
+  --sand:#161513; --card:#201f1c; --card2:#1b1a18; --line:#2e2c29; --line2:#3d3a36;
+  --ink:#f2efeb; --ink2:#bdb6ae; --ink3:#948c84;
+  --pine:#0c1510; --grass:#2fbf66; --grass-ink:#4ade80;
+  --bar:#0f0f0d; --bar-ink:#f2efeb; --bar-dim:#8f877f;
+  --ok:#4ade80; --ok-bg:#12301d; --warn:#fdba74; --warn-bg:#3a2210; --bad:#fca5a5; --bad-bg:#3b1515;
+  --info:#93c5fd; --info-bg:#132542; --pass:#d8b4fe; --pass-bg:#2c1840;
+  --shadow:0 1px 2px rgba(0,0,0,.4);
+}}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --sand:#161513; --card:#201f1c; --card2:#1b1a18; --line:#2e2c29; --line2:#3d3a36;
+  --ink:#f2efeb; --ink2:#bdb6ae; --ink3:#948c84;
+  --pine:#0c1510; --grass:#2fbf66; --grass-ink:#4ade80;
+  --bar:#0f0f0d; --bar-ink:#f2efeb; --bar-dim:#8f877f;
+  --ok:#4ade80; --ok-bg:#12301d; --warn:#fdba74; --warn-bg:#3a2210; --bad:#fca5a5; --bad-bg:#3b1515;
+  --info:#93c5fd; --info-bg:#132542; --pass:#d8b4fe; --pass-bg:#2c1840;
+  --shadow:0 1px 2px rgba(0,0,0,.4);
+}
+*{box-sizing:border-box}
+body{background:var(--sand);color:var(--ink);font:14px/1.45 Figtree,system-ui,-apple-system,"Segoe UI",sans-serif;margin:0}
+.wrap{max-width:1180px;margin:0 auto;padding-inline:16px;padding-block:18px 60px}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--grass);outline-offset:2px}
+.mono{font-family:var(--mono);font-size:12.5px;letter-spacing:.01em}
+.num{font-variant-numeric:tabular-nums}
+
+
+.bar{background:var(--bar);color:var(--bar-ink);border-radius:var(--r);padding:10px 14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.bar .ttl{font-weight:700;margin-right:auto;display:flex;gap:10px;align-items:center}
+.bar .ttl small{color:var(--bar-dim);font-weight:500}
+.bar button{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);color:var(--bar-ink);border-radius:8px;padding:6px 11px;font-size:13px}
+.bar button:hover{background:rgba(255,255,255,.16)}
+.bar .sync{font-size:12.5px;color:var(--bar-dim);display:flex;align-items:center;gap:7px}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--grass);box-shadow:0 0 0 3px rgba(27,152,73,.25)}
+
+.mast{margin-top:12px;border-radius:var(--r);background:linear-gradient(115deg,var(--pine) 0%,#16492a 55%,var(--grass) 130%);color:#fff;padding:20px 22px;display:flex;gap:18px;align-items:flex-end;flex-wrap:wrap}
+.mast h1{margin:0;font-size:26px;letter-spacing:-.01em;text-wrap:balance}
+.mast .eyebrow{text-transform:uppercase;letter-spacing:.09em;font-size:11px;opacity:.75;font-weight:700}
+.mast p{margin:6px 0 0;opacity:.85;max-width:62ch}
+.mast .spacer{flex:1}
+.mast .pill{background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.22);border-radius:99px;padding:5px 11px;font-size:12.5px;white-space:nowrap}
+
+.kpis{display:flex;flex-wrap:wrap;gap:1px;background:var(--line);border-radius:var(--r);overflow:hidden;box-shadow:var(--shadow),0 0 0 1px var(--line);margin:16px 0}
+.kpi{flex:1 1 170px;background:var(--card);padding:14px 18px}
+.kpi .l{font-size:11.5px;color:var(--ink3);text-transform:uppercase;letter-spacing:.06em;font-weight:700}
+.kpi .v{font-size:26px;font-weight:800;margin-top:2px;font-variant-numeric:tabular-nums}
+.kpi .s{font-size:12.5px;color:var(--ink2)}
+.kpi.alert .v{color:var(--warn)} .kpi.bad .v{color:var(--bad)}
+button.kpi{border:0;text-align:left}
+button.kpi:hover{background:var(--card2)}
+
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--line2);margin-bottom:14px;overflow-x:auto}
+.tab{background:none;border:0;border-bottom:2px solid transparent;padding:9px 14px;font-weight:600;color:var(--ink2);white-space:nowrap}
+.tab[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--grass)}
+.tab .ct{background:var(--warn-bg);color:var(--warn);border-radius:99px;padding:1px 7px;font-size:11.5px;margin-left:5px}
+
+.panel{background:var(--card);border-radius:var(--r);box-shadow:var(--shadow),0 0 0 1px var(--line)}
+.ph{display:flex;gap:10px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.ph h2{margin:0;font-size:15px;margin-right:auto}
+.ph input[type=search]{border:1px solid var(--line2);background:var(--card2);border-radius:8px;padding:6px 10px;min-width:0;width:220px;max-width:100%}
+.seg{display:inline-flex;border:1px solid var(--line2);border-radius:8px;overflow:hidden}
+.seg button{border:0;background:var(--card);padding:5px 10px;font-size:12.5px;color:var(--ink2)}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--card)}
+
+.tscroll{overflow-x:auto}
+table{border-collapse:collapse;width:100%;min-width:860px}
+th{font-size:11.5px;text-transform:uppercase;letter-spacing:.05em;color:var(--ink3);text-align:left;padding:9px 14px;border-bottom:1px solid var(--line);font-weight:700;white-space:nowrap}
+td{padding:10px 14px;border-bottom:1px solid var(--line);vertical-align:middle}
+tr:last-child td{border-bottom:0}
+td.r,th.r{text-align:right}
+td[data-onhand]{white-space:nowrap}
+tbody tr:hover{background:var(--card2)}
+.iname{font-weight:600}
+.isub{font-size:12px;color:var(--ink3)}
+.chip{display:inline-flex;align-items:center;gap:5px;border-radius:99px;padding:2px 9px;font-size:12px;font-weight:700;white-space:nowrap}
+.chip.ok{background:var(--ok-bg);color:var(--ok)}
+.chip.low{background:var(--warn-bg);color:var(--warn)}
+.chip.out{background:var(--bad-bg);color:var(--bad)}
+.chip.pass{background:var(--pass-bg);color:var(--pass)}
+.chip.info{background:var(--info-bg);color:var(--info)}
+.nobar{color:var(--warn);font-size:12px;font-weight:600}
+.meter{height:6px;border-radius:9px;background:var(--line);width:90px;overflow:hidden;display:inline-block;vertical-align:middle;margin-left:8px}
+.meter i{display:block;height:100%;border-radius:9px;background:var(--ok)}
+.meter i.low{background:var(--warn)} .meter i.out{background:var(--bad)}
+.acts{display:flex;gap:6px;justify-content:flex-end}
+.btn{border:1px solid var(--line2);background:var(--card);border-radius:8px;padding:5px 10px;font-size:12.5px;font-weight:600;white-space:nowrap}
+.btn:hover{border-color:var(--ink3)}
+.btn.pri{background:var(--grass);border-color:var(--grass);color:#fff}
+.btn.pri:hover{filter:brightness(1.07)}
+.btn.link{border:0;background:none;color:var(--grass-ink);padding:5px 4px}
+
+.grid2{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr);gap:16px}
+@media (max-width:860px){.grid2{grid-template-columns:1fr}}
+.pb{padding:16px}
+.scanbox{border:2px dashed var(--line2);border-radius:12px;padding:18px;display:flex;gap:14px;align-items:center;background:var(--card2)}
+.scanbox.hot{border-color:var(--grass);background:color-mix(in srgb,var(--grass) 7%,var(--card))}
+.scanicon{width:46px;height:46px;flex:none;border-radius:10px;background:var(--ink);display:grid;place-items:center}
+.scanicon svg{width:30px;height:30px}
+.scanbox input{flex:1;min-width:0;border:1px solid var(--line2);border-radius:9px;padding:11px 12px;background:var(--card);font-family:var(--mono);font-size:16px;letter-spacing:.06em}
+.hint{font-size:12.5px;color:var(--ink3);margin-top:8px}
+.sims{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+.sims button{border:1px solid var(--line2);background:var(--card);border-radius:99px;padding:4px 10px;font-size:12px}
+.result{margin-top:16px;border:1px solid var(--line);border-radius:12px;padding:16px}
+.result h3{margin:0 0 2px;font-size:18px}
+.bigcount{display:flex;gap:26px;margin:14px 0;flex-wrap:wrap}
+.bigcount div .l{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink3);font-weight:700}
+.bigcount div .v{font-size:28px;font-weight:800}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.qty{width:84px;border:1px solid var(--line2);border-radius:8px;padding:6px 9px;background:var(--card);font-variant-numeric:tabular-nums}
+select{border:1px solid var(--line2);border-radius:8px;padding:6px 9px;background:var(--card);max-width:100%}
+
+.ledger{list-style:none;margin:0;padding:0}
+.ledger li{display:grid;grid-template-columns:118px 1fr auto auto;gap:10px;align-items:baseline;padding:8px 0;border-bottom:1px dashed var(--line);font-size:13px}
+.ledger li:last-child{border-bottom:0}
+.ledger .when{color:var(--ink3);font-size:12px}
+.ledger .d{font-weight:700;font-variant-numeric:tabular-nums;text-align:right;min-width:44px}
+.ledger .d.pos{color:var(--ok)} .ledger .d.neg{color:var(--ink2)} .ledger .d.set{color:var(--info)}
+.ledger .bal{color:var(--ink3);font-variant-numeric:tabular-nums;min-width:52px;text-align:right}
+.lk{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:6px}
+.explain{font-size:12.5px;color:var(--ink2);background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-top:12px}
+
+.email{border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.email .eh{background:var(--card2);padding:10px 14px;border-bottom:1px solid var(--line);font-size:12.5px;color:var(--ink2)}
+.email .eh b{color:var(--ink)}
+.email .eb{padding:14px;font-size:13.5px}
+.email .eb table{min-width:0}
+.email .eb td,.email .eb th{padding:6px 8px}
+.alertlog{list-style:none;padding:0;margin:0}
+.alertlog li{padding:10px 16px;border-bottom:1px solid var(--line);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.alertlog li:last-child{border-bottom:0}
+.alertlog li .w{color:var(--ink3);font-size:12px;margin-left:auto}
+
+.toggle{position:relative;width:36px;height:20px;flex:none}
+.toggle input{position:absolute;opacity:0;inset:0;margin:0;cursor:pointer}
+.toggle span{position:absolute;inset:0;border-radius:99px;background:var(--line2);transition:background .15s}
+.toggle span::after{content:"";position:absolute;left:2px;top:2px;width:16px;height:16px;border-radius:50%;background:#fff;transition:transform .15s;box-shadow:0 1px 2px rgba(0,0,0,.25)}
+.toggle input:checked+span{background:var(--grass)}
+.toggle input:checked+span::after{transform:translateX(16px)}
+.toggle input:focus-visible+span{outline:2px solid var(--grass);outline-offset:2px}
+.field{display:flex;flex-direction:column;gap:5px;margin-bottom:14px}
+.field label{font-size:12px;font-weight:700;color:var(--ink2);text-transform:uppercase;letter-spacing:.05em}
+.field input[type=text],.field input[type=email]{border:1px solid var(--line2);border-radius:8px;padding:8px 10px;background:var(--card)}
+.field .h{font-size:12.5px;color:var(--ink3)}
+
+.modal-bg{position:fixed;inset:0;background:rgba(28,25,23,.45);display:grid;place-items:center;padding:16px;z-index:50}
+.modal{background:var(--card);border-radius:14px;width:min(460px,100%);box-shadow:0 20px 50px rgba(0,0,0,.25);overflow:hidden}
+.modal .mh{padding:16px 18px 6px}
+.modal .mh h3{margin:0;font-size:18px}
+.modal .mh p{margin:4px 0 0;color:var(--ink2);font-size:13px}
+.modal .mb{padding:10px 18px 4px}
+.modal .mf{padding:12px 18px 16px;display:flex;gap:8px;justify-content:flex-end}
+.var{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:var(--line);border-radius:10px;overflow:hidden;margin:12px 0}
+.var div{background:var(--card2);padding:10px 12px}
+.var .l{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--ink3);font-weight:700}
+.var .v{font-size:22px;font-weight:800;font-variant-numeric:tabular-nums}
+.var .v.bad{color:var(--bad)} .var .v.good{color:var(--ok)}
+.big-in{font-size:22px;width:120px;padding:8px 10px;border:1px solid var(--line2);border-radius:9px;background:var(--card);font-weight:700;font-variant-numeric:tabular-nums}
+
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--card);padding:10px 16px;border-radius:10px;font-weight:600;box-shadow:0 10px 30px rgba(0,0,0,.25);z-index:60;max-width:calc(100% - 32px)}
+.banner{border-radius:10px;padding:10px 14px;margin:0 0 14px;font-size:13.5px}
+.banner.warn{background:var(--warn-bg);color:var(--warn)}
+.banner.bad{background:var(--bad-bg);color:var(--bad)}
+.banner.info{background:var(--info-bg);color:var(--info)}
+.chip.uncounted{background:var(--info-bg);color:var(--info)}
+.chip.untracked{background:var(--line);color:var(--ink2)}
+.empty{padding:30px 16px;text-align:center;color:var(--ink3)}
+.note{font-size:12.5px;color:var(--ink3);padding:10px 16px;border-top:1px solid var(--line)}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style></head>
+<body>
+<div class="wrap">
+  <div class="bar">
+    <div class="ttl"><span id="orgName"></span> <small>· Inventory</small></div>
+    <div class="sync"><span class="dot" id="syncDot"></span><span id="syncTxt">Loading…</span></div>
+    <button id="syncBtn" type="button">Sync with Rec now</button>
+  </div>
+
+  <div class="mast">
+    <div>
+      <div class="eyebrow">Inventory</div>
+      <h1>Snack bar &amp; merch stock</h1>
+      <p>Counts drop as Rec's item log records sales, and go back up for refunds, voids and deliveries you receive. A physical count resets an item to what's on the shelf.</p>
+    </div>
+    <div class="spacer"></div>
+    <div class="pill" id="mastPill"></div>
+  </div>
+
+  <div id="banner"></div>
+  <div class="kpis" id="kpis"></div>
+
+  <div class="tabs" role="tablist">
+    <button class="tab" role="tab" id="t-stock" aria-selected="true" data-tab="stock">Stock</button>
+    <button class="tab" role="tab" id="t-scan" aria-selected="false" data-tab="scan">Scan</button>
+    <button class="tab" role="tab" id="t-alerts" aria-selected="false" data-tab="alerts">Reorder emails</button>
+    <button class="tab" role="tab" id="t-setup" aria-selected="false" data-tab="setup">Items from Rec</button>
+  </div>
+
+  <section id="v-stock"></section>
+  <section id="v-scan" hidden></section>
+  <section id="v-alerts" hidden></section>
+  <section id="v-setup" hidden></section>
+</div>
+<div id="modalRoot"></div>
+<div id="toastRoot"></div>
+
+<script>
+(function(){
+/* The inventory report. Vanilla JS on purpose, like programs-schedule.html:
+   no JSX means no in-browser Babel, which is what turns a const read before
+   its declaration into `undefined` two lines later instead of a throw.
+
+   The page OWNS NO ARITHMETIC. On-hand, status, days-left and order-to-par
+   all come from lib/inventory.js on the server via /api/state, so the stock
+   table, the email and the hourly job cannot disagree about a number. */
+var CFG = window.ORG_CONFIG || {};
+var Q = new URLSearchParams(location.search);
+var TOKEN = Q.get('token') || CFG.token || '';
+var SLUG = CFG.slug || location.pathname.split('/').filter(Boolean)[0] || '';
+var $ = function(s){ return document.querySelector(s); };
+var esc = function(s){ return String(s == null ? '' : s).replace(/[&<>"]/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]; }); };
+var money = function(n){ return n == null ? '—' : '$' + Number(n).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); };
+var STATUS_LABEL = { ok:'In stock', low:'Reorder', out:'Out', uncounted:'Needs a count', untracked:'Not tracked' };
+
+function api(path, body){
+  var u = '/' + SLUG + '/inventory/api/' + path + '?token=' + encodeURIComponent(TOKEN);
+  var opts = body ? { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) } : { cache:'no-store' };
+  return fetch(u, opts).then(function(r){
+    return r.json().catch(function(){ return { ok:false, error:'HTTP ' + r.status }; }).then(function(d){
+      if (!r.ok || d.ok === false) throw new Error(d.error || ('HTTP ' + r.status));
+      return d;
+    });
+  });
+}
+
+var S = { data:null, tab:'stock', filter:'all', q:'', scan:null, err:'' };
+try { var t = localStorage.getItem('inv-tab'); if (t) S.tab = t; } catch(e){}
+if (Q.get('tab')) S.tab = Q.get('tab');
+// Who is doing the counting, remembered per browser. It goes on the ledger
+// line, because "who counted 12 Snickers" is the first question a variance asks.
+var BY = ''; try { BY = localStorage.getItem('inv-by') || ''; } catch(e){}
+
+function toast(msg){ var r=$('#toastRoot'); r.innerHTML='<div class="toast" role="status">'+esc(msg)+'</div>'; clearTimeout(toast._t); toast._t=setTimeout(function(){ r.innerHTML=''; },2800); }
+function items(){ return (S.data && S.data.items) || []; }
+function tracked(){ return items().filter(function(i){ return i.track && i.live; }); }
+function byId(id){ return items().find(function(i){ return i.id === id; }); }
+function when(ts){ if (!ts) return ''; var d=new Date(ts); return d.toLocaleDateString(undefined,{month:'short',day:'numeric'})+' · '+d.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'}).toLowerCase(); }
+
+function load(){ return api('state').then(function(d){ S.data=d; S.err=''; render(); }).catch(function(e){ S.err=e.message; render(); }); }
+function save(path, body, okMsg){
+  return api(path, body).then(function(d){ S.data=d; closeModal(); render(); if (okMsg) toast(typeof okMsg==='function' ? okMsg(d) : okMsg); return d; })
+    .catch(function(e){ var m=$('#mErr'); if (m){ m.textContent=e.message; m.hidden=false; } else toast(e.message); throw e; });
+}
+
+/* ── Chrome ─────────────────────────────────────────────────────────── */
+function renderChrome(){
+  $('#orgName').textContent = CFG.displayName || SLUG;
+  var d = S.data, ls = d && d.lastSync;
+  $('#syncTxt').textContent = !d ? 'Loading…'
+    : !d.configured ? 'Not connected to Rec yet'
+    : !ls ? 'Not synced yet'
+    : (ls.ok ? 'Synced with Rec ' + when(ls.ts) + ' · checks every hour' : 'Last sync failed ' + when(ls.ts));
+  $('#syncDot').style.background = d && ls && !ls.ok ? 'var(--bad)' : '';
+  var b = '';
+  if (S.err) b = '<div class="banner bad">Could not load inventory: '+esc(S.err)+'</div>';
+  else if (d && !d.configured) b = '<div class="banner warn">The inventory feed is not wired yet, so nothing can be pulled from Rec. Metabase card '+esc(d.cardId)+' needs a public link, set as <code>MB_INVENTORY_UUID</code>.</div>';
+  else if (ls && !ls.ok) b = '<div class="banner bad">The last sync with Rec failed ('+esc(ls.error)+'). Counts below are as of the last good sync; the next hourly run will try again.</div>';
+  else if (d && tracked().length && tracked().every(function(i){ return i.onHand === null; })) b = '<div class="banner info">First-time setup: do one physical count of each item (the Count button). Sales start counting down from that moment.</div>';
+  $('#banner').innerHTML = b;
+
+  var tr = tracked(), low = tr.filter(function(i){return i.status==='low';}), out = tr.filter(function(i){return i.status==='out';});
+  var need = tr.filter(function(i){return i.status==='uncounted';});
+  $('#mastPill').textContent = tr.length + ' items tracked · ' + (low.length+out.length) + ' need reordering';
+  var counted = tr.filter(function(i){ return i.onHand !== null; });
+  var withCost = counted.filter(function(i){ return i.cost != null; });
+  var value = withCost.reduce(function(a,i){ return a + Math.max(0,i.onHand)*i.cost; },0);
+  var units = tr.reduce(function(a,i){ return a + i.sold7; },0);
+  var rev = tr.reduce(function(a,i){ return a + i.sold7*(i.price||0); },0);
+  $('#kpis').innerHTML =
+    '<div class="kpi"><div class="l">Items tracked</div><div class="v">'+tr.length+'</div><div class="s">'+(need.length ? need.length+' still need a first count' : 'of '+items().filter(function(i){return i.live;}).length+' Rec store items')+'</div></div>'+
+    '<button type="button" class="kpi alert" data-go="low"><div class="l">At reorder point</div><div class="v">'+low.length+'</div><div class="s">Show them →</div></button>'+
+    '<button type="button" class="kpi bad" data-go="out"><div class="l">Out of stock</div><div class="v">'+out.length+'</div><div class="s">Show them →</div></button>'+
+    '<div class="kpi"><div class="l">Stock on hand, at cost</div><div class="v num">'+(withCost.length ? money(value) : '—')+'</div><div class="s">'+(withCost.length < counted.length ? withCost.length+' of '+counted.length+' items have a unit cost' : 'what’s on the shelf now')+'</div></div>'+
+    '<div class="kpi"><div class="l">Sold, last 7 days</div><div class="v num">'+units+'</div><div class="s">'+money(rev)+' in sales, counted items only</div></div>';
+  Array.prototype.forEach.call($('#kpis').querySelectorAll('[data-go]'), function(b){ b.onclick=function(){ S.filter=b.dataset.go; setTab('stock'); }; });
+  var n = low.length + out.length;
+  $('#t-stock').innerHTML = 'Stock' + (n ? '<span class="ct">'+n+'</span>' : '');
+}
+
+function setTab(t){
+  if (['stock','scan','alerts','setup'].indexOf(t) < 0) t = 'stock';
+  S.tab = t; try { localStorage.setItem('inv-tab', t); } catch(e){}
+  Array.prototype.forEach.call(document.querySelectorAll('.tab'), function(b){ b.setAttribute('aria-selected', b.dataset.tab===t ? 'true':'false'); });
+  ['stock','scan','alerts','setup'].forEach(function(k){ $('#v-'+k).hidden = k !== t; });
+  render();
+  if (t === 'scan') setTimeout(function(){ var i=$('#scanIn'); if (i) i.focus(); }, 0);
+}
+Array.prototype.forEach.call(document.querySelectorAll('.tab'), function(b){ b.onclick=function(){ setTab(b.dataset.tab); }; });
+
+/* ── Stock ──────────────────────────────────────────────────────────── */
+function renderStock(){
+  if (!S.data){ $('#v-stock').innerHTML='<div class="panel"><div class="empty">Loading…</div></div>'; return; }
+  var rows = tracked();
+  if (S.filter !== 'all') rows = rows.filter(function(i){ return i.status === S.filter; });
+  if (S.q){ var q=S.q.toLowerCase(); rows = rows.filter(function(i){ return i.name.toLowerCase().indexOf(q)>=0 || (i.upc||'').indexOf(q)>=0; }); }
+  var rank = { out:0, low:1, uncounted:2, ok:3 };
+  rows.sort(function(a,b){ return (rank[a.status]-rank[b.status]) || a.name.localeCompare(b.name); });
+  var seg = [['all','All'],['low','At reorder point'],['out','Out'],['uncounted','Needs a count'],['ok','In stock']].map(function(x){ return '<button type="button" data-f="'+x[0]+'" aria-pressed="'+(S.filter===x[0])+'">'+x[1]+'</button>'; }).join('');
+  var body = rows.map(function(i){
+    var par = i.par || null, pct = i.onHand === null || !par ? 0 : Math.max(0, Math.min(100, i.onHand/par*100));
+    return '<tr data-inv-row="'+esc(i.id)+'" data-status="'+i.status+'">'+
+      '<td><div class="iname">'+esc(i.name)+'</div><div class="isub">'+money(i.price)+'</div></td>'+
+      '<td>'+(i.upc ? '<span class="mono">'+esc(i.upc)+'</span>' : '<span class="nobar">No barcode yet</span>')+'</td>'+
+      '<td class="r num" data-onhand="'+(i.onHand===null?'':i.onHand)+'">'+(i.onHand===null ? '<span class="isub">—</span>' : '<b>'+i.onHand+'</b>'+(par ? '<span class="meter" title="'+i.onHand+' of '+par+' par"><i class="'+i.status+'" style="width:'+pct+'%"></i></span>' : ''))+'</td>'+
+      '<td class="r num">'+(i.reorder==null?'<span class="isub">set</span>':i.reorder)+'</td>'+
+      '<td><span class="chip '+i.status+'">'+STATUS_LABEL[i.status]+'</span></td>'+
+      '<td class="r num">'+i.sold7+'</td>'+
+      '<td class="r num">'+(i.onHand===null ? '—' : i.onHand<=0 ? '<span style="color:var(--bad)">now</span>' : i.daysLeft===null ? '—' : i.daysLeft+' days')+'</td>'+
+      '<td><div class="acts"><button type="button" class="btn" data-hist="'+esc(i.id)+'">History</button><button type="button" class="btn'+(i.onHand===null?' pri':'')+'" data-count="'+esc(i.id)+'">Count</button>'+(i.onHand===null?'':'<button type="button" class="btn pri" data-recv="'+esc(i.id)+'">Receive</button>')+'</div></td>'+
+    '</tr>';
+  }).join('');
+  var empty = !tracked().length ? 'No items are tracked yet. Turn on the ones you stock under <b>Items from Rec</b>.' : 'Nothing matches this filter.';
+  $('#v-stock').innerHTML = '<div class="panel"><div class="ph"><h2>On hand</h2><input type="search" id="q" placeholder="Search name or UPC" value="'+esc(S.q)+'" aria-label="Search items"><div class="seg">'+seg+'</div></div>'+
+    '<div class="tscroll"><table><thead><tr><th>Item</th><th>UPC</th><th class="r">On hand</th><th class="r">Reorder at</th><th>Status</th><th class="r">Sold 7d</th><th class="r">Runs out in</th><th></th></tr></thead><tbody>'+
+    (body || '<tr><td colspan="8"><div class="empty">'+empty+'</div></td></tr>')+'</tbody></table></div>'+
+    '<div class="note">On hand = last physical count, minus sales from Rec’s item log, plus refunds, voids and deliveries received. "Runs out in" uses the last 7 days’ pace.</div></div>';
+  Array.prototype.forEach.call($('#v-stock').querySelectorAll('[data-f]'), function(b){ b.onclick=function(){ S.filter=b.dataset.f; render(); }; });
+  var qi = $('#q'); qi.oninput = function(){ S.q=qi.value; var p=qi.selectionStart; renderStock(); var n=$('#q'); n.focus(); n.setSelectionRange(p,p); };
+  wireRowActions($('#v-stock'));
+}
+function wireRowActions(root){
+  Array.prototype.forEach.call(root.querySelectorAll('[data-count]'), function(b){ b.onclick=function(){ openCount(byId(b.dataset.count)); }; });
+  Array.prototype.forEach.call(root.querySelectorAll('[data-recv]'), function(b){ b.onclick=function(){ openReceive(byId(b.dataset.recv)); }; });
+  Array.prototype.forEach.call(root.querySelectorAll('[data-hist]'), function(b){ b.onclick=function(){ openHistory(byId(b.dataset.hist)); }; });
+}
+
+/* ── Scan ───────────────────────────────────────────────────────────── */
+var SCAN_SVG = '<svg viewBox="0 0 30 30" fill="none" stroke="#fff" stroke-width="2"><path d="M3 9V4h5M22 4h5v5M27 21v5h-5M8 26H3v-5"/><path d="M8 10v10M11 10v10M14.5 10v10M18 10v10M21.5 10v10" stroke-width="1.6"/></svg>';
+// A phone camera works where the browser ships a barcode reader (Chrome on
+// Android, Edge, Chrome desktop). Where it does not, the button is simply not
+// offered — a handheld scanner typing into the box works everywhere.
+var CAMERA_OK = 'BarcodeDetector' in window && !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+function renderScan(){
+  if (!S.data){ $('#v-scan').innerHTML=''; return; }
+  var r = S.scan, res = '';
+  if (r && r.item){
+    var i = byId(r.item.id) || r.item;
+    res = '<div class="result" data-scan-hit="'+esc(i.id)+'"><div class="row" style="justify-content:space-between"><div><h3>'+esc(i.name)+'</h3><div class="isub"><span class="mono">'+esc(i.upc)+'</span> · '+money(i.price)+'</div></div><span class="chip '+i.status+'">'+STATUS_LABEL[i.status]+'</span></div>'+
+      '<div class="bigcount"><div><div class="l">On hand</div><div class="v num">'+(i.onHand===null?'—':i.onHand)+'</div></div><div><div class="l">Reorder at</div><div class="v num">'+(i.reorder==null?'—':i.reorder)+'</div></div><div><div class="l">Par</div><div class="v num">'+(i.par==null?'—':i.par)+'</div></div></div>'+
+      (i.onHand===null
+        ? '<div class="row"><button type="button" class="btn pri" id="doCount">Do the first physical count</button></div>'
+        : '<div class="row"><label for="rq" class="isub">Received</label><input id="rq" class="qty" type="number" min="1" value="'+Math.max(1,(i.orderToPar||0)||24)+'"><button type="button" class="btn pri" id="doRecv">Add to stock</button><span class="isub">or</span><button type="button" class="btn" id="doCount">Do a physical count</button></div>')+'</div>';
+  } else if (r && r.untracked){
+    res = '<div class="result"><h3>'+esc(r.untracked.name)+'</h3><div class="isub">This item is not tracked.</div><div class="row" style="margin-top:10px"><button type="button" class="btn pri" id="doTrack">Start tracking it</button></div></div>';
+  } else if (r && r.unknown){
+    var opts = tracked().filter(function(i){ return !i.upc; }).sort(function(a,b){ return a.name.localeCompare(b.name); }).map(function(i){ return '<option value="'+esc(i.id)+'">'+esc(i.name)+'</option>'; }).join('');
+    res = '<div class="result" data-scan-unknown="1"><h3>New barcode</h3><div class="isub"><span class="mono">'+esc(r.code)+'</span> isn’t linked to anything yet.</div>'+
+      (opts ? '<div class="row" style="margin-top:12px"><label for="linkSel" class="isub">This is</label><select id="linkSel">'+opts+'</select><button type="button" class="btn pri" id="doLink">Link barcode</button></div><div class="hint">You only do this once per product. After that every scan finds it.</div>'
+            : '<div class="hint">Every tracked item already has a barcode. Turn the item on under Items from Rec first.</div>')+'</div>';
+  }
+  var unl = tracked().filter(function(i){ return !i.upc; });
+  $('#v-scan').innerHTML = '<div class="grid2"><div class="panel pb">'+
+    '<div class="scanbox'+(r?' hot':'')+'"><div class="scanicon" aria-hidden="true">'+SCAN_SVG+'</div><input id="scanIn" inputmode="numeric" autocomplete="off" placeholder="Scan or type a UPC" aria-label="Barcode"></div>'+
+    '<div class="hint">A USB or Bluetooth handheld scanner types into this box and presses Enter for you.'+(CAMERA_OK?'':' Camera scanning isn’t available in this browser.')+'</div>'+
+    (CAMERA_OK ? '<div class="sims"><button type="button" id="camBtn">Use camera</button></div><video id="cam" playsinline muted hidden style="width:100%;max-width:420px;border-radius:10px;margin-top:10px;background:#000"></video>' : '')+
+    res+'</div>'+
+    '<div class="panel"><div class="ph"><h2>Scan to receive a delivery</h2></div><div class="pb" style="font-size:13.5px;color:var(--ink2)">'+
+    '<p style="margin-top:0">Unpack the box, scan one of each product, enter how many came in. The reorder alert resets once an item is back above its reorder point.</p>'+
+    '<p><b style="color:var(--ink)">Sales are never scanned here.</b> They come from Rec’s item log every hour, so the register stays the one place a sale happens.</p>'+
+    (unl.length ? '<p style="margin-bottom:0"><span class="chip low">'+unl.length+' tracked item'+(unl.length>1?'s':'')+' without a barcode</span> — scan the package to link it.</p>' : '')+
+    '</div></div></div>';
+  var inp = $('#scanIn');
+  inp.onkeydown = function(e){ if (e.key === 'Enter'){ e.preventDefault(); doScan(inp.value.trim()); } };
+  var dr=$('#doRecv'); if (dr) dr.onclick=function(){ var n=parseInt($('#rq').value,10); if (n>0) save('receive',{id:r.item.id,qty:n,scanned:true,by:BY}, function(d){ var it=d.items.find(function(x){return x.id===r.item.id;}); return '+'+n+' '+it.name+' · now '+it.onHand+' on hand'; }).catch(function(){}); };
+  var dc=$('#doCount'); if (dc) dc.onclick=function(){ openCount(byId(r.item.id)); };
+  var dt=$('#doTrack'); if (dt) dt.onclick=function(){ save('item',{id:r.untracked.id,track:true},'Now tracking '+r.untracked.name).then(function(){ S.scan={item:byId(r.untracked.id)}; render(); }).catch(function(){}); };
+  var dl=$('#doLink'); if (dl) dl.onclick=function(){ var id=$('#linkSel').value; save('item',{id:id,upc:r.code},'Barcode linked').then(function(){ S.scan={item:byId(id)}; render(); }).catch(function(){}); };
+  var cb=$('#camBtn'); if (cb) cb.onclick=startCamera;
+}
+function doScan(code){
+  if (!code) return;
+  var it = items().find(function(i){ return i.upc === code; });
+  if (it && !it.track) S.scan = { untracked: it };
+  else S.scan = it ? { item: it } : { unknown: true, code: code };
+  render();
+}
+var _stream = null;
+function startCamera(){
+  var v = $('#cam'); if (!v) return;
+  var det; try { det = new window.BarcodeDetector({ formats:['upc_a','upc_e','ean_13','ean_8','code_128'] }); } catch(e){ toast('This browser cannot read barcodes from the camera'); return; }
+  navigator.mediaDevices.getUserMedia({ video:{ facingMode:'environment' } }).then(function(stream){
+    _stream = stream; v.srcObject = stream; v.hidden = false; v.play();
+    var tick = function(){
+      if (!_stream) return;
+      det.detect(v).then(function(codes){
+        if (codes && codes.length){ stopCamera(); doScan(String(codes[0].rawValue)); }
+        else requestAnimationFrame(tick);
+      }).catch(function(){ requestAnimationFrame(tick); });
+    };
+    tick();
+  }).catch(function(){ toast('Camera permission was not granted'); });
+}
+function stopCamera(){ if (_stream){ _stream.getTracks().forEach(function(t){ t.stop(); }); _stream = null; } var v=$('#cam'); if (v) v.hidden = true; }
+
+/* ── Modals ─────────────────────────────────────────────────────────── */
+function modal(html){ $('#modalRoot').innerHTML='<div class="modal-bg" id="mbg"><div class="modal" role="dialog" aria-modal="true">'+html+'<div class="banner bad" id="mErr" hidden style="margin:0 18px 12px"></div></div></div>'; $('#mbg').onclick=function(e){ if (e.target.id==='mbg') closeModal(); }; document.onkeydown=function(e){ if (e.key==='Escape') closeModal(); }; }
+function closeModal(){ $('#modalRoot').innerHTML=''; document.onkeydown=null; }
+function byField(){ return '<div style="margin-top:10px"><label for="byIn" class="isub">Your name (optional)</label><br><input id="byIn" class="qty" style="width:200px" type="text" value="'+esc(BY)+'"></div>'; }
+function readBy(){ var b=$('#byIn'); if (b){ BY=b.value.trim().slice(0,60); try{ localStorage.setItem('inv-by',BY); }catch(e){} } return BY; }
+function openCount(it){
+  var exp = it.onHand, first = exp === null;
+  modal('<div class="mh"><h3>'+(first?'First count':'Physical count')+' · '+esc(it.name)+'</h3><p>'+(first?'Count what’s on the shelf and in the back. Sales start counting down from now.':'Count what’s on the shelf and in the back. This replaces the running number.')+'</p></div>'+
+    '<div class="mb"><label for="cn" class="isub">Counted</label><br><input id="cn" class="big-in" type="number" min="0" value="'+(first?'':Math.max(0,exp))+'">'+
+    (first ? '' : '<div class="var"><div><div class="l">Expected</div><div class="v">'+exp+'</div></div><div><div class="l">Counted</div><div class="v" id="cv">'+Math.max(0,exp)+'</div></div><div><div class="l">Variance</div><div class="v" id="vv">0</div></div></div>'+
+    '<div id="rsn" hidden><label for="rs" class="isub">Why is it off?</label><br><select id="rs"><option>Shrinkage / missing</option><option>Damaged or expired</option><option>Given away / comped</option><option>Miscounted last time</option><option>Unknown</option></select></div>')+
+    byField()+'</div>'+
+    '<div class="mf"><button type="button" class="btn" id="cx">Cancel</button><button type="button" class="btn pri" id="ok">Save count</button></div>');
+  var cn = $('#cn');
+  cn.oninput = function(){ if (first) return; var n=parseInt(cn.value,10)||0, d=n-exp; $('#cv').textContent=n; var vv=$('#vv'); vv.textContent=(d>0?'+':'')+d; vv.className='v'+(d<0?' bad':d>0?' good':''); $('#rsn').hidden = d===0; };
+  cn.focus(); cn.select();
+  $('#cx').onclick = closeModal;
+  $('#ok').onclick = function(){
+    if (cn.value === '') { $('#mErr').textContent='Enter how many you counted'; $('#mErr').hidden=false; return; }
+    var n = Math.max(0, parseInt(cn.value,10)||0);
+    save('count',{ id:it.id, qty:n, reason: $('#rs') ? $('#rs').value : '', by: readBy() }, function(){ var d = first ? 0 : n-exp; return it.name+' set to '+n+(first?'':d?' · '+(d>0?'+':'')+d+' variance logged':' · matched what we expected'); }).catch(function(){});
+  };
+}
+function openReceive(it){
+  var sugg = Math.max(1, it.orderToPar || 12);
+  modal('<div class="mh"><h3>Receive · '+esc(it.name)+'</h3><p>'+it.onHand+' on hand now.'+(it.par!=null?' Filling to par ('+it.par+') would take '+(it.orderToPar||0)+'.':'')+'</p></div>'+
+    '<div class="mb"><label for="rn" class="isub">Units received</label><br><input id="rn" class="big-in" type="number" min="1" value="'+sugg+'">'+byField()+'</div>'+
+    '<div class="mf"><button type="button" class="btn" id="cx">Cancel</button><button type="button" class="btn pri" id="ok">Add to stock</button></div>');
+  var rn=$('#rn'); rn.focus(); rn.select();
+  $('#cx').onclick = closeModal;
+  $('#ok').onclick = function(){ var n=parseInt(rn.value,10); if (!(n>0)) return; save('receive',{id:it.id,qty:n,by:readBy()}, '+'+n+' '+it.name).catch(function(){}); };
+}
+var LEDGER_COLOR = { count:'var(--info)', sale:'var(--ink3)', refund:'var(--ok)', void:'var(--ok)', receive:'var(--ok)', adjust:'var(--warn)' };
+function openHistory(it){
+  // Replayed the same way the server does, for the running-balance column
+  // only; the on-hand figure in the table is the server's.
+  var b = null;
+  var rows = (it.history||[]).map(function(e){ b = e.type==='count' ? e.qty : (b===null ? null : b + e.qty); var cls = e.type==='count' ? 'set' : e.qty>0 ? 'pos' : 'neg';
+    return '<li><span class="when">'+esc(when(e.ts))+'</span><span><i class="lk" style="background:'+(LEDGER_COLOR[e.type]||'var(--ink3)')+'"></i>'+esc(e.note)+'</span><span class="d '+cls+'">'+(e.type==='count' ? '= '+e.qty : (e.qty>0?'+':'')+e.qty)+'</span><span class="bal">'+(b===null?'—':b)+'</span></li>'; }).reverse().join('');
+  modal('<div class="mh"><h3>'+esc(it.name)+' · history</h3><p>Newest first. The right column is the running balance.</p></div><div class="mb" style="max-height:60vh;overflow:auto"><ul class="ledger">'+(rows||'<li class="isub">Nothing recorded yet.</li>')+'</ul>'+
+    '<div class="explain">A <b>count</b> sets the number outright. Sales come off Rec’s item log each hour; refunds and voids put units back. Only what happens after the last count moves the number.</div></div>'+
+    '<div class="mf"><button type="button" class="btn" id="cx">Close</button></div>');
+  $('#cx').onclick = closeModal;
+}
+
+/* ── Reorder emails ─────────────────────────────────────────────────── */
+function renderAlerts(){
+  if (!S.data){ $('#v-alerts').innerHTML=''; return; }
+  var need = tracked().filter(function(i){ return (i.status==='low'||i.status==='out') && i.reorder!=null; });
+  var rows = need.map(function(i){ return '<tr><td>'+esc(i.name)+'</td><td class="r num">'+i.onHand+'</td><td class="r num">'+i.reorder+'</td><td class="r num"><b>'+(i.orderToPar==null?'—':i.orderToPar)+'</b></td></tr>'; }).join('');
+  var log = (S.data.alerts||[]).map(function(a){ return '<li><span class="chip '+(a.sent?'info':'low')+'">'+(a.sent?'Sent':'Not sent')+'</span><span>'+a.items.map(function(x){ return esc(x.name); }).join(', ')+'</span><span class="w">'+esc(when(a.ts))+(a.sent?'':' · no email address set')+'</span></li>'; }).join('');
+  var to = S.data.recipients;
+  $('#v-alerts').innerHTML = '<div class="grid2">'+
+    '<div class="panel pb"><div class="email"><div class="eh">To <b>'+(to?esc(to):'<span style="color:var(--warn)">nobody yet — add an address under Items from Rec</span>')+'</b><br>Subject <b>Reorder: '+need.length+' item'+(need.length===1?'':'s')+' at '+esc(CFG.displayName||SLUG)+'</b></div>'+
+    '<div class="eb"><p style="margin-top:0">These items are at or below their reorder point:</p>'+
+    (need.length ? '<table><thead><tr><th>Item</th><th class="r">On hand</th><th class="r">Reorder at</th><th class="r">Order to par</th></tr></thead><tbody>'+rows+'</tbody></table>' : '<p>Nothing needs reordering right now.</p>')+
+    '<p style="margin-bottom:0;color:var(--ink3);font-size:12.5px">One email when an item drops to its reorder point, not one every hour. It resets once you receive stock. Items with no reorder point set never email.</p></div></div></div>'+
+    '<div class="panel"><div class="ph"><h2>Sent</h2></div><ul class="alertlog">'+(log||'<li class="isub">No reorder emails yet.</li>')+'</ul></div></div>';
+}
+
+/* ── Setup ──────────────────────────────────────────────────────────── */
+function renderSetup(){
+  if (!S.data){ $('#v-setup').innerHTML=''; return; }
+  var TYPE_LABEL = { product:'Merch', pass:'Pass', membership:'Membership', fee:'Fee', giftCard:'Gift card' };
+  var list = items().filter(function(i){ return i.live; }).sort(function(a,b){ return (a.type==='product'?0:1)-(b.type==='product'?0:1) || a.name.localeCompare(b.name); });
+  var rows = list.map(function(i){
+    var tag = i.type==='product' ? '<span class="chip ok">Merch</span>' : '<span class="chip pass">'+esc(TYPE_LABEL[i.type]||i.type)+' · not stock</span>';
+    return '<tr data-setup-row="'+esc(i.id)+'"><td><label class="toggle"><input type="checkbox" data-tk="'+esc(i.id)+'" '+(i.track?'checked':'')+' aria-label="Track '+esc(i.name)+'"><span></span></label></td>'+
+      '<td><div class="iname">'+esc(i.name)+'</div><div class="isub">'+money(i.price)+(i.inStore?'':' · hidden from Rec store')+'</div></td><td>'+tag+'</td>'+
+      '<td>'+(i.track?'<input class="qty" type="number" min="0" value="'+(i.reorder==null?'':i.reorder)+'" placeholder="—" data-ro="'+esc(i.id)+'" aria-label="Reorder point">':'<span class="isub">—</span>')+'</td>'+
+      '<td>'+(i.track?'<input class="qty" type="number" min="0" value="'+(i.par==null?'':i.par)+'" placeholder="—" data-par="'+esc(i.id)+'" aria-label="Par level">':'<span class="isub">—</span>')+'</td>'+
+      '<td>'+(i.track?'<input class="qty" type="number" min="0" step="0.01" value="'+(i.cost==null?'':i.cost)+'" placeholder="—" data-cost="'+esc(i.id)+'" aria-label="Unit cost">':'<span class="isub">—</span>')+'</td>'+
+      '<td>'+(i.upc?'<span class="mono">'+esc(i.upc)+'</span> <button type="button" class="btn link" data-unlink="'+esc(i.id)+'">Remove</button>':'<span class="isub">—</span>')+'</td></tr>';
+  }).join('');
+  $('#v-setup').innerHTML = '<div class="grid2"><div class="panel"><div class="ph"><h2>Store items pulled from Rec</h2><span class="isub">'+list.length+' items</span></div>'+
+    '<div class="tscroll"><table style="min-width:760px"><thead><tr><th>Track</th><th>Item</th><th>Type</th><th>Reorder at</th><th>Par</th><th>Unit cost</th><th>UPC</th></tr></thead><tbody>'+(rows||'<tr><td colspan="7"><div class="empty">No store items came back from Rec yet.</div></td></tr>')+'</tbody></table></div>'+
+    '<div class="note">Passes, memberships, fees and gift cards come in switched off, so a punch pass never shows up as stock. Unit cost is optional and only feeds the stock-value figure.</div></div>'+
+    '<div class="panel pb"><h2 style="margin:0 0 12px;font-size:15px">Reorder emails</h2>'+
+    '<div class="field"><label for="rcpt">Send to</label><input id="rcpt" type="email" multiple value="'+esc(S.data.recipients||'')+'" placeholder="name@city.gov, other@city.gov"><span class="h">Comma-separated. Anyone who places orders.</span></div>'+
+    '<div class="row"><button type="button" class="btn pri" id="saveRcpt">Save</button></div>'+
+    '<div class="field" style="margin-top:18px"><label>Checks Rec for sales</label><div>Every hour</div><span class="h">Sales, refunds and voids from Rec’s item log.</span></div>'+
+    '<div class="field"><label>First-time setup</label><div>Turn on the items you stock, do one physical count of each, set a reorder point, then scan each product once to link its barcode.</div></div></div></div>';
+  var root = $('#v-setup');
+  Array.prototype.forEach.call(root.querySelectorAll('[data-tk]'), function(c){ c.onchange=function(){ var it=byId(c.dataset.tk); save('item',{id:it.id,track:c.checked}, it.name+(c.checked?' is now tracked':' is no longer tracked')).catch(function(){ c.checked=!c.checked; }); }; });
+  var bind = function(attr, key){ Array.prototype.forEach.call(root.querySelectorAll('['+attr+']'), function(c){ c.onchange=function(){ var o={id:c.getAttribute(attr)}; o[key]=c.value===''?null:c.value; save('item',o,'Saved').catch(function(){}); }; }); };
+  bind('data-ro','reorder'); bind('data-par','par'); bind('data-cost','cost');
+  Array.prototype.forEach.call(root.querySelectorAll('[data-unlink]'), function(b){ b.onclick=function(){ save('item',{id:b.dataset.unlink,upc:''},'Barcode removed').catch(function(){}); }; });
+  $('#saveRcpt').onclick = function(){ save('prefs',{recipients:$('#rcpt').value}, function(d){ return d.recipients ? 'Reorder emails go to '+d.recipients : 'No valid addresses — reorder emails are off'; }).catch(function(){}); };
+}
+
+function render(){ renderChrome(); ({stock:renderStock, scan:renderScan, alerts:renderAlerts, setup:renderSetup})[S.tab](); }
+
+$('#syncBtn').onclick = function(){
+  var b=$('#syncBtn'); b.disabled=true; b.textContent='Syncing…';
+  api('sync',{}).then(function(d){ S.data=d; render(); var l=d.lastSync||{}; toast('Pulled '+(l.sales||0)+' sales, '+(l.refunds||0)+' refunds and '+(l.voids||0)+' voids from Rec'); })
+    .catch(function(e){ toast('Sync failed: '+e.message); load(); })
+    .then(function(){ b.disabled=false; b.textContent='Sync with Rec now'; });
+};
+setTab(S.tab);
+load();
+})();
+</script>
+<script src="/feedback-widget.js" defer></script>
+</body>
+</html>

@@ -1907,6 +1907,7 @@ const REPORT_DIRECTORY = {
   rentalcalendar:      { label: "Rental Calendar",          emoji: "🏟️" },
   "directors-report":  { label: "Director's Report",        emoji: "📰" },
   opportunities:       { label: "Opportunities",            emoji: "💡" },
+  inventory:           { label: "Inventory",                emoji: "📦" },
   lessons:             { label: "Instructor Lessons",       emoji: "🎾" },
   campmap:             { label: "Campsite Map",             emoji: "🏕️" },
   facilities:          { label: "Facilities",               emoji: "🏞️" },
@@ -3051,7 +3052,7 @@ async function resolveBannerUrl(org) {
    pins the list of reports that are visible by default, so adding a report
    that anyone can see without him asking fails a guard rather than appearing
    on 29 dashboards on deploy. */
-const DEFAULT_HIDDEN_REPORTS = new Set(["opportunities"]);
+const DEFAULT_HIDDEN_REPORTS = new Set(["opportunities", "inventory"]);
 // Reports RETIRED as standalone cards: kept as valid report types + endpoints
 // (so the Facilities hub's native Court Utilization tab, chat, and /api/data all
 // keep working) but no longer rendered as a clickable card on org/admin grids.
@@ -4123,6 +4124,7 @@ function visibleReportsForOrg(slug) {
   if (RENTAL_CALENDAR_ORGS.has(slug) && !hidden.has("rentalcalendar")) out.push("rentalcalendar");
   if (directorsReportEnabled(slug) && !hidden.has("directors-report")) out.push("directors-report");
   if (opportunitiesEnabled(slug) && !hidden.has("opportunities")) out.push("opportunities");
+  if (inventoryEnabled(slug) && !hidden.has("inventory")) out.push("inventory");
   if (lessonsReportEnabled(slug) && !hidden.has("lessons")) out.push("lessons");
   customReportsForOrg(slug).forEach(k => { if (!hidden.has(k)) out.push(k); });
   if ((org.gl?.mbUuid || SHARED_UUIDS.gl) && !hidden.has("qoq")) out.push("qoq");
@@ -4170,6 +4172,14 @@ const REPORT_VISIBILITY_SEEDS = {
   // the grid's own eye was inverted for a default-hidden report, so the click
   // that looked like "show" was the one that hid it again. See the toggle route.
   "opportunities:2026-09-14-shrewsbury": { report: "opportunities", orgs: ["shrewsbury"] },
+  // Inventory pilot. Keyed on the ORGID, not a slug: Madison is not onboarded in
+  // this project yet (checked 2026-09-22 — org-by-id answered exists:false), so
+  // there is no slug here to trust, and the name the org is given when it is
+  // added is not ours to guess. Per-org marker, so it waits for the org rather
+  // than burning on a boot that cannot see it — see seedReportVisibility.
+  "inventory:2026-09-22-madison": {
+    report: "inventory", orgIds: ["14e26ada-ac6c-48ec-ad75-0590daaa4d71"],
+  },
 };
 
 /* Report SETTINGS seeds - the same one-shot shape as REPORT_VISIBILITY_SEEDS
@@ -4249,6 +4259,25 @@ function seedReportVisibility() {
     const all = readJSON(VISIBILITY_FILE, {});
     let changed = false;
     for (const [key, seed] of Object.entries(REPORT_VISIBILITY_SEEDS)) {
+      if (seed.orgIds) {
+        /* RECONCILED ON THE orgId, and the marker is PER ORG. A per-key marker
+           burns the seed on any boot that cannot see the org — a dynamic org is
+           absent from ORGS until storeConnect has loaded it, and an org not yet
+           onboarded is absent altogether — so the feature would ship doing
+           nothing, silently. Same rule as seedReportSettings. */
+        for (const orgId of seed.orgIds) {
+          const mark = key + "|" + orgId;
+          if (applied[mark]) continue;                 // this org: already run
+          const slug = Object.keys(ORGS).find(sl => ORGS[sl] && ORGS[sl].orgId === orgId);
+          if (!slug) { console.warn("[seed] " + key + ": no org with orgId " + orgId + " yet - not marked, retries"); continue; }
+          const list = Array.isArray(all[slug]) ? all[slug] : [];
+          if (!list.includes(seed.report)) { all[slug] = list.concat(seed.report); changed = true; }
+          applied[mark] = new Date().toISOString();
+          writeJSON(seedFile, applied);
+          console.log("[seed] " + key + " → " + seed.report + " shown for " + slug);
+        }
+        continue;
+      }
       if (applied[key]) continue;                      // already run: never again
       for (const slug of seed.orgs) {
         // An org that is not served here must not get a phantom entry.
@@ -5228,7 +5257,7 @@ setTimeout(() => { checkCardParamTypes().catch(() => {}); }, 150 * 1000).unref?.
 // Inert if the env var is unset. Fire-and-forget — never blocks or breaks logging.
 // To change what pings Slack, edit SLACK_NOTIFY. High-frequency events (view/fetch)
 // are debounced per org+report so Slack isn't a firehose.
-const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "campmap-filter", "campmap-amenity", "pdf", "excel", "print", "summary", "game", "map", "outdoor", "fields", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email", "checkin-loc", "checkin-member", "checkin-failed", "form-open", "epact", "settings-open", "settings-unlock", "settings-locked", "settings-save", "settings-reset", "deadlink", "generate", "wizard-save", "mb-autorenew", "mb-salesmix", "ft-export", "panel-csv", "intel-csv", "wizard-feedback", "roster-open", "report-csv", "survey-response", "insights-listen", "opp-drill", "opp-print", "opp-csv", "backup-failed", "org-synced", "fee-alloc"]);
+const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "campmap-filter", "campmap-amenity", "pdf", "excel", "print", "summary", "game", "map", "outdoor", "fields", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email", "checkin-loc", "checkin-member", "checkin-failed", "form-open", "epact", "settings-open", "settings-unlock", "settings-locked", "settings-save", "settings-reset", "deadlink", "generate", "wizard-save", "mb-autorenew", "mb-salesmix", "ft-export", "panel-csv", "intel-csv", "wizard-feedback", "roster-open", "report-csv", "survey-response", "insights-listen", "opp-drill", "opp-print", "opp-csv", "backup-failed", "org-synced", "fee-alloc", "inv-count", "inv-receive", "inv-link", "inv-track", "inv-reorder"]);
 const SLACK_DEBOUNCE_MS = { view: 30 * 60 * 1000, fetch: 30 * 60 * 1000,
   // A broken report stays broken. The health check only reports NEW failures,
   // but a flapping card would otherwise post every hour.
@@ -5317,6 +5346,14 @@ const SLACK_EVENT_META = {
   // actually using it in place of the spreadsheet they rebuilt by hand, so the
   // message carries the WEEK and the total it priced rather than just the click.
   "fee-alloc": { emoji: "\uD83E\uDDFE", verb: "opened the fee allocation worksheet for" },
+  // Inventory. Each names the ITEM, because "someone counted something" says
+  // nothing and "counted Snickers: 18 on the shelf, 3 fewer than expected" is
+  // the whole point of a physical count. See the inventory branch in notifySlack.
+  "inv-count":   { emoji: "\u{1F4CB}", verb: "did a physical count on" },
+  "inv-receive": { emoji: "\u{1F4E6}", verb: "received stock on" },
+  "inv-link":    { emoji: "\u{1F3F7}\uFE0F", verb: "linked a barcode on" },
+  "inv-track":   { emoji: "\u{1F4CA}", verb: "changed what is tracked on" },
+  "inv-reorder": { emoji: "\u{1F6D2}", verb: "hit a reorder point on" },
   // FIVE WRONG ATTEMPTS. Not a typo — this is the one worth reading as a
   // security event, which is why only the lockout posts and single misses do not.
   "settings-locked": { emoji: "\uD83D\uDEA8", verb: "was LOCKED OUT of the report settings for" },
@@ -5416,6 +5453,10 @@ function notifySlack(rec) {
     // first one clicked — which is precisely the signal this event exists for.
     : rec.event === "opp-drill"
       ? `${rec.org}|opportunities|opp-drill|${rec.finding || ""}`
+    // Per ITEM: counting the Snickers and then the Gatorade is two counts, and
+    // a reorder email for two different items is two things to order.
+    : (rec.event === "inv-count" || rec.event === "inv-receive" || rec.event === "inv-link" || rec.event === "inv-track" || rec.event === "inv-reorder")
+      ? `${rec.org}|inventory|${rec.event}|${rec.item || ""}`
     // Per FINDING again: pulling the dormant list and then the member list is
     // two audiences to work, and the default key would keep only the first.
     : rec.event === "opp-csv"
@@ -5665,6 +5706,16 @@ function notifySlack(rec) {
     const skipped = (rec.rows || 0) - (rec.sheets || 0);
     text = `${meta.emoji} ${orgName} (\`${rec.org}\`) ${meta.verb} *${rec.report}* — ${rec.sheets || 0} sheet${rec.sheets === 1 ? "" : "s"}`
          + (skipped > 0 ? ` (${skipped} row${skipped === 1 ? "" : "s"} had no issued permit)` : "");
+  } else if (rec.event && rec.event.startsWith("inv-")) {
+    const what = rec.item ? `*${rec.item}*` : "an item";
+    const detail = rec.event === "inv-count"
+        ? ` \u2014 ${rec.qty} on the shelf` + (rec.variance ? ` (${rec.variance > 0 ? "+" : ""}${rec.variance} vs expected${rec.reason ? ", " + rec.reason : ""})` : ", matched what we expected")
+      : rec.event === "inv-receive" ? ` \u2014 +${rec.qty}, now ${rec.onHand} on hand`
+      : rec.event === "inv-link"    ? ` \u2014 UPC ${rec.upc}`
+      : rec.event === "inv-track"   ? ` \u2014 ${rec.track ? "now tracked" : "no longer tracked"}`
+      : rec.event === "inv-reorder" ? ` \u2014 ${rec.onHand} left, reorder at ${rec.reorder}${rec.emailed ? " \u00B7 email sent" : " \u00B7 no email address set"}`
+      : "";
+    text = `${meta.emoji} ${orgName} (\`${rec.org}\`) ${meta.verb} ${what} in *inventory*${detail}`;
   } else if (rec.event === "fee-alloc") {
     const fees  = rec.fees  ? ` \u00B7 $${rec.fees} in fees` : "";
     const txns  = rec.txns  ? ` over ${rec.txns} card transactions` : "";
@@ -6192,6 +6243,7 @@ function buildMetrics(org, daysBack) {
   if (RENTAL_CALENDAR_ORGS.has(org)) configuredReports.push('rentalcalendar');
   if (directorsReportEnabled(org)) configuredReports.push('directors-report');
   if (opportunitiesEnabled(org)) configuredReports.push('opportunities');
+  if (inventoryEnabled(org)) configuredReports.push('inventory');
   if (lessonsReportEnabled(org)) configuredReports.push('lessons');
   customReportsForOrg(org).forEach(k => configuredReports.push(k));
   return { summary, daily, subCounts, subByCadence, totalSubscribers: allSubs.length, insights, configuredReports };
@@ -6686,6 +6738,8 @@ async function generatePdf(orgSlug, reportType, startDate, endDate, filters = {}
       ? "Director's Report"
     : reportType === "opportunities"
       ? "Opportunities"
+    : reportType === "inventory"
+      ? "Inventory"
     : reportType === "lessons"
       ? "Instructor Lessons"
     : reportType === "historic"
@@ -8062,6 +8116,7 @@ app.post("/api/admin/add-org", express.json(), (req, res) => {
     console.error("[orgs] Failed to persist dynamic org:", e.message);
   }
   console.log(`[orgs] Added org via API: ${slug} (${orgId})`);
+  seedReportVisibility();   // a seed waiting on this orgId applies now, not next deploy
   res.json({ ok: true, action: "created", slug });
 });
 
@@ -8548,7 +8603,7 @@ app.get("/api/org-visibility/:slug", (req, res) => {
     }
   }
   // Also check non-REPORT_TYPES that can be toggled (chat, report-wizard, rentalcalendar, directors-report)
-  for (const rt of ["chat", "report-wizard", "rentalcalendar", "directors-report", "lessons", "opportunities"]) {
+  for (const rt of ["chat", "report-wizard", "rentalcalendar", "directors-report", "lessons", "opportunities", "inventory"]) {
     if (RETIRED_REPORTS.has(rt)) continue; // globally not surfaced
     // A default-hidden report INVERTS the store's meaning, so reading
     // `!hidden.has(rt)` here would tell rec-dashboard the opposite of the
@@ -11600,6 +11655,285 @@ app.get("/:org/opportunities/api/pdf", async (req, res) => {
     console.error("[opportunities] pdf " + slug + ": " + e.message);
     res.status(500).send("PDF generation failed: " + e.message);
   }
+});
+
+/* ── Inventory (2026-09-22) ─────────────────────────────────────────────────
+   Dan: "vibecode an inventory management system for Rec" — ingest an org's
+   store items, set quantities, every sale in Rec counts one down, reorder
+   thresholds email the org admin, and items carry a scannable UPC. Then:
+   "a job/cron every hour, don't go crazy, and check against that org's item
+   log for sales. confirmed that refunds and voids add a unit back." Product
+   will not have this until 11/30 and will not have UPC scanning at all.
+
+   THIS IS THE FIRST REPORT WHOSE NUMBERS WE OWN. Every other report here reads
+   Metabase and caches; this one keeps state an org types in (counts,
+   deliveries, barcodes, reorder points), so it lives in the shared store
+   (readJSON/writeJSON → Postgres) and not in the feed cache.
+
+   The ledger rules are in lib/inventory.js, which is pure and which
+   scripts/inventory.spec.js runs. What is here is plumbing: the card, the
+   hourly job, the routes, the email.
+
+   REGISTERED ABOVE /:org/:report/api/*, because `inventory` is deliberately
+   not in REPORT_TYPES (it has no card that answers a date window) and the
+   generic routes would 404 it as an unknown report — the trap this repo has
+   stepped in five times. */
+const INVENTORY = require("./lib/inventory");
+// Card 22144, "Inventory Feed". Omitted when unset: the page then says the
+// feed is not wired rather than rendering an empty stock list that reads as
+// "this org sells nothing". Same shape SHARED_UUIDS used before a link existed.
+const INVENTORY_UUID = process.env.MB_INVENTORY_UUID || "c6069a94-0ef5-4e6e-8578-37e851edf607";
+const INVENTORY_CARD_ID = 22144;
+const inventoryEnabled = (slug) => !!ORGS[slug];
+const inventoryFile = (slug) => path.join(DATA_DIR, "inventory", String(slug).replace(/[^a-z0-9-]/gi, "") + ".json");
+const readInventory = (slug) => INVENTORY.normalizeState(readJSON(inventoryFile(slug), null));
+const writeInventory = (slug, st) => writeJSON(inventoryFile(slug), st);
+
+let _invParamDefs = null;
+async function inventoryParamDefs() {
+  if (_invParamDefs && Date.now() - _invParamDefs.ts < 60 * 60 * 1000) return _invParamDefs.params;
+  const resp = await fetch(`${METABASE_URL}/api/public/card/${INVENTORY_UUID}`, { signal: AbortSignal.timeout(15000) });
+  if (!resp.ok) throw new Error(`inventory card definition HTTP ${resp.status}`);
+  const def = await resp.json();
+  const params = Array.isArray(def.parameters) ? def.parameters : [];
+  _invParamDefs = { ts: Date.now(), params };
+  return params;
+}
+
+// Echoes the card's OWN registered parameter types, like the permits and Munis
+// feeds, so an API save that resets the tags to Text cannot break it.
+async function fetchInventoryFeed(orgId, sinceYmd) {
+  const vals = { org_id: orgId, since: sinceYmd };
+  const params = (await inventoryParamDefs())
+    .filter(p => vals[p.slug] !== undefined)
+    .map(p => ({ id: p.id, type: p.type, target: p.target, slug: p.slug, value: vals[p.slug] }));
+  if (params.length < 2) throw new Error("inventory card is missing its org_id / since parameters");
+  const url = `${METABASE_URL}/api/public/card/${INVENTORY_UUID}/query/json?parameters=${encodeURIComponent(JSON.stringify(params))}`;
+  const resp = await fetch(url, { signal: AbortSignal.timeout(90000) });
+  if (!resp.ok) throw new Error(`Metabase HTTP ${resp.status}`);
+  const rows = await resp.json();
+  if (!Array.isArray(rows)) throw new Error("Metabase returned an error for the inventory card");
+  return rows;
+}
+
+// Reorder email. Sent for the items that CROSSED this sync, listing every item
+// at or below its point so the email is a complete shopping list and not just
+// the one that tipped it.
+async function sendReorderEmail(slug, st, crossedIds) {
+  const to = INVENTORY.parseRecipients(st.recipients);
+  if (!to.length) return false;
+  const resend = getResendClient();
+  const org = ORGS[slug] || {};
+  const name = org.displayName || slug;
+  const low = Object.values(st.items).filter(it => it.track && it.live && ["low", "out"].includes(INVENTORY.statusOf(it)) && it.reorder !== null);
+  const esc = (x) => String(x == null ? "" : x).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const rows = low.map(it => `<tr><td style="padding:6px 10px;border-bottom:1px solid #e7e5e4">${esc(it.name)}</td><td style="padding:6px 10px;border-bottom:1px solid #e7e5e4;text-align:right">${INVENTORY.onHand(it)}</td><td style="padding:6px 10px;border-bottom:1px solid #e7e5e4;text-align:right">${it.reorder}</td><td style="padding:6px 10px;border-bottom:1px solid #e7e5e4;text-align:right"><b>${INVENTORY.orderToPar(it) ?? "—"}</b></td></tr>`).join("");
+  const link = `${BASE_URL}/${slug}/inventory${org.token ? "?token=" + encodeURIComponent(org.token) : ""}`;
+  const subject = `Reorder: ${low.length} item${low.length === 1 ? "" : "s"} at ${name}`;
+  const html = `<div style="font-family:system-ui,sans-serif;color:#1c1917;max-width:560px">
+    <p>These items are at or below their reorder point after the latest sync with Rec:</p>
+    <table style="border-collapse:collapse;width:100%;font-size:14px"><thead><tr>
+      <th style="text-align:left;padding:6px 10px;border-bottom:2px solid #d6d3d1">Item</th>
+      <th style="text-align:right;padding:6px 10px;border-bottom:2px solid #d6d3d1">On hand</th>
+      <th style="text-align:right;padding:6px 10px;border-bottom:2px solid #d6d3d1">Reorder at</th>
+      <th style="text-align:right;padding:6px 10px;border-bottom:2px solid #d6d3d1">Order to par</th></tr></thead><tbody>${rows}</tbody></table>
+    <p style="margin-top:16px"><a href="${esc(link)}">Open the inventory report</a></p>
+    <p style="color:#7c7570;font-size:12px">You get one email when an item drops to its reorder point, not one every hour. It resets once stock is received or counted above that point.</p></div>`;
+  if (!resend) { console.log(`[inventory] reorder email (stub) → ${to.join(", ")}: ${subject}`); return false; }
+  try {
+    const { error } = await resend.emails.send({ from: `${FROM_NAME} <${FROM_EMAIL}>`, to, subject, html });
+    if (error) throw new Error(error.message || String(error));
+    return true;
+  } catch (e) { console.warn(`[inventory] reorder email failed for ${slug}: ${e.message}`); return false; }
+}
+
+// One sync per org at a time on this replica; a second caller waits on the
+// first rather than reading the item log twice.
+const _invSyncing = new Map();
+function syncInventory(slug, { reason = "manual" } = {}) {
+  if (_invSyncing.has(slug)) return _invSyncing.get(slug);
+  const run = (async () => {
+    const org = ORGS[slug];
+    if (!org || !org.orgId) throw new Error("This organization has no Rec org id on file");
+    if (!INVENTORY_UUID) throw new Error("The inventory feed is not wired yet (MB_INVENTORY_UUID)");
+    const now = Date.now();
+    const since = new Date(now - INVENTORY.SYNC_LOOKBACK_DAYS * 86400000).toISOString().slice(0, 10);
+    // The card filters on the org's LOCAL wall clock from `since` midnight, so
+    // its answer is complete only from a little after UTC midnight of that
+    // day. A full day of margin covers every US zone.
+    const windowStartMs = Date.parse(since + "T00:00:00Z") + 86400000;
+    let rows;
+    try { rows = await fetchInventoryFeed(org.orgId, since); }
+    catch (e) {
+      const st = readInventory(slug);
+      st.lastSync = { ts: new Date(now).toISOString(), ok: false, error: String(e.message).slice(0, 200), reason };
+      writeInventory(slug, st);
+      throw e;
+    }
+    // Re-read AFTER the fetch: a count typed on the other replica while the
+    // card was running must not be overwritten by a state read before it.
+    const st = readInventory(slug);
+    const added = INVENTORY.ingestCatalogue(st, rows);
+    const t = INVENTORY.applyMovements(st, rows, now, windowStartMs);
+    const crossed = INVENTORY.reorderCrossings(st);
+    st.lastSync = { ts: new Date(now).toISOString(), ok: true, reason, since, added, ...t };
+    let emailed = false;
+    if (crossed.length) {
+      emailed = await sendReorderEmail(slug, st, crossed);
+      INVENTORY.recordAlert(st, crossed, st.recipients, now, emailed);
+    }
+    writeInventory(slug, st);
+    crossed.forEach(id => {
+      const it = st.items[id];
+      logEvent(slug, "inventory", "inv-reorder", null, { item: String(it.name).slice(0, 80), onHand: INVENTORY.onHand(it), reorder: it.reorder, emailed });
+    });
+    return st;
+  })();
+  _invSyncing.set(slug, run);
+  run.finally(() => _invSyncing.delete(slug)).catch(() => {});
+  return run;
+}
+
+// The hourly job walks only orgs that have actually set inventory up — a
+// tracked item with a count. An org that has never opened the report costs
+// nothing, and orgs are walked one at a time.
+async function inventoryHourlyJob() {
+  if (!INVENTORY_UUID) return;
+  for (const slug of Object.keys(ORGS)) {
+    const st = readInventory(slug);
+    const live = Object.values(st.items).some(it => it.track && INVENTORY.lastCount(it));
+    if (!live) continue;
+    try { await syncInventory(slug, { reason: "hourly" }); }
+    catch (e) { console.warn(`[inventory] hourly sync failed for ${slug}: ${e.message}`); }
+    await new Promise(r => setTimeout(r, 2000));
+  }
+}
+cron.schedule("7 * * * *", leaderCron("inventory", () => inventoryHourlyJob().catch(() => {})));
+
+function inventoryPayload(slug) {
+  const st = readInventory(slug);
+  return { ok: true, configured: !!INVENTORY_UUID, cardId: INVENTORY_CARD_ID, ...INVENTORY.view(st, Date.now()) };
+}
+
+app.get("/:org/inventory", async (req, res) => {
+  const slug = req.params.org;
+  const org = ORGS[slug];
+  if (!org) return res.status(404).send("Unknown org");
+  logEvent(slug, "inventory", "view", req);
+  const orgConfig = {
+    slug,
+    displayName: org.displayName || (slug.charAt(0).toUpperCase() + slug.slice(1) + " Parks & Recreation"),
+    logoUrl: org.logoUrl || "",
+    token: org.token || "",
+  };
+  const html = require("fs").readFileSync(path.join(__dirname, "public", "inventory.html"), "utf8");
+  res.type("html").send(html.replace("</head>", () => orgConfigInject(orgConfig, req) + "</head>"));
+});
+
+app.get("/:org/inventory/api/state", async (req, res) => {
+  const slug = req.params.org;
+  if (!ORGS[slug]) return res.status(404).json({ ok: false, error: "Unknown org" });
+  // First open ingests the catalogue, so the page never starts empty.
+  const st = readInventory(slug);
+  if (!st.lastSync && INVENTORY_UUID) { try { await syncInventory(slug, { reason: "first-open" }); } catch (_) {} }
+  res.json(inventoryPayload(slug));
+});
+
+app.post("/:org/inventory/api/sync", async (req, res) => {
+  const slug = req.params.org;
+  if (!ORGS[slug]) return res.status(404).json({ ok: false, error: "Unknown org" });
+  // A button somebody can click repeatedly is not allowed to become a query
+  // per click: inside a minute of a good sync, the last one is the answer.
+  const last = readInventory(slug).lastSync;
+  if (last && last.ok && Date.now() - Date.parse(last.ts) < 60000) return res.json(inventoryPayload(slug));
+  try { await syncInventory(slug, { reason: "manual" }); res.json(inventoryPayload(slug)); }
+  catch (e) { res.status(502).json({ ok: false, error: e.message }); }
+});
+
+// Every write below is read-modify-write in one synchronous step, so two
+// people saving at once cannot interleave on this replica.
+function invItemOr404(slug, id, res) {
+  const st = readInventory(slug);
+  const it = st.items[String(id || "")];
+  if (!it) { res.status(404).json({ ok: false, error: "No such item" }); return null; }
+  return { st, it };
+}
+const invInt = (v, lo, hi) => { const n = Math.round(Number(v)); return Number.isFinite(n) && n >= lo && n <= hi ? n : null; };
+const invBy = (req) => String((req.body && req.body.by) || "").trim().slice(0, 60);
+
+app.post("/:org/inventory/api/count", express.json(), (req, res) => {
+  const slug = req.params.org;
+  if (!ORGS[slug]) return res.status(404).json({ ok: false, error: "Unknown org" });
+  const got = invItemOr404(slug, req.body && req.body.id, res); if (!got) return;
+  const { st, it } = got;
+  const qty = invInt(req.body.qty, 0, 1000000);
+  if (qty === null) return res.status(400).json({ ok: false, error: "Enter how many are on the shelf (0 or more)" });
+  const expected = INVENTORY.onHand(it);
+  const variance = expected === null ? null : qty - expected;
+  const reason = String(req.body.reason || "").slice(0, 60);
+  const by = invBy(req);
+  const note = expected === null ? "First physical count"
+    : "Physical count" + (variance ? ` · ${variance > 0 ? "+" : ""}${variance} vs expected${reason ? " (" + reason + ")" : ""}` : " · matched");
+  INVENTORY.push(it, { ts: new Date().toISOString(), type: "count", qty, note: note + (by ? " · " + by : "") });
+  if (!it.track) it.track = true;
+  INVENTORY.reorderCrossings(st);   // a count above the point clears the alert
+  writeInventory(slug, st);
+  logEvent(slug, "inventory", "inv-count", req, { item: it.name.slice(0, 80), qty, variance: variance || 0, reason });
+  res.json(inventoryPayload(slug));
+});
+
+app.post("/:org/inventory/api/receive", express.json(), (req, res) => {
+  const slug = req.params.org;
+  if (!ORGS[slug]) return res.status(404).json({ ok: false, error: "Unknown org" });
+  const got = invItemOr404(slug, req.body && req.body.id, res); if (!got) return;
+  const { st, it } = got;
+  const qty = invInt(req.body.qty, 1, 100000);
+  if (qty === null) return res.status(400).json({ ok: false, error: "Enter how many came in (1 or more)" });
+  // Receiving into an item that has never been counted would be a number with
+  // nothing under it. Ask for the count first; that is also first-time setup.
+  if (INVENTORY.onHand(it) === null) return res.status(409).json({ ok: false, error: "Do a physical count of this item first, then log deliveries" });
+  const by = invBy(req);
+  INVENTORY.push(it, { ts: new Date().toISOString(), type: "receive", qty, note: "Delivery received" + (req.body.scanned ? " · scanned" : "") + (by ? " · " + by : "") });
+  INVENTORY.reorderCrossings(st);
+  writeInventory(slug, st);
+  logEvent(slug, "inventory", "inv-receive", req, { item: it.name.slice(0, 80), qty, onHand: INVENTORY.onHand(it) });
+  res.json(inventoryPayload(slug));
+});
+
+// Track on/off, reorder point, par, unit cost, barcode.
+app.post("/:org/inventory/api/item", express.json(), (req, res) => {
+  const slug = req.params.org;
+  if (!ORGS[slug]) return res.status(404).json({ ok: false, error: "Unknown org" });
+  const got = invItemOr404(slug, req.body && req.body.id, res); if (!got) return;
+  const { st, it } = got;
+  const b = req.body || {};
+  let event = null, extra = { item: it.name.slice(0, 80) };
+  if (typeof b.track === "boolean" && b.track !== !!it.track) { it.track = b.track; event = "inv-track"; extra.track = b.track; }
+  for (const k of ["reorder", "par"]) if (k in b) it[k] = b[k] === null || b[k] === "" ? null : invInt(b[k], 0, 100000);
+  if ("cost" in b) { const c = Number(b.cost); it.cost = b.cost === null || b.cost === "" || !Number.isFinite(c) || c < 0 ? null : Math.round(c * 100) / 100; }
+  if ("upc" in b) {
+    const upc = String(b.upc || "").replace(/\s+/g, "");
+    if (upc && !/^[0-9A-Za-z\-]{4,32}$/.test(upc)) return res.status(400).json({ ok: false, error: "That does not look like a barcode" });
+    // One barcode, one product. A scan that could open two items is worse
+    // than one that opens neither.
+    const clash = upc && Object.entries(st.items).find(([id, o]) => o !== it && o.upc === upc);
+    if (clash) return res.status(409).json({ ok: false, error: `That barcode is already linked to ${clash[1].name}` });
+    if (upc !== it.upc) { it.upc = upc; event = event || "inv-link"; extra.upc = upc; }
+  }
+  INVENTORY.reorderCrossings(st);
+  writeInventory(slug, st);
+  if (event) logEvent(slug, "inventory", event, req, extra);
+  res.json(inventoryPayload(slug));
+});
+
+app.post("/:org/inventory/api/prefs", express.json(), (req, res) => {
+  const slug = req.params.org;
+  if (!ORGS[slug]) return res.status(404).json({ ok: false, error: "Unknown org" });
+  const st = readInventory(slug);
+  const list = INVENTORY.parseRecipients(req.body && req.body.recipients);
+  st.recipients = list.join(", ");
+  writeInventory(slug, st);
+  res.json(inventoryPayload(slug));
 });
 
 app.get("/:org/:report/api/data", resolveOrg, async (req, res) => {
@@ -17527,6 +17861,8 @@ app.get("/:org", async (req, res, next) => {
   // Opportunities — on every org's dashboard, hidden until Dan turns it on.
   // reportHiddenForOrg carries the inverted default-hidden semantics.
   if (!reportHiddenForOrg(slug, 'opportunities')) available.push('opportunities');
+  // Inventory — same shape: on every dashboard, hidden until turned on per org.
+  if (!reportHiddenForOrg(slug, 'inventory')) available.push('inventory');
   // Instructor Lessons — programs-pipeline report, per-org pilot (SF)
   if (lessonsReportEnabled(slug) && !orgHidden.has('lessons')) available.push('lessons');
   // Custom data reports — per-org (El Segundo aquatics); see CUSTOM_REPORTS.
@@ -17619,7 +17955,7 @@ app.post("/api/admin/toggle-report", express.json(), (req, res) => {
      in and could not be moved out of through its own API, which is how a card
      with a missing chip would have become unfixable. Found by mutation testing:
      the set-toggle spec's own setup step was silently 400ing. */
-  if (!REPORT_TYPES.includes(report) && report !== "chat" && report !== "report-wizard" && report !== "rentalcalendar" && report !== "facilities" && report !== "directors-report" && report !== "lessons" && report !== "opportunities" && report !== DATA_REPORTS_KEY && !customReportsForOrg(slug).includes(report)) return res.status(400).json({ error: "Unknown report type" });
+  if (!REPORT_TYPES.includes(report) && report !== "chat" && report !== "report-wizard" && report !== "rentalcalendar" && report !== "facilities" && report !== "directors-report" && report !== "lessons" && report !== "opportunities" && report !== "inventory" && report !== DATA_REPORTS_KEY && !customReportsForOrg(slug).includes(report)) return res.status(400).json({ error: "Unknown report type" });
   const hidden = getHiddenReports(slug);
 
   /* THE DATA REPORTS CARD IS N KEYS BEHIND ONE SWITCH, so it flips as a SET.
@@ -18954,6 +19290,8 @@ app.post("/api/admin/new-org", dashboardAuth, async (req, res) => {
   // is the watcher this needs; a console warning in Railway is not. It cannot
   // fail the creation — the org exists here regardless, exactly as it does when
   // the GitHub push above fails — and a failure is queued for the retry cron.
+  // A seed waiting on this org (by orgId) applies now rather than next deploy.
+  seedReportVisibility();
   const dashboardSync = await pushOrgToDashboard(slug, orgEntry);
 
   res.json({ ok: true, slug, reports: Object.keys(reports), github, dashboardSync });
@@ -19341,6 +19679,7 @@ app.get("/", (req, res) => {
     fasttrack:   { label: "Fast Track",             icon: "⚡", desc: "Pre-registration demand signal with conversion tracking", color: "#6366f1", ai: true },
     waitlist:    { label: "Waitlist Demand",        icon: "⏳", desc: "Waitlist pressure, conversion, and unmet demand — the add-another-section signal", color: "#b45309" },
     opportunities: { label: "Opportunities",        icon: "💡", desc: "A daily ranked list of what is worth acting on, read across every other report", color: "#ca8a04", ai: true },
+    inventory:   { label: "Inventory",              icon: "📦", desc: "Snack bar and merch stock, counted down by sales in Rec, with UPC scanning and reorder emails", color: "#15803d" },
     users:       { label: "Community Intel",            icon: "👥", desc: "Demographics, revenue, and strategy intelligence across your community", color: "#7c3aed", ai: true },
     "instructor-payout": { label: "Instructor Payout", ai: true, icon: "💰", desc: "Revenue splits and payout calculations by instructor", color: "#6366f1" },
 
@@ -19485,6 +19824,22 @@ app.get("/", (req, res) => {
           <button type="button" class="vis-toggle" onclick="event.preventDefault();event.stopPropagation();toggleVis('${slug}','opportunities',this)" title="${oppHidden ? 'Hidden from org page' : 'Visible on org page'}">
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="display:${oppHidden ? 'none' : 'block'}"><path d="M8 3C3 3 1 8 1 8s2 5 7 5 7-5 7-5-2-5-7-5z" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="display:${oppHidden ? 'block' : 'none'}"><path d="M8 3C3 3 1 8 1 8s2 5 7 5 7-5 7-5-2-5-7-5z" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.5" fill="none"/><line x1="2" y1="14" x2="14" y2="2" stroke="currentColor" stroke-width="1.5"/></svg>
+          </button>
+        </a>`);
+      /* Inventory — HIDDEN by default, like Opportunities. The eye hides the
+         CARD from the org; the page itself stays openable from here. */
+      const invHidden = reportHiddenForOrg(slug, 'inventory');
+      const invDim = invHidden ? ' report-card-hidden' : '';
+      cards.push(`
+        <a href="/${slug}/inventory${tokenQS}" class="report-card${invDim}" style="border-left:3px solid #15803d" data-org="${slug}" data-report="inventory">
+          <span class="report-icon">\u{1F4E6}</span>
+          <div class="report-body">
+            <div class="report-label">Inventory <span class="ai-pill-inline" style="background:#dcfce7;color:#14532d">NEW</span></div>
+            <div class="report-desc">Snack bar and merch stock, counted down by sales in Rec, with UPC scanning and reorder emails</div>
+          </div>
+          <button type="button" class="vis-toggle" onclick="event.preventDefault();event.stopPropagation();toggleVis('${slug}','inventory',this)" title="${invHidden ? 'Hidden from org page' : 'Visible on org page'}">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="display:${invHidden ? 'none' : 'block'}"><path d="M8 3C3 3 1 8 1 8s2 5 7 5 7-5 7-5-2-5-7-5z" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.5" fill="none"/></svg>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style="display:${invHidden ? 'block' : 'none'}"><path d="M8 3C3 3 1 8 1 8s2 5 7 5 7-5 7-5-2-5-7-5z" stroke="currentColor" stroke-width="1.5" fill="none"/><circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.5" fill="none"/><line x1="2" y1="14" x2="14" y2="2" stroke="currentColor" stroke-width="1.5"/></svg>
           </button>
         </a>`);
       // Facilities hub — new WIP report, HIDDEN by default (inverted semantics)
