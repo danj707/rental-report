@@ -689,6 +689,22 @@ if (!SKIP_SOURCE) {
     assert.ok(/if \(surveySeen\(\)\[s\.id\]\) return;/.test(widget),
       "being re-asked something you declined is worse than never being asked");
   });
+  /* Dan, 2026-09-23: "pop it now until people close it." */
+  test("the card comes up almost at once, not after a long wait", () => {
+    const m = /var SURVEY_DELAY_MS = (\d+);/.exec(widget);
+    assert.ok(m, "SURVEY_DELAY_MS not found");
+    assert.ok(Number(m[1]) <= 1000, "delay is " + m[1] + "ms — nobody answers a card that has not appeared yet");
+  });
+  test("\"Not now\" is a snooze: it stores nothing and reports nothing", () => {
+    const i = widget.indexOf('later.addEventListener("click"');
+    assert.ok(i > -1, "the Not now handler is missing");
+    const line = widget.slice(i, widget.indexOf("\n", i));
+    assert.ok(!/dismiss|surveyRemember/.test(line),
+      "Not now must not remember the survey — it would never come back, which is the bug Dan asked to fix");
+  });
+  test("only the x records a dismissal", () => {
+    assert.ok(/x\.addEventListener\("click", dismiss\)/.test(widget), "the x no longer dismisses");
+  });
   test("the widget remembers a send only after the server confirms it", () => {
     const i = widget.indexOf('surveyRemember(survey.id, "done")');
     assert.ok(i > widget.indexOf("if (!r.ok) throw new Error"),

@@ -321,7 +321,11 @@
      how a survey gets closed unread. It sits in the corner, it can be ignored,
      and it never covers the page. */
   var SURVEY_SEEN_KEY = "rec_survey_v1";      // { "<id>": "done" | "no" }
-  var SURVEY_DELAY_MS = 4000;                 // let them see the report first
+  /* Dan, 2026-09-23: "can we get a bit more pushy ... pop it now until people
+     close it." Nobody had answered. So the card comes up almost at once and
+     comes back on EVERY page load until it is answered or closed with the x.
+     "Not now" hides it for this page only. Still a corner card, never a modal. */
+  var SURVEY_DELAY_MS = 600;                  // just past first paint
   // The org landing page has no second path segment. MUST match
   // SURVEY_ORG_SURFACE in server.js — the spec pins the two together, because
   // two spellings of one surface makes targeting it match nothing, silently.
@@ -511,7 +515,8 @@
     var hd = surveyEl("div", "rec-svy-hd");
     hd.appendChild(surveyEl("h3", null, survey.title));
     var x = surveyEl("button", "rec-svy-x", "×");
-    x.type = "button"; x.setAttribute("aria-label", "Close");
+    x.type = "button"; x.setAttribute("aria-label", "Close and don\u2019t ask again");
+    x.title = "Close and don\u2019t ask again";
     hd.appendChild(x);
     card.appendChild(hd);
     if (survey.intro) card.appendChild(surveyEl("p", "rec-svy-intro", survey.intro));
@@ -545,7 +550,10 @@
       card.remove();
     }
     x.addEventListener("click", dismiss);
-    later.addEventListener("click", dismiss);
+    // A SNOOZE, not a dismissal: nothing is stored and nothing is reported, so
+    // the card is back on the next page load. Only the x (or an answer) stops it.
+    later.title = "Hide for now \u2014 we\u2019ll ask again on the next page";
+    later.addEventListener("click", function(){ card.remove(); });
 
     send.addEventListener("click", function(){
       var missing = (survey.questions || []).filter(function(q){
@@ -600,9 +608,8 @@
       .then(function(d){
         var s = d && d.survey;
         if (!s || !s.id || !(s.questions || []).length) return;
-        // Asked once per browser. Answered OR dismissed both count — being
-        // re-asked something you already declined is worse than never being
-        // asked, and it is the fastest way to make the card get ignored.
+        // Asked until answered or closed with the x — both are remembered per
+        // browser. "Not now" stores nothing, so it comes back next load.
         if (surveySeen()[s.id]) return;
         setTimeout(function(){ surveyMount(s, where); }, SURVEY_DELAY_MS);
       })

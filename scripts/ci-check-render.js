@@ -2962,7 +2962,7 @@ const CASES = [
   // Dismissed stays dismissed. Being re-asked something you already declined
   // is worse than never being asked, and it is the fastest way to make the
   // card get ignored.
-  { name: "survey · Not now dismisses it, and it does not come back",
+  { name: "survey · the x closes it for good",
     path: "/{org}/facility",
     // ONE-SHOT clear, via sessionStorage. `evaluateOnNewDocument` runs on every
     // navigation, so an unconditional clear would wipe the dismissal on the
@@ -2979,16 +2979,39 @@ const CASES = [
     },
     needs: "body[data-svy-gone='1']",
     act: async (page) => {
-      await page.waitForSelector(".rec-svy-later", { timeout: 20000 });
-      await page.click(".rec-svy-later");
+      await page.waitForSelector(".rec-svy-x", { timeout: 20000 });
+      await page.click(".rec-svy-x");
       await page.waitForFunction(() => !document.querySelector(".rec-svy"), { timeout: 5000 });
       // Reload WITHOUT clearing storage — this is the half that matters.
       await page.reload({ waitUntil: "domcontentloaded" });
       await page.waitForSelector(".toolbar", { timeout: 30000 });
-      await new Promise(r => setTimeout(r, 5200));   // past the widget's own show delay
+      await new Promise(r => setTimeout(r, 2500));   // well past the widget's show delay
       await page.evaluate(() => {
         if (!document.querySelector(".rec-svy")) document.body.setAttribute("data-svy-gone", "1");
       });
+    } },
+
+  // "Not now" is a SNOOZE (Dan: "pop it now until people close it"): the card
+  // goes away for this page and is back on the next load. Same one-shot clear.
+  { name: "survey · Not now hides it, and it comes back next load",
+    path: "/{org}/facility",
+    pre: async (page) => {
+      await page.evaluateOnNewDocument(() => {
+        try {
+          if (!sessionStorage.getItem("__svyCleared")) {
+            localStorage.clear(); sessionStorage.setItem("__svyCleared", "1");
+          }
+        } catch (e) {}
+      });
+    },
+    needs: "body[data-svy-back='1']",
+    act: async (page) => {
+      await page.waitForSelector(".rec-svy-later", { timeout: 20000 });
+      await page.click(".rec-svy-later");
+      await page.waitForFunction(() => !document.querySelector(".rec-svy"), { timeout: 5000 });
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await page.waitForSelector(".rec-svy", { timeout: 10000 });
+      await page.evaluate(() => { document.body.setAttribute("data-svy-back", "1"); });
     } },
 
   { name: "facilities · camping",  path: "/{org}/facilities?tab=camping", needs: ".camp-cal .cc-hd" },
