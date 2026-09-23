@@ -6890,6 +6890,100 @@ const CASES = [
   // in red, and the map claims nothing until it has been asked. "A Depart field
   // rendered" passes either way — this pins the prompt itself.
   { name: "campmap · depart prompts first", path: "/{org}/campmap",       needs: "#departLbl.prompt" },
+  // ── The campground map on a PHONE (2026-09-23) ─────────────────────────────
+  // Dan: "leave the desktop, detect mobile vs desktop and then display the
+  // correct one." Every case is keyed on COMPUTED geometry or where a node
+  // lives, because the phone layout is CSS over the same markup: a page that
+  // set the class and changed nothing would pass any presence assertion.
+  { name: "campmap · a phone gets the phone layout", path: "/{org}/campmap",
+    viewport: { width: 390, height: 844 },
+    act: async (page) => {
+      await page.waitForSelector("body.m", { timeout: 8000 });
+      await page.evaluate(() => {
+        const vh = window.innerHeight;
+        const m = document.getElementById("map").getBoundingClientRect();
+        const db = document.querySelector(".datebar");
+        const leg = getComputedStyle(document.getElementById("legend")).display;
+        const pill = document.getElementById("mPill").getBoundingClientRect();
+        const ok = m.height >= vh * 0.75 && db.closest("#mSheet") && leg === "none" && pill.height > 40;
+        document.body.setAttribute("data-rc-mm-seen", "map=" + Math.round(m.height) + "/" + vh + " datebarInSheet=" + !!db.closest("#mSheet") + " legend=" + leg);
+        if (ok) document.body.setAttribute("data-mm-map", "1");
+      });
+    },
+    needs: 'body.m[data-mm-map="1"]' },
+  // ...and a desktop gets exactly the page it had: the datebar where it was, and
+  // none of the phone controls drawn.
+  { name: "campmap · the desktop layout is untouched", path: "/{org}/campmap",
+    act: async (page) => {
+      await page.waitForSelector("#arrivePick", { timeout: 8000 });
+      await page.evaluate(() => {
+        const db = document.querySelector(".datebar");
+        const hidden = ["mPill", "mTog", "mKey", "mSheet"].every(id => getComputedStyle(document.getElementById(id)).display === "none");
+        document.body.setAttribute("data-rc-mm-seen", "parent=" + db.parentElement.id + " phoneControlsHidden=" + hidden);
+        if (db.parentElement.id === "app" && hidden) document.body.setAttribute("data-mm-desk", "1");
+      });
+    },
+    needs: 'body[data-mm-desk="1"]', absent: "body.m" },
+  // ?view=desktop is the override a staffer uses to see the full page from a phone.
+  { name: "campmap · ?view=desktop wins on a phone", path: "/{org}/campmap?view=desktop",
+    viewport: { width: 390, height: 844 },
+    needs: "#app > .datebar #arrivePick", absent: "body.m" },
+  // The pill opens the REAL datebar, in a sheet on screen, with inputs iOS will
+  // not zoom into (it zooms any field under 16px and never zooms back).
+  { name: "campmap · the search pill opens the stay sheet", path: "/{org}/campmap",
+    viewport: { width: 390, height: 844 },
+    act: async (page) => {
+      await page.waitForSelector("body.m #mPill", { timeout: 8000 });
+      await page.click("#mPill");
+      await new Promise(r => setTimeout(r, 450));
+      await page.evaluate(() => {
+        const sh = document.getElementById("mSheet").getBoundingClientRect();
+        const a = document.getElementById("arrivePick");
+        const ar = a.getBoundingClientRect();
+        const fs = parseFloat(getComputedStyle(a).fontSize);
+        const onScreen = sh.top < window.innerHeight * 0.5 && ar.top > sh.top && ar.bottom < window.innerHeight;
+        document.body.setAttribute("data-rc-mm-seen", "sheetTop=" + Math.round(sh.top) + " arrive=" + Math.round(ar.top) + " font=" + fs);
+        if (onScreen && fs >= 16 && a.closest("#mSheet")) document.body.setAttribute("data-mm-sheet", "1");
+      });
+    },
+    needs: 'body.m-search[data-mm-sheet="1"]' },
+  // Picking a stay in the sheet rewrites the pill — the pill IS the search on a
+  // phone, so one that kept saying "Choose your dates" would be lying.
+  { name: "campmap · the pill says the stay you picked", path: "/{org}/campmap",
+    viewport: { width: 390, height: 844 },
+    act: async (page) => {
+      await page.waitForSelector("body.m #mPill.unset", { timeout: 8000 });
+      await page.evaluate(() => {
+        const d = new Date(); d.setDate(d.getDate() + 3);
+        const p = n => String(n).padStart(2, "0");
+        const a = document.getElementById("arrivePick");
+        a.value = d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate());
+        a.dispatchEvent(new Event("change", { bubbles: true }));
+      });
+      await page.waitForFunction(() => !document.getElementById("mPill").classList.contains("unset"), { timeout: 5000 });
+      await page.evaluate(() => {
+        const t = document.getElementById("mPill1").textContent;
+        document.body.setAttribute("data-rc-mm-seen", "pill=" + t);
+        if (/–/.test(t) && !/Choose/.test(t)) document.body.setAttribute("data-mm-pill", "1");
+      });
+    },
+    needs: 'body[data-mm-pill="1"]', also: ["#mCount:not([hidden])"] },
+  // List replaces the map — never both squeezed onto one phone screen.
+  { name: "campmap · List replaces the map on a phone", path: "/{org}/campmap",
+    viewport: { width: 390, height: 844 },
+    act: async (page) => {
+      await page.waitForSelector("body.m #mTogList", { timeout: 8000 });
+      await page.click("#mTogList");
+      await new Promise(r => setTimeout(r, 200));
+      await page.evaluate(() => {
+        const sl = document.getElementById("sitelist").getBoundingClientRect();
+        const ctl = getComputedStyle(document.querySelector(".mapctl")).display;
+        const pressed = document.getElementById("mTogList").getAttribute("aria-pressed");
+        document.body.setAttribute("data-rc-mm-seen", "list=" + Math.round(sl.height) + "/" + window.innerHeight + " mapctl=" + ctl + " pressed=" + pressed);
+        if (sl.height >= window.innerHeight * 0.7 && sl.width >= window.innerWidth - 2 && ctl === "none" && pressed === "true") document.body.setAttribute("data-mm-list", "1");
+      });
+    },
+    needs: 'body.m-list[data-mm-list="1"]' },
   // ── Rental Calendar: the full-screen split ─────────────────────────────────
   // This page had NO render coverage at all before the split shipped, which is
   // the state CLAUDE.md records for the waitlist report and the rental schedule.
@@ -9057,7 +9151,7 @@ function waitForServer(started) {
            before this its first act-driven case hung for the whole timeout and
            reported as an uncaught error, which reads as the page being broken.
            Same latent gap `.report-header` was added for. */
-        await page.waitForSelector(".prompt-panel, .toolbar, .card, .report-header, .rc-shell", { timeout: PAGE_TIMEOUT_MS });
+        await page.waitForSelector(".prompt-panel, .toolbar, .card, .report-header, .rc-shell, .mapwrap", { timeout: PAGE_TIMEOUT_MS });
         await c.act(page);
       }
       try { await page.waitForSelector(c.needs, { timeout: PAGE_TIMEOUT_MS }); found = true; } catch (_) {}

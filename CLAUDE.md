@@ -1,5 +1,38 @@
 # Project notes for Claude
 
+## THE CAMPGROUND MAP HAS A PHONE LAYOUT (2026-09-23)
+
+Dan: *"build a mobile friendly view, leave the desktop, detect mobile vs desktop
+and then display the correct one."* Mockup he approved:
+https://claude.ai/artifact/MdUfQYZhBwAYtDJ3ptCUV6
+
+- **Detection:** `(max-width: 700px), (pointer: coarse) and (max-height: 500px)`
+  (the second half is a phone held sideways). Re-evaluated on change.
+  `?view=mobile` / `?view=desktop` overrides it.
+- **Everything is scoped under `body.m`**, so the desktop page cannot move. The
+  `desktop layout is untouched` render case caught the first draft leaking the
+  search pill onto desktop (a base `display:flex` beating `.m-only`).
+- **The search controls are NOT duplicated.** The real `.datebar` node is MOVED
+  into the bottom sheet and back, so every handler and bound is the desktop's.
+  The pill, count chip, List button and sheet button all read `stayTally()`
+  through `mSync()`, which rides on a wrapped `updateSummary`.
+- Map | List swap instead of sharing the screen; the legend becomes a key strip
+  that opens the full legend; zoom buttons hidden (pinch); pins get a 46px
+  invisible hit ring (growing the pin itself would put it off its 17px anchor).
+- **Inputs are 16px** in the sheet: iOS zooms into anything smaller and never
+  zooms back.
+- `body.m .mapwrap{z-index:0}` — Leaflet's attribution otherwise paints over the
+  sheet (the Facilities stacking bug from 2026-09-18).
+- **The admin editor stays desktop.** Edit layout is hidden on a phone; a window
+  made narrow mid-edit stays desktop until Done.
+- Pings carry `device=mobile` and Slack says *"on a phone"*; the route takes that
+  one word and drops anything else.
+- Guards: six `campmap ·` render cases at 390×844 keyed on geometry (map height,
+  where the datebar lives, the sheet on screen with 16px inputs, the list's box),
+  plus `campmap-beacons.spec.js` for the device field. `ci-check-render.js`'s
+  pre-act wait now includes `.mapwrap`: the campmap had none of the markers it
+  waited for, so any act-driven campmap case hung 45s.
+
 ## DOUGLAS COUNTY'S SCHEDULE SETTINGS (2026-09-23)
 
 From the Douglas County reporting sync (Fireflies `01M32RZDSWRPQPQ67EJ10P73KD`):

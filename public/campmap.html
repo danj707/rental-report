@@ -315,6 +315,123 @@ body{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica
 .mk-editor .del{background:#fee2e2;color:#991b1b;border:none;border-radius:8px;padding:7px 12px;font-weight:700;font-size:12px;cursor:pointer}
 .mk-editor .del:hover{background:#fecaca}
 .mk-editor .done2{background:var(--accent);color:#fff;border:none;border-radius:8px;padding:7px 16px;font-weight:700;font-size:12px;cursor:pointer}
+
+/* ══ Phone layout ═════════════════════════════════════════════════════════════
+   Everything below is scoped under body.m, which the script sets on a phone
+   (see the "phone layout" block). The desktop page never carries the class, so
+   none of this can move a desktop pixel. The shape is Dan's approved mockup
+   (2026-09-23): a one-line header, the whole search folded into one pill that
+   opens a bottom sheet, the map full screen, and Map | List swapped rather than
+   squeezed together.
+   The SEARCH CONTROLS ARE NOT DUPLICATED: the existing .datebar node is moved
+   into the sheet, so every handler, every bound and every rule it carries is the
+   one the desktop page runs. Two copies of the date logic is how the phone and
+   the desktop would start disagreeing about which nights are free. */
+.m-only{display:none}
+body.m .m-only{display:revert}
+body.m .hdr{flex-wrap:nowrap;gap:10px;padding:8px 12px;min-height:56px}
+body.m .hdr .titles{min-width:0}
+body.m .hdr h1{font-size:15.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+body.m .hdr .sub{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+body.m .hdr img.logo{height:30px;max-width:90px}
+body.m .hdr .mock-tag,body.m .hdr .wx,body.m .hdr .edit-btn{display:none!important}
+body.m .hdr .rec-by .pb{display:none}
+body.m .mapwrap:not(.nolist) #map,body.m #map{right:0;bottom:0}
+/* Leaflet numbers its panes and controls up to 1000 with no stacking context of
+   its own, so without this its attribution paints over the search sheet and the
+   site drawer. z-index 0 contains all of it — the Facilities page fix of
+   2026-09-18, applied here to the phone layout only. */
+body.m .mapwrap{z-index:0}
+body.m .leaflet-control-zoom{display:none}
+body.m .legend{display:none}
+body.m.m-legend .legend{display:block;left:10px;right:10px;bottom:92px;max-width:none;max-height:55%;overflow:auto}
+body.m .legend .collapse{display:none}
+body.m .mapctl,body.m .mapwrap.nolist .mapctl{top:76px;right:12px}
+body.m .basetoggle button{padding:9px 12px}
+/* The list replaces the map rather than sharing the screen with it: 42% of a
+   phone is four rows of list and a map too small to tap a pin on. */
+body.m .sitelist{display:none}
+body.m.m-list .sitelist{display:flex;top:76px;left:0;right:0;bottom:0;width:auto;height:auto;border:0;background:#f5f6f3;z-index:590}
+body.m.m-list .sitelist .sl-head{background:#f5f6f3;border:0;padding:4px 16px 6px}
+body.m.m-list .sitelist .sl-body{padding:4px 10px 100px}
+body.m.m-list .sitelist .sl-cta{position:absolute;left:0;right:0;bottom:84px;border:0;background:transparent;padding:0 12px}
+body.m.m-list .mapctl,body.m.m-list .m-count,body.m.m-list .m-key{display:none}
+body.m .sl-item{min-height:56px;padding:10px 12px;margin-bottom:6px;border-radius:12px}
+body.m .sl-item .nm{font-size:15px}
+body.m .sl-item .rt{font-size:13px}
+body.m .sl-item .wh{font-size:12px}
+
+/* the search pill: the whole search, folded into one line you tap to change */
+.m-pill{position:absolute;left:12px;right:12px;top:10px;z-index:620;align-items:center;gap:12px;
+  min-height:56px;padding:8px 14px;background:#fff;border:0;border-radius:16px;box-shadow:0 4px 16px rgba(16,24,40,.18);
+  font:inherit;text-align:left;cursor:pointer;color:var(--ink)}
+body.m .m-pill{display:flex}
+.m-pill .ico{flex:0 0 auto;color:var(--accent)}
+.m-pill .txt{flex:1;min-width:0}
+.m-pill .l1{display:block;font-size:15px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.m-pill .l2{display:block;font-size:12px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.m-pill .ed{flex:0 0 auto;font-size:13px;font-weight:700;color:var(--accent)}
+.m-pill.unset .l1{color:var(--booked)}
+.m-count{position:absolute;left:12px;top:76px;z-index:600;align-items:center;gap:6px;padding:7px 12px;border-radius:999px;
+  background:#fff;box-shadow:0 2px 8px rgba(16,24,40,.15);font-size:12.5px;font-weight:700;max-width:calc(100% - 200px)}
+body.m .m-count{display:flex}
+.m-count[hidden]{display:none!important}
+.m-count .d{width:9px;height:9px;border-radius:50%;flex:0 0 auto;background:var(--unknown)}
+.m-count.ok .d{background:var(--avail)}.m-count.some .d{background:var(--partial)}.m-count.none .d{background:var(--booked)}
+/* The colour key, as a strip. Tapping it opens the full legend. */
+.m-key{position:absolute;left:12px;bottom:88px;z-index:600;align-items:center;gap:10px;padding:8px 11px;border:0;border-radius:10px;
+  background:#fff;box-shadow:0 2px 8px rgba(16,24,40,.15);font:inherit;font-size:11.5px;font-weight:600;color:#374151;cursor:pointer}
+body.m .m-key{display:flex}
+.m-key i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:4px;vertical-align:-1px}
+/* Map | List. Never both. */
+.m-tog{position:absolute;left:50%;bottom:22px;transform:translateX(-50%);z-index:630;padding:4px;gap:0;border-radius:999px;
+  background:#fff;box-shadow:0 6px 20px rgba(16,24,40,.25)}
+body.m .m-tog{display:flex}
+.m-tog button{font:inherit;font-size:14px;font-weight:700;min-height:44px;padding:0 20px;border:0;border-radius:999px;background:none;color:#374151;cursor:pointer;white-space:nowrap}
+.m-tog button.on{background:var(--accent);color:#fff}
+
+/* the search sheet, holding the real .datebar */
+.m-scrim{position:absolute;inset:0;background:rgba(15,23,42,.45);z-index:760;opacity:0;pointer-events:none;transition:opacity .2s}
+body.m .m-scrim{display:block}
+body.m.m-search .m-scrim{opacity:1;pointer-events:auto}
+.m-sheet{position:absolute;left:0;right:0;bottom:0;max-height:88%;z-index:770;background:#fff;border-radius:20px 20px 0 0;
+  box-shadow:0 -8px 30px rgba(16,24,40,.25);flex-direction:column;transform:translateY(105%);transition:transform .22s cubic-bezier(.4,0,.2,1)}
+body.m .m-sheet{display:flex}
+body.m.m-search .m-sheet{transform:translateY(0)}
+.m-sheet .grab{width:40px;height:5px;border-radius:3px;background:#d1d5db;align-self:center;margin-top:9px;flex:0 0 auto}
+.m-sheet .shd{display:flex;align-items:center;padding:8px 10px 2px 20px;flex:0 0 auto}
+.m-sheet .shd h2{margin:0;flex:1;font-size:19px;font-weight:800}
+.m-sheet .shx{width:44px;height:44px;border:0;background:none;font-size:20px;color:#374151;cursor:pointer}
+.m-sheet .sbd{flex:1;overflow-y:auto;min-height:0}
+.m-sheet .sft{flex:0 0 auto;padding:12px 16px calc(16px + env(safe-area-inset-bottom));border-top:1px solid var(--line)}
+.m-show{display:block;width:100%;min-height:52px;border:0;border-radius:14px;background:var(--accent);color:#fff;font:inherit;font-size:16px;font-weight:800;cursor:pointer}
+/* The datebar, re-laid for a thumb. 16px inputs are not decoration: iOS zooms the
+   whole page into any field smaller than that, and never zooms back out. */
+body.m .m-sheet .datebar{border:0}
+body.m .m-sheet .dbrow{flex-wrap:wrap;gap:14px;padding:8px 20px 12px}
+body.m .m-sheet .fld{flex:1 1 40%;min-width:0}
+body.m .m-sheet .fld span{font-size:11.5px}
+body.m .m-sheet .fld input,body.m .m-sheet .fld select{font-size:16px;min-height:48px;padding:8px 12px;border-radius:12px;width:100%;max-width:none}
+body.m .m-sheet .fld-type{flex-basis:100%}
+body.m .m-sheet .fld-arrow{display:none}
+body.m .m-sheet .nights{flex-basis:100%;order:3;padding:0;margin-top:-6px}
+body.m .m-sheet .fld-type{order:5}
+body.m .m-sheet .staynote{order:4;white-space:normal}
+body.m .m-sheet .summ,body.m .m-sheet .listtog{display:none}
+body.m .m-sheet .dbrow-amen{padding-top:4px}
+body.m .m-sheet .amlbl{flex-basis:100%;font-size:11.5px}
+body.m .m-sheet .amchk{min-height:44px;padding:0 14px 0 12px;font-size:14px}
+body.m .m-sheet .amchk input{width:18px;height:18px}
+body.m .m-sheet .amnote{margin:0 20px 12px}
+/* A pin is a thumb target, not a cursor target: the hit area grows to 46px with
+   an invisible ring, while the drawn pin stays 34px. Growing the pin itself would
+   put it off its own anchor, which Leaflet pins at 17px. */
+body.m .site-marker::after{content:'';position:absolute;inset:-6px;border-radius:50%}
+/* The site drawer is already a bottom sheet under 640px; a phone in the 640-700
+   band gets the same, since that is the layout this class promises. */
+body.m .drawer{width:100%;max-width:100%;top:auto;height:82%;border-radius:16px 16px 0 0;transform:translateY(105%)}
+body.m .drawer.open{transform:translateY(0)}
+body.m .drawer .dclose{width:40px;height:40px}
 </style>
 </head>
 <body>
@@ -397,6 +514,20 @@ body{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica
       </div>
     </div>
     <div class="toast" id="toast"></div>
+    <!-- Phone layout only (body.m). Hidden on the desktop page. -->
+    <button type="button" class="m-pill m-only" id="mPill" aria-label="Change your dates and filters">
+      <svg class="ico" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>
+      <span class="txt"><span class="l1" id="mPill1">Choose your dates</span><span class="l2" id="mPill2">Tap to pick an arrival date</span></span>
+      <span class="ed">Edit</span>
+    </button>
+    <div class="m-count m-only" id="mCount" hidden><span class="d"></span><span id="mCountTxt"></span></div>
+    <button type="button" class="m-key m-only" id="mKey" aria-label="Show the map key">
+      <span><i style="background:var(--avail)"></i>Open</span><span><i style="background:var(--partial)"></i>Some nights</span><span><i style="background:var(--booked)"></i>Taken</span><span aria-hidden="true">ⓘ</span>
+    </button>
+    <div class="m-tog m-only" id="mTog" role="group" aria-label="Map or list">
+      <button type="button" id="mTogMap" class="on" aria-pressed="true">Map</button>
+      <button type="button" id="mTogList" aria-pressed="false">List</button>
+    </div>
     <div class="mapctl">
       <div class="basetoggle">
         <button id="btSat" class="on">Satellite</button>
@@ -423,6 +554,13 @@ body{font:14px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica
     </div>
   </div>
 
+  <div class="m-scrim m-only" id="mScrim"></div>
+  <section class="m-sheet m-only" id="mSheet" aria-label="Your stay">
+    <div class="grab"></div>
+    <div class="shd"><h2>Your stay</h2><button type="button" class="shx" id="mSheetX" aria-label="Close">✕</button></div>
+    <div class="sbd" id="mSheetBody"></div>
+    <div class="sft"><button type="button" class="m-show" id="mShow">Show sites</button></div>
+  </section>
   <div class="scrim" id="scrim"></div>
   <div class="drawer" id="drawer">
     <button class="dclose" id="dclose">✕</button>
@@ -1748,6 +1886,8 @@ var galleryIdx=0;
 // camper closing the tab must not lose the event.
 function ping(event, params){
   try{
+    // Which layout the camper was on, so the feed can say a booking came from a phone.
+    if(document.body.classList.contains('m')){ params=Object.assign({}, params||{}); params.device='mobile'; }
     var qs = Object.keys(params||{}).filter(function(k){ return params[k]!=null && params[k]!==''; })
       .map(function(k){ return k+'='+encodeURIComponent(params[k]); }).join('&');
     fetch('/'+CFG.slug+'/campmap/api/log?event='+event+(qs?'&'+qs:''),
@@ -1948,6 +2088,7 @@ function refreshDirty(){
 }
 function setEditMode(on){
   EDIT=on;
+  if(typeof applyPhone==='function') applyPhone();   // leaving the editor on a narrow screen lands on the phone layout
   var b=document.getElementById('editBtn'); b.classList.toggle('on',on); b.textContent = on?'✕ Exit edit':'✏️ Edit layout';
   document.getElementById('editbar').classList.toggle('on',on);
   SEED.forEach(function(s){ var m=markers[s.id]; if(m && m.dragging){ if(on) m.dragging.enable(); else m.dragging.disable(); } });
@@ -2231,6 +2372,107 @@ document.getElementById('editDone').onclick=function(){
   setEditMode(false);
 };
 
+
+/* ── phone layout ─────────────────────────────────────────────────────────────
+   Dan, 2026-09-23: "leave the desktop, detect mobile vs desktop and then display
+   the correct one." A phone is a narrow viewport, or a touch screen held
+   sideways (a landscape phone is 800+ wide but only ~390 tall, and the desktop
+   toolbar does not fit in that). ?view=mobile / ?view=desktop overrides it, so a
+   staffer can see the other one from a laptop — and so the render check can.
+   It is re-evaluated when the window changes, because rotating a phone or
+   dragging a desktop window narrow must not strand the reader in the wrong one.
+   The admin editor stays a desktop tool: Edit layout is hidden on a phone, and a
+   phone that is already editing (a window made narrow mid-edit) stays desktop
+   until Done, rather than hiding the editor's Save button under it. */
+var M_Q = window.matchMedia ? window.matchMedia('(max-width: 700px), (pointer: coarse) and (max-height: 500px)') : null;
+var M_FORCE = (new URLSearchParams(location.search).get('view') || '').toLowerCase();
+function isPhone(){
+  if(M_FORCE==='mobile') return true;
+  if(M_FORCE==='desktop') return false;
+  return !!(M_Q && M_Q.matches);
+}
+var M_ON = false;
+function applyPhone(){
+  var on = isPhone() && !EDIT;
+  var db = document.querySelector('.datebar');
+  if(on !== M_ON){
+    M_ON = on;
+    document.body.classList.toggle('m', on);
+    // The one datebar moves between the page and the sheet. Moving the node keeps
+    // every listener on it; rebuilding it would not.
+    if(on) document.getElementById('mSheetBody').appendChild(db);
+    else document.getElementById('app').insertBefore(db, document.querySelector('.mapwrap'));
+    if(!on) document.body.classList.remove('m-search','m-list','m-legend');
+    remap();
+  }
+  mSync();
+}
+function mSheet(open){
+  document.body.classList.toggle('m-search', !!open);
+  if(!open) remap();
+}
+function mPane(which){
+  var list = which === 'list';
+  document.body.classList.toggle('m-list', list);
+  document.body.classList.remove('m-legend');
+  var bm=document.getElementById('mTogMap'), bl=document.getElementById('mTogList');
+  bm.classList.toggle('on', !list); bm.setAttribute('aria-pressed', String(!list));
+  bl.classList.toggle('on', list);  bl.setAttribute('aria-pressed', String(list));
+  if(!list) remap();
+}
+// The pill, the count chip, the List button and the sheet's button all read the
+// same tally updateSummary does, so the phone cannot report a different number
+// from the desktop verdict pill for the same stay.
+function mSync(){
+  if(!M_ON) return;
+  var pill=document.getElementById('mPill');
+  var l1=document.getElementById('mPill1'), l2=document.getElementById('mPill2');
+  var nf=AMEN_FILTER.length + (TYPE_FILTER!=='all' ? 1 : 0);
+  var typeTxt = TYPE_FILTER==='all' ? 'All types' : kindInfo(TYPE_FILTER).label;
+  var filt = nf ? ' · ' + nf + ' filter' + (nf===1?'':'s') : '';
+  var view=VIEW().length, t=stayTally(), n=stayNights().length;
+  pill.classList.toggle('unset', !PICKED);
+  if(!PICKED){
+    l1.textContent='Choose your dates';
+    l2.textContent='Tap to pick an arrival date · ' + typeTxt + filt;
+  } else {
+    var a=new Date(SELECTED+'T00:00:00'), d=new Date(DEPART+'T00:00:00');
+    l1.textContent=fmtDay(a)+' – '+fmtDay(d);
+    l2.textContent=n+' night'+(n===1?'':'s')+' · '+typeTxt+filt;
+  }
+  var c=document.getElementById('mCount'), ct=document.getElementById('mCountTxt');
+  c.classList.remove('ok','some','none');
+  if(!PICKED){ c.hidden=true; }
+  else if(t.known===0){ c.hidden=false; ct.textContent='Loading availability…'; }
+  else {
+    c.hidden=false;
+    c.classList.add(t.full ? 'ok' : (t.part ? 'some' : 'none'));
+    ct.textContent = t.full ? (t.full+' of '+view+' sites open')
+                   : t.part ? ('None open every night · '+t.part+' some nights')
+                   : ('No sites open for these dates');
+  }
+  c.dataset.full=t.full||0;
+  var shown = PICKED ? (t.full + t.part) : view;
+  document.getElementById('mTogList').textContent = 'List · ' + shown;
+  var sb=document.getElementById('mShow');
+  sb.textContent = !PICKED ? 'Show all ' + view + ' sites'
+                 : t.known===0 ? 'Show sites'
+                 : t.full ? ('Show ' + t.full + ' open site' + (t.full===1?'':'s'))
+                 : t.part ? ('Show ' + t.part + ' partly open site' + (t.part===1?'':'s'))
+                 : 'Show sites';
+}
+document.getElementById('mPill').onclick=function(){ mSheet(true); };
+document.getElementById('mSheetX').onclick=function(){ mSheet(false); };
+document.getElementById('mScrim').onclick=function(){ mSheet(false); };
+document.getElementById('mShow').onclick=function(){ mSheet(false); };
+document.getElementById('mTogMap').onclick=function(){ mPane('map'); };
+document.getElementById('mTogList').onclick=function(){ mPane('list'); };
+document.getElementById('mKey').onclick=function(){ document.body.classList.toggle('m-legend'); };
+// Everything that repaints the verdict repaints the phone's copies of it too.
+var _mUpdateSummary = updateSummary;
+updateSummary = function(){ _mUpdateSummary.apply(this, arguments); mSync(); };
+if(M_Q){ if(M_Q.addEventListener) M_Q.addEventListener('change', applyPhone); else if(M_Q.addListener) M_Q.addListener(applyPhone); }
+
 applyConfig();
 buildMarkers();
 // Populates both inputs, the nights label, the in-range chips and the summary in
@@ -2239,6 +2481,7 @@ buildTypeFilter();   // before setStay: the checkout bound is derived from VIEW(
 buildAmenFilter();   // hidden until the live feed brings tags; same ordering reason
 setStay(TODAY_ISO, iso(addDays(TODAY, 1)));
 applyPanels();   // honour the viewer's remembered panel choice
+applyPhone();    // phone or desktop — after the first paint so mSync has a stay to read
 loadPositions();   // apply any admin-saved pin positions
 loadMarkers();     // load admin custom markers (Boat Ramp, etc.)
 loadSites();       // live site data → then availability (with offline fallbacks)
