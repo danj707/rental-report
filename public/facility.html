@@ -1462,6 +1462,7 @@ function scheduleSettings() {
     multiDayDisplay: s.multiDayDisplay === 'endpoints' ? 'endpoints' : 'every',
     siteOrder: s.siteOrder === 'site' ? 'site' : 'time',
     permitQr: s.permitQr !== false,
+    permitLayout: s.permitLayout === 'siteTag' ? 'siteTag' : 'sheet',
   };
 }
 
@@ -2608,6 +2609,7 @@ function ScheduleSettings() {
   const [multi, setMulti] = useState(cur.multiDayDisplay);
   const [order, setOrder] = useState(cur.siteOrder);
   const [qr, setQr] = useState(cur.permitQr);
+  const [layout, setLayout] = useState(cur.permitLayout);
 
   const slug = cfg.slug || window.location.pathname.split('/').filter(Boolean)[0] || '';
   const q = (extra) => {
@@ -2651,7 +2653,7 @@ function ScheduleSettings() {
       const resp = await fetch('/' + slug + '/facility/api/settings'
           + q(cfg.adminKey ? 'admin=' + encodeURIComponent(cfg.adminKey) : ''), {
         method: 'PUT', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ multiDayDisplay: multi, siteOrder: order, permitQr: qr }),
+        body: JSON.stringify({ multiDayDisplay: multi, siteOrder: order, permitQr: qr, permitLayout: layout }),
       });
       const data = await resp.json().catch(() => ({}));
       if (!resp.ok) { setErr(data.error || 'Could not save the settings.'); return; }
@@ -2685,7 +2687,7 @@ function ScheduleSettings() {
 
   if (!open) return gear;
 
-  const dirty = multi !== cur.multiDayDisplay || order !== cur.siteOrder || qr !== cur.permitQr;
+  const dirty = multi !== cur.multiDayDisplay || order !== cur.siteOrder || qr !== cur.permitQr || layout !== cur.permitLayout;
   const opt = (name, val, now, set, label, hint) => (
     <label className="fsrs-opt" data-fsrs-opt={name + ':' + val}>
       <input type="radio" name={name} checked={now === val} onChange={() => set(val)} />
@@ -2715,6 +2717,10 @@ function ScheduleSettings() {
         </div>
         <div className="rs-grp fsrs-body">
           <h4>Permit posting sheets</h4>
+          {opt('layout', 'sheet', layout, setLayout, 'One full-page sheet per permit',
+               'Holder, dates, times and add-ons. Right for a pavilion or a field.')}
+          {opt('layout', 'siteTag', layout, setLayout, 'Site tags, two to a page',
+               'One half-page tag per site with every reservation on it, and a cut line. Built from Douglas County\u2019s own campsite tags.')}
           <label className="fsrs-opt" data-fsrs-opt="qr">
             <input type="checkbox" checked={qr} onChange={ev => setQr(ev.target.checked)} />
             <span><b>Print a QR code</b><br /><span className="rs-hint">It opens the public permit page, which shows the permit holder's details to anyone who scans a posted sheet.</span></span>
@@ -3947,6 +3953,8 @@ function App() {
       // The server prints on ARRIVAL only for an org showing arrivals and
       // departures; it needs the row's place in the stay to know which is which.
       dayNum: r.multiDayNum || null,
+      // Site tags fold every row back to its whole stay, which needs the length.
+      days: r.multiDayDays || null,
     };
   }
 
@@ -3959,6 +3967,16 @@ function App() {
     if (!rows || !permits) return 0;
     const seen = new Set();
     let n = 0;
+    // Site tags: one per location + site with a permitted stay in view, which
+    // is what permitSiteTags() in server.js prints. Change one, change both.
+    if (scheduleSettings().permitLayout === 'siteTag') {
+      const norm = v => String(v == null ? '' : v).replace(/\s+/g, ' ').trim().toLowerCase();
+      for (const r of rows) {
+        if (!(r.resId && permits[r.resId]) || !r.date) continue;
+        seen.add(norm(r.location) + '|' + norm(r.site));
+      }
+      return seen.size;
+    }
     const arrivalOnly = scheduleSettings().multiDayDisplay === 'endpoints';
     for (const r of rows) {
       const p = r.resId && permits[r.resId];
@@ -4525,13 +4543,17 @@ function App() {
           if (!permits || !filteredRows || !filteredRows.length) return null;
           const n = permitSheetCount(filteredRows);
           if (!n) return null;   // nothing to print → no button, rather than a dead one
+          const tags = scheduleSettings().permitLayout === 'siteTag';
           return (
             <button
               onClick={() => exportPermits()}
               disabled={permitLoading === 'all'}
-              title="Print one posting sheet per rental with an issued permit, for the rentals shown"
+              data-permit-layout={tags ? 'siteTag' : 'sheet'}
+              title={tags
+                ? 'Print one reservation tag per site, two to a page, for the rentals shown'
+                : 'Print one posting sheet per rental with an issued permit, for the rentals shown'}
               style={{background:'#7c3aed',color:'#fff',borderColor:'#7c3aed'}}
-            >{permitLoading === 'all' ? 'Building…' : `📋 Export Permits (${n})`}</button>
+            >{permitLoading === 'all' ? 'Building…' : (tags ? `📋 Site Tags (${n})` : `📋 Export Permits (${n})`)}</button>
           );
         })()}
         <button

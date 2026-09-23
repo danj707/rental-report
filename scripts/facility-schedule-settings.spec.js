@@ -81,7 +81,7 @@ if (H.siteCompare) {
 }
 
 if (H.scheduleSettings) {
-  eq(guard(H.scheduleSettings), { multiDayDisplay: "every", siteOrder: "time", permitQr: true },
+  eq(guard(H.scheduleSettings), { multiDayDisplay: "every", siteOrder: "time", permitQr: true, permitLayout: "sheet" },
      "an unconfigured org renders exactly as the report always has");
 }
 
@@ -125,6 +125,68 @@ ok(/class="qrbox"/.test(withQr) && /SCAN TO VERIFY/.test(withQr), "a sheet with 
 ok(!/class="qrbox"/.test(noQr) && !/SCAN TO VERIFY/.test(noQr) && !/<img src="null"/.test(noQr),
    "a sheet without one renders no code box at all — not an empty frame or a broken image");
 ok(/Site 12/.test(noQr), "…and still carries the site");
+
+// ── site tags (permitLayout: "siteTag") ─────────────────────────────────────
+// Douglas County's own mockup: one tag per site, two per page, every stay on
+// the site listed. The grouping is LIFTED AND RUN — it is date arithmetic.
+ok(/permitLayout:\s*\{ kind: "enum", values: \["sheet", "siteTag"\], def: "sheet" \}/.test(schema),
+   "permitLayout defaults to the full-page sheet — no other org's export changes");
+ok(/"facility-schedule:2026-09-23-douglas-tags"[\s\S]*permitLayout: "siteTag"/.test(seeds),
+   "Douglas County gets site tags through a NEW seed key, not an edit to an applied one");
+ok(/permitLayout === "siteTag"[\s\S]*permitSiteTags\(rows, byRes\)[\s\S]*tagsToHtml/.test(pdf),
+   "permits.pdf prints site tags when the org chose them");
+ok(pdf.indexOf('permitLayout === "siteTag"') < pdf.indexOf("arrivalOnly && Number(r.dayNum) > 1"),
+   "site tags are built BEFORE the arrival-only skip — a stay that arrived before the window still occupies its site");
+const ta = server.indexOf("function permitSiteTags(");
+const tb = server.indexOf("// ── POST /:org/facility/permits.pdf");
+ok(ta > 0 && tb > ta, "found permitSiteTags in server.js");
+let permitSiteTags = null;
+try { permitSiteTags = new Function(server.slice(ta, tb) + "\nreturn permitSiteTags;")(); }
+catch (e) { failures.push("lifting permitSiteTags THREW: " + e.message); }
+if (permitSiteTags) {
+  const P = new Map([["r1", { "Permit Holder": "James Baurley", "Permit URL": "u1" }],
+                     ["r2", { "Permit Holder": "Karla Rodriguez", "Permit URL": "u2" }],
+                     ["r3", { "Permit Holder": "Brianna Randall", "Permit URL": "u3" }]]);
+  const L = "Topaz Lake Recreation Area";
+  const rows = [
+    // r2 arrives 9/18 for 3 days (checkout 9/20): its day-1 and day-3 rows.
+    { resId: "r2", site: "Site 14", location: L, date: "2026-09-18", dayNum: "1", days: "3" },
+    { resId: "r2", site: "Site 14", location: L, date: "2026-09-20", dayNum: "3", days: "3" },
+    // r1 checks out 9/18 — only its departure row is in view.
+    { resId: "r1", site: "Site 14", location: L, date: "2026-09-18", dayNum: "2", days: "2" },
+    { resId: "r3", site: "Site 01", location: L, date: "2026-09-18", dayNum: "1", days: "3" },
+    { resId: "nopermit", site: "Site 02", location: L, date: "2026-09-18" },
+  ];
+  const tags = guard(permitSiteTags, rows, P) || [];
+  eq(tags.map(t => t.site), ["Site 01", "Site 14"], "one tag per site, in site-number order, and none without a permit");
+  const t14 = tags[1] || { reservations: [] };
+  eq(t14.reservations.map(r => [r.name, r.start, r.end]),
+     [["James Baurley", "2026-09-17", "2026-09-18"], ["Karla Rodriguez", "2026-09-18", "2026-09-20"]],
+     "a turnover site lists both stays, each folded back to its whole check-in → check-out");
+  eq(t14.url, "", "a site with two stays carries no single permit link, so no QR");
+  eq((tags[0] || {}).url, "u3", "a site with one stay keeps its permit link for the optional QR");
+  const nine = guard(permitSiteTags, [
+    { resId: "r1", site: "Site 10", location: L, date: "2026-09-18" },
+    { resId: "r2", site: "Site 9", location: L, date: "2026-09-18" }], P) || [];
+  eq(nine.map(t => t.site), ["Site 9", "Site 10"], "natural site order: Site 9 before Site 10");
+}
+const tagHtml = permit.tagsToHtml([
+  { area: "Topaz Lake Recreation Area", site: "Site 01", reservations: [{ name: "Brianna Randall", start: "2026-09-18", end: "2026-09-20" }] },
+  { area: "Topaz Lake Recreation Area", site: "Site 14", reservations: [{ name: "James Baurley", start: "2026-09-17", end: "2026-09-18" }, { name: "Karla Rodriguez", start: "2026-09-18", end: "2026-09-20" }] },
+  { area: "Topaz Lake Recreation Area", site: "Group Pavilion", reservations: [{ name: "Ted Biggin", start: "2026-09-18", end: "2026-09-18" }], qr: "data:image/png;base64,AAAA" },
+]);
+eq((tagHtml.match(/class="page"/g) || []).length, 2, "three tags print on two pages — two to a sheet");
+eq((tagHtml.match(/CUT HERE/g) || []).length, 2, "every page carries its cut line");
+ok(/TOPAZ LAKE RECREATION AREA/.test(tagHtml) && /<div class="t-num">1<\/div>/.test(tagHtml),
+   "the tag leads with the area and prints 'Site 01' as a big 1, as their mockup does");
+ok(/MULTIPLE RESERVATIONS/.test(tagHtml) && /Sep 17 - Sep 18, 2026/.test(tagHtml) && /Sep 18 - Sep 20, 2026/.test(tagHtml),
+   "a turnover site says MULTIPLE RESERVATIONS and dates each stay");
+ok(/<div class="t-num name">Group Pavilion<\/div>/.test(tagHtml) && /class="t-qr"/.test(tagHtml),
+   "a non-numbered site prints its name, and a single stay with a QR renders it");
+eq((tagHtml.match(/class="t-qr"/g) || []).length, 1, "…and only that tag carries a QR");
+eq(permit.tagSpan("2026-12-30", "2027-01-02"), "Dec 30, 2026 - Jan 2, 2027", "a stay across new year spells both years");
+ok(/permitLayout === 'siteTag'/.test(cnt) && /days: r\.multiDayDays/.test(page),
+   "the button counts sites, and the payload carries the stay length the server folds rows with");
 
 // ── the campground address ──────────────────────────────────────────────────
 const seedsJson = fs.readFileSync(path.join(root, "campmap-seeds.json"), "utf8");

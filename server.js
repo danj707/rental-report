@@ -4231,6 +4231,13 @@ const REPORT_SETTINGS_SEEDS = {
     report: "facility", orgs: ["douglas-county-nv"],
     settings: { multiDayDisplay: "endpoints", siteOrder: "site", permitQr: false },
   },
+  // Their own site-tag mockup (Topaz_Lake_Site_Tags_Sep_18_2026.pdf). A NEW key,
+  // not an edit to the one above: that one may already be applied, and an
+  // applied key never runs again.
+  "facility-schedule:2026-09-23-douglas-tags": {
+    report: "facility", orgs: ["douglas-county-nv"],
+    settings: { permitLayout: "siteTag" },
+  },
 };
 
 /* CALLED FROM storeBoot(), NOT AT MODULE SCOPE - see the note on
@@ -12959,6 +12966,11 @@ const REPORT_SETTINGS_SCHEMA = {
     // the permit holder's details to anyone who scans a sheet taped to a post.
     // Douglas County asked for it off; other orgs want it, so it is per org.
     permitQr:        { kind: "bool", def: true },
+    // What "Export Permits" prints. `sheet` is one full-page posting sheet per
+    // permit. `siteTag` is Douglas County's own design (their mockup,
+    // 2026-09-23): one half-page tag PER SITE, two to a sheet with a cut line,
+    // every stay on that site in the window listed on it. See lib/permit.js.
+    permitLayout:    { kind: "enum", values: ["sheet", "siteTag"], def: "sheet" },
   },
 };
 
@@ -14317,6 +14329,47 @@ app.get("/:org/facility/api/permits", async (req, res) => {
   }
 });
 
+// Site tags for the permits.pdf route (permitLayout "siteTag"). Pure over the
+// posted rows and the permit map, so the spec can run it. One entry per
+// location + site, in natural site order; each lists its stays by check-in.
+function permitSiteTags(rows, byRes) {
+  const norm = v => String(v == null ? "" : v).replace(/\s+/g, " ").trim();
+  const addDays = (iso, n) => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ""));
+    if (!m) return String(iso || "");
+    const d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3] + n));
+    return d.toISOString().slice(0, 10);
+  };
+  const bySite = new Map();
+  for (const r of rows || []) {
+    const p = byRes && byRes.get(String(r.resId || ""));
+    if (!p) continue;                               // no issued permit → not printed
+    const date = String(r.date || "").slice(0, 10);
+    if (!date) continue;
+    const num = parseInt(r.dayNum, 10), days = parseInt(r.days, 10);
+    const multi = days > 1 && num >= 1;
+    const start = multi ? addDays(date, -(num - 1)) : date;
+    const end = multi ? addDays(start, days - 1) : date;
+    const sk = norm(r.location).toLowerCase() + "|" + norm(r.site).toLowerCase();
+    if (!bySite.has(sk)) bySite.set(sk, { area: norm(r.location), site: norm(r.site), stays: new Map(), url: "" });
+    const t = bySite.get(sk);
+    const rk = String(r.resId);
+    const prev = t.stays.get(rk);
+    const name = norm(p["Permit Holder"] || r.reservee) || norm(r.title) || "Reserved";
+    if (!prev) t.stays.set(rk, { name, start, end, url: p["Permit URL"] || "" });
+    else { if (start < prev.start) prev.start = start; if (end > prev.end) prev.end = end; }
+  }
+  const cmp = (a, b) => String(a || "").localeCompare(String(b || ""), undefined, { numeric: true, sensitivity: "base" });
+  return Array.from(bySite.values())
+    .map(t => {
+      const reservations = Array.from(t.stays.values())
+        .sort((a, b) => (a.start < b.start ? -1 : a.start > b.start ? 1 : cmp(a.name, b.name)));
+      return { area: t.area, site: t.site, reservations,
+               url: reservations.length === 1 ? reservations[0].url : "" };
+    })
+    .sort((a, b) => cmp(a.area, b.area) || cmp(a.site, b.site));
+}
+
 // ── POST /:org/facility/permits.pdf — printable posting sheets ──────────────
 // One page per rental-day in the CURRENT FILTERED VIEW. The client posts the
 // rows it is showing, which is the only way the export can honour on-screen
@@ -14356,6 +14409,30 @@ app.post("/:org/facility/permits.pdf", express.json({ limit: "2mb" }), async (re
     // not a sheet for a stay that began before the window. dayNum is the card's
     // Multi-Day Day#; a single-day booking carries none and always prints.
     const arrivalOnly = fset.multiDayDisplay === "endpoints";
+    const QRCode = require("qrcode");
+
+    // SITE TAGS: one per site, every stay on it listed. Arrival-only does not
+    // apply here — a tag is about the SITE, and a stay that arrived before the
+    // window still occupies it. Each row is folded back to its whole stay
+    // (Day# and Days put the check-in and check-out either side of the row's
+    // date), so a departure row and an arrival row of one booking are one line.
+    if (fset.permitLayout === "siteTag") {
+      const tags = permitSiteTags(rows, byRes);
+      if (!tags.length) {
+        return res.status(404).type("text/plain").send("None of the rentals in this view have an issued permit.");
+      }
+      for (const t of tags) {
+        t.qr = (fset.permitQr !== false && t.reservations.length === 1 && t.url)
+          ? await QRCode.toDataURL(t.url, { errorCorrectionLevel: "M", margin: 1, width: 240 }) : null;
+      }
+      logEvent(slug, "facility", "permits", req, { sheets: tags.length, rows: rows.length, layout: "siteTag" });
+      const pdf = await renderHtmlPdf(permitLib.tagsToHtml(tags), { landscape: false, plain: true });
+      const day = (rows[0] && rows[0].date ? String(rows[0].date) : new Date().toISOString().slice(0, 10)).replace(/-/g, "");
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader("Content-Disposition", `attachment; filename="${slug}-site-tags-${day}.pdf"`);
+      return res.send(pdf);
+    }
+
     for (const r of rows) {
       if (arrivalOnly && Number(r.dayNum) > 1) continue;
       const p = byRes.get(String(r.resId || ""));
@@ -14373,7 +14450,6 @@ app.post("/:org/facility/permits.pdf", express.json({ limit: "2mb" }), async (re
       picked.push({ r, p });
     }
 
-    const QRCode = require("qrcode");
     const sheets = [];
     for (const { r, p } of picked) {
       const url = p["Permit URL"];

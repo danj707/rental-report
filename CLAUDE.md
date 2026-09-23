@@ -33,9 +33,21 @@ today's behaviour, seeded for `douglas-county-nv` by
 - Guard: `scripts/facility-schedule-settings.spec.js` (34 assertions, in CI),
   lifting and RUNNING the row helpers; mutation-tested seven ways, all caught.
 
-**NOT DONE:** the two-up landscape sheet with the next upcoming rental under the
-current one — waiting on Rebecca's photos of their own tags. No "Open" tag
-(Dan: skip for now). Mobile view scoped, not built.
+**SITE TAGS, built off Douglas County's own mockup** (`Topaz_Lake_Site_Tags_Sep_18_2026.pdf`,
+which replaced the "two-up landscape + next rental" ask): a fourth setting,
+`permitLayout` `sheet` / `siteTag` (default `sheet`, seeded `siteTag` for Douglas
+by a NEW key `facility-schedule:2026-09-23-douglas-tags`). One half-page tag PER
+SITE, two to a portrait Letter sheet with a cut line — area, RESERVED, SITE and
+a big number, then the holder and "Sep 18 - Sep 20, 2026", or MULTIPLE
+RESERVATIONS listing every stay when the site turns over (that IS the "next
+rental under the current one"). `permitSiteTags()` in server.js folds each row
+back to its whole stay from Day# and Days, and runs BEFORE the arrival-only skip,
+because a stay that arrived before the window still occupies the site. Still one
+permit required per stay; QR only when `permitQr` is on AND the site holds one
+stay. Guarded in the same spec (52 assertions, the grouping lifted and run).
+
+**NOT DONE:** No "Open" tag for an empty site (Dan: skip for now). Mobile view
+scoped, not built.
 
 ## INVENTORY — the first report whose numbers we own (2026-09-22)
 
