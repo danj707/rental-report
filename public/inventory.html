@@ -142,12 +142,18 @@ select{border:1px solid var(--line2);border-radius:8px;padding:6px 9px;backgroun
 .alertlog li:last-child{border-bottom:0}
 .alertlog li .w{color:var(--ink3);font-size:12px;margin-left:auto}
 
-.toggle{position:relative;display:inline-block;vertical-align:middle;width:36px;height:20px;flex:none}
-.toggle input{position:absolute;opacity:0;inset:0;margin:0;cursor:pointer}
-.toggle span{position:absolute;inset:0;border-radius:99px;background:var(--line2);transition:background .15s}
-.toggle span::after{content:"";position:absolute;left:2px;top:2px;width:16px;height:16px;border-radius:50%;background:#fff;transition:transform .15s;box-shadow:0 1px 2px rgba(0,0,0,.25)}
+/* The Track switch. Big enough to find at a glance, a visibly GREY track when
+   off rather than near-white, and the state in words beside it — a switch
+   whose off state disappears into the row reads as no control at all. */
+.tgl{display:inline-flex;align-items:center;gap:8px;white-space:nowrap}
+.tgl .tw{font-size:12px;font-weight:700;color:var(--ink3);min-width:22px}
+.tgl .tw.on{color:var(--grass-ink)}
+.toggle{position:relative;display:inline-block;vertical-align:middle;width:44px;height:24px;flex:none}
+.toggle input{position:absolute;opacity:0;inset:0;margin:0;cursor:pointer;z-index:1}
+.toggle span{position:absolute;inset:0;border-radius:99px;background:#a8a29e;box-shadow:inset 0 0 0 1px rgba(0,0,0,.08);transition:background .15s}
+.toggle span::after{content:"";position:absolute;left:3px;top:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:transform .15s;box-shadow:0 1px 3px rgba(0,0,0,.35)}
 .toggle input:checked+span{background:var(--grass)}
-.toggle input:checked+span::after{transform:translateX(16px)}
+.toggle input:checked+span::after{transform:translateX(20px)}
 .toggle input:focus-visible+span{outline:2px solid var(--grass);outline-offset:2px}
 .field{display:flex;flex-direction:column;gap:5px;margin-bottom:14px}
 .field label{font-size:12px;font-weight:700;color:var(--ink2);text-transform:uppercase;letter-spacing:.05em}
@@ -341,7 +347,7 @@ function renderChrome(){
   var units = tr.reduce(function(a,i){ return a + i.sold7; },0);
   var rev = tr.reduce(function(a,i){ return a + i.sold7*(i.price||0); },0);
   $('#kpis').innerHTML =
-    '<div class="kpi"><div class="l">Items tracked</div><div class="v">'+tr.length+'</div><div class="s">'+(need.length ? need.length+' still need a first count' : 'of '+items().filter(function(i){return i.live;}).length+' Rec store items')+'</div></div>'+
+    '<div class="kpi"><div class="l">Items tracked</div><div class="v">'+tr.length+'</div><div class="s">'+(need.length ? need.length+' still need a first count' : 'of '+items().filter(function(i){return i.live && i.type==='product';}).length+' Rec store products')+'</div></div>'+
     '<button type="button" class="kpi alert" data-go="low"><div class="l">At reorder point</div><div class="v">'+low.length+'</div><div class="s">Show them →</div></button>'+
     '<button type="button" class="kpi bad" data-go="out"><div class="l">Out of stock</div><div class="v">'+out.length+'</div><div class="s">Show them →</div></button>'+
     '<div class="kpi"><div class="l">Stock on hand, at cost</div><div class="v num">'+(withCost.length ? money(value) : '—')+'</div><div class="s">'+(withCost.length < counted.length ? withCost.length+' of '+counted.length+' items have a unit cost' : 'what’s on the shelf now')+'</div></div>'+
@@ -709,23 +715,30 @@ function renderAlerts(){
   var log = (S.data.alerts||[]).map(function(a){ return '<li><span class="chip '+(a.sent?'info':'low')+'">'+(a.sent?'Sent':'Not sent')+'</span><span>'+a.items.map(function(x){ return esc(x.name); }).join(', ')+'</span><span class="w">'+esc(when(a.ts))+(a.sent?'':' · no email address set')+'</span></li>'; }).join('');
   var to = S.data.recipients;
   $('#v-alerts').innerHTML = '<div class="grid2">'+
-    '<div class="panel pb"><div class="email"><div class="eh">To <b>'+(to?esc(to):'<span style="color:var(--warn)">nobody yet — add an address under Items from Rec</span>')+'</b><br>Subject <b>Reorder: '+need.length+' item'+(need.length===1?'':'s')+' at '+esc(CFG.displayName||SLUG)+'</b></div>'+
+    '<div class="panel pb"><div class="email"><div class="eh">To <b>'+(to?esc(to):'<span style="color:var(--warn)">nobody yet — add an address on the right</span>')+'</b><br>Subject <b>Reorder: '+need.length+' item'+(need.length===1?'':'s')+' at '+esc(CFG.displayName||SLUG)+'</b></div>'+
     '<div class="eb"><p style="margin-top:0">These items are at or below their reorder point:</p>'+
     (need.length ? '<table><thead><tr><th>Item</th><th class="r">On hand</th><th class="r">Reorder at</th><th class="r">Order to par</th></tr></thead><tbody>'+rows+'</tbody></table>' : '<p>Nothing needs reordering right now.</p>')+
     '<p style="margin-bottom:0;color:var(--ink3);font-size:12.5px">One email when an item drops to its reorder point, not one every hour. It resets once you receive stock. Items with no reorder point set never email.</p></div></div></div>'+
-    '<div class="panel"><div class="ph"><h2>Sent</h2></div><ul class="alertlog">'+(log||'<li class="isub">No reorder emails yet.</li>')+'</ul></div></div>';
+    '<div><div class="panel pb" style="margin-bottom:16px"><h2 style="margin:0 0 12px;font-size:15px">Send reorder emails to</h2>'+
+      '<div class="field"><label for="rcpt">Addresses</label><input id="rcpt" type="email" multiple value="'+esc(to||'')+'" placeholder="name@city.gov, other@city.gov"><span class="h">Comma-separated. Anyone who places orders. Rec is checked for sales every hour.</span></div>'+
+      '<div class="row"><button type="button" class="btn pri" id="saveRcpt">Save</button></div></div>'+
+    '<div class="panel"><div class="ph"><h2>Sent</h2></div><ul class="alertlog">'+(log||'<li class="isub">No reorder emails yet.</li>')+'</ul></div></div></div>';
+  $('#saveRcpt').onclick = function(){ save('prefs',{recipients:$('#rcpt').value}, function(d){ return d.recipients ? 'Reorder emails go to '+d.recipients : 'No valid addresses — reorder emails are off'; }).catch(function(){}); };
 }
 
 /* ── Setup ──────────────────────────────────────────────────────────── */
 function renderSetup(){
   if (!S.data){ $('#v-setup').innerHTML=''; return; }
   var TYPE_LABEL = { product:'Merch', pass:'Pass', membership:'Membership', fee:'Fee', giftCard:'Gift card' };
-  var list = items().filter(function(i){ return i.live; });
+  // PRODUCTS ONLY. Passes, memberships, fees and gift cards are never stock,
+  // and listing them buried the candy bars under ticket types. One an org had
+  // already switched on stays listed, so it can still be switched off.
+  var list = items().filter(function(i){ return i.live && (i.type === 'product' || i.track); });
   var setupRow = function(i, isVariant){
     var tag = i.carried === false ? '<span class="chip notcarried">Not carried in Rec</span>'
       : i.type==='product' ? '<span class="chip ok">Merch</span>' : '<span class="chip pass">'+esc(TYPE_LABEL[i.type]||i.type)+' · not stock</span>';
     var label = isVariant ? (i.variantName || i.name) : i.name;
-    return '<tr data-setup-row="'+esc(i.id)+'" class="'+(isVariant?'svrow':'')+(i.carried===false?' nc':'')+'"><td><label class="toggle"><input type="checkbox" data-tk="'+esc(i.id)+'" '+(i.track?'checked':'')+' aria-label="Track '+esc(i.name)+'"><span></span></label></td>'+
+    return '<tr data-setup-row="'+esc(i.id)+'" class="'+(isVariant?'svrow':'')+(i.carried===false?' nc':'')+'"><td><span class="tgl"><label class="toggle"><input type="checkbox" data-tk="'+esc(i.id)+'" '+(i.track?'checked':'')+' aria-label="Track '+esc(i.name)+'"><span></span></label><span class="tw'+(i.track?' on':'')+'">'+(i.track?'On':'Off')+'</span></span></td>'+
       '<td><div class="iname">'+esc(label)+'</div><div class="isub">'+(isVariant && i.sku ? '<span class="mono">'+esc(i.sku)+'</span> · ' : '')+money(i.price)+(i.inStore?'':' · hidden from Rec store')+'</div></td><td>'+tag+'</td>'+
       '<td>'+(i.track?'<input class="qty" type="number" min="0" value="'+(i.reorder==null?'':i.reorder)+'" placeholder="—" data-ro="'+esc(i.id)+'" aria-label="Reorder point">':'<span class="isub">—</span>')+'</td>'+
       '<td>'+(i.track?'<input class="qty" type="number" min="0" value="'+(i.par==null?'':i.par)+'" placeholder="—" data-par="'+esc(i.id)+'" aria-label="Par level">':'<span class="isub">—</span>')+'</td>'+
@@ -740,19 +753,14 @@ function renderSetup(){
     if (f.item) return setupRow(f.item, false);
     var carried = f.kids.filter(function(i){ return i.carried !== false; }), on = carried.filter(function(i){ return i.track; }).length;
     var open = !!S.open['s:'+f.group.id];
-    return '<tr class="grp" data-setup-group="'+esc(f.group.id)+'"><td><label class="toggle" title="Track every variant Rec says you carry"><input type="checkbox" data-gtk="'+esc(f.group.id)+'" '+(on && on===carried.length?'checked':'')+' aria-label="Track all '+esc(f.name)+'"><span></span></label></td>'+
+    return '<tr class="grp" data-setup-group="'+esc(f.group.id)+'"><td><span class="tgl"><label class="toggle" title="Track every variant Rec says you carry"><input type="checkbox" data-gtk="'+esc(f.group.id)+'" '+(on && on===carried.length?'checked':'')+' aria-label="Track all '+esc(f.name)+'"><span></span></label><span class="tw'+(on?' on':'')+'">'+(!on?'Off':on===carried.length?'On':'Some')+'</span></span></td>'+
       '<td colspan="6"><button type="button" class="caret" data-stoggle="'+esc(f.group.id)+'" aria-expanded="'+open+'">'+(open?'&#9662;':'&#9656;')+'</button><span class="iname">'+esc(f.name)+'</span><span class="vct">'+f.kids.length+' variants</span>'+
       '<span class="isub" style="margin-left:8px">'+on+' of '+carried.length+' tracked'+(f.kids.length > carried.length ? ' · '+(f.kids.length-carried.length)+' not carried' : '')+'</span></td></tr>'+
       (open ? f.kids.map(function(i){ return setupRow(i, true); }).join('') : '');
   }).join('');
-  $('#v-setup').innerHTML = '<div class="grid2"><div class="panel"><div class="ph"><h2>Store items pulled from Rec</h2><span class="isub">'+list.length+' items</span></div>'+
-    '<div class="tscroll"><table style="min-width:760px"><thead><tr><th>Track</th><th>Item</th><th>Type</th><th>Reorder at</th><th>Par</th><th>Unit cost</th><th>UPC</th></tr></thead><tbody>'+(rows||'<tr><td colspan="7"><div class="empty">No store items came back from Rec yet.</div></td></tr>')+'</tbody></table></div>'+
-    '<div class="note">Passes, memberships, fees and gift cards come in switched off, so a punch pass never shows up as stock. So does a variant Rec marks not carried; an item’s own switch tracks every variant it carries. Unit cost is optional and only feeds the stock-value figure.</div></div>'+
-    '<div class="panel pb"><h2 style="margin:0 0 12px;font-size:15px">Reorder emails</h2>'+
-    '<div class="field"><label for="rcpt">Send to</label><input id="rcpt" type="email" multiple value="'+esc(S.data.recipients||'')+'" placeholder="name@city.gov, other@city.gov"><span class="h">Comma-separated. Anyone who places orders.</span></div>'+
-    '<div class="row"><button type="button" class="btn pri" id="saveRcpt">Save</button></div>'+
-    '<div class="field" style="margin-top:18px"><label>Checks Rec for sales</label><div>Every hour</div><span class="h">Sales, refunds and voids from Rec’s item log.</span></div>'+
-    '<div class="field"><label>First-time setup</label><div>Turn on the items you stock, do one physical count of each, set a reorder point, then scan each product once to link its barcode.</div></div></div></div>';
+  $('#v-setup').innerHTML = '<div class="panel"><div class="ph"><h2>Store items pulled from Rec</h2><span class="isub">'+list.length+' products</span></div>'+
+    '<div class="tscroll"><table style="min-width:760px"><thead><tr><th>Track</th><th>Item</th><th>Type</th><th>Reorder at</th><th>Par</th><th>Unit cost</th><th>UPC</th></tr></thead><tbody>'+(rows||'<tr><td colspan="7"><div class="empty">No store products came back from Rec yet.</div></td></tr>')+'</tbody></table></div>'+
+    '<div class="note">Only products are listed; passes, memberships, fees and gift cards are never stock. A variant Rec marks not carried comes in switched off, and an item’s own switch tracks every variant it carries. Turn on what you stock, count each once, set a reorder point, then scan each product to link its barcode. Unit cost is optional and only feeds the stock-value figure.</div></div>';
   var root = $('#v-setup');
   Array.prototype.forEach.call(root.querySelectorAll('[data-stoggle]'), function(b){ b.onclick=function(){ var k='s:'+b.dataset.stoggle; S.open[k]=!S.open[k]; renderSetup(); }; });
   Array.prototype.forEach.call(root.querySelectorAll('[data-gtk]'), function(c){ c.onchange=function(){ var g=(S.data.groups||{})[c.dataset.gtk]||{name:''}; save('group',{parentId:c.dataset.gtk,track:c.checked}, function(d){ return (c.checked?'Tracking ':'Stopped tracking ')+(d.changed||0)+' '+g.name+' variant'+(d.changed===1?'':'s'); }).catch(function(){ c.checked=!c.checked; }); }; });
@@ -760,7 +768,6 @@ function renderSetup(){
   var bind = function(attr, key){ Array.prototype.forEach.call(root.querySelectorAll('['+attr+']'), function(c){ c.onchange=function(){ var o={id:c.getAttribute(attr)}; o[key]=c.value===''?null:c.value; save('item',o,'Saved').catch(function(){}); }; }); };
   bind('data-ro','reorder'); bind('data-par','par'); bind('data-cost','cost');
   Array.prototype.forEach.call(root.querySelectorAll('[data-unlink]'), function(b){ b.onclick=function(){ save('item',{id:b.dataset.unlink,upc:''},'Barcode removed').catch(function(){}); }; });
-  $('#saveRcpt').onclick = function(){ save('prefs',{recipients:$('#rcpt').value}, function(d){ return d.recipients ? 'Reorder emails go to '+d.recipients : 'No valid addresses — reorder emails are off'; }).catch(function(){}); };
 }
 
 function render(){ renderChrome(); ({stock:renderStock, move:renderMove, scan:renderScan, alerts:renderAlerts, setup:renderSetup})[S.tab](); }

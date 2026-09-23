@@ -294,6 +294,10 @@ if (!process.env.SKIP_SOURCE) {
   ok(/'\?token=' \+ encodeURIComponent\(TOKEN\)/.test(page), "every page call carries the org token (the gate 404s without it)");
   ok(/window\.RECESS_CAT/.test(page) && /src="\/open-pdf\.js"/.test(page), "the velocity chart reads the ONE shared categorical palette");
   ok(/S\.mvSlot\[id\]/.test(page), "a line's colour follows the product, not its rank");
+  const setup = page.slice(page.indexOf("function renderSetup("), page.indexOf("function render()"));
+  const alerts = page.slice(page.indexOf("function renderAlerts("), page.indexOf("function renderSetup("));
+  ok(/i\.type === 'product' \|\| i\.track/.test(setup), "Items from Rec lists products only (plus anything already switched on, so it can be switched off)");
+  ok(!/id="rcpt"/.test(setup) && /id="rcpt"/.test(alerts) && /id="saveRcpt"/.test(alerts), "the reorder-email address lives on the Reorder emails tab, and only there");
 }
 
 /* ── live: the real server against a stand-in Metabase ──────────────────── */
