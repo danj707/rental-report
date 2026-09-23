@@ -505,6 +505,7 @@
   <link rel="stylesheet" href="/recess-report.css">
   <script src="/open-pdf.js"></script>
   <script src="/report-loader.js"></script>
+  <script src="/clear-all.js"></script>
 </head>
 <body>
 
@@ -523,6 +524,13 @@
          refuse. Same openReportPdf every other report's PDF button uses. -->
     <button id="pdfBtn" type="button">📄 PDF</button>
     <button id="printBtn" type="button">🖨️ Print</button>
+    <!-- THE NUCLEAR OPTION, last and on its own. Dan asked for it at the
+         top of the report; the toolbar is the top, and the far end of the
+         row is where a destructive control belongs — next to Print it
+         would sit in the run of ordinary buttons somebody clicks without
+         reading. The dialog and the button are mounted from
+         /clear-all.js, one implementation shared with Inventory. -->
+    <span id="clearAllSlot"></span>
   </div>
   <div class="tb-row picks">
     <div class="seg" id="modeSeg" role="group" aria-label="Period type">
@@ -2662,6 +2670,48 @@ function crEsc(s) {
   }
   $("startDate").value = urlDate("start_date", defaultStart());
   $("endDate").value   = urlDate("end_date", todayISO());
+
+  /* ── the nuclear option ─────────────────────────────────────────────
+     `describe` runs EACH TIME the dialog opens, never once here, so the
+     counts are what is on the page now rather than what it held when the
+     button was drawn. They come from the page's own two stores, which is
+     what the reader can see; the response then reports what the SERVER
+     actually destroyed, and that is the number the toast prints. */
+  if (window.RecClearAll) {
+    window.RecClearAll.mount({
+      mount: $("clearAllSlot"), report: "cost-recovery", label: "Cost Recovery",
+      slug: SLUG, token: TOKEN,
+      note: "Program costs, tiers and every Overhead & other row. The programs themselves come from Rec and are untouched — it is the figures typed here that go.",
+      describe: function () {
+        var keys = {};
+        Object.keys(costs).forEach(function (k) { keys[k] = 1; });
+        Object.keys(tiers).forEach(function (k) { keys[k] = 1; });
+        return [
+          { n: Object.keys(keys).length,  label: "program cost" },
+          { n: Object.keys(ledger).length, label: "overhead & other row" }
+        ];
+      },
+      beforeClear: function () {
+        /* A QUEUED SAVE WOULD WRITE THE DATA BACK. Saves are debounced 700ms,
+           so a figure typed just before the confirmation is still pending and
+           would land after the wipe. Cancel the timer and drop both queues. */
+        clearTimeout(saveTimer); dirty = {}; ledgerDirty = {};
+      },
+      onCleared: function (d) {
+        /* RELOAD rather than resetting in place. The page holds two dirty
+           queues, a save in flight and every derived slice; re-deriving them
+           by hand is a second implementation of load(), and the one that is
+           wrong is the one nobody notices. */
+        try { sessionStorage.setItem("crCleared", d.what || "everything"); } catch (e) {}
+        location.reload();
+      }
+    });
+    try {
+      var msg = sessionStorage.getItem("crCleared");
+      if (msg) { sessionStorage.removeItem("crCleared"); setPill("", "Cleared — " + msg + " deleted"); }
+    } catch (e) {}
+  }
+
   load();
 })();
 </script>

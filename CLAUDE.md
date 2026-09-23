@@ -8016,6 +8016,168 @@ per-case **`expectsConsoleError`**, because a case that drives a failing respons
 expects the page to log it, and without that an error-path case can only ever
 fail.
 
+## A NUCLEAR OPTION ON THE TWO REPORTS THAT WRITE (2026-09-23)
+
+Dan: *"we need a 'clear all data' nuclear option for each report. Button option
+somewhere at the top, has a confirmation, 'type DELETE to delete all data' type
+double confirmation box."*
+
+**"EACH REPORT" IS TWO REPORTS, because two is how many write.** Cost Recovery
+holds the program costs and the overhead ledger; Inventory holds the count and
+movement ledger. Every other report here is read-only over a Metabase card, so
+a button on one would be a control that cannot do anything — the dead end this
+file keeps recording. Said plainly rather than quietly narrowed.
+
+### THE DIALOG IS NOT THE GATE, and that split is the whole design
+
+`POST /:org/<report>/api/clear-all` refuses unless the body carries
+`confirm: "DELETE"`. A modal stops a **misclick**; it cannot stop a stale tab
+replaying a POST, a script holding the org token, or a build shipped with the
+dialog accidentally removed. So the typed word is checked on the SERVER and the
+dialog is what makes it reachable — two different things, and only one of them
+is ours to rely on.
+
+- **The counts are taken BEFORE the clear.** Counted after, every figure the
+  dialog, the response and Slack report is zero — and the mutation that swaps
+  those two lines fails by name.
+- **`X.toUpperCase() !== CLEAR_WORD` is the tempting loosening and is refused.**
+  *"delete"* is what somebody types by reflex; the case is the second half of
+  the confirmation.
+- **TOKENLESS IS A 404, NOT A 403.** The org-token middleware sits ahead of
+  every `/:org/*` path and answers a generic 404 so the org's existence is not
+  leaked. It reads the QUERY only, so the body's copy of the token can never be
+  what gets a caller in, and the route's own check is a backstop. Asserted as
+  the 404 it actually is rather than as the 403 the handler reads like.
+
+### ONE BUTTON, BOTH OF COST RECOVERY'S STORES
+
+Program costs and the overhead ledger are separate files for good reasons, and
+*"clear all data"* still has to mean all of it — one button per store leaves
+the reader doing arithmetic about what survived the nuclear option. The
+mutation that clears only the costs fails on a live read of the ledger.
+
+**INVENTORY'S CLEAR IS ASYMMETRIC, AND THAT IS WHAT THE TYPED WORD PROTECTS.**
+The catalogue is INGESTED from Rec, so it comes back on the next sync and a
+wipe returns the org to first-open rather than to a page that can never be used
+again. What does not come back is the ledger — every physical count, delivery
+and remembered sale — so the dialog says so in words. Proven end to end in a
+browser rather than argued: after a real clear, `items` is 2 again and
+`onHand` is **null**, not 14.
+
+### THE SLACK RECORD IS WHAT PAYS FOR THE TOKEN-ONLY GATE
+
+This is gated on the org token like every other write on these two reports —
+Dan's standing call (*"anyone with the report link can edit costs"*), and the
+people who typed a pilot's test data are exactly the people who need to clear
+it. So `data-cleared` (☢️) posts naming the org, the report **by its label** and
+what was destroyed.
+
+- **IT IS NEVER DEBOUNCED.** Every other key in `notifySlack` collapses a burst
+  of one kind of activity into one line, which is right for a save and wrong
+  for a destruction: two presses are two events, and the second is the one that
+  destroyed the data somebody re-entered. Keying on the record's own `ts` is
+  how this event opts out, and the spec drives a second clear to prove it.
+- **It posts even when nothing was destroyed.** The press of a nuclear button
+  is the signal, and *"somebody cleared and it did nothing"* is worth seeing
+  during a pilot.
+- **Its own message branch**, or the shared line prints the report type and
+  never says what went — which is the entire content of this event. Same defect
+  already fixed once in the feedback branch.
+- **A label is pluralised by adding `"s"`, so the labels are picked to survive
+  it** — *"ledger line"*, never *"ledger entry"*, which prints `7 ledger
+  entrys`. The pluraliser stays dumb because three surfaces read it and a
+  clever one is a third thing that can disagree. Caught by reading the live
+  response, not by review.
+
+### ONE DIALOG, TWO PAGES — and it is portalled
+
+`public/clear-all.js` is the single implementation. Two copies of a destructive
+dialog is how one of them ends up missing the typed word.
+
+- **PORTALLED TO `<body>`.** Both toolbars set `text-transform`, colour and
+  `flex-direction` on their own labels and buttons, and a dialog rendered
+  inside one inherits all three — the recorded aquatics-settings failure, where
+  the sheet came out uppercase, grey and stacked with a Save button that looked
+  inert. Measured in a browser: `text-transform: none`, parent `BODY`.
+- **`beforeClear` IS LOAD-BEARING, not a hook for symmetry.** Cost Recovery
+  debounces saves by 700ms, so a figure typed a moment before the confirmation
+  is still queued — and it would land AFTER the wipe and write itself straight
+  back. The page cancels its timer and drops both dirty queues there.
+- **It RELOADS rather than resetting in place**, because re-deriving two dirty
+  queues, a save in flight and every slice by hand is a second implementation
+  of `load()`, and the one that is wrong is the one nobody notices.
+- **A FAILED clear says so and stays open.** Closing on an error would tell a
+  reader their data is gone while it is still there — the worst outcome this
+  dialog can produce.
+- **The dialog NAMES what it will destroy, with counts.** *"Are you sure?"*
+  over an unnamed amount is a dialog people learn to click through; *"3 program
+  costs and 5 overhead & other rows"* is one they read.
+- **Inventory counts only what it can count EXACTLY** — items, and items
+  carrying a physical count. It does NOT count ledger lines client-side,
+  because `history` on each item is truncated by the view to the last 60 and a
+  confident undercount in a destruction dialog is worse than not saying. The
+  response reports the server's exact figure and that is what the toast prints.
+
+### Guards
+
+`scripts/clear-all-data.spec.js` (**60 assertions, in CI**), whose LIVE half
+boots a real server and drives both reports' real routes — every claim here is
+about what a route does when it is driven, and a regex over our own patch is
+not evidence the server behaves. **It stands up a fake Slack**, because
+`notifySlack` early-returns on an empty webhook and *"the code mentions the
+event"* is otherwise all anyone has proved — and the Slack record is what pays
+for the token-only gate.
+
+**Mutation-tested 15 ways, all 15 caught by an assertion that names the
+defect**: the typed word no longer checked on the server (the dialog becomes
+the gate), the word compared case-insensitively, the counts taken after the
+clear, Cost Recovery leaving its ledger behind, Inventory's clear doing
+nothing, `data-cleared` dropped from `SLACK_NOTIFY`, the debounce key reverted
+so a second clear is swallowed, the message branch removed, the inventory route
+never registered, `beforeClear` never called, the dialog rendered inside the
+toolbar, a failed clear closing the dialog, cost-recovery not dropping its
+dirty queues, and the button no longer mounted in the toolbar.
+
+**ONE SOURCE ASSERTION SURVIVED ITS OWN MUTATION, on the single most important
+behaviour here.** `/go\.disabled = true/` also matches the click handler's own
+line, so *"the delete button is live from the start"* — no second confirmation
+at all — passed the spec. It is scoped to the footer block now, **and no source
+assertion can settle it anyway**: a disabled button and a live one are the same
+markup until a browser renders them.
+
+**Two `ci-check-render.js` cases, and the first is what actually holds the
+feature.** *"the nuclear option asks twice"* opens the dialog and reads the
+COMPUTED disabled state at four points — at rest, on `delete`, on `DELETEX`,
+and on `DELETE` — and *"names what it will destroy"* keys on both counts,
+because a build that renders the box and describes nothing renders a perfectly
+plausible dialog. Browser-mutation-tested four ways, each failing **exactly**
+the case that names it while the other 32 keep passing.
+
+**And Inventory has no render coverage at all**, so it was driven by hand
+against a real server: the button mounts, the dialog reads *"2 items and 1
+counted item"*, Delete is disabled at rest and on `delete` and live on
+`DELETE`, the box is parented to `BODY` at `text-transform: none`, and pressing
+it really does leave `onHand: null` behind a re-ingested catalogue.
+
+94 specs run from `ci.yml`, 94 pass, 0 fail. 33 `cost-recovery` render cases
+green.
+
+### NOT DONE
+
+- **No undo, and no export-before-clear.** That is a second feature (somewhere
+  to keep the snapshot, and a rule for how long), and the typed word plus the
+  Slack record is the shape Dan asked for.
+- **No admin gate.** It is the org's own typed data and the org's own token,
+  deliberately — an admin gate would make it unusable for the pilot orgs this
+  exists for. The record is what makes that safe, which is why the Slack half
+  is spec-asserted on a captured post rather than on the source.
+- **A clear is per ORG and per REPORT.** There is no platform-wide button, and
+  clearing Cost Recovery does not touch Inventory.
+- **The 700ms race is narrowed, not closed.** `beforeClear` stops a queued save
+  from landing after the wipe; a save already in flight when the button is
+  pressed can still land. A reload follows, so the page never shows it — and it
+  would be a single figure, re-clearable.
+
 ## THE COST RECOVERY / P&L REPORT — the first surface here that WRITES (2026-09-22)
 
 Laurel at Shrewsbury, on a call, wanted a cost recovery / profit-and-loss
