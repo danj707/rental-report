@@ -3766,6 +3766,92 @@ const CASES = [
         { timeout: 20000 });
     } },
 
+  /* ── THE PDF PATH, WHICH A SANDBOXED IFRAME IS THE WHOLE POINT OF ────
+        Dan: "don't forget about the pdf printing issue for reports inside an
+        iframe sandbox ... I suspect the way you've implemented printing or
+        pdfs here won't work." Both buttons called window.print(), and a modal
+        opened by a sandboxed frame is blocked with no error and no event.
+
+        This is the PAGE half: the button opens a popup through openReportPdf
+        and the URL it hands over carries the state the reader is looking at.
+        It says NOTHING about whether generatePdf forwards those keys — that is
+        the server gate, and it is the one gl_codes, refunds, pii and sites each
+        failed while three client gates passed. cost-recovery.spec.js lifts and
+        RUNS the query builder for it. */
+  { name: "cost-recovery · the PDF button opens a popup carrying the view",
+    path: "/{org}/cost-recovery?mode=quarter&tier=2",
+    needs: 'body[data-rc-crpdf-seen^="ok=1 "]',
+    pre: async (page) => {
+      await page.evaluateOnNewDocument(() => {
+        window.__pdfOpened = [];
+        // Stubbed at the helper, not at window.open: what is under test is the
+        // URL the page hands over, and a real popup cannot be read from here.
+        window.openReportPdf = function (u) { window.__pdfOpened.push(u); return true; };
+        window.print = function () { window.__printed = true; };
+      });
+    },
+    act: async (page) => {
+      await page.waitForSelector('body[data-cr-seen*="mode=quarter"]', { timeout: 20000 });
+      await page.click("#pdfBtn");
+      await page.click('#viewTabs button[data-view="statement"]');
+      await page.waitForFunction(() => !document.getElementById("statementView").hidden,
+        { timeout: 20000 });
+      await page.click("#pdfStmt");
+      const m = await page.evaluate(() => ({
+        urls: window.__pdfOpened || [], printed: !!window.__printed,
+      }));
+      const [main, stmt] = m.urls;
+      // `location` does not exist in NODE scope — this runs in the harness, not
+       // in the page. Recorded trap, hit again; parse the query string by hand.
+      const has = (u, k, v) => !!u
+        && new URLSearchParams(String(u).split("?")[1] || "").get(k) === v;
+      const ok = m.urls.length === 2 && !m.printed
+        && /\/cost-recovery\/api\/pdf\?/.test(main)
+        // The toolbar button asks for the view on screen…
+        && has(main, "mode", "quarter") && has(main, "tier", "2")
+        // …the booleans ride as an explicit value, never as an absence…
+        && has(main, "hide_blank", "0") && has(main, "hide_free", "0")
+        // …and the Statement button asks for the statement WITHOUT the reader
+        // having to be on it, which is the whole reason it takes an argument.
+        && has(stmt, "view", "statement") && has(stmt, "mode", "quarter");
+      await page.evaluate(t => document.body.setAttribute("data-rc-crpdf-seen", t),
+        (ok ? "ok=1 " : "ok=0 ") + "opened=" + m.urls.length
+        + " printed=" + m.printed + " main=" + JSON.stringify(main || null)
+        + " statement=" + JSON.stringify(stmt || null));
+    } },
+
+  /* …and the other end of that URL: the page Puppeteer actually captures. It
+     has to drop the chrome and stamp #report-ready, and a ?view=statement
+     render has to print the statement ALONE without anyone clicking Print —
+     which is the bug one surface over arriving by the other door. */
+  { name: "cost-recovery · the print render is ready, bare, and honours the view",
+    path: "/{org}/cost-recovery?_print=1&view=statement&mode=season",
+    needs: 'body[data-rc-crprintmode-seen^="ok=1 "]',
+    act: async (page) => {
+      await page.waitForSelector("#report-ready", { timeout: 25000 });
+      const m = await page.evaluate(() => {
+        const d = (sel) => { const el = document.querySelector(sel);
+          return el ? getComputedStyle(el).display : "absent"; };
+        return { ready: !!document.getElementById("report-ready"),
+                 isPrint: document.body.classList.contains("is-print"),
+                 stmtFlag: document.body.classList.contains("printing-statement"),
+                 toolbar: d(".toolbar"), tabs: d(".tabs"), stmtbar: d(".stmtbar"),
+                 kpis: d(".sum-cards"), banner: d(".cr-banner"),
+                 statementShown: !document.getElementById("statementView").hidden,
+                 // The print page is TOLD its state; writing one back would put
+                 // a history entry on a page nobody is navigating.
+                 url: location.search };
+      });
+      const ok = m.ready && m.isPrint && m.stmtFlag && m.statementShown
+        && m.toolbar === "none" && m.tabs === "none" && m.stmtbar === "none"
+        && m.kpis === "none" && m.banner !== "none";
+      await page.evaluate(t => document.body.setAttribute("data-rc-crprintmode-seen", t),
+        (ok ? "ok=1 " : "ok=0 ") + "ready=" + m.ready + " isPrint=" + m.isPrint
+        + " statementFlag=" + m.stmtFlag + " statementShown=" + m.statementShown
+        + " toolbar=" + m.toolbar + " tabs=" + m.tabs + " stmtbar=" + m.stmtbar
+        + " kpis=" + m.kpis + " banner=" + m.banner);
+    } },
+
   /* ── LEAVING COMPARE HAS TO TAKE THE COMPARE PICKER WITH IT ──────────
         Dan: "Compare field doesn't clear if you move to another selection."
         It was never cleared because it was never HIDDEN: renderPeriods has

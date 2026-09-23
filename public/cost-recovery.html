@@ -381,6 +381,21 @@
      sat in the left 40% of the page with a card border running the full width
      — and the KPI strip and the basis note live OUTSIDE the view divs, so they
      printed on top of a document whose own bar promises they will not. */
+  /* `body.is-print` is ?_print=1 — the Puppeteer render. page.pdf() applies
+     print CSS on its own, but the chrome has to be gone BEFORE the capture as
+     well, or #report-ready fires over a page still carrying a toolbar. One
+     list, so the two can never drift. */
+  body.is-print .toolbar, body.is-print .tabs, body.is-print .picks,
+  body.is-print .exp, body.is-print .costin, body.is-print .tiersel,
+  body.is-print .linebox, body.is-print #exportCsv, body.is-print .stmtbar,
+  body.is-print .rowcount, body.is-print .report-foot { display: none !important; }
+  body.is-print { background: #fff; }
+  body.is-print.printing-statement .sum-cards,
+  body.is-print.printing-statement .basis,
+  body.is-print.printing-statement .cr-pills { display: none !important; }
+  body.is-print #statementView { border: 0; padding: 0; margin: 0; background: none; }
+  body.is-print #statementView .st { max-width: none; width: 100%; }
+
   @media print {
     .toolbar, .tabs, .picks, .exp, .costin, .tiersel, .linebox,
     #exportCsv, .stmtbar, .rowcount, .report-foot { display: none !important; }
@@ -449,7 +464,14 @@
     <span class="savepill" id="savePill">All costs saved</span>
     <button id="carryBtn" type="button" title="Copy each program's most recent earlier season into any season that has no cost yet">Carry costs forward</button>
     <button id="exportCsv" type="button">⬇ CSV</button>
-    <button id="printBtn" type="button">Print</button>
+    <!-- PDF, NOT window.print(). Report pages run inside a SANDBOXED IFRAME and
+         a modal the frame opens is blocked with no error — so Print is the
+         reader's own escape hatch when the page stands alone, and this is the
+         path that works embedded: a top-level popup navigating to a
+         server-rendered PDF, which is never a download for the sandbox to
+         refuse. Same openReportPdf every other report's PDF button uses. -->
+    <button id="pdfBtn" type="button">📄 PDF</button>
+    <button id="printBtn" type="button">🖨️ Print</button>
   </div>
   <div class="tb-row picks">
     <div class="seg" id="modeSeg" role="group" aria-label="Period type">
@@ -596,9 +618,10 @@
          class now, so nothing is inherited from a control of a different
          shape. -->
     <div class="stmtbar">
-      <button type="button" id="printStmt" class="stbtn primary">⎙ Print / save as PDF</button>
+      <button type="button" id="pdfStmt" class="stbtn primary">📄 Statement PDF</button>
+      <button type="button" id="printStmt" class="stbtn">🖨️ Print</button>
       <button type="button" id="stmtCsv" class="stbtn">↓ Statement CSV</button>
-      <span class="sthint">Prints on its own — the toolbar, the pickers and every input are left off the page.</span>
+      <span class="sthint">The PDF opens in its own tab — the toolbar, the pickers and every input are left off the page.</span>
     </div>
     <div class="st" id="stmtBody"></div>
   </div>
@@ -979,13 +1002,34 @@ function crEsc(s) {
   var rows = [], progs = [], seasons = [], minD = null, maxD = null;
   var costs = {};                       // key -> { instructors: cents, …, note }
   var tiers = {};                       // key -> 1..4  (also stored, on the same record)
-  var mode = "season", period = null, periodB = null;
-  var tierFilter = "", hideBlank = false, hideFree = false, open = {};
+  /* ── THE URL IS THE ONLY CHANNEL TO THE PDF ──────────────────────────
+     A Puppeteer render opens this page fresh, in a browser that has never
+     seen the reader's session and has an empty localStorage, so anything not
+     in the query string cannot reach it. Every one of these was in-memory
+     only, which is why there was no PDF route worth having: it could only
+     ever have produced the report's DEFAULT view.
+
+     Read here, written back on every change, and forwarded by generatePdf —
+     the four gates this project keeps writing down. */
+  var Q = new URLSearchParams(location.search);
+  var PRINT = Q.get("_print") === "1";
+  var MODES = ["season", "fy", "quarter", "month", "compare"];
+  var VIEWS = ["pl", "ledger", "statement"];
+  var mode = MODES.indexOf(Q.get("mode")) >= 0 ? Q.get("mode") : "season";
+  var period = Q.get("period") || null, periodB = Q.get("period_b") || null;
+  var tierFilter = Q.get("tier") || "", open = {};
+  /* PRESENCE, NOT TRUTHINESS, on both of these — they are booleans whose
+     default is OFF, so "0" has to survive as a real answer rather than being
+     read as absent. Absent still means "the caller is not speaking about
+     this", which is what lets a hand-built link leave them alone. */
+  var hideBlank = Q.has("hide_blank") ? Q.get("hide_blank") === "1" : false;
+  var hideFree  = Q.has("hide_free")  ? Q.get("hide_free")  === "1" : false;
   // "" is the report's own order (biggest revenue first). A click sets a key
   // and a direction; a second click on the same key reverses it.
   var sortKey = "", sortDir = -1;
   var dirty = {}, saveTimer = null, saving = false, saveFailed = false;
-  var view = "pl", ledger = {}, ledgerDirty = {}, ledgerBlanks = 30, ledgerSeq = 0;
+  var view = VIEWS.indexOf(Q.get("view")) >= 0 ? Q.get("view") : "pl";
+  var ledger = {}, ledgerDirty = {}, ledgerBlanks = 30, ledgerSeq = 0;
   var LEDGER_STEP = 25;
 
   // ── dates. Built from LOCAL parts, never toISOString(): that is the UTC
@@ -1087,12 +1131,33 @@ function crEsc(s) {
         seasons.length + " season" + (seasons.length === 1 ? "" : "s")
       ].map(function (t) { return "<span>" + crEsc(t) + "</span>"; }).join("");
       $("wrap").hidden = false;
-      period = null; periodB = null;
+      /* A RE-RUN CLEARS THE PERIOD, THE FIRST LOAD DOES NOT. renderPeriods
+         picks the period with the most money in it when there is none, which
+         is right after the dates move — and wrong on the very first load,
+         where it would discard the `?period=` a shared link or a PDF request
+         asked for. That is the whole reason the URL carries one. */
+      if (!firstLoad) { period = null; periodB = null; }
+      /* …and the same for the view. It is read from the URL into `view`, but
+         nothing had APPLIED it: the markup opens on the P&L, so a
+         ?view=statement render — which is exactly what the Statement PDF
+         requests — captured the P&L. Found by the print render case, not by
+         review. setView re-renders, so nothing else is needed here. */
+      /* RENDER FIRST, THEN SWITCH. setView does not call render() — it flips the
+         three view divs and re-renders only the one it opens — so switching
+         before rendering left #report-ready unstamped and the PDF route waited
+         its full 120s. Found by the print render case timing out, which is the
+         only thing that could have seen it. */
       render();
+      if (firstLoad && view !== "pl") { var want = view; view = "pl"; setView(want); }
+      firstLoad = false;
     }).catch(function (e) {
       stopLoader();
       $("runBtn").disabled = false;
       showError(String(e && e.message || e));
+      /* THE PDF ROUTE WAITS 120s FOR #report-ready. A feed that did not answer
+         must still end that wait, or a broken report costs two minutes and
+         then a 500 rather than a page that says what went wrong. */
+      markReady();
     });
   }
 
@@ -2033,6 +2098,44 @@ function crEsc(s) {
     document.body.setAttribute("data-cr-seen",
       "mode=" + mode + " period=" + (per.v || "") + " rows=" + d.rows.length
       + " rev=" + Math.round(totals(d).rev) + " undated=" + d.undated);
+    syncUrl();
+    markReady();
+  }
+
+  /* THE URL FOLLOWS THE SCREEN, so Copy Link and the PDF both carry what the
+     reader is looking at. replaceState rather than push — every keystroke in a
+     cost box re-renders, and a history entry per keystroke makes Back useless.
+     `token` and anything else already on the URL is preserved: this rewrites
+     the keys it owns and no others. */
+  function syncUrl() {
+    if (PRINT) return;          // the print page is TOLD its state; it never writes one
+    try {
+      var q = new URLSearchParams(location.search);
+      q.set("mode", mode);
+      if (period) q.set("period", period); else q.delete("period");
+      if (mode === "compare" && periodB) q.set("period_b", periodB); else q.delete("period_b");
+      if (tierFilter) q.set("tier", tierFilter); else q.delete("tier");
+      if (view !== "pl") q.set("view", view); else q.delete("view");
+      if (hideBlank) q.set("hide_blank", "1"); else q.delete("hide_blank");
+      if (hideFree)  q.set("hide_free", "1");  else q.delete("hide_free");
+      q.set("start_date", $("startDate").value);
+      q.set("end_date", $("endDate").value);
+      history.replaceState(null, "", location.pathname + "?" + q.toString());
+    } catch (_) {}
+  }
+
+  /* #report-ready is what generatePdf waits 120s for. It is stamped ONCE, and
+     it is stamped on the failure paths too — a PDF route that hangs for two
+     minutes on a report whose feed did not answer costs more than one that
+     renders the page saying so. */
+  var firstLoad = true;
+  var readyStamped = false;
+  function markReady() {
+    if (readyStamped) return;
+    readyStamped = true;
+    var m = document.createElement("div");
+    m.id = "report-ready"; m.style.display = "none";
+    document.body.appendChild(m);
   }
 
   // ── saving ──────────────────────────────────────────────────────────
@@ -2115,6 +2218,38 @@ function crEsc(s) {
   $("hideFree").addEventListener("change", function () { hideFree = this.checked; render(); });
   $("runBtn").addEventListener("click", load);
   $("printBtn").addEventListener("click", function () { window.print(); });
+
+  /* THE PDF URL IS BUILT FROM THE PAGE'S OWN STATE, not from location.search —
+     they agree (syncUrl keeps them in step) and reading the state directly is
+     what makes the button correct on the very first render, before any change
+     has written a URL. `view` is passed explicitly so the Statement button can
+     ask for the statement without switching the reader's screen to it.
+
+     CALLED STRAIGHT FROM THE CLICK HANDLER. openReportPdf opens the popup
+     synchronously; behind an await or a .then() the user gesture is gone and
+     the browser blocks it — the rule open-pdf.js states at the top. */
+  function pdfUrl(wantView) {
+    var q = new URLSearchParams();
+    q.set("start_date", $("startDate").value);
+    q.set("end_date", $("endDate").value);
+    q.set("mode", mode);
+    if (period) q.set("period", period);
+    if (mode === "compare" && periodB) q.set("period_b", periodB);
+    if (tierFilter) q.set("tier", tierFilter);
+    q.set("view", wantView || view);
+    // Booleans travel on PRESENCE, so "off" survives as an answer rather than
+    // falling back to the report's default the way an absent key does.
+    q.set("hide_blank", hideBlank ? "1" : "0");
+    q.set("hide_free",  hideFree  ? "1" : "0");
+    if (TOKEN) q.set("token", TOKEN);
+    return "/" + SLUG + "/cost-recovery/api/pdf?" + q.toString();
+  }
+  function openPdf(wantView, label) {
+    if (!window.openReportPdf) { window.print(); return; }   // never a dead button
+    window.openReportPdf(pdfUrl(wantView), { label: label });
+  }
+  $("pdfBtn").addEventListener("click", function () { openPdf(null, "Cost Recovery"); });
+  $("pdfStmt").addEventListener("click", function () { openPdf("statement", "Cost recovery statement"); });
   /* The statement prints as a document of its own. The class is removed on
      `afterprint` rather than left on the body: Chrome fires it for a cancelled
      dialog too, and a body that stayed flagged would silently drop the KPI
@@ -2383,6 +2518,14 @@ function crEsc(s) {
   });
 
   // ── boot ────────────────────────────────────────────────────────────
+  /* In print mode the class comes from the REQUESTED VIEW rather than from the
+     Print button, because Puppeteer never clicks it — and a statement PDF that
+     carried the KPI strip is exactly the bug this whole pass is fixing, one
+     surface over. */
+  if (PRINT) {
+    document.body.classList.add("is-print");
+    if (view === "statement") document.body.classList.add("printing-statement");
+  }
   if (CFG.logoUrl) { $("orgLogo").src = CFG.logoUrl; $("orgPlate").hidden = false; }
   $("orgEyebrow").textContent = SLUG;
   $("orgTitle").textContent = "Cost Recovery";

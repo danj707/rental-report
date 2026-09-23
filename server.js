@@ -6714,6 +6714,20 @@ async function generatePdf(orgSlug, reportType, startDate, endDate, filters = {}
   // Absent still means "the caller is not speaking about this".
   if (filters.site_types !== undefined) qsObj.site_types = filters.site_types;
   if (filters.sitetype !== undefined) qsObj.sitetype = filters.sitetype;
+  /* ── Cost Recovery ────────────────────────────────────────────────────
+     `view` already rides the loop above. `mode`, `period`, `period_b` and
+     `tier` are single values whose empty string IS their default (all tiers,
+     the report's own period), so truthiness is the right test for them.
+
+     SIXTH AND SEVENTH INSTANCE of the `pii` rule: `hide_blank` and `hide_free`
+     are BOOLEANS spelled "1"/"0", and "0" is a real answer. The truthy loop
+     drops it, the print page then finds no parameter and falls back to its
+     own default — which is OFF, so today they would survive by luck. A
+     parameter that works by accident of its encoding is one rename from
+     breaking silently, which is exactly what `sitetype` above records. */
+  ["mode", "period", "period_b", "tier"].forEach(k => { if (filters[k]) qsObj[k] = filters[k]; });
+  if (filters.hide_blank !== undefined) qsObj.hide_blank = filters.hide_blank;
+  if (filters.hide_free !== undefined) qsObj.hide_free = filters.hide_free;
   if (orgTok) qsObj.token = orgTok;
   const qs = new URLSearchParams(qsObj);
   // ── The custom data reports' own filter vocabulary ──

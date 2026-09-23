@@ -444,6 +444,14 @@ if (!process.env.SKIP_SOURCE) {
     const a = SERVER.indexOf(from); if (a < 0) return "";
     const b = SERVER.indexOf(to, a); return b < 0 ? SERVER.slice(a) : SERVER.slice(a, b);
   };
+  /* `slice` is SERVER-scoped. The PDF assertions below are about the PAGE, and
+     a slice taken from the wrong file returns "" and passes every "must not
+     contain" test vacuously — so they get their own, with a was-it-found
+     assertion on each use. */
+  const pslice = (from, to) => {
+    const a = PAGE.indexOf(from); if (a < 0) return "";
+    const b = PAGE.indexOf(to, a); return b < 0 ? PAGE.slice(a) : PAGE.slice(a, b);
+  };
 
   // THE STANDING RULE: every new report ships HIDDEN. Dan, 2026-09-14: "by
   // default all new reports should be hidden unless I say otherwise."
@@ -498,6 +506,102 @@ if (!process.env.SKIP_SOURCE) {
   ok(vis.length > 50, "the visibility API was found");
   ok(/costRecoveryEnabled\(slug\)/.test(vis) && /type: "cost-recovery"/.test(vis),
      "the visibility API reports cost-recovery, and only for the pilot orgs");
+
+  /* ── THE PDF HAS TO SURVIVE A SANDBOXED IFRAME ────────────────────────
+     Dan: "don't forget about the pdf printing issue for reports inside an
+     iframe sandbox. I suspect the way you've implemented printing or pdfs
+     here won't work." He was right — both buttons called window.print(), and
+     a modal opened by a sandboxed frame is blocked with no error and no
+     event. The house pattern is `openReportPdf`: a TOP-LEVEL POPUP navigating
+     to a server-rendered PDF, which is never a download for the sandbox to
+     refuse. Print stays beside it as the reader's own escape hatch when the
+     page stands alone. */
+  ok(/openReportPdf/.test(PAGE), "the PDF goes through openReportPdf, not window.print");
+  ok(/<script src="\/open-pdf\.js">/.test(PAGE), "…and the page loads the file that defines it");
+  /* SYNCHRONOUS, FROM THE CLICK HANDLER. Behind an await or a .then() the user
+     gesture is gone and the browser blocks the popup — the rule open-pdf.js
+     states at the top of itself. */
+  const pdfClick = pslice('$("pdfBtn").addEventListener', "});");
+  ok(pdfClick.length > 20, "the PDF click handler was found — otherwise the next assertion is vacuous");
+  ok(/openPdf\(/.test(pdfClick) && !/await|\.then\(/.test(pdfClick),
+     "the PDF button opens the popup straight from the click, with no await before it");
+  ok(/if \(!window\.openReportPdf\) \{ window\.print\(\); return; \}/.test(PAGE),
+     "…and falls back to print rather than being a dead button if the helper is absent");
+
+  /* THE URL IS THE ONLY CHANNEL. A Puppeteer render opens this page fresh with
+     an empty localStorage, so anything the PDF needs has to be in the query
+     string — which is why a PDF route was worth nothing until the report's
+     state lived there. */
+  ["mode", "period", "tier", "view", "hide_blank", "hide_free"].forEach(k => {
+    ok(new RegExp('Q\\.(get|has)\\("' + k.replace("_", "_") + '"\\)').test(PAGE)
+       || new RegExp('q\\.set\\("' + k + '"').test(PAGE),
+       "the page reads/writes `" + k + "` on the URL, or the PDF cannot carry it");
+  });
+  ok(/history\.replaceState/.test(PAGE) && !/history\.pushState/.test(PAGE),
+     "the URL is REPLACED, not pushed — every keystroke in a cost box re-renders");
+  const syncBlk = pslice("function syncUrl()", "\n  }");
+  ok(syncBlk.length > 20, "syncUrl was found");
+  ok(/if \(PRINT\) return;/.test(syncBlk),
+     "…and the print page never writes one back: it is TOLD its state");
+
+  /* #report-ready IS WHAT generatePdf WAITS 120s FOR, and the failure path has
+     to stamp it too or a report whose feed did not answer costs two minutes
+     and then a 500. */
+  ok(/id = "report-ready"/.test(PAGE), "the page stamps #report-ready");
+  const failBranch = pslice("showError(String(e && e.message || e));", "});");
+  ok(failBranch.length > 20, "the failed-feed branch was found");
+  ok(/markReady\(\)/.test(failBranch),
+     "…on the FAILED-feed branch as well, or the PDF route hangs for two minutes");
+
+  /* THE SERVER HALF. A render case at ?_print=1 proves the PAGE reads a
+     parameter and says NOTHING about whether generatePdf sends it — which is
+     exactly how gl_codes, refunds, pii and sites each shipped reaching the
+     screen and not the PDF. So the query builder is LIFTED AND RUN. */
+  const gp = SERVER.slice(SERVER.indexOf("async function generatePdf("));
+  const qsBlock = gp.slice(gp.indexOf("const qsObj = {"),
+    gp.indexOf("const qs = new URLSearchParams(qsObj);") + "const qs = new URLSearchParams(qsObj);".length);
+  ok(qsBlock.includes("forEach"), "the generatePdf query block was found and is liftable");
+  const buildQs = new Function("startDate", "endDate", "orgTok", "filters",
+    qsBlock + "\nreturn qs.toString();");
+
+  const full = buildQs("2026-07-01", "2026-09-23", "tok",
+    { mode: "quarter", period: "FY2026 Q1", period_b: "FY2025 Q1", tier: "2",
+      view: "statement", hide_blank: "1", hide_free: "1" });
+  ["mode=quarter", "period=FY2026+Q1", "period_b=FY2025+Q1", "tier=2",
+   "view=statement", "hide_blank=1", "hide_free=1"].forEach(want => {
+    ok(full.indexOf(want) >= 0, "generatePdf forwards " + want + ". Got: " + full);
+  });
+
+  /* THE BOOLEANS TRAVEL ON PRESENCE — and a VALUE test cannot prove that,
+     which is worth writing down rather than dressing up. The page spells them
+     "1"/"0", and the string "0" is TRUTHY in JS, so folding them into the
+     truthy loop passes this assertion and every one above it. Measured by
+     mutation, not assumed: that fold SURVIVED until the source assertion below
+     was added. It is the same thing `sitetype` already records one block up —
+     a parameter that works by accident of its encoding is one rename from
+     breaking silently, and the rename here is "0" -> "". */
+  const off = buildQs("2026-07-01", "2026-09-23", "tok", { hide_blank: "0", hide_free: "0" });
+  ok(/(^|&)hide_blank=0(&|$)/.test(off) && /(^|&)hide_free=0(&|$)/.test(off),
+     "an explicit OFF must survive — dropped, the print page falls back to its "
+     + "own default instead of the answer the reader gave. Got: " + off);
+  // [source] The guard that actually holds the shape, because the value test above cannot.
+  ok(/if \(filters\.hide_blank !== undefined\) qsObj\.hide_blank = filters\.hide_blank;/.test(SERVER)
+     && /if \(filters\.hide_free !== undefined\) qsObj\.hide_free = filters\.hide_free;/.test(SERVER),
+     "both booleans are forwarded on PRESENCE (!== undefined), never by the truthy "
+     + "loop — which would keep working only while they are spelled \"0\" rather than \"\"");
+  const none = buildQs("2026-07-01", "2026-09-23", "tok", {});
+  ok(!/hide_blank=|hide_free=/.test(none),
+     "…while ABSENT is not invented as a value: absent means the caller is not "
+     + "speaking about it at all. Got: " + none);
+
+  /* PRINT MODE COMES FROM THE REQUESTED VIEW, because Puppeteer never clicks
+     the Print button that sets the class on screen. Without this the statement
+     PDF carries the KPI strip — the bug one surface over, arriving by the
+     other door. */
+  ok(/if \(view === "statement"\) document\.body\.classList\.add\("printing-statement"\)/.test(PAGE),
+     "a ?view=statement render prints the statement alone, with no click involved");
+  ok(/body\.is-print \.toolbar/.test(PAGE),
+     "…and ?_print=1 drops the chrome before the capture, not only in @media print");
 
   /* INVENTORY IS DELIBERATELY NOT SCOPED THE SAME WAY, and that is not an
      oversight. Its seed is keyed on Madison's ORGID and Madison is not

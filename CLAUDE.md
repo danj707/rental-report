@@ -8832,14 +8832,123 @@ changing anything.*
   reader gates on the pilot set. Refusing it is the opposite mistake already
   recorded for the custom reports — a state the platform can be in and cannot
   be moved out of through its own API.
-- **No PDF route and no email subscription**, unchanged. The statement prints
-  from the browser; the two CSVs are the file exports.
+- **No email subscription**, unchanged — the report is not in
+  `EMAIL_SUBSCRIBABLE_REPORTS`. (There IS a PDF route now; see the section
+  below.)
 - **The amber surplus is unproven in a browser**, for the fixture reason above.
   A period that turns a profit would show it; inventing one to paint a tile is a
   fixture written for a test.
 - **Sorting is not in the URL.** Which column you sorted by is not part of the
   question the report answers, so it is not shareable — the same line the tier
   filter draws.
+
+### THE PDF BUTTON WOULD HAVE DONE NOTHING IN THE IFRAME (2026-09-23)
+
+Dan, before clicking anything: *"don't forget about the pdf printing issue for
+reports inside an iframe sandbox. we had to adjust the way pdf's print (check
+the facility rental schedule or gl code report as an example of how we
+implemented that, it should be written into your memory). I suspect the way
+you've implemented printing or pdfs here in this cost recovery report won't
+work."*
+
+**He is right, and it is worse than he suspected: there was no PDF at all.**
+Both buttons — the toolbar's and the statement's — called `window.print()`, and
+**a report page runs inside a sandboxed iframe where a modal the frame opens is
+blocked with no error.** So the control did nothing, silently, which is the
+failure mode this file already records for a beacon that 404s.
+
+### THE URL IS THE ONLY CHANNEL, WHICH IS WHY A ROUTE ALONE WAS WORTH NOTHING
+
+`generatePdf` drives Puppeteer at `/:org/:report?_print=1&…` in a browser that
+has **never seen the reader's session and has an empty localStorage**. Every
+piece of this report's state — the mode, the period, the compare period, the
+tier filter, the two hide toggles and **which of the three views is open** —
+was in-memory only. So wiring the route first would have produced a PDF of the
+report's DEFAULT view every time, on a page whose whole point is the period you
+chose.
+
+Nine values now ride the query string, read at boot and written back with
+`history.replaceState`, and they clear the four gates this file keeps writing
+down: `getParams`-equivalent parsing here, the page's own state, the client
+export paths, and **`generatePdf`'s forward list** — the gate `gl_codes`,
+`refunds`, `pii` and `sites` each failed while their authors were reading the
+comment about the last one.
+
+- **`hide_blank` and `hide_free` ride on PRESENCE, not truthiness.** Both
+  default OFF, so `"0"` has to survive as a real answer — folded into the
+  truthy loop, an explicit *"no, show them"* is dropped and the render falls
+  back to the default. Same rule `pii` needed twice.
+- **The route needed no server work.** `/:org/:report/api/pdf` already serves
+  any report in `REPORT_TYPES`, and `reportLabel`'s ladder already names this
+  one, so the whole server change is six lines of forwarding.
+
+### TWO REAL BUGS THE PRINT RENDER CASE FOUND, AND NOTHING ELSE COULD HAVE
+
+Both were in code that reads perfectly:
+
+- **`view` was parsed from the URL and never APPLIED.** The markup opens on the
+  P&L, so `?view=statement` — which is exactly what the Statement PDF requests
+  — rendered the P&L under a statement's filename. The case measured
+  `statementShown=false`.
+- **`#report-ready` was never stamped on a view switch**, because `setView`
+  flips the three view divs and re-renders only the one it opens; it does not
+  call `render()`. So the PDF route waited its **full 120 seconds** and then
+  failed. The fix is ordering — render first, then switch — and it was found by
+  the case timing out.
+
+**And the first load was discarding its own `?period=`.** The load branch
+cleared `period`/`periodB` unconditionally so `renderPeriods` could pick the
+busiest period after the dates move — right on a re-run, and wrong on the one
+load where a link or a PDF request has just told it which period to open.
+Gated on `!firstLoad`.
+
+### A DEAD BUTTON IS WORSE THAN A MISSING ONE
+
+`openPdf()` falls back to `window.print()` when `window.openReportPdf` is
+absent. That is not defensive decoration: the helper lives in
+`public/open-pdf.js`, and a page that failed to load it would otherwise carry a
+button that does nothing at all — which is the state this whole section exists
+to fix. **Print stays beside PDF** for the same reason it does on every other
+report: standing alone in its own tab, the reader's own print dialog is the
+faster path, and it is the only one that works if the PDF route is down.
+
+**`openReportPdf` must be called STRAIGHT from the click handler.** Behind an
+`await` or a `.then()` the user gesture is spent and the popup is blocked —
+recorded already, and the reason `pdfUrl()` builds its string synchronously
+rather than asking the server anything first.
+
+### Guards
+
+`scripts/cost-recovery.spec.js` 227 → **257 assertions**, in CI, which LIFTS
+AND RUNS `generatePdf`'s query builder — a render case at `?_print=1&period=…`
+proves the PAGE reads the parameter and says nothing about whether the SERVER
+sends it, which is exactly how all four earlier instances shipped.
+
+**Mutation-tested, all failing by an assertion that names the defect**: the
+button back on `window.print()` (the bug as Dan flagged it), the PDF URL
+dropping the on-screen filters, the two booleans folded into the truthy loop,
+the URL's view never applied (so a statement PDF captures the P&L),
+`?_print=1` never stamping `#report-ready`, and the print render keeping its
+chrome.
+
+**ONE SURVIVOR IS GENUINELY BENIGN and is recorded as such rather than dressed
+up as caught.** Making the Statement button ask for no view (`openPdf(null)`)
+changes nothing, because `#pdfStmt` only exists INSIDE `#statementView` — the
+current `view` is always `"statement"` when that button is clickable, so both
+spellings build the same URL. *A mutation that cannot reproduce a bug has not
+tested the guard*, and the explicit argument is kept because it stops being a
+no-op the day that button is rendered anywhere else.
+
+**The truthy-loop mutation is caught by a `[source]`-labelled assertion**, and
+that is named rather than implied: `"0"` is truthy in JS, so a VALUE test over
+the built query string cannot separate the two implementations — only reading
+the forwarding code can.
+
+Five `ci-check-render.js` cases, because none of this is visible in source: the
+statement printing alone and filling the page, the P&L keeping its summary,
+leaving compare clearing the compare picker, the PDF button opening a popup
+carrying the view, and the print render being ready, bare, and honouring the
+view it was asked for.
 
 ## Working preferences (from Dan, dan@rec.us)
 
