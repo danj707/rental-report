@@ -8016,6 +8016,87 @@ per-case **`expectsConsoleError`**, because a case that drives a failing respons
 expects the page to log it, and without that an error-path case can only ever
 fail.
 
+## PINNED: TURNING A REPORT ON FOR AN ORG SHOULD NOT BE A CODE CHANGE (2026-09-23)
+
+Dan, while I was adding Pawnee to the Cost Recovery pilot: *"we really need a
+better way to launch/edit reports for orgs, instead of doing a code change. that
+should be something on the admin page."*
+
+**PINNED, not being built.** Written down now because the Pawnee change is the
+exhibit: the entire diff that gave an org a report was **one slug in a `Set`**,
+and it still cost a branch, a spec edit, a PR, a CI run and a deploy.
+
+### THE EYE ALREADY WORKS. IT IS THE ELIGIBILITY GATE THAT DOES NOT.
+
+There are **two** gates and only one of them is editable from the admin page:
+
+| | where it lives | editable today |
+|---|---|---|
+| **is this org ELIGIBLE** | a hand-kept `Set` in server.js | **no — a deploy** |
+| what the eye STARTS on | `DEFAULT_HIDDEN_REPORTS` | no (but it never needs to move) |
+| is it SHOWN right now | the store, via `toggle-report` | **yes, the admin grid** |
+
+So the admin page can already turn a report on and off per org — proven end to
+end on a real boot while adding Pawnee: flip the eye and the card appears on the
+org dashboard and `/api/org-visibility/:slug` flips to `visible: true`; flip it
+back and both return. **Nothing about the toggle needs building.** What needs
+building is making the ELIGIBILITY list data rather than code.
+
+### THE HAND-KEPT LISTS, counted
+
+Six of them, all in server.js, all requiring a deploy to change:
+
+```
+MUNIS_EXPORT_ORGS      []                                    (parked)
+RENTAL_CALENDAR_ORGS   watertown, norman, niagarafalls
+LESSONS_REPORT_ORGS    san-francisco-rec-park
+COST_RECOVERY_ORGS     shrewsbury, windham, pawnee
+DIRECTORS_REPORT_ORGS  watertown            + an EXCLUDED set
+WIZARD_ENABLED_ORGS    (env-driven, empty)
+```
+
+They are not one shape: `DIRECTORS_REPORT_ORGS` is paired with an `ALL_ORGS`
+boolean **and** an exclusion set, and `WIZARD_ENABLED_ORGS` reads an env var. So
+a single "eligible orgs" store has to absorb three different existing semantics
+before any of them can be deleted, or the three disagree with each other.
+
+### WHAT MAKES THIS NOT A ONE-LINER
+
+- **A report is eligible only where it can actually RENDER.** `costRecoveryEnabled`
+  is `has(slug) && !!ORGS[slug]`; `lessons` needs SF's own cards; `munis` needs a
+  per-org Tyler config. So the admin control has to refuse an org whose report
+  would open empty — **the whole reason `+ Add report` was taken off Cost
+  Recovery** (a report with no card of its own read as permanently missing for
+  all 29 orgs and then refused itself). A list that lets anyone tick anything
+  reintroduces that.
+- **The cost is real for some reports.** Opportunities is ~9 heavy feeds per org
+  per night and its cron walks only eligible orgs; Cost Recovery's default window
+  is two fiscal years of card 17295, which **times out at apex**. Eligibility is
+  partly a spend decision, so the control should show what an org is about to
+  cost rather than just a checkbox.
+- **`MAY_BE_VISIBLE` is the guard that must survive.** `report-visibility.spec.js`
+  freezes what may be seen without Dan asking, deliberately as a whitelist because
+  *"a blacklist is satisfied by forgetting to add to it"*. Moving eligibility into
+  a store must not move that rule into the store with it, or the guard that stops
+  a report shipping to 29 dashboards becomes a row somebody can edit.
+- **rec-dashboard reads `/api/org-visibility/:slug`.** Whatever changes has to keep
+  that answer honest, or an org is linked to a report its dashboard never draws —
+  the `town-of-shrewsbury` 404 again.
+
+### The shape it probably wants
+
+`REPORT_ELIGIBILITY` in the store (`readJSON`/`writeJSON`, so it is Postgres and
+survives a deploy), seeded from today's six Sets so nothing moves on the first
+boot, read by one `reportEligibleForOrg(slug, rt)` that every gate calls. The
+admin grid grows a second column beside the eye: **eligible** (a deploy today)
+next to **visible** (a click today). The six Sets stay as the SEED and are
+deleted only once the store is authoritative — the `aquaticsExtraTypes` lesson,
+where a registered setting nothing read was worse than none.
+
+**Guard it the way the seeds are guarded**: an eligibility row naming a slug not
+in `ORGS` warns and skips rather than writing a row nothing can read, and the
+whitelist spec keeps covering what ships visible.
+
 ## A NUCLEAR OPTION ON THE TWO REPORTS THAT WRITE (2026-09-23)
 
 Dan: *"we need a 'clear all data' nuclear option for each report. Button option
@@ -8905,6 +8986,38 @@ anchors matching in more places than intended (`"net" : "bad"` appears in
 does not apply has not tested anything, and it reads as a hole* — the runner
 asserts the file actually changed and counts the anchor's occurrences against
 what it expects.
+
+### PAWNEE JOINED THE PILOT (2026-09-23)
+
+Dan: *"can you add this report to the City of Pawnee's account as well plz?"*
+
+**One slug in `COST_RECOVERY_ORGS`, and nothing else.** The report reads the
+shared Programs card through `SHARED_UUIDS`, which every org already has, so
+Pawnee needed no card, no uuid and no flip — which is exactly what makes this
+change the exhibit for the PINNED item above about doing this from the admin
+page instead of a deploy.
+
+**It arrives HIDDEN**, because `DEFAULT_HIDDEN_REPORTS` is the other gate and
+this one does not touch it. Dan flips the eye.
+
+**The spec's own label demanded this.** It read *"…and ONLY those two — a third
+slug is a decision somebody has to justify"*, so widening it cost a sentence
+saying why, which is the guard working rather than an obstacle. The exact count
+is kept (now 3) rather than loosened to a range: what it refuses is the pilot
+quietly becoming all 29.
+
+**Verified on a real boot rather than asserted**, because no source assertion can
+see four code paths agreeing: the admin grid draws an eye for Pawnee and still
+draws none for Watertown; at rest the org dashboard shows no card and
+`/api/org-visibility/pawnee` reports the report present with `visible: false`;
+flipping the eye makes the card appear AND the API flip to `visible: true`;
+flipping it back returns both. The page route answers 200 for Pawnee and
+Watertown alike — the eye hides a report, it has never locked one.
+
+**Two apparent discrepancies during that check were my own probe**, recorded so
+nobody re-chases them: the visibility route answers `{ slug, available,
+hiddenCount }`, not `.reports`, and `toggle-report` takes the password in the
+BODY (`dashboardPasswordBlocked` reads `req.body.password`), not a Basic header.
 
 ### THE PILOT IS TWO ORGS, AND THAT IS A SECOND GATE (2026-09-23)
 

@@ -3028,8 +3028,14 @@ const lessonsReportEnabled = (slug) => LESSONS_REPORT_ORGS.has(slug);
    IT DOES NOT LOCK THE PAGE, and that is the standing rule rather than an
    oversight: `/:org/cost-recovery` gates on the PROGRAMS card and stays open
    for every org, so Dan can still click into his own admin card. The eye hides
-   a report from the org; it has never been an authorization boundary. */
-const COST_RECOVERY_ORGS = new Set(["shrewsbury", "windham"]);
+   a report from the org; it has never been an authorization boundary.
+
+   PAWNEE JOINED THE PILOT 2026-09-23, on Dan's ask. It needs no card of its
+   own — the report reads the shared Programs card through SHARED_UUIDS, which
+   every org already has — so the slug IS the whole change. It still arrives
+   hidden, because DEFAULT_HIDDEN_REPORTS is the other gate and this one does
+   not touch it. */
+const COST_RECOVERY_ORGS = new Set(["shrewsbury", "windham", "pawnee"]);
 const costRecoveryEnabled = (slug) => COST_RECOVERY_ORGS.has(slug) && !!ORGS[slug];
 
 const DIRECTORS_REPORT_ALL_ORGS = true;
