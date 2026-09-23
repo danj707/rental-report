@@ -31,13 +31,32 @@
 -- timestamptz in America/Los_Angeles and the server compares these against
 -- its own clock.
 --
+-- "Sold Day" / "Refunded Day" are the ORG'S LOCAL date of the sale, straight
+-- off datetime_at_primary_timezone (already localised). They bucket the
+-- velocity charts: a 9pm Eastern candy bar is 01:00Z tomorrow, and a UTC date
+-- would file every evening shift under the next day.
+--
+-- VARIANTS — THE CONTRACT, NOT YET EMITTED. Rec is adding item variants (one
+-- "Candy Bar" item, fifty bars underneath). As of 2026-09-23 the read replica
+-- has NO variant table (information_schema shows only
+-- order_item.parent_order_item_id), so this card cannot emit them yet. When
+-- product ships the schema, add these columns and nothing else changes:
+--   item rows     "Variant ID", "Variant Name", "SKU", "UPC",
+--                 "Variant Price Cents", "Carried" — ONE ROW PER VARIANT for a
+--                 product that has them (and no product-level row for it)
+--   movement rows "Variant ID" — the variant the order item bought
+-- lib/inventory.js already keys stock on the variant when the column is
+-- present and on the product when it is not, so the page lights up on the
+-- next sync with no deploy.
+--
 -- {{since}} is a TEXT tag on purpose (a date string, cast here). The server
 -- echoes the card's own registered parameter types back, so no Date flip is
 -- ever needed after an API save.
 WITH win AS (
   SELECT ilr.order_item_id,
          ilr.transaction_type,
-         ilr.order_item_transaction_confirmed_at AS ts
+         ilr.order_item_transaction_confirmed_at AS ts,
+         ilr.datetime_at_primary_timezone        AS lts
   FROM materialized.item_log_report ilr
   WHERE ilr.organization_id = {{org_id}}::uuid
     AND ilr.datetime_at_primary_timezone >= {{since}}::timestamp
@@ -48,7 +67,9 @@ mv AS (
          pp.product_id,
          COALESCE(pp.quantity, 1) AS qty,
          MIN(w.ts) FILTER (WHERE w.transaction_type = 'payment') AS sold_at,
-         MIN(w.ts) FILTER (WHERE w.transaction_type = 'refund')  AS refunded_at
+         MIN(w.ts) FILTER (WHERE w.transaction_type = 'refund')  AS refunded_at,
+         MIN(w.lts) FILTER (WHERE w.transaction_type = 'payment') AS sold_lts,
+         MIN(w.lts) FILTER (WHERE w.transaction_type = 'refund')  AS refunded_lts
   FROM win w
   JOIN order_item oi       ON oi.id = w.order_item_id
   JOIN product_purchase pp ON pp.id = oi.product_purchase_id
@@ -64,7 +85,9 @@ SELECT 'item'                                   AS "Row Kind",
        NULL::text                               AS "Order Item ID",
        NULL::numeric                            AS "Quantity",
        NULL::text                               AS "Sold At",
-       NULL::text                               AS "Refunded At"
+       NULL::text                               AS "Refunded At",
+       NULL::text                               AS "Sold Day",
+       NULL::text                               AS "Refunded Day"
 FROM product p
 WHERE p.organization_id = {{org_id}}::uuid
   AND p.deleted_at IS NULL
@@ -79,6 +102,8 @@ SELECT 'movement',
        mv.order_item_id::text,
        mv.qty::numeric,
        to_char(mv.sold_at     AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
-       to_char(mv.refunded_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"')
+       to_char(mv.refunded_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"'),
+       to_char(mv.sold_lts,     'YYYY-MM-DD'),
+       to_char(mv.refunded_lts, 'YYYY-MM-DD')
 FROM mv
 ORDER BY 1, 2

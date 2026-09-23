@@ -172,6 +172,88 @@ guard("view", () => {
   ok(v.items.find(i => i.id === "pp").status === "untracked", "an untracked item says so");
 });
 
+/* ── variants: the variant is the stock unit, the item is the grouping ──── */
+const vcat = (pid, vid, name, vname, extra) => Object.assign({ "Row Kind": "item", "Product ID": pid, "Variant ID": vid, Name: name,
+  "Variant Name": vname, "Product Type": "product", "Price Cents": 200, "In Store": true }, extra || {});
+const vmv = (oid, pid, vid, soldMs, day) => Object.assign(mv(oid, pid, soldMs), { "Variant ID": vid, "Sold Day": day || null });
+guard("variants", () => {
+  const st = INV.emptyState();
+  INV.ingestCatalogue(st, [cat("bar", "Candy Bar", "product", 200)]);
+  INV.push(st.items.bar, { ts: iso(T0 - H), type: "count", qty: 40, note: "c" });
+  // Rec splits the item into variants: the product row goes, a row per bar arrives.
+  const rows = [vcat("bar", "v-snk", "Candy Bar", "Snickers", { SKU: "SNK", UPC: "040000424314" }),
+                vcat("bar", "v-twx", "Candy Bar", "Twix", { "Variant Price Cents": 250 }),
+                vcat("bar", "v-mnd", "Candy Bar", "Mounds", { Carried: false })];
+  const added = INV.ingestCatalogue(st, rows);
+  ok(added === 3, "each variant is its own stock unit (got " + added + ")");
+  ok(st.items["v-snk"].parentId === "bar" && st.items["v-snk"].name === "Candy Bar · Snickers", "a variant carries its parent and reads 'Item · Variant'");
+  ok(st.items["v-twx"].price === 2.5 && st.items["v-snk"].price === 2, "a variant's own price wins, and falls back to the item's");
+  ok(st.items["v-snk"].sku === "SNK", "the SKU comes through");
+  ok(st.items["v-snk"].upc === "040000424314", "a barcode Rec already knows is adopted");
+  ok(st.items["v-mnd"].track === false && st.items["v-snk"].track === true, "a variant Rec marks not carried comes in switched off");
+  ok(INV.statusOf(st.items["v-mnd"]) === "notcarried", "…and never reads out or low");
+  ok(st.items.bar.live === false && st.items.bar.split === true && st.items.bar.ledger.length === 1,
+     "the old item-level unit keeps its history and is marked split, not deleted");
+  // Our own link beats Rec's, and a barcode can never land on two items.
+  st.items["v-snk"].upc = "MINE"; INV.ingestCatalogue(st, rows);
+  ok(st.items["v-snk"].upc === "MINE", "a barcode a person linked is never overwritten by Rec's");
+  INV.ingestCatalogue(st, rows.map(r => r["Variant ID"] === "v-twx" ? Object.assign({}, r, { UPC: "MINE" }) : r));
+  ok(st.items["v-twx"].upc === "", "Rec's barcode is not adopted when another item already holds it");
+  // A sale on a variant moves THAT variant, not the family.
+  INV.push(st.items["v-snk"], { ts: iso(T0), type: "count", qty: 20, note: "c" });
+  INV.applyMovements(st, [...rows, vmv("s1", "bar", "v-snk", T0 + H), vmv("s2", "bar", "v-snk", T0 + H)], T0 + 2 * H, T0 - 48 * H);
+  ok(INV.onHand(st.items["v-snk"]) === 18, "a variant's sale comes off the variant (20 → 18), got " + INV.onHand(st.items["v-snk"]));
+  ok(INV.onHand(st.items.bar) === 40, "…and never off the split item-level unit");
+  const v = INV.view(st, T0 + 3 * H);
+  const g = v.groups.bar;
+  ok(g && g.variants === 3 && g.tracked === 2 && g.notCarried === 1, "the family roll-up counts variants, tracked and not carried");
+  ok(g.onHand === 18 && g.uncounted === 1, "the roll-up sums COUNTED variants and says how many are not counted (18, +1)");
+  // A feed without the variant columns ingests exactly as before.
+  const old = INV.emptyState(); INV.ingestCatalogue(old, CATALOGUE);
+  ok(old.items.snk.parentId === null && old.items.snk.carried === true && Object.keys(INV.view(old, T0).groups).length === 0,
+     "a pre-variant feed is unchanged: no parent, carried, no families");
+});
+
+/* ── velocity: a daily tally that does not wait for a count ───────────────── */
+guard("daily", () => {
+  const st = INV.emptyState(); INV.ingestCatalogue(st, CATALOGUE);
+  const day = (ms) => iso(ms).slice(0, 10);
+  // Uncounted: the ledger does not move, but the tally does.
+  INV.applyMovements(st, [mv("a1", "snk", T0), mv("a2", "snk", T0), Object.assign(mv("a3", "snk", T0 + H), { "Sold Day": "2026-09-19" })], T0 + 2 * H, T0 - 48 * H);
+  ok(INV.onHand(st.items.snk) === null, "an uncounted item still has no balance");
+  ok(st.items.snk.daily[day(T0)] === 2 && st.items.snk.daily["2026-09-19"] === 1,
+     "…but every sale is tallied, and the card's LOCAL 'Sold Day' wins over the UTC date");
+  INV.applyMovements(st, [mv("a1", "snk", T0), mv("a2", "snk", T0), mv("a3", "snk", T0 + H)], T0 + 2 * H, T0 - 48 * H);
+  ok(st.items.snk.daily[day(T0)] === 2, "re-reading the same window tallies nothing twice");
+  // a2 vanishes → void takes it back out of its day; it reappears → back in.
+  INV.applyMovements(st, [mv("a1", "snk", T0), mv("a3", "snk", T0 + H)], T0 + 3 * H, T0 - 48 * H);
+  ok(st.items.snk.daily[day(T0)] === 1, "a void takes the unit back out of the day it sold");
+  INV.applyMovements(st, [mv("a1", "snk", T0), mv("a2", "snk", T0), mv("a3", "snk", T0 + H)], T0 + 4 * H, T0 - 48 * H);
+  ok(st.items.snk.daily[day(T0)] === 2, "…and a sale that reappears goes back in, once");
+  INV.applyMovements(st, [mv("a1", "snk", T0, T0 + 30 * H), mv("a2", "snk", T0), mv("a3", "snk", T0 + H)], T0 + 31 * H, T0 - 48 * H);
+  ok(st.items.snk.daily[day(T0 + 30 * H)] === -1, "a refund comes off the day it happened");
+  const series = INV.dailySeries(st.items.snk, T0 + 31 * H, 3);
+  ok(series.length === 3 && series.every(n => n >= 0), "the daily series is zero-filled and never negative");
+  // Old days are forgotten.
+  st.items.snk.daily["2025-01-01"] = 9;
+  INV.applyMovements(st, [], T0 + 32 * H, T0 - 48 * H);
+  ok(!("2025-01-01" in st.items.snk.daily), "tally days past DAILY_KEEP_DAYS are dropped");
+});
+
+guard("spark", () => {
+  const st = counted(40, T0);
+  ok(INV.onHandSeries(INV.emptyState().items.x || { ledger: [] }, T0) === null, "no count, no sparkline");
+  INV.applyMovements(st, [mv("a", "snk", T0 + H, null, 7)], T0 + 2 * H, T0 - H);
+  INV.push(st.items.snk, { ts: iso(T0 + 5 * H), type: "receive", qty: 10, note: "d" });
+  const pts = INV.onHandSeries(st.items.snk, T0 + 6 * H);
+  ok(pts.map(p => p[1]).join() === "40,33,43,43", "the sparkline replays the ledger: count, sale, delivery, holding to now (got " + pts.map(p => p[1]).join() + ")");
+  ok(pts[pts.length - 1][1] === INV.onHand(st.items.snk), "its last point IS the on-hand figure beside it");
+  const older = counted(40, T0 - 60 * 86400000);
+  INV.push(older.items.snk, { ts: iso(T0 - 50 * 86400000), type: "adjust", qty: -5, note: "x" });
+  const op = INV.onHandSeries(older.items.snk, T0, 30);
+  ok(op.length === 2 && op[0][1] === 35 && Date.parse(op[0][0]) === T0 - 30 * 86400000, "an old count starts the window at the balance going into it");
+});
+
 /* ── source: the wiring that ships a report hidden and reachable ────────── */
 if (!process.env.SKIP_SOURCE) {
   const srv = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
@@ -190,9 +272,28 @@ if (!process.env.SKIP_SOURCE) {
   ok(/ilr\.datetime_at_primary_timezone >= \{\{since\}\}::timestamp/.test(sql), "the card's window is sargable (bare column, cast on the tag)");
   ok(/p\.type = 'product'/.test(sql), "only product.type = 'product' produces movements");
   ok(/ORDER BY 1, 2\s*$/.test(sql.trim() + "\n") || /ORDER BY 1, 2/.test(sql), "the card keeps its trailing ORDER BY");
+  // One value per slug: lift and RUN the helper, since the bug it fixes is
+  // "sent both copies" and a regex cannot count what a function returns.
+  const a0 = srv.indexOf("function inventoryParamSets("), a1 = srv.indexOf("\nasync function fetchInventoryFeed(");
+  ok(a0 > 0 && a1 > a0, "inventoryParamSets is where this expects it");
+  try {
+    const sets = new Function(srv.slice(a0, a1) + "; return inventoryParamSets;")()(
+      [{ id: "a", slug: "org_id", type: "string/=" }, { id: "b", slug: "since", type: "date/single" },
+       { id: "c", slug: "since", type: "string/=" }, { id: "d", slug: "org_id", type: "string/=" }], { org_id: "o", since: "s" });
+    ok(sets.length === 2 && sets.every(ps => ps.length === 2), "a card with duplicated tags yields two candidate sets, one value per slug each");
+    ok(sets[0].map(p => p.id).sort().join() === "c,d", "the LAST-registered set goes first — measured to be the one that answers");
+    const one = new Function(srv.slice(a0, a1) + "; return inventoryParamSets;")()(
+      [{ id: "a", slug: "org_id" }, { id: "b", slug: "since" }], { org_id: "o", since: "s" });
+    ok(one.length === 1, "a clean card is asked once");
+  } catch (e) { failures.push("inventoryParamSets THREW: " + e.message); }
+  const grp = srv.slice(srv.indexOf('app.post("/:org/inventory/api/group"'), srv.indexOf('app.post("/:org/inventory/api/prefs"'));
+  ok(/it\.carried === false\) continue/.test(grp), "the whole-item switch never starts tracking a variant Rec says is not carried");
+  ok(/Sold Day/.test(sql) && /to_char\(mv\.sold_lts/.test(sql), "the card emits each sale's LOCAL day");
   const page = fs.readFileSync(path.join(__dirname, "..", "public", "inventory.html"), "utf8");
   ok(!/onHand\s*[-+]=/.test(page) && !/ledger\.reduce/.test(page), "the page does no stock arithmetic of its own — lib/inventory.js is the one definition");
   ok(/'\?token=' \+ encodeURIComponent\(TOKEN\)/.test(page), "every page call carries the org token (the gate 404s without it)");
+  ok(/window\.RECESS_CAT/.test(page) && /src="\/open-pdf\.js"/.test(page), "the velocity chart reads the ONE shared categorical palette");
+  ok(/S\.mvSlot\[id\]/.test(page), "a line's colour follows the product, not its rank");
 }
 
 /* ── live: the real server against a stand-in Metabase ──────────────────── */
@@ -272,6 +373,17 @@ async function live() {
     ok((s2.json.alerts || []).length === 1 && s2.json.alerts[0].sent === false, "the crossing is logged, and says no email went (no recipients)");
     const s3 = await req_("POST", "/spec-inv/inventory/api/sync" + q, {});
     ok(snk(s3.json).onHand === 11, "an immediate second sync changes nothing");
+    // Variants arrive: the whole-item switch tracks the carried ones only.
+    mb.rows = [...CATALOGUE, vcat("tee", "tee-s", "Race Tee", "Navy / S"), vcat("tee", "tee-x", "Race Tee", "Gray / XL", { Carried: false })];
+    const st4 = inventoryReadState(dataDir); st4.lastSync.ts = new Date(0).toISOString(); writeState(dataDir, st4);
+    const s4 = await req_("POST", "/spec-inv/inventory/api/sync" + q, {});
+    ok(s4.json.groups && s4.json.groups.tee && s4.json.groups.tee.variants === 2, "a synced item with variants reaches the page as a family");
+    const off = await req_("POST", "/spec-inv/inventory/api/group" + q, { parentId: "tee", track: false });
+    ok(off.status === 200 && off.json.changed === 1, "switching the item off turns off its one tracked variant (changed " + off.json.changed + ")");
+    const on = await req_("POST", "/spec-inv/inventory/api/group" + q, { parentId: "tee", track: true });
+    const gx = (on.json.items || []).find(i => i.id === "tee-x") || {};
+    ok(on.json.changed === 1 && gx.track === false, "switching it on never starts tracking the variant Rec says is not carried");
+    ok((await req_("POST", "/spec-inv/inventory/api/group" + q, { parentId: "nope", track: true })).status === 404, "an unknown item 404s");
     const onDisk = inventoryReadState(dataDir);
     ok(onDisk && onDisk.items && onDisk.items.snk && onDisk.items.snk.upc === "040000424314", "state is persisted through the store");
   } finally {

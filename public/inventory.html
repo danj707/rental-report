@@ -142,7 +142,7 @@ select{border:1px solid var(--line2);border-radius:8px;padding:6px 9px;backgroun
 .alertlog li:last-child{border-bottom:0}
 .alertlog li .w{color:var(--ink3);font-size:12px;margin-left:auto}
 
-.toggle{position:relative;width:36px;height:20px;flex:none}
+.toggle{position:relative;display:inline-block;vertical-align:middle;width:36px;height:20px;flex:none}
 .toggle input{position:absolute;opacity:0;inset:0;margin:0;cursor:pointer}
 .toggle span{position:absolute;inset:0;border-radius:99px;background:var(--line2);transition:background .15s}
 .toggle span::after{content:"";position:absolute;left:2px;top:2px;width:16px;height:16px;border-radius:50%;background:#fff;transition:transform .15s;box-shadow:0 1px 2px rgba(0,0,0,.25)}
@@ -178,6 +178,49 @@ select{border:1px solid var(--line2);border-radius:8px;padding:6px 9px;backgroun
 .empty{padding:30px 16px;text-align:center;color:var(--ink3)}
 .note{font-size:12.5px;color:var(--ink3);padding:10px 16px;border-top:1px solid var(--line)}
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+/* ── Variants: a parent row, its variants indented under it ─────────── */
+tr.grp td{background:var(--card2);border-top:1px solid var(--line2)}
+tr.grp .caret{border:0;background:none;padding:0 6px 0 0;color:var(--ink3);font-size:12px;vertical-align:middle}
+tr.grp .vct{display:inline-block;margin-left:6px;border:1px solid #99d3b1;color:var(--grass-ink);border-radius:99px;padding:0 7px;font-size:11.5px;font-weight:700}
+tr.vrow td:first-child{padding-left:38px}
+tr.svrow td:nth-child(2){padding-left:30px}
+tr.vrow .iname{font-weight:500}
+.nc .iname{text-decoration:line-through;color:var(--ink3)}
+.chip.notcarried{background:var(--line);color:var(--ink2)}
+/* ── Sparkline: on hand over 30 days, one quiet ink line ──────────────── */
+.spark{display:block}
+.spark .ln{fill:none;stroke:var(--ink2);stroke-width:1.5;stroke-linejoin:round}
+.spark .ro{stroke:var(--warn);stroke-width:1;stroke-dasharray:2 2;opacity:.7}
+.spark .end{fill:var(--ink)}
+/* ── Movement tab ─────────────────────────────────────────────────────── */
+.mv-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+@media (max-width:860px){.mv-grid{grid-template-columns:1fr}}
+.rank{list-style:none;margin:0;padding:6px 0}
+.rank li{display:grid;grid-template-columns:22px minmax(0,1fr) 110px 56px 76px;gap:8px;align-items:center;padding:6px 16px;cursor:pointer}
+.rank li:hover{background:var(--card2)}
+.rank .n{color:var(--ink3);font-size:12px;font-variant-numeric:tabular-nums}
+.rank .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600}
+.rank .bar{height:8px;border-radius:0 4px 4px 0;background:var(--ink2);min-width:2px}
+.rank .u{text-align:right;font-weight:700;font-variant-numeric:tabular-nums}
+.rank .t{text-align:right;font-size:12px;font-variant-numeric:tabular-nums;color:var(--ink2)}
+.rank .t.up{color:var(--ok)} .rank .t.dn{color:var(--bad)}
+.rank li.on .nm::after{content:" \2022 on chart";color:var(--ink3);font-weight:500;font-size:11.5px}
+.vchips{display:flex;flex-wrap:wrap;gap:6px;padding:10px 16px;border-bottom:1px solid var(--line)}
+.vchip{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line2);background:var(--card);border-radius:99px;padding:4px 11px;font-size:12.5px;font-weight:600;color:var(--ink)}
+.vchip i{width:9px;height:9px;border-radius:50%;background:var(--line2)}
+.vchip[aria-pressed="true"]{border-color:var(--ink2)}
+.vchip .x{color:var(--ink3);font-weight:500}
+.vchart{position:relative;padding:8px 8px 4px}
+.vchart svg text{font:11.5px Inter,system-ui,sans-serif;fill:var(--ink3)}
+.vchart .grid{stroke:var(--line);stroke-width:1}
+.vchart .axis{stroke:var(--line2)}
+.vchart .dl{fill:var(--ink);font-weight:600}
+.vchart .dlv{fill:var(--ink2);font-weight:700}
+.vtip{position:absolute;pointer-events:none;background:var(--card);border:1px solid var(--line2);border-radius:8px;box-shadow:var(--shadow);padding:8px 10px;font-size:12px;min-width:170px;z-index:5}
+.vtip .d{font-weight:700;margin-bottom:4px}
+.vtip .r{display:flex;align-items:center;gap:6px;justify-content:space-between}
+.vtip .r span{display:inline-flex;align-items:center;gap:6px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;max-width:200px}
+.vtip .r i{width:8px;height:8px;border-radius:50%;flex:none}
 </style>
 <link rel="stylesheet" href="/recess-tokens.css">
 <link rel="stylesheet" href="/recess-report.css">
@@ -209,12 +252,14 @@ select{border:1px solid var(--line2);border-radius:8px;padding:6px 9px;backgroun
 
   <div class="tabs" role="tablist">
     <button class="tab" role="tab" id="t-stock" aria-selected="true" data-tab="stock">Stock</button>
+    <button class="tab" role="tab" id="t-move" aria-selected="false" data-tab="move">Movement</button>
     <button class="tab" role="tab" id="t-scan" aria-selected="false" data-tab="scan">Scan</button>
     <button class="tab" role="tab" id="t-alerts" aria-selected="false" data-tab="alerts">Reorder emails</button>
     <button class="tab" role="tab" id="t-setup" aria-selected="false" data-tab="setup">Items from Rec</button>
   </div>
 
   <section id="v-stock"></section>
+  <section id="v-move" hidden></section>
   <section id="v-scan" hidden></section>
   <section id="v-alerts" hidden></section>
   <section id="v-setup" hidden></section>
@@ -238,7 +283,7 @@ var SLUG = CFG.slug || location.pathname.split('/').filter(Boolean)[0] || '';
 var $ = function(s){ return document.querySelector(s); };
 var esc = function(s){ return String(s == null ? '' : s).replace(/[&<>"]/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]; }); };
 var money = function(n){ return n == null ? '—' : '$' + Number(n).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2}); };
-var STATUS_LABEL = { ok:'In stock', low:'Reorder', out:'Out', uncounted:'Needs a count', untracked:'Not tracked' };
+var STATUS_LABEL = { ok:'In stock', low:'Reorder', out:'Out', uncounted:'Needs a count', untracked:'Not tracked', notcarried:'Not carried' };
 
 function api(path, body){
   var u = '/' + SLUG + '/inventory/api/' + path + '?token=' + encodeURIComponent(TOKEN);
@@ -251,7 +296,7 @@ function api(path, body){
   });
 }
 
-var S = { data:null, tab:'stock', filter:'all', q:'', scan:null, err:'' };
+var S = { data:null, tab:'stock', filter:'all', q:'', scan:null, err:'', open:{}, mvDays:30, mvSel:null, mvQ:'', mvMore:false };
 try { var t = localStorage.getItem('inv-tab'); if (t) S.tab = t; } catch(e){}
 if (Q.get('tab')) S.tab = Q.get('tab');
 // Who is doing the counting, remembered per browser. It goes on the ledger
@@ -260,7 +305,7 @@ var BY = ''; try { BY = localStorage.getItem('inv-by') || ''; } catch(e){}
 
 function toast(msg){ var r=$('#toastRoot'); r.innerHTML='<div class="toast" role="status">'+esc(msg)+'</div>'; clearTimeout(toast._t); toast._t=setTimeout(function(){ r.innerHTML=''; },2800); }
 function items(){ return (S.data && S.data.items) || []; }
-function tracked(){ return items().filter(function(i){ return i.track && i.live; }); }
+function tracked(){ return items().filter(function(i){ return i.track && i.live && i.carried !== false; }); }
 function byId(id){ return items().find(function(i){ return i.id === id; }); }
 function when(ts){ if (!ts) return ''; var d=new Date(ts); return d.toLocaleDateString(undefined,{month:'short',day:'numeric'})+' · '+d.toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'}).toLowerCase(); }
 
@@ -307,43 +352,101 @@ function renderChrome(){
 }
 
 function setTab(t){
-  if (['stock','scan','alerts','setup'].indexOf(t) < 0) t = 'stock';
+  if (['stock','move','scan','alerts','setup'].indexOf(t) < 0) t = 'stock';
   S.tab = t; try { localStorage.setItem('inv-tab', t); } catch(e){}
   Array.prototype.forEach.call(document.querySelectorAll('.tab'), function(b){ b.setAttribute('aria-selected', b.dataset.tab===t ? 'true':'false'); });
-  ['stock','scan','alerts','setup'].forEach(function(k){ $('#v-'+k).hidden = k !== t; });
+  ['stock','move','scan','alerts','setup'].forEach(function(k){ $('#v-'+k).hidden = k !== t; });
   render();
   if (t === 'scan') setTimeout(function(){ var i=$('#scanIn'); if (i) i.focus(); }, 0);
 }
 Array.prototype.forEach.call(document.querySelectorAll('.tab'), function(b){ b.onclick=function(){ setTab(b.dataset.tab); }; });
 
 /* ── Stock ──────────────────────────────────────────────────────────── */
+// A variant's family, for grouping. Items with no parent stand alone.
+var RANK = { out:0, low:1, uncounted:2, ok:3, notcarried:4, untracked:5 };
+function worst(list){ return list.reduce(function(w,i){ return RANK[i.status] < RANK[w] ? i.status : w; }, 'untracked'); }
+function families(list){
+  var out = [], byP = {}, G = (S.data && S.data.groups) || {};
+  list.forEach(function(i){ if (i.parentId) (byP[i.parentId] = byP[i.parentId] || []).push(i); else out.push({ item:i, st:i.status, name:i.name }); });
+  Object.keys(byP).forEach(function(pid){
+    var kids = byP[pid].sort(function(a,b){ return (a.variantName||'').localeCompare(b.variantName||'', undefined, {numeric:true}); });
+    out.push({ group: G[pid] || { id:pid, name:kids[0].parentName }, kids: kids, st: worst(kids), name: kids[0].parentName || '' });
+  });
+  return out.sort(function(a,b){ return (RANK[a.st]-RANK[b.st]) || a.name.localeCompare(b.name); });
+}
+function matches(i, q){ return !q || i.name.toLowerCase().indexOf(q)>=0 || (i.upc||'').toLowerCase().indexOf(q)>=0 || (i.sku||'').toLowerCase().indexOf(q)>=0; }
+
+// On hand over the last 30 days. A STEP line, because a balance does not
+// glide between syncs — it holds, then drops. The dashed line is the reorder
+// point, so "how close did it get" reads without a number.
+function sparkSvg(i){
+  var pts = i.spark;
+  if (!pts || !pts.length) return '<span class="isub" title="No count yet, so nothing to draw">—</span>';
+  var W = 96, H = 26, P = 3;
+  var t0 = Date.parse(pts[0][0]), t1 = Date.parse(pts[pts.length-1][0]); if (!(t1 > t0)) t1 = t0 + 1;
+  var vals = pts.map(function(p){ return p[1]; }); if (i.reorder != null) vals.push(i.reorder);
+  var lo = Math.min(0, Math.min.apply(null, vals)), hi = Math.max.apply(null, vals); if (hi <= lo) hi = lo + 1;
+  var x = function(t){ return P + (Date.parse(t) - t0) / (t1 - t0) * (W - 2*P); };
+  var y = function(v){ return H - P - (v - lo) / (hi - lo) * (H - 2*P); };
+  var d = '';
+  pts.forEach(function(p, k){ var X = x(p[0]).toFixed(1), Y = y(p[1]).toFixed(1); d += k ? ' H' + X + ' V' + Y : 'M' + X + ' ' + Y; });
+  var last = pts[pts.length-1], first = pts[0];
+  var ro = i.reorder != null ? '<line class="ro" x1="'+P+'" x2="'+(W-P)+'" y1="'+y(i.reorder).toFixed(1)+'" y2="'+y(i.reorder).toFixed(1)+'"/>' : '';
+  return '<svg class="spark" width="'+W+'" height="'+H+'" role="img" data-spark="'+pts.length+'" aria-label="On hand over 30 days, '+first[1]+' to '+last[1]+'">'+
+    '<title>On hand, last 30 days: '+first[1]+' → '+last[1]+(i.reorder!=null?' (reorder at '+i.reorder+')':'')+'</title>'+
+    ro+'<path class="ln" d="'+d+'"/><circle class="end" r="2.2" cx="'+x(last[0]).toFixed(1)+'" cy="'+y(last[1]).toFixed(1)+'"/></svg>';
+}
+
+function stockRow(i, isVariant){
+  var par = i.par || null, pct = i.onHand === null || !par ? 0 : Math.max(0, Math.min(100, i.onHand/par*100));
+  var label = isVariant ? (i.variantName || i.name) : i.name;
+  var sub = [isVariant && i.sku ? '<span class="mono">'+esc(i.sku)+'</span>' : '', money(i.price)].filter(Boolean).join(' · ');
+  return '<tr data-inv-row="'+esc(i.id)+'" data-status="'+i.status+'"'+(isVariant?' class="vrow" data-parent="'+esc(i.parentId)+'"':'')+'>'+
+    '<td><div class="iname">'+esc(label)+'</div><div class="isub">'+sub+'</div></td>'+
+    '<td>'+(i.upc ? '<span class="mono">'+esc(i.upc)+'</span>' : '<span class="nobar">No barcode yet</span>')+'</td>'+
+    '<td class="r num" data-onhand="'+(i.onHand===null?'':i.onHand)+'">'+(i.onHand===null ? '<span class="isub">—</span>' : '<b>'+i.onHand+'</b>'+(par ? '<span class="meter" title="'+i.onHand+' of '+par+' par"><i class="'+i.status+'" style="width:'+pct+'%"></i></span>' : ''))+'</td>'+
+    '<td>'+sparkSvg(i)+'</td>'+
+    '<td class="r num">'+(i.reorder==null?'<span class="isub">set</span>':i.reorder)+'</td>'+
+    '<td><span class="chip '+i.status+'">'+STATUS_LABEL[i.status]+'</span></td>'+
+    '<td class="r num">'+i.sold7+'</td>'+
+    '<td class="r num">'+(i.onHand===null ? '—' : i.onHand<=0 ? '<span style="color:var(--bad)">now</span>' : i.daysLeft===null ? '—' : i.daysLeft+' days')+'</td>'+
+    '<td><div class="acts"><button type="button" class="btn" data-hist="'+esc(i.id)+'">History</button><button type="button" class="btn'+(i.onHand===null?' pri':'')+'" data-count="'+esc(i.id)+'">Count</button>'+(i.onHand===null?'':'<button type="button" class="btn pri" data-recv="'+esc(i.id)+'">Receive</button>')+'</div></td>'+
+  '</tr>';
+}
+function groupRow(f, open){
+  var g = f.group, low = f.kids.filter(function(i){ return i.status==='low'||i.status==='out'; }).length;
+  var unc = f.kids.filter(function(i){ return i.status==='uncounted'; }).length;
+  var sold = f.kids.reduce(function(a,i){ return a + i.sold7; }, 0);
+  var oh = f.kids.filter(function(i){ return i.onHand !== null; });
+  var sum = oh.reduce(function(a,i){ return a + Math.max(0,i.onHand); }, 0);
+  return '<tr class="grp" data-inv-group="'+esc(g.id)+'" data-open="'+(open?'1':'0')+'">'+
+    '<td colspan="2"><button type="button" class="caret" data-toggle="'+esc(g.id)+'" aria-expanded="'+open+'" aria-label="'+(open?'Collapse':'Expand')+' '+esc(f.name)+'">'+(open?'&#9662;':'&#9656;')+'</button>'+
+      '<span class="iname">'+esc(f.name)+'</span><span class="vct">'+f.kids.length+' variant'+(f.kids.length===1?'':'s')+'</span>'+
+      '<div class="isub" style="padding-left:18px">'+(low ? low+' at or below reorder point' : unc ? unc+' still need a count' : 'All variants stocked')+'</div></td>'+
+    '<td class="r num" data-group-onhand="'+(oh.length?sum:'')+'">'+(oh.length ? '<b>'+sum+'</b>'+(unc?'<div class="isub">+'+unc+' uncounted</div>':'') : '<span class="isub">—</span>')+'</td>'+
+    '<td></td><td></td><td><span class="chip '+f.st+'">'+STATUS_LABEL[f.st]+'</span></td>'+
+    '<td class="r num">'+sold+'</td><td></td><td></td></tr>';
+}
 function renderStock(){
   if (!S.data){ $('#v-stock').innerHTML='<div class="panel"><div class="empty">Loading…</div></div>'; return; }
-  var rows = tracked();
-  if (S.filter !== 'all') rows = rows.filter(function(i){ return i.status === S.filter; });
-  if (S.q){ var q=S.q.toLowerCase(); rows = rows.filter(function(i){ return i.name.toLowerCase().indexOf(q)>=0 || (i.upc||'').indexOf(q)>=0; }); }
-  var rank = { out:0, low:1, uncounted:2, ok:3 };
-  rows.sort(function(a,b){ return (rank[a.status]-rank[b.status]) || a.name.localeCompare(b.name); });
+  var q = S.q.toLowerCase();
+  var rows = tracked().filter(function(i){ return (S.filter === 'all' || i.status === S.filter) && (matches(i, q) || (q && (i.parentName||'').toLowerCase().indexOf(q) >= 0)); });
   var seg = [['all','All'],['low','At reorder point'],['out','Out'],['uncounted','Needs a count'],['ok','In stock']].map(function(x){ return '<button type="button" data-f="'+x[0]+'" aria-pressed="'+(S.filter===x[0])+'">'+x[1]+'</button>'; }).join('');
-  var body = rows.map(function(i){
-    var par = i.par || null, pct = i.onHand === null || !par ? 0 : Math.max(0, Math.min(100, i.onHand/par*100));
-    return '<tr data-inv-row="'+esc(i.id)+'" data-status="'+i.status+'">'+
-      '<td><div class="iname">'+esc(i.name)+'</div><div class="isub">'+money(i.price)+'</div></td>'+
-      '<td>'+(i.upc ? '<span class="mono">'+esc(i.upc)+'</span>' : '<span class="nobar">No barcode yet</span>')+'</td>'+
-      '<td class="r num" data-onhand="'+(i.onHand===null?'':i.onHand)+'">'+(i.onHand===null ? '<span class="isub">—</span>' : '<b>'+i.onHand+'</b>'+(par ? '<span class="meter" title="'+i.onHand+' of '+par+' par"><i class="'+i.status+'" style="width:'+pct+'%"></i></span>' : ''))+'</td>'+
-      '<td class="r num">'+(i.reorder==null?'<span class="isub">set</span>':i.reorder)+'</td>'+
-      '<td><span class="chip '+i.status+'">'+STATUS_LABEL[i.status]+'</span></td>'+
-      '<td class="r num">'+i.sold7+'</td>'+
-      '<td class="r num">'+(i.onHand===null ? '—' : i.onHand<=0 ? '<span style="color:var(--bad)">now</span>' : i.daysLeft===null ? '—' : i.daysLeft+' days')+'</td>'+
-      '<td><div class="acts"><button type="button" class="btn" data-hist="'+esc(i.id)+'">History</button><button type="button" class="btn'+(i.onHand===null?' pri':'')+'" data-count="'+esc(i.id)+'">Count</button>'+(i.onHand===null?'':'<button type="button" class="btn pri" data-recv="'+esc(i.id)+'">Receive</button>')+'</div></td>'+
-    '</tr>';
+  // A family opens on its own when a filter or a search is narrowing the
+  // view — otherwise its matching variants would be hidden under a caret.
+  var narrowed = S.filter !== 'all' || !!q;
+  var body = families(rows).map(function(f){
+    if (f.item) return stockRow(f.item, false);
+    var open = narrowed || !!S.open[f.group.id];
+    return groupRow(f, open) + (open ? f.kids.map(function(i){ return stockRow(i, true); }).join('') : '');
   }).join('');
   var empty = !tracked().length ? 'No items are tracked yet. Turn on the ones you stock under <b>Items from Rec</b>.' : 'Nothing matches this filter.';
-  $('#v-stock').innerHTML = '<div class="panel"><div class="ph"><h2>On hand</h2><input type="search" id="q" placeholder="Search name or UPC" value="'+esc(S.q)+'" aria-label="Search items"><div class="seg">'+seg+'</div></div>'+
-    '<div class="tscroll"><table><thead><tr><th>Item</th><th>UPC</th><th class="r">On hand</th><th class="r">Reorder at</th><th>Status</th><th class="r">Sold 7d</th><th class="r">Runs out in</th><th></th></tr></thead><tbody>'+
-    (body || '<tr><td colspan="8"><div class="empty">'+empty+'</div></td></tr>')+'</tbody></table></div>'+
-    '<div class="note">On hand = last physical count, minus sales from Rec’s item log, plus refunds, voids and deliveries received. "Runs out in" uses the last 7 days’ pace.</div></div>';
+  $('#v-stock').innerHTML = '<div class="panel"><div class="ph"><h2>On hand</h2><input type="search" id="q" placeholder="Search name, SKU or UPC" value="'+esc(S.q)+'" aria-label="Search items"><div class="seg">'+seg+'</div></div>'+
+    '<div class="tscroll"><table><thead><tr><th>Item</th><th>UPC</th><th class="r">On hand</th><th>Last 30 days</th><th class="r">Reorder at</th><th>Status</th><th class="r">Sold 7d</th><th class="r">Runs out in</th><th></th></tr></thead><tbody>'+
+    (body || '<tr><td colspan="9"><div class="empty">'+empty+'</div></td></tr>')+'</tbody></table></div>'+
+    '<div class="note">On hand = last physical count, minus sales from Rec’s item log, plus refunds, voids and deliveries received. "Runs out in" uses the last 7 days’ pace. An item with variants is counted per variant; its row adds up the counted ones.</div></div>';
   Array.prototype.forEach.call($('#v-stock').querySelectorAll('[data-f]'), function(b){ b.onclick=function(){ S.filter=b.dataset.f; render(); }; });
+  Array.prototype.forEach.call($('#v-stock').querySelectorAll('[data-toggle]'), function(b){ b.onclick=function(){ var id=b.dataset.toggle; S.open[id]=!S.open[id]; renderStock(); }; });
   var qi = $('#q'); qi.oninput = function(){ S.q=qi.value; var p=qi.selectionStart; renderStock(); var n=$('#q'); n.focus(); n.setSelectionRange(p,p); };
   wireRowActions($('#v-stock'));
 }
@@ -352,6 +455,133 @@ function wireRowActions(root){
   Array.prototype.forEach.call(root.querySelectorAll('[data-recv]'), function(b){ b.onclick=function(){ openReceive(byId(b.dataset.recv)); }; });
   Array.prototype.forEach.call(root.querySelectorAll('[data-hist]'), function(b){ b.onclick=function(){ openHistory(byId(b.dataset.hist)); }; });
 }
+
+/* ── Movement: what sells, what sits, and how fast ──────────────────── */
+// Series are items and whole families ("Candy Bars, all variants"). Every
+// figure is units per day from the server's daily tally, which records every
+// sale whether or not the shelf has been counted — so a product's velocity
+// does not start on the day somebody first counted it.
+var MV_MAX = 8;
+function mvSeries(){
+  var out = [], G = (S.data && S.data.groups) || {};
+  items().filter(function(i){ return i.live && i.type === 'product' && i.daily; }).forEach(function(i){
+    out.push({ id:i.id, name:i.name, daily:i.daily, onHand:i.onHand, track:i.track && i.carried !== false, item:i });
+  });
+  Object.keys(G).forEach(function(pid){ var g = G[pid]; if (g.daily) out.push({ id:'g:'+pid, name:g.name+' (all variants)', daily:g.daily, onHand:g.onHand, family:true, track:g.tracked > 0 }); });
+  return out;
+}
+function sumLast(a, n, skip){ var t = 0, e = a.length - (skip||0); for (var k = Math.max(0, e-n); k < e; k++) t += a[k] || 0; return t; }
+// A colour belongs to the SERIES, handed out in the order it was added and
+// held until it is removed — so adding a fourth product never repaints the
+// three already on the chart.
+function mvColor(id){ var pal = window.RECESS_CAT || ['#57534e']; var k = (S.mvSel||[]).indexOf(id); return k < 0 ? null : pal[S.mvSlot[id] % pal.length]; }
+function mvAdd(id){
+  S.mvSel = S.mvSel || []; S.mvSlot = S.mvSlot || {};
+  if (S.mvSel.indexOf(id) >= 0){ S.mvSel = S.mvSel.filter(function(x){ return x !== id; }); delete S.mvSlot[id]; return; }
+  if (S.mvSel.length >= MV_MAX){ toast('Up to '+MV_MAX+' lines at once — remove one first'); return; }
+  var used = Object.keys(S.mvSlot).map(function(k){ return S.mvSlot[k]; }), slot = 0; while (used.indexOf(slot) >= 0) slot++;
+  S.mvSel.push(id); S.mvSlot[id] = slot;
+}
+function renderMove(){
+  var root = $('#v-move');
+  if (!S.data){ root.innerHTML = ''; return; }
+  var N = S.mvDays, all = mvSeries();
+  var ranked = all.filter(function(x){ return !x.family; }).map(function(x){
+    var u = sumLast(x.daily, N), prev = N * 2 <= x.daily.length ? sumLast(x.daily, N, N) : null;
+    return { s:x, units:u, prev:prev };
+  });
+  var hot = ranked.filter(function(r){ return r.units > 0; }).sort(function(a,b){ return b.units - a.units || a.s.name.localeCompare(b.s.name); }).slice(0, 10);
+  // Slowest is about what is SITTING on the shelf: tracked items only, the
+  // ones selling least first, and among equals the one holding most stock.
+  var slow = ranked.filter(function(r){ return r.s.track; }).sort(function(a,b){ return a.units - b.units || ((b.s.onHand||0) - (a.s.onHand||0)) || a.s.name.localeCompare(b.s.name); }).slice(0, 10);
+  if (S.mvSel === null){ S.mvSel = []; S.mvSlot = {}; hot.slice(0, 3).forEach(function(r){ mvAdd(r.s.id); }); }
+  var maxU = hot.length ? hot[0].units : 1;
+  var trend = function(r){
+    if (r.prev === null) return '<span class="t">—</span>';
+    if (!r.prev) return r.units ? '<span class="t up" title="Nothing sold the '+N+' days before">new</span>' : '<span class="t">—</span>';
+    var pct = Math.round((r.units - r.prev) / r.prev * 100);
+    return '<span class="t '+(pct>0?'up':pct<0?'dn':'')+'" title="vs the '+N+' days before ('+r.prev+')">'+(pct>0?'▲ ':pct<0?'▼ ':'')+Math.abs(pct)+'%</span>';
+  };
+  var li = function(r, k, isHot){
+    var on = S.mvSel.indexOf(r.s.id) >= 0;
+    return '<li data-mv-rank="'+esc(r.s.id)+'" class="'+(on?'on':'')+'" title="Click to '+(on?'remove from':'add to')+' the chart"><span class="n">'+(k+1)+'</span><span class="nm">'+esc(r.s.name)+'</span>'+
+      (isHot ? '<span><span class="bar" style="display:block;width:'+Math.max(2, r.units/maxU*100)+'%"></span></span>'
+             : '<span class="isub">'+(r.s.onHand===null ? 'not counted' : r.s.onHand+' on hand')+'</span>')+
+      '<span class="u">'+r.units+'</span>'+(isHot ? trend(r) : '<span class="t">'+(r.units ? (r.units/N).toFixed(1)+'/day' : 'none sold')+'</span>')+'</li>';
+  };
+  var seg = [[7,'7 days'],[30,'30 days'],[90,'90 days']].map(function(x){ return '<button type="button" data-mvd="'+x[0]+'" aria-pressed="'+(N===x[0])+'">'+x[1]+'</button>'; }).join('');
+  var q = S.mvQ.toLowerCase();
+  var pool = all.filter(function(x){ return S.mvSel.indexOf(x.id) < 0 && (!q || x.name.toLowerCase().indexOf(q) >= 0); })
+    .sort(function(a,b){ return sumLast(b.daily,N) - sumLast(a.daily,N) || a.name.localeCompare(b.name); });
+  var shown = S.mvMore || q ? pool.slice(0, 60) : pool.slice(0, 10);
+  var chip = function(x){ var c = mvColor(x.id), on = !!c;
+    return '<button type="button" class="vchip" data-mv-chip="'+esc(x.id)+'" aria-pressed="'+on+'"><i style="'+(on?'background:'+c:'')+'"></i>'+esc(x.name)+
+      ' <span class="x">'+sumLast(x.daily,N)+'</span>'+(on?'<span class="x" aria-hidden="true">×</span>':'')+'</button>'; };
+  var selChips = S.mvSel.map(function(id){ return all.find(function(x){ return x.id === id; }); }).filter(Boolean);
+  root.innerHTML =
+    '<div class="panel" style="margin-bottom:14px"><div class="ph"><h2>Velocity</h2><span class="isub">units sold per day'+(N>7?', 7-day average':'')+' · click a product to add or remove its line</span><div class="seg">'+seg+'</div></div>'+
+    '<div class="vchips">'+selChips.map(chip).join('')+shown.map(chip).join('')+
+      (!q && !S.mvMore && pool.length > shown.length ? '<button type="button" class="vchip" id="mvMore">+'+(pool.length-shown.length)+' more</button>' : '')+
+      '<input type="search" id="mvQ" placeholder="Find a product…" value="'+esc(S.mvQ)+'" aria-label="Find a product" style="margin-left:auto;border:1px solid var(--line2);border-radius:99px;padding:4px 11px;min-width:0;width:200px;max-width:100%"></div>'+
+    '<div class="vchart" id="vchart"></div>'+
+    '<div class="note">Refunds and voids come off the day they happened. Sales come from Rec’s item log every hour, whether or not the shelf has been counted.</div></div>'+
+    '<div class="mv-grid">'+
+      '<div class="panel"><div class="ph"><h2>Hottest</h2><span class="isub">most units sold, last '+N+' days</span></div><ul class="rank" data-mv-list="hot">'+(hot.length ? hot.map(function(r,k){ return li(r,k,true); }).join('') : '<li class="isub" style="display:block;cursor:default">Nothing sold in the last '+N+' days.</li>')+'</ul></div>'+
+      '<div class="panel"><div class="ph"><h2>Slowest</h2><span class="isub">tracked items selling least, last '+N+' days</span></div><ul class="rank" data-mv-list="slow">'+(slow.length ? slow.map(function(r,k){ return li(r,k,false); }).join('') : '<li class="isub" style="display:block;cursor:default">Track some items first, under Items from Rec.</li>')+'</ul></div>'+
+    '</div>';
+  Array.prototype.forEach.call(root.querySelectorAll('[data-mvd]'), function(b){ b.onclick = function(){ S.mvDays = +b.dataset.mvd; renderMove(); }; });
+  Array.prototype.forEach.call(root.querySelectorAll('[data-mv-chip],[data-mv-rank]'), function(b){ b.onclick = function(){ mvAdd(b.dataset.mvChip || b.dataset.mvRank); renderMove(); }; });
+  var mm = $('#mvMore'); if (mm) mm.onclick = function(){ S.mvMore = true; renderMove(); };
+  var mq = $('#mvQ'); mq.oninput = function(){ S.mvQ = mq.value; var p = mq.selectionStart; renderMove(); var n = $('#mvQ'); n.focus(); n.setSelectionRange(p,p); };
+  drawVelocity(selChips.map(function(x){ return { id:x.id, name:x.name, daily:x.daily, color:mvColor(x.id) }; }), N);
+}
+// A trailing average smooths a snack bar's weekday/weekend rhythm out of the
+// line; a 7-day view shows the raw days, because there is nothing to smooth.
+function rolling(a, w){ return a.map(function(_, k){ var lo = Math.max(0, k-w+1), t = 0; for (var j = lo; j <= k; j++) t += a[j]; return t / (k-lo+1); }); }
+function niceMax(v){ if (v <= 0) return 1; var p = Math.pow(10, Math.floor(Math.log10(v))), m = v / p; return (m <= 1 ? 1 : m <= 2 ? 2 : m <= 2.5 ? 2.5 : m <= 5 ? 5 : 10) * p; }
+function fmtDay(ymd, long){ var p = ymd.split('-'); var d = new Date(+p[0], +p[1]-1, +p[2]); return d.toLocaleDateString(undefined, long ? {weekday:'short',month:'short',day:'numeric'} : {month:'short',day:'numeric'}); }
+function drawVelocity(series, N){
+  var box = $('#vchart'); if (!box) return;
+  var days = (S.data.days || []).slice(-N);
+  if (!series.length){ box.innerHTML = '<div class="empty">Pick a product above, or click one in Hottest or Slowest, to draw its line.</div>'; return; }
+  var W = Math.max(320, box.clientWidth - 16), H = 280, L = 40, R = 220, T = 14, B = 28;
+  var lines = series.map(function(sr){ var full = rolling(sr.daily, N > 7 ? 7 : 1); return { sr:sr, v: full.slice(-N) }; });
+  var ymax = niceMax(Math.max.apply(null, lines.map(function(l){ return Math.max.apply(null, l.v); })) * 1.08);
+  var x = function(k){ return L + (N === 1 ? 0 : k / (N-1)) * (W - L - R); };
+  var y = function(v){ return T + (1 - v / ymax) * (H - T - B); };
+  var g = '';
+  for (var t = 0; t <= 4; t++){ var v = ymax * t / 4, Y = y(v).toFixed(1); g += '<line class="grid" x1="'+L+'" x2="'+(W-R)+'" y1="'+Y+'" y2="'+Y+'"/><text x="'+(L-6)+'" y="'+(+Y+4)+'" text-anchor="end">'+(v % 1 ? v.toFixed(1) : v)+'</text>'; }
+  var step = Math.max(1, Math.round(N / 6));
+  for (var k = 0; k < N; k += step) g += '<text x="'+x(k).toFixed(1)+'" y="'+(H-8)+'" text-anchor="middle">'+esc(fmtDay(days[k]||''))+'</text>';
+  g += '<line class="axis" x1="'+L+'" x2="'+(W-R)+'" y1="'+y(0)+'" y2="'+y(0)+'"/>';
+  var paths = lines.map(function(l){ var d = l.v.map(function(v,k){ return (k?'L':'M')+x(k).toFixed(1)+' '+y(v).toFixed(1); }).join(' ');
+    return '<path d="'+d+'" fill="none" stroke="'+l.sr.color+'" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" data-vline="'+esc(l.sr.id)+'"/>'; }).join('');
+  // Direct labels at the right edge, pushed apart so two lines ending close
+  // together do not print on top of each other.
+  var lab = lines.map(function(l){ var v = l.v[l.v.length-1]; return { l:l, v:v, y:y(v) }; }).sort(function(a,b){ return a.y - b.y; });
+  for (var i = 1; i < lab.length; i++) if (lab[i].y - lab[i-1].y < 16) lab[i].y = lab[i-1].y + 16;
+  var over = lab.length ? lab[lab.length-1].y - (H - B) : 0; if (over > 0) lab.forEach(function(a){ a.y -= over; });
+  var labels = lab.map(function(a){ var nm = a.l.sr.name.length > 24 ? a.l.sr.name.slice(0, 23) + '…' : a.l.sr.name;
+    return '<circle cx="'+x(N-1).toFixed(1)+'" cy="'+y(a.v).toFixed(1)+'" r="4" fill="'+a.l.sr.color+'" stroke="var(--card)" stroke-width="2"/>'+
+      '<text class="dl" x="'+(W-R+10)+'" y="'+(a.y+4).toFixed(1)+'">'+esc(nm)+' <tspan class="dlv">'+(a.v % 1 ? a.v.toFixed(1) : a.v)+'</tspan></text>'; }).join('');
+  box.innerHTML = '<svg width="'+W+'" height="'+H+'" role="img" aria-label="Units sold per day for '+series.length+' product'+(series.length===1?'':'s')+'" data-vseries="'+series.length+'">'+g+paths+labels+
+    '<line id="vx" class="axis" y1="'+T+'" y2="'+y(0)+'" x1="-9" x2="-9" style="stroke:var(--ink3)"/><g id="vdots"></g>'+
+    '<rect x="'+L+'" y="'+T+'" width="'+(W-L-R)+'" height="'+(H-T-B)+'" fill="transparent" id="vhit"/></svg><div class="vtip" id="vtip" hidden></div>';
+  var hit = $('#vhit'), tip = $('#vtip'), vx = $('#vx'), dots = $('#vdots');
+  hit.onmousemove = function(e){
+    var r = hit.getBoundingClientRect(), k = Math.max(0, Math.min(N-1, Math.round((e.clientX - r.left) / r.width * (N-1)))), X = x(k);
+    vx.setAttribute('x1', X); vx.setAttribute('x2', X);
+    dots.innerHTML = lines.map(function(l){ return '<circle cx="'+X+'" cy="'+y(l.v[k])+'" r="4" fill="'+l.sr.color+'" stroke="var(--card)" stroke-width="2"/>'; }).join('');
+    var rows = lines.slice().sort(function(a,b){ return b.v[k] - a.v[k]; });
+    tip.innerHTML = '<div class="d">'+esc(fmtDay(days[k]||'', true))+'</div>'+rows.map(function(l){ var raw = l.sr.daily[l.sr.daily.length - N + k] || 0;
+      return '<div class="r"><span><i style="background:'+l.sr.color+'"></i>'+esc(l.sr.name)+'</span><b>'+(N>7 ? l.v[k].toFixed(1)+'/day' : raw)+'</b></div>'; }).join('')+(N>7?'<div class="isub" style="margin-top:4px">7-day average</div>':'');
+    tip.hidden = false;
+    var bx = box.getBoundingClientRect(), left = e.clientX - bx.left + 14; if (left + 220 > bx.width) left = e.clientX - bx.left - 234;
+    tip.style.left = left + 'px'; tip.style.top = (e.clientY - bx.top - 10) + 'px';
+  };
+  hit.onmouseleave = function(){ tip.hidden = true; dots.innerHTML = ''; vx.setAttribute('x1', -9); vx.setAttribute('x2', -9); };
+}
+var _rz; window.addEventListener('resize', function(){ clearTimeout(_rz); _rz = setTimeout(function(){ if (S.tab === 'move') renderMove(); }, 150); });
 
 /* ── Scan ───────────────────────────────────────────────────────────── */
 var SCAN_SVG = '<svg viewBox="0 0 30 30" fill="none" stroke="#fff" stroke-width="2"><path d="M3 9V4h5M22 4h5v5M27 21v5h-5M8 26H3v-5"/><path d="M8 10v10M11 10v10M14.5 10v10M18 10v10M21.5 10v10" stroke-width="1.6"/></svg>';
@@ -372,7 +602,12 @@ function renderScan(){
   } else if (r && r.untracked){
     res = '<div class="result"><h3>'+esc(r.untracked.name)+'</h3><div class="isub">This item is not tracked.</div><div class="row" style="margin-top:10px"><button type="button" class="btn pri" id="doTrack">Start tracking it</button></div></div>';
   } else if (r && r.unknown){
-    var opts = tracked().filter(function(i){ return !i.upc; }).sort(function(a,b){ return a.name.localeCompare(b.name); }).map(function(i){ return '<option value="'+esc(i.id)+'">'+esc(i.name)+'</option>'; }).join('');
+    // Variants sit under their item, so "which of the fifty candy bars is
+    // this" is one short list to scan rather than fifty loose names.
+    var opts = families(tracked().filter(function(i){ return !i.upc; })).sort(function(a,b){ return a.name.localeCompare(b.name); }).map(function(f){
+      if (f.item) return '<option value="'+esc(f.item.id)+'">'+esc(f.item.name)+'</option>';
+      return '<optgroup label="'+esc(f.name)+'">'+f.kids.map(function(i){ return '<option value="'+esc(i.id)+'">'+esc(i.variantName||i.name)+'</option>'; }).join('')+'</optgroup>';
+    }).join('');
     res = '<div class="result" data-scan-unknown="1"><h3>New barcode</h3><div class="isub"><span class="mono">'+esc(r.code)+'</span> isn’t linked to anything yet.</div>'+
       (opts ? '<div class="row" style="margin-top:12px"><label for="linkSel" class="isub">This is</label><select id="linkSel">'+opts+'</select><button type="button" class="btn pri" id="doLink">Link barcode</button></div><div class="hint">You only do this once per product. After that every scan finds it.</div>'
             : '<div class="hint">Every tracked item already has a barcode. Turn the item on under Items from Rec first.</div>')+'</div>';
@@ -485,25 +720,42 @@ function renderAlerts(){
 function renderSetup(){
   if (!S.data){ $('#v-setup').innerHTML=''; return; }
   var TYPE_LABEL = { product:'Merch', pass:'Pass', membership:'Membership', fee:'Fee', giftCard:'Gift card' };
-  var list = items().filter(function(i){ return i.live; }).sort(function(a,b){ return (a.type==='product'?0:1)-(b.type==='product'?0:1) || a.name.localeCompare(b.name); });
-  var rows = list.map(function(i){
-    var tag = i.type==='product' ? '<span class="chip ok">Merch</span>' : '<span class="chip pass">'+esc(TYPE_LABEL[i.type]||i.type)+' · not stock</span>';
-    return '<tr data-setup-row="'+esc(i.id)+'"><td><label class="toggle"><input type="checkbox" data-tk="'+esc(i.id)+'" '+(i.track?'checked':'')+' aria-label="Track '+esc(i.name)+'"><span></span></label></td>'+
-      '<td><div class="iname">'+esc(i.name)+'</div><div class="isub">'+money(i.price)+(i.inStore?'':' · hidden from Rec store')+'</div></td><td>'+tag+'</td>'+
+  var list = items().filter(function(i){ return i.live; });
+  var setupRow = function(i, isVariant){
+    var tag = i.carried === false ? '<span class="chip notcarried">Not carried in Rec</span>'
+      : i.type==='product' ? '<span class="chip ok">Merch</span>' : '<span class="chip pass">'+esc(TYPE_LABEL[i.type]||i.type)+' · not stock</span>';
+    var label = isVariant ? (i.variantName || i.name) : i.name;
+    return '<tr data-setup-row="'+esc(i.id)+'" class="'+(isVariant?'svrow':'')+(i.carried===false?' nc':'')+'"><td><label class="toggle"><input type="checkbox" data-tk="'+esc(i.id)+'" '+(i.track?'checked':'')+' aria-label="Track '+esc(i.name)+'"><span></span></label></td>'+
+      '<td><div class="iname">'+esc(label)+'</div><div class="isub">'+(isVariant && i.sku ? '<span class="mono">'+esc(i.sku)+'</span> · ' : '')+money(i.price)+(i.inStore?'':' · hidden from Rec store')+'</div></td><td>'+tag+'</td>'+
       '<td>'+(i.track?'<input class="qty" type="number" min="0" value="'+(i.reorder==null?'':i.reorder)+'" placeholder="—" data-ro="'+esc(i.id)+'" aria-label="Reorder point">':'<span class="isub">—</span>')+'</td>'+
       '<td>'+(i.track?'<input class="qty" type="number" min="0" value="'+(i.par==null?'':i.par)+'" placeholder="—" data-par="'+esc(i.id)+'" aria-label="Par level">':'<span class="isub">—</span>')+'</td>'+
       '<td>'+(i.track?'<input class="qty" type="number" min="0" step="0.01" value="'+(i.cost==null?'':i.cost)+'" placeholder="—" data-cost="'+esc(i.id)+'" aria-label="Unit cost">':'<span class="isub">—</span>')+'</td>'+
       '<td>'+(i.upc?'<span class="mono">'+esc(i.upc)+'</span> <button type="button" class="btn link" data-unlink="'+esc(i.id)+'">Remove</button>':'<span class="isub">—</span>')+'</td></tr>';
+  };
+  var fam = families(list).sort(function(a,b){
+    var ta = a.item ? a.item.type : 'product', tb = b.item ? b.item.type : 'product';
+    return (ta==='product'?0:1)-(tb==='product'?0:1) || a.name.localeCompare(b.name);
+  });
+  var rows = fam.map(function(f){
+    if (f.item) return setupRow(f.item, false);
+    var carried = f.kids.filter(function(i){ return i.carried !== false; }), on = carried.filter(function(i){ return i.track; }).length;
+    var open = !!S.open['s:'+f.group.id];
+    return '<tr class="grp" data-setup-group="'+esc(f.group.id)+'"><td><label class="toggle" title="Track every variant Rec says you carry"><input type="checkbox" data-gtk="'+esc(f.group.id)+'" '+(on && on===carried.length?'checked':'')+' aria-label="Track all '+esc(f.name)+'"><span></span></label></td>'+
+      '<td colspan="6"><button type="button" class="caret" data-stoggle="'+esc(f.group.id)+'" aria-expanded="'+open+'">'+(open?'&#9662;':'&#9656;')+'</button><span class="iname">'+esc(f.name)+'</span><span class="vct">'+f.kids.length+' variants</span>'+
+      '<span class="isub" style="margin-left:8px">'+on+' of '+carried.length+' tracked'+(f.kids.length > carried.length ? ' · '+(f.kids.length-carried.length)+' not carried' : '')+'</span></td></tr>'+
+      (open ? f.kids.map(function(i){ return setupRow(i, true); }).join('') : '');
   }).join('');
   $('#v-setup').innerHTML = '<div class="grid2"><div class="panel"><div class="ph"><h2>Store items pulled from Rec</h2><span class="isub">'+list.length+' items</span></div>'+
     '<div class="tscroll"><table style="min-width:760px"><thead><tr><th>Track</th><th>Item</th><th>Type</th><th>Reorder at</th><th>Par</th><th>Unit cost</th><th>UPC</th></tr></thead><tbody>'+(rows||'<tr><td colspan="7"><div class="empty">No store items came back from Rec yet.</div></td></tr>')+'</tbody></table></div>'+
-    '<div class="note">Passes, memberships, fees and gift cards come in switched off, so a punch pass never shows up as stock. Unit cost is optional and only feeds the stock-value figure.</div></div>'+
+    '<div class="note">Passes, memberships, fees and gift cards come in switched off, so a punch pass never shows up as stock. So does a variant Rec marks not carried; an item’s own switch tracks every variant it carries. Unit cost is optional and only feeds the stock-value figure.</div></div>'+
     '<div class="panel pb"><h2 style="margin:0 0 12px;font-size:15px">Reorder emails</h2>'+
     '<div class="field"><label for="rcpt">Send to</label><input id="rcpt" type="email" multiple value="'+esc(S.data.recipients||'')+'" placeholder="name@city.gov, other@city.gov"><span class="h">Comma-separated. Anyone who places orders.</span></div>'+
     '<div class="row"><button type="button" class="btn pri" id="saveRcpt">Save</button></div>'+
     '<div class="field" style="margin-top:18px"><label>Checks Rec for sales</label><div>Every hour</div><span class="h">Sales, refunds and voids from Rec’s item log.</span></div>'+
     '<div class="field"><label>First-time setup</label><div>Turn on the items you stock, do one physical count of each, set a reorder point, then scan each product once to link its barcode.</div></div></div></div>';
   var root = $('#v-setup');
+  Array.prototype.forEach.call(root.querySelectorAll('[data-stoggle]'), function(b){ b.onclick=function(){ var k='s:'+b.dataset.stoggle; S.open[k]=!S.open[k]; renderSetup(); }; });
+  Array.prototype.forEach.call(root.querySelectorAll('[data-gtk]'), function(c){ c.onchange=function(){ var g=(S.data.groups||{})[c.dataset.gtk]||{name:''}; save('group',{parentId:c.dataset.gtk,track:c.checked}, function(d){ return (c.checked?'Tracking ':'Stopped tracking ')+(d.changed||0)+' '+g.name+' variant'+(d.changed===1?'':'s'); }).catch(function(){ c.checked=!c.checked; }); }; });
   Array.prototype.forEach.call(root.querySelectorAll('[data-tk]'), function(c){ c.onchange=function(){ var it=byId(c.dataset.tk); save('item',{id:it.id,track:c.checked}, it.name+(c.checked?' is now tracked':' is no longer tracked')).catch(function(){ c.checked=!c.checked; }); }; });
   var bind = function(attr, key){ Array.prototype.forEach.call(root.querySelectorAll('['+attr+']'), function(c){ c.onchange=function(){ var o={id:c.getAttribute(attr)}; o[key]=c.value===''?null:c.value; save('item',o,'Saved').catch(function(){}); }; }); };
   bind('data-ro','reorder'); bind('data-par','par'); bind('data-cost','cost');
@@ -511,7 +763,7 @@ function renderSetup(){
   $('#saveRcpt').onclick = function(){ save('prefs',{recipients:$('#rcpt').value}, function(d){ return d.recipients ? 'Reorder emails go to '+d.recipients : 'No valid addresses — reorder emails are off'; }).catch(function(){}); };
 }
 
-function render(){ renderChrome(); ({stock:renderStock, scan:renderScan, alerts:renderAlerts, setup:renderSetup})[S.tab](); }
+function render(){ renderChrome(); ({stock:renderStock, move:renderMove, scan:renderScan, alerts:renderAlerts, setup:renderSetup})[S.tab](); }
 
 $('#syncBtn').onclick = function(){
   var b=$('#syncBtn'); b.disabled=true; b.textContent='Syncing…';
@@ -523,6 +775,7 @@ setTab(S.tab);
 load();
 })();
 </script>
+<script src="/open-pdf.js"></script>
 <script src="/share-widget.js" defer></script>
 <script src="/feedback-widget.js" defer></script>
 <script src="/nav-breadcrumb.js" defer></script>
