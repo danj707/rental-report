@@ -1,5 +1,42 @@
 # Project notes for Claude
 
+## DOUGLAS COUNTY'S SCHEDULE SETTINGS (2026-09-23)
+
+From the Douglas County reporting sync (Fireflies `01M32RZDSWRPQPQ67EJ10P73KD`):
+*"We need to know when the parties are showing up on what day and what day
+they're leaving without all the repeats"*, sites in order 1 to 41, and the
+posting sheet's QR code *"giving too much personal information about the camper
+for anyone to scan"*. Dan: settings, not hardcoding — *"other orgs want it"*.
+
+Three fields on `REPORT_SETTINGS_SCHEMA.facility` (shared with `aquaticsScope`;
+the PUT is a patch, so neither panel can clobber the other), all defaulting to
+today's behaviour, seeded for `douglas-county-nv` by
+`facility-schedule:2026-09-23-douglas`:
+
+| field | values | effect |
+|---|---|---|
+| `multiDayDisplay` | `every` / `endpoints` | endpoints keeps the check-in and check-out rows only, and permits print on ARRIVAL only (server-side, in `permits.pdf`, off the row's `dayNum`) |
+| `siteOrder` | `time` / `site` | natural site-number order within a location (Site 9 before Site 10) |
+| `permitQr` | bool, default true | off ⇒ no QR and no right-hand column on the sheet |
+
+- **Display only — card 17294 is untouched**, so no push, no flip, no other org's
+  feed moves. The filter runs LAST in `filteredRows`, so the row count, Excel,
+  the PDF and the permit export all agree.
+- **A stay spanning the whole window keeps ONE row**, its first in view, marked
+  `_midStay` ("Staying through"). Dropping it would make an occupied site read
+  empty. Keyed per reservation AND site.
+- **The QR opens the PUBLIC permit page**, not the admin view as was said on the
+  call — that page is what shows the holder's details.
+- Gear on facility.html is the last toolbar item, same three states as the roster
+  and aquatics gears, behind the `reportSettings` flag.
+- Topaz Lake's map address corrected to **3700** Topaz Park Rd.
+- Guard: `scripts/facility-schedule-settings.spec.js` (34 assertions, in CI),
+  lifting and RUNNING the row helpers; mutation-tested seven ways, all caught.
+
+**NOT DONE:** the two-up landscape sheet with the next upcoming rental under the
+current one — waiting on Rebecca's photos of their own tags. No "Open" tag
+(Dan: skip for now). Mobile view scoped, not built.
+
 ## INVENTORY — the first report whose numbers we own (2026-09-22)
 
 Dan: *"how much work to vibecode an inventory management system for Rec?"* —

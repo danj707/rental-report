@@ -648,8 +648,21 @@ ok(/ePACT columns no longer the verified set/.test(SERVER),
     // An org nobody has touched has NO RECORD, which is why reset drops the
     // record rather than writing the defaults into it: a later change to a
     // platform default still has to reach every org that never customised.
+    // An org a REPORT_SETTINGS_SEEDS entry names is configured on purpose (boot
+    // applies the seed), so it is excluded here; any OTHER extra record is the
+    // leak this assertion exists to catch. Read from server.js, not restated.
+    const seedSrc = (() => {
+      const src = fs.readFileSync(path.join(__dirname, "..", "server.js"), "utf8");
+      const a = src.indexOf("const REPORT_SETTINGS_SEEDS = {");
+      return a < 0 ? "" : src.slice(a, src.indexOf("\n};", a));
+    })();
+    ok(seedSrc.length > 0, "found REPORT_SETTINGS_SEEDS in server.js (or the exclusion below is vacuous)");
+    const seeded = new Set();
+    seedSrc.replace(/orgs:\s*\[([^\]]*)\]/g, (_, list) => {
+      list.replace(/"([^"]+)"/g, (__, slug) => seeded.add(slug));
+    });
     const store = JSON.parse(fs.readFileSync(path.join(dataDir, "report-settings.json"), "utf8"));
-    is(Object.keys(store), [org],
+    is(Object.keys(store).filter(k => !seeded.has(k) || k === org), [org],
        "the store holds a record for the ONE org that was configured and nobody else");
 
     // The one thing that is deliberately NOT contained: the cache is shared, so
