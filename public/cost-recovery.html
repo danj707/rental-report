@@ -2100,8 +2100,24 @@ function crEsc(s) {
       + " \u00B7 prepared " + when.toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" })
       + "</div></div>";
 
-    h += "<h3>Income</h3><table class=\"stt\">"
-      + stRow("Program revenue \u00B7 " + d.rows.length + " program" + (d.rows.length === 1 ? "" : "s"), crMoney(t.rev));
+    /* THE STATEMENT HAS TO FOOT. Income lists every dollar taken, but the
+       result is the COSTED programs' revenue less their costs (crCostedSum) —
+       so with some programs uncosted, "total income less direct costs" did not
+       equal the result printed under it ($425,448 − $12,777 against −$1,434 at
+       Windham). The revenue is split by that line here, and the result shows
+       its own arithmetic, so every figure it uses is on the page. */
+    var nRows = d.rows.length, partial = t.costed > 0 && t.costed < nRows;
+    var plural = function (n) { return n + " program" + (n === 1 ? "" : "s"); };
+    var grey = function (x) { return ' <span style="font-weight:400;color:#8a8a8a">\u00B7 ' + x + "</span>"; };
+    h += "<h3>Income</h3><table class=\"stt\">";
+    if (partial) {
+      h += stRow("Program revenue \u00B7 costed" + grey(plural(t.costed)), crMoney(t.costedRev), "ind")
+        + stRow("Program revenue \u00B7 not costed yet" + grey(plural(nRows - t.costed)),
+                crMoney(t.rev - t.costedRev), "ind")
+        + stRow("Program revenue" + grey(plural(nRows)), crMoney(t.rev));
+    } else {
+      h += stRow("Program revenue \u00B7 " + plural(nRows), crMoney(t.rev));
+    }
     B.cats.forEach(function (c) {
       if (B.byCat[c].inc > 0) h += stRow(crEsc(c), crMoney(B.byCat[c].inc), "ind");
     });
@@ -2119,13 +2135,29 @@ function crEsc(s) {
       h += stRow("Total overhead", crMoney(B.expense), "sub") + "</table>";
     }
 
-    h += "<h3>Result</h3><table class=\"stt\">"
-      + stRow("Program revenue less direct costs", crMoney(directNet), directNet < 0 ? "neg" : "")
-      + (B.expense > 0 || B.income > 0
-          ? stRow((fullNet >= 0 ? "Surplus" : "Shortfall") + " after overhead and other income",
-                  crMoney(fullNet), "grand" + (fullNet < 0 ? " neg" : ""))
-          : stRow(directNet >= 0 ? "Surplus" : "Shortfall", crMoney(directNet), "grand" + (directNet < 0 ? " neg" : "")))
-      + "</table>";
+    var onWhat = partial ? " on the " + plural(t.costed) + " costed" : "";
+    h += "<h3>Result</h3><table class=\"stt\">";
+    if (!t.costed) {
+      h += stRow("No program has a cost entered yet", "\u2014", "grand") + "</table>";
+    } else {
+      if (partial) {
+        h += stRow("Revenue of the costed programs", crMoney(t.costedRev), "ind")
+          + stRow("less their direct costs", crMoney(-t.cost), "ind");
+      }
+      h += stRow(partial ? "Costed programs\u2019 revenue less direct costs" : "Program revenue less direct costs",
+                 crMoney(directNet), directNet < 0 ? "neg" : "")
+        + (B.expense > 0 || B.income > 0
+            ? stRow((fullNet >= 0 ? "Surplus" : "Shortfall") + onWhat + ", after overhead and other income",
+                    crMoney(fullNet), "grand" + (fullNet < 0 ? " neg" : ""))
+            : stRow((directNet >= 0 ? "Surplus" : "Shortfall") + onWhat, crMoney(directNet),
+                    "grand" + (directNet < 0 ? " neg" : "")))
+        + "</table>";
+      if (partial) {
+        h += '<p class="hint" style="margin:6px 0 0">' + plural(nRows - t.costed) + " with no cost entered ("
+          + crMoney(t.rev - t.costedRev) + " of revenue) " + (nRows - t.costed === 1 ? "is" : "are")
+          + " left out of the result and the recovery rate \u2014 a program with no cost would otherwise read as pure profit.</p>";
+      }
+    }
 
     h += "<h3>Cost recovery</h3><table class=\"stt\">"
       + stRow("Direct cost recovery", crPctText(t.recovery))
@@ -2173,7 +2205,8 @@ function crEsc(s) {
 
     $("stmtBody").innerHTML = h;
     document.body.setAttribute("data-cr-stmt-seen",
-      "income=" + Math.round(totalIncome) + " direct=" + Math.round(C.total)
+      "income=" + Math.round(totalIncome) + " costedrev=" + Math.round(t.costedRev)
+      + " direct=" + Math.round(C.total)
       + " overhead=" + Math.round(B.expense) + " net=" + Math.round(fullNet));
   }
 
@@ -2612,6 +2645,11 @@ function crEsc(s) {
     var money = function (v) { return v === null || !Number.isFinite(v) ? "" : v.toFixed(2); };
     var out = [[(CFG.displayName || SLUG) + " · Cost recovery statement"], [d.per.t], [],
                ["Section", "Line", "Amount"]];
+    var partial = t.costed > 0 && t.costed < d.rows.length;
+    if (partial) {
+      out.push(["Income", "Program revenue, costed programs (" + t.costed + ")", money(t.costedRev)]);
+      out.push(["Income", "Program revenue, not costed yet (" + (d.rows.length - t.costed) + ")", money(t.rev - t.costedRev)]);
+    }
     out.push(["Income", "Program revenue", money(t.rev)]);
     B.cats.forEach(function (c) { if (B.byCat[c].inc > 0) out.push(["Income", c, money(B.byCat[c].inc)]); });
     out.push(["Income", "Total income", money(t.rev + B.income)]);
@@ -2619,8 +2657,11 @@ function crEsc(s) {
     out.push(["Direct costs", "Total direct costs", money(C.total)]);
     B.accts.forEach(function (a) { if (B.byAcct[a].exp > 0) out.push(["Overhead", a, money(B.byAcct[a].exp)]); });
     if (B.expense > 0) out.push(["Overhead", "Total overhead", money(B.expense)]);
-    out.push(["Result", "Program revenue less direct costs", money(t.net)]);
-    out.push(["Result", "Surplus after overhead", money(t.costedRev + B.income - (t.cost + B.expense))]);
+    // Costed programs only, as on the page — see renderStatement.
+    out.push(["Result", partial ? "Costed programs' revenue less direct costs" : "Program revenue less direct costs",
+              t.costed ? money(t.net) : ""]);
+    out.push(["Result", "Surplus after overhead" + (partial ? ", costed programs" : ""),
+              t.costed ? money(t.costedRev + B.income - (t.cost + B.expense)) : ""]);
     out.push(["Cost recovery", "Direct", t.recovery === null ? "" : t.recovery.toFixed(1)]);
     var full = crRecovery(t.costedRev + B.income, t.cost + B.expense);
     out.push(["Cost recovery", "Full, after overhead", full === null || !Number.isFinite(full) ? "" : full.toFixed(1)]);

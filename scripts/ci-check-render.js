@@ -3740,13 +3740,40 @@ const CASES = [
      would render a perfectly plausible document and fail here. */
   { name: "cost-recovery · the statement ties to the report it came from",
     path: "/{org}/cost-recovery",
-    needs: 'body[data-cr-stmt-seen="income=71200 direct=80000 overhead=2700 net=-11500"]',
+    needs: 'body[data-cr-stmt-seen="income=71200 costedrev=70000 direct=80000 overhead=2700 net=-11500"]',
     also: ['#kpis[data-cr-money="direct=80000 overhead=2700 fullrev=71200 fullcost=82700"]',
            "#statementView:not([hidden]) .st-head"],
     act: async (page) => {
       await page.waitForSelector('body[data-cr-seen*="mode=season"]', { timeout: 20000 });
       await page.click('#viewTabs button[data-view="statement"]');
       await page.waitForSelector("#stmtBody .st-head", { timeout: 20000 });
+    } },
+
+  /* Dan, on Windham's Summer 2026 statement: "this summary doesn't look quite
+     right." Income listed all 44 programs ($425,448) while the result was the
+     18 COSTED programs' revenue less their costs (-$1,434), so the statement
+     did not foot and nothing on it said why. The quarter view is 4 programs
+     with 3 costed: the statement must split revenue into costed and not-yet-
+     costed, and costedrev - direct must equal the net it prints. */
+  { name: "cost-recovery · a part-costed statement foots",
+    path: "/{org}/cost-recovery",
+    needs: 'body[data-rc-foot-seen^="split=1 foots=1 note=1"]',
+    act: async (page) => {
+      await page.waitForSelector('body[data-cr-seen*="mode=season"]', { timeout: 20000 });
+      await page.click('#modeSeg button[data-mode="quarter"]');
+      await page.waitForFunction(
+        () => /mode=quarter/.test(document.body.getAttribute("data-cr-seen") || ""), { timeout: 20000 });
+      await page.click('#viewTabs button[data-view="statement"]');
+      await page.waitForSelector("#stmtBody .st-head", { timeout: 20000 });
+      await page.evaluate(() => {
+        const txt = document.getElementById("stmtBody").textContent;
+        const st = document.body.getAttribute("data-cr-stmt-seen") || "";
+        const n = k => +((st.match(new RegExp(k + "=(-?\\d+)")) || [])[1]);
+        const foots = n("overhead") === 0 && n("costedrev") - n("direct") === n("net");
+        document.body.setAttribute("data-rc-foot-seen",
+          "split=" + (/Program revenue · not costed yet/.test(txt) ? 1 : 0) + " foots=" + (foots ? 1 : 0)
+          + " note=" + (/left out of the result/.test(txt) ? 1 : 0) + " (" + st + ")");
+      });
     } },
 
   /* Dan, on the model: "never even heard of that, but that's bad ass. lean
