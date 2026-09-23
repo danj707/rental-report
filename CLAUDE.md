@@ -8286,10 +8286,10 @@ it says so rather than rendering a comparison with nothing in it.
   two FYs is ~35–45s cold and inside the 60s first try. **Apex would time out**,
   and apex is already parked on card 17295 — the report ships hidden, so only
   orgs Dan switches on are affected, and the reader can narrow the window.
-- **Costs do not reach the PDF, the emailed report or a saved view.** This
-  report has no PDF route and is not in `EMAIL_SUBSCRIBABLE_REPORTS`; the CSV is
-  the export and it honours the mode, the period, the tier filter and the
-  hide-blank toggle.
+- **~~Costs do not reach the PDF~~ — REVERSED 2026-09-23, there is a PDF route
+  now** (read *"THE PDF BUTTON WOULD HAVE DONE NOTHING IN THE IFRAME"* below).
+  The report is still not in `EMAIL_SUBSCRIBABLE_REPORTS`, and the CSV still
+  honours the mode, the period, the tier filter and the hide-blank toggle.
 - **No per-org cost categories for the PROGRAM table.** The five (instructors,
   staff, supplies, facility, other) are fixed, because a per-org list makes two
   orgs' reports incomparable and turns a roll-up into a union of whatever anyone
@@ -8593,11 +8593,18 @@ those five fields were typed, summed and never read apart again), overhead by
 account, the surplus direct and after overhead, cost recovery against the
 blended target, and a tier-by-tier reading against the pyramid.
 
-- **A VIEW, NOT A PDF ROUTE.** The page already holds every figure and a print
-  stylesheet already strips the chrome, so *"Print / save as PDF"* is a button the
-  reader's own browser answers. A Puppeteer route would need its own endpoint, a
-  `#report-ready` marker and every filter written into the URL, and buys the
-  reader nothing they cannot already get.
+- **~~A VIEW, NOT A PDF ROUTE~~ — WRONG, and REVERSED on 2026-09-23.** The
+  reasoning was that the page holds every figure and a print stylesheet already
+  strips the chrome, so *"Print / save as PDF"* is a button the reader's own
+  browser answers. **It assumed the reader's browser can open a print dialog,
+  and inside a sandboxed iframe it cannot** — the modal is blocked with no
+  error, so the button did nothing at all. The list of what a Puppeteer route
+  would cost was accurate (its own endpoint, a `#report-ready` marker, and every
+  filter written into the URL) and all three were paid; what was wrong is the
+  last clause, *"buys the reader nothing they cannot already get"*. It buys them
+  the only thing that works where the report is actually read.
+  *Generalise it: before deciding a feature is redundant with the browser's own,
+  check the browser is allowed to do it here.*
 - **THE ASSERTION IS THAT IT TIES.** Every figure comes from the same reducers
   the screen uses — `totals`, `crCostByCat`, `crLedgerBreakdown` — so the render
   case requires the statement's stamp AND the strip's to agree on the same four
@@ -8963,7 +8970,7 @@ rather than asking the server anything first.
 
 ### Guards
 
-`scripts/cost-recovery.spec.js` 227 → **257 assertions**, in CI, which LIFTS
+`scripts/cost-recovery.spec.js` 227 → **270 assertions**, in CI, which LIFTS
 AND RUNS `generatePdf`'s query builder — a render case at `?_print=1&period=…`
 proves the PAGE reads the parameter and says nothing about whether the SERVER
 sends it, which is exactly how all four earlier instances shipped.
