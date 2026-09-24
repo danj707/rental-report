@@ -27,7 +27,8 @@ ok(a > 0 && b > a, "found the schedule helpers in facility.html");
 let H = {};
 try {
   H = new Function("window", page.slice(a, b)
-    + "\nreturn { scheduleSettings, stayRole, scheduleEndpointRows, siteCompare };")(
+    + "\n" + page.slice(page.indexOf("function timeToMinutes(t)"), page.indexOf("\n}\n", page.indexOf("function timeToMinutes(t)")) + 2)
+    + "\nreturn { scheduleSettings, stayRole, scheduleEndpointRows, siteCompare, rowSortMinutes };")(
     { ORG_CONFIG: { settings: {} } });
 } catch (e) { failures.push("lifting the schedule helpers THREW: " + e.message); }
 const guard = (fn, ...args) => { try { return fn(...args); } catch (e) { failures.push("threw: " + e.message); return undefined; } };
@@ -40,6 +41,17 @@ if (H.stayRole) {
   eq(guard(H.stayRole, { multiDayDays: "2", multiDayNum: "2" }), "departure", "a one-night stay has no middle day");
 }
 
+// Same day, same site: the 11am checkout must come BEFORE the 1pm check-in.
+// A checkout row has no Begin, so a sort on `start` alone put it last.
+if (H.rowSortMinutes) {
+  const out = { site: "Site 34", start: "", end: "11:00am", multiDayDays: "4", multiDayNum: "4" };
+  const inn = { site: "Site 34", start: "01:00pm", end: "", multiDayDays: "4", multiDayNum: "1" };
+  const allDay = { site: "Site 34", start: "", end: "" };
+  const rows = [inn, allDay, out];
+  rows.sort((a, b) => H.siteCompare(a.site, b.site) || H.rowSortMinutes(a) - H.rowSortMinutes(b));
+  eq(rows.map(r => r === out ? "out" : r === inn ? "in" : "allday"), ["out", "in", "allday"],
+     "a same-day checkout sorts before the check-in on that site, and an all-day row still sorts last");
+}
 if (H.scheduleEndpointRows) {
   const stay = (resId, site, days, from, to) => {
     const out = [];
@@ -94,6 +106,8 @@ ok(fr.indexOf("scheduleEndpointRows") > fr.indexOf("muscoLit"),
    "…LAST, so a stay's endpoints are asked of the rows that survived every other filter");
 const gr = page.slice(page.indexOf("const grouped = useMemo"), page.indexOf("const sortedDates"));
 ok(/siteOrder === 'site'[\s\S]*siteCompare\(a\.site, b\.site\)/.test(gr), "the site-number sort is applied in grouped");
+ok((gr.match(/rowSortMinutes\(a\) - rowSortMinutes\(b\)/g) || []).length === 2 && !/timeToMinutes\(a\.start\)/.test(gr),
+   "BOTH day sorts order by rowSortMinutes, never by start alone (a checkout row has no start)");
 ok(/dayNum: r\.multiDayNum/.test(page), "the permit payload carries the row's place in the stay");
 const cnt = page.slice(page.indexOf("function permitSheetCount"), page.indexOf("function exportPermits"));
 ok(/arrivalOnly && parseInt\(r\.multiDayNum, 10\) > 1\) continue/.test(cnt),
