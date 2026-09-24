@@ -8347,6 +8347,17 @@ green.
   pressed can still land. A reload follows, so the page never shows it — and it
   would be a single figure, re-clearable.
 
+## QUEUED FOR THE NEXT COST RECOVERY UPDATE (Dan, 2026-09-24: "save it for the next update")
+
+Two wording nits on the statement, left from #258 (the part-costed footing fix):
+
+- **"Shortfall on the 18 programs costed"** should read "on the 18 costed
+  programs" — `onWhat` in `renderStatement` appends " costed" after
+  `plural(n)`, which already ends in "programs".
+- **"Program revenue · 44 programs" duplicates "Total income"** on the next
+  line when there is no ledger income. Drop the subtotal row when
+  `B.income === 0`; keep it when other income follows it.
+
 ## THE COST RECOVERY / P&L REPORT — the first surface here that WRITES (2026-09-22)
 
 Laurel at Shrewsbury, on a call, wanted a cost recovery / profit-and-loss
