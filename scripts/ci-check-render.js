@@ -2126,7 +2126,15 @@ const STUBS = [
      nothing live, which must look different from a page that cannot be
      surveyed at all. */
   { match: /\/api\/survey-dismiss/,        body: () => ({ ok: true }) },
-  { match: /\/api\/survey/, body: () => (STUB_MODE === "nosurvey" ? { survey: null } : {
+  { match: /\/api\/survey/, body: () => (STUB_MODE === "nosurvey" ? { survey: null } : STUB_MODE === "svyform" ? {
+      survey: {
+        id: "svy_fixture", title: "How is the schedule?", intro: "Two quick questions.",
+        questions: [
+          { id: "q1", type: "single", prompt: "Rate the schedule", required: true, options: ["Good", "Bad"] },
+          { id: "q3", type: "text",   prompt: "Anything else?", placeholder: "Optional" },
+        ],
+      },
+    } : {
       survey: {
         id: "svy_fixture", title: "How is the schedule?", intro: "Two quick questions.",
         questions: [
@@ -2860,7 +2868,7 @@ const CASES = [
 
   { name: "survey · the card is offered on an admin report",
     path: "/{org}/facility",
-    pre: async (page) => { await page.evaluateOnNewDocument(() => { try { localStorage.clear(); } catch (e) {} }); },
+    pre: async (page) => { await page.evaluateOnNewDocument(() => { try { localStorage.clear(); sessionStorage.clear(); } catch (e) {} window.__recSurveyDwellMs = 200; }); },
     needs: ".rec-svy[data-svy='svy_fixture']" },
 
   // A corner card, never a modal: these readers are admins mid-task, and a
@@ -2869,7 +2877,7 @@ const CASES = [
   // renders an identical class.
   { name: "survey · ...as a corner card that does not cover the report",
     path: "/{org}/facility",
-    pre: async (page) => { await page.evaluateOnNewDocument(() => { try { localStorage.clear(); } catch (e) {} }); },
+    pre: async (page) => { await page.evaluateOnNewDocument(() => { try { localStorage.clear(); sessionStorage.clear(); } catch (e) {} window.__recSurveyDwellMs = 200; }); },
     needs: "body[data-svy-corner='1']",
     act: async (page) => {
       await page.waitForSelector(".rec-svy", { timeout: 20000 });
@@ -2886,10 +2894,10 @@ const CASES = [
   // and the case asserts NO request was made, because an error message over a
   // request that already fired is the worse failure.
   { name: "survey · a required question blocks Send and names itself",
-    path: "/{org}/facility",
+    path: "/{org}/facility", stubMode: "svyform",
     pre: async (page) => {
       await page.evaluateOnNewDocument(() => {
-        try { localStorage.clear(); } catch (e) {}
+        try { localStorage.clear(); sessionStorage.clear(); } catch (e) {} window.__recSurveyDwellMs = 200;
         window.__svyPosts = [];
         const f = window.fetch;
         window.fetch = function (u, o) {
@@ -2913,16 +2921,19 @@ const CASES = [
      card that posted them positionally, or under the prompt text, renders
      identically and produces a body the server then drops on the floor. So
      this reads what the POST actually carried. */
-  { name: "survey · answering posts the answers keyed by question id",
+  /* ONE CLICK IS AN ANSWER (2026-09-25). Clicking the rating POSTS it at
+     once, carrying a responseId; the rest are then offered, optional, and the
+     follow-up POSTs under the SAME id. Only the bytes can say so. */
+  { name: "survey · one click on the rating is an answer, and the follow-up shares its id",
     path: "/{org}/facility",
     pre: async (page) => {
       await page.evaluateOnNewDocument(() => {
-        try { localStorage.clear(); } catch (e) {}
-        window.__svyBody = null;
+        try { localStorage.clear(); sessionStorage.clear(); } catch (e) {} window.__recSurveyDwellMs = 200;
+        window.__svyBodies = [];
         const f = window.fetch;
         window.fetch = function (u, o) {
-          if (o && o.method === "POST" && /\/api\/survey($|\?)/.test(String(u).split("?")[0] + "?")) {
-            try { window.__svyBody = JSON.parse(o.body); } catch (e) {}
+          if (o && o.method === "POST" && /\/api\/survey$/.test(String(u).split("?")[0])) {
+            try { window.__svyBodies.push(JSON.parse(o.body)); } catch (e) {}
           }
           return f.apply(this, arguments);
         };
@@ -2930,33 +2941,53 @@ const CASES = [
     },
     needs: "body[data-svy-sent='1']",
     act: async (page) => {
-      await page.waitForSelector(".rec-svy-scale button", { timeout: 20000 });
+      await page.waitForSelector(".rec-svy[data-svy-mode='quick'] .rec-svy-scale button", { timeout: 20000 });
+      await page.evaluate(() => { document.querySelectorAll('[data-svy-q="q1"] .rec-svy-scale button')[3].click(); });
+      await page.waitForFunction(() => window.__svyBodies.length === 1, { timeout: 10000 });
+      await page.waitForSelector(".rec-svy[data-svy-stage='more'] [data-svy-q='q2']", { timeout: 10000 });
       await page.evaluate(() => {
-        // 4 of 5 on the rating, "Month" on the choice, and a sentence.
-        document.querySelectorAll('[data-svy-q="q1"] .rec-svy-scale button')[3].click();
-        const opts = document.querySelectorAll('[data-svy-q="q2"] input');
-        opts[1].click();
+        document.querySelectorAll('[data-svy-q="q2"] input')[1].click();
         const ta = document.querySelector('[data-svy-q="q3"] textarea');
         ta.value = "The week view wraps.";
         ta.dispatchEvent(new Event("input", { bubbles: true }));
         document.querySelector(".rec-svy-send").click();
       });
-      await page.waitForFunction(() => window.__svyBody, { timeout: 10000 });
-      await page.evaluate(() => {
-        const b = window.__svyBody;
-        if (b && b.surveyId === "svy_fixture" && b.answers
-            && b.answers.q1 === 4 && b.answers.q2 === "Month"
-            && b.answers.q3 === "The week view wraps.") {
-          document.body.setAttribute("data-svy-sent", "1");
-        }
+      await page.waitForFunction(() => window.__svyBodies.length === 2, { timeout: 10000 });
+      const v = await page.evaluate(() => {
+        const [a, b] = window.__svyBodies;
+        const okA = a.surveyId === "svy_fixture" && a.stage === "quick" && a.answers.q1 === 4
+          && Object.keys(a.answers).length === 1 && /^r/.test(a.responseId || "");
+        const okB = b.stage === "more" && b.responseId === a.responseId && b.answers.q1 === 4
+          && b.answers.q2 === "Month" && b.answers.q3 === "The week view wraps.";
+        if (okA && okB) document.body.setAttribute("data-svy-sent", "1");
+        return JSON.stringify(window.__svyBodies);
       });
+      await page.evaluate(v => document.body.setAttribute("data-svy-bodies-seen", v), v);
+    } },
+
+  // It waits for time on the page. With a 3s dwell the card is absent at 1s
+  // and present by 5s — a card that popped at once fails the first half.
+  { name: "survey · it waits for time on the page before asking",
+    path: "/{org}/facility",
+    pre: async (page) => {
+      await page.evaluateOnNewDocument(() => {
+        try { localStorage.clear(); sessionStorage.clear(); } catch (e) {} window.__recSurveyDwellMs = 3000;
+      });
+    },
+    needs: "body[data-svy-waited='1']",
+    act: async (page) => {
+      await page.waitForSelector(".toolbar", { timeout: 30000 });
+      await new Promise(r => setTimeout(r, 800));
+      const early = await page.evaluate(() => !!document.querySelector(".rec-svy"));
+      await page.waitForSelector(".rec-svy", { timeout: 8000 });
+      if (!early) await page.evaluate(() => document.body.setAttribute("data-svy-waited", "1"));
     } },
 
   // An admin page with nothing live must look different from a page that
   // cannot be surveyed at all — a value test could not separate the two.
   { name: "survey · nothing is offered when no survey is live",
     path: "/{org}/facility", stubMode: "nosurvey",
-    pre: async (page) => { await page.evaluateOnNewDocument(() => { try { localStorage.clear(); } catch (e) {} }); },
+    pre: async (page) => { await page.evaluateOnNewDocument(() => { try { localStorage.clear(); sessionStorage.clear(); } catch (e) {} window.__recSurveyDwellMs = 200; }); },
     needs: ".toolbar", absent: ".rec-svy" },
 
   // Dismissed stays dismissed. Being re-asked something you already declined
@@ -2972,9 +3003,10 @@ const CASES = [
       await page.evaluateOnNewDocument(() => {
         try {
           if (!sessionStorage.getItem("__svyCleared")) {
-            localStorage.clear(); sessionStorage.setItem("__svyCleared", "1");
+            localStorage.clear(); sessionStorage.clear(); sessionStorage.setItem("__svyCleared", "1");
           }
         } catch (e) {}
+        window.__recSurveyDwellMs = 200;
       });
     },
     needs: "body[data-svy-gone='1']",
@@ -2991,27 +3023,32 @@ const CASES = [
       });
     } },
 
-  // "Not now" is a SNOOZE (Dan: "pop it now until people close it"): the card
-  // goes away for this page and is back on the next load. Same one-shot clear.
-  { name: "survey · Not now hides it, and it comes back next load",
+  // "Not now" hides it, and it is NOT back this session: the card is offered
+  // at most once per browser session (Dan, 2026-09-25 — re-asking on every
+  // load trained people to reach for the x). Same one-shot clear.
+  { name: "survey · Not now hides it, and it is not back this session",
     path: "/{org}/facility",
     pre: async (page) => {
       await page.evaluateOnNewDocument(() => {
         try {
           if (!sessionStorage.getItem("__svyCleared")) {
-            localStorage.clear(); sessionStorage.setItem("__svyCleared", "1");
+            localStorage.clear(); sessionStorage.clear(); sessionStorage.setItem("__svyCleared", "1");
           }
         } catch (e) {}
+        window.__recSurveyDwellMs = 200;
       });
     },
-    needs: "body[data-svy-back='1']",
+    needs: "body[data-svy-once='1']",
     act: async (page) => {
       await page.waitForSelector(".rec-svy-later", { timeout: 20000 });
       await page.click(".rec-svy-later");
       await page.waitForFunction(() => !document.querySelector(".rec-svy"), { timeout: 5000 });
       await page.reload({ waitUntil: "domcontentloaded" });
-      await page.waitForSelector(".rec-svy", { timeout: 10000 });
-      await page.evaluate(() => { document.body.setAttribute("data-svy-back", "1"); });
+      await page.waitForSelector(".toolbar", { timeout: 30000 });
+      await new Promise(r => setTimeout(r, 2500));
+      await page.evaluate(() => {
+        if (!document.querySelector(".rec-svy")) document.body.setAttribute("data-svy-once", "1");
+      });
     } },
 
   { name: "facilities · camping",  path: "/{org}/facilities?tab=camping", needs: ".camp-cal .cc-hd" },

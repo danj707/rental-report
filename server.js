@@ -4567,6 +4567,29 @@ function surveyFor(slug, report, now) {
    between a page load and a submit would otherwise file an answer under the
    wrong question, silently, and the readout cannot tell that from a real one.
    Anything unrecognised is dropped rather than stored raw. */
+/* A response id ties the one-click rating to its optional follow-up. Clamped
+   to a short token shape — it is echoed into the event log and never trusted
+   for anything else. */
+function normalizeSurveyResponseId(v) {
+  const t = String(v == null ? "" : v);
+  return /^[A-Za-z0-9_-]{6,40}$/.test(t) ? t : null;
+}
+
+/* ONE PERSON, ONE RESPONSE. The quick rating and the follow-up share a
+   responseId and each is its own event; every reader counts the LATEST event
+   per (survey, responseId) — the follow-up carries the rating too, so nothing
+   is lost by dropping the earlier one. An event without an id (every answer
+   before this shipped) is its own response, exactly as before. Non-response
+   events pass through untouched. */
+function latestSurveyResponses(events) {
+  const lastIdx = new Map();
+  events.forEach((e, i) => {
+    if (e && e.event === "survey-response" && e.responseId) lastIdx.set(e.surveyId + "|" + e.responseId, i);
+  });
+  return events.filter((e, i) => !(e && e.event === "survey-response" && e.responseId)
+    || lastIdx.get(e.surveyId + "|" + e.responseId) === i);
+}
+
 function normalizeSurveyAnswers(survey, raw) {
   const src = (raw && typeof raw === "object") ? raw : {};
   const out = {};
@@ -5959,7 +5982,8 @@ function notifySlack(rec) {
       : "";
     const what = rec.surveyTitle ? ` \u2014 *${String(rec.surveyTitle).slice(0, 90)}*` : "";
     const mention = (words.length && SLACK_MENTION_USER_ID) ? ` <@${SLACK_MENTION_USER_ID}>` : "";
-    text = `${meta.emoji} ${orgName} (\`${rec.org}\`) answered a survey${what}${filled}${scale}${chose}${mention}${said}`;
+    const verb = rec.stage === "more" ? "added to their survey answer" : "answered a survey";
+    text = `${meta.emoji} ${orgName} (\`${rec.org}\`) ${verb}${what}${filled}${scale}${chose}${mention}${said}`;
   } else if (rec.event === "wizard-feedback") {
     // The SITE TYPE is the rating. "somebody rated a suggestion" says nothing;
     // which suggestion they were shown is the only part worth reading.
@@ -18273,8 +18297,18 @@ app.post("/:org/:report/api/survey", (req, res) => {
 
   const { answers, answered } = normalizeSurveyAnswers(survey, req.body && req.body.answers);
   if (!answered) return res.status(400).json({ error: "Answer at least one question" });
-  const missing = survey.questions.filter(q => q.required && answers[q.id] == null);
-  if (missing.length) return res.status(400).json({ error: "Answer the required questions", missing: missing.map(q => q.id) });
+  /* ONE CLICK IS AN ANSWER (Dan, 2026-09-25). The card POSTs the rating the
+     moment it is clicked, carrying a responseId, and may follow it with the
+     optional rest under the SAME id. Such a response is not held to the
+     required flags — the rating IS the answer, and refusing it for skipping a
+     follow-up is how a survey with 113 closes gets 0 answers. A legacy body
+     with no responseId is still held to them. */
+  const responseId = normalizeSurveyResponseId(req.body && req.body.responseId);
+  const stage = responseId && req.body && req.body.stage === "more" ? "more" : (responseId ? "quick" : null);
+  if (!responseId) {
+    const missing = survey.questions.filter(q => q.required && answers[q.id] == null);
+    if (missing.length) return res.status(400).json({ error: "Answer the required questions", missing: missing.map(q => q.id) });
+  }
 
   logEvent(org, report, "survey-response", req, {
     surveyId: survey.id,
@@ -18282,6 +18316,7 @@ app.post("/:org/:report/api/survey", (req, res) => {
     answers,
     answered,
     questions: survey.questions.length,
+    ...(responseId ? { responseId, stage } : {}),
   });
   console.log(`[survey] ${org}/${report} answered ${answered}/${survey.questions.length} of "${survey.title}"`);
   res.json({ ok: true });
@@ -18996,7 +19031,7 @@ function surveyReadout(surveyId, days, org) {
   const only = org ? String(org) : null;
   const rows = [];
   let dismissed = 0;
-  for (const e of readEvents(days || SURVEY_READOUT_DAYS)) {
+  for (const e of latestSurveyResponses(readEvents(days || SURVEY_READOUT_DAYS))) {
     if (!e || e.surveyId !== surveyId) continue;
     // Scope dismissals too, or a per-org panel reports the PLATFORM's
     // "said not now" count beside one org's answers.
@@ -19129,7 +19164,7 @@ function buildSurveyScores(daysBack) {
   const byOrg = {};
   const all = blank();
   let oldest = null;
-  for (const e of readEvents(days)) {
+  for (const e of latestSurveyResponses(readEvents(days))) {
     if (!e || !e.org || !e.surveyId) continue;
     const isResp = e.event === "survey-response";
     if (!isResp && e.event !== "survey-dismiss") continue;
@@ -19203,7 +19238,7 @@ app.get("/api/admin/surveys", (req, res) => {
   // under its own slug, which no report type uses and no route claims.
   reports.unshift({ type: SURVEY_ORG_SURFACE, label: "Org dashboard (landing page)", emoji: "\u{1F3E0}" });
   const counts = {};
-  for (const e of readEvents(SURVEY_READOUT_DAYS)) {
+  for (const e of latestSurveyResponses(readEvents(SURVEY_READOUT_DAYS))) {
     if (!e || !e.surveyId) continue;
     if (e.event === "survey-response") counts[e.surveyId] = (counts[e.surveyId] || 0) + 1;
   }
@@ -21880,7 +21915,7 @@ app.get("/", (req, res) => {
       + '<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:12px">'
       +   '<div style="font-size:13px;font-weight:700;color:#111827">'+svyEsc(d.survey.title)+'</div>'
       +   '<div style="font-size:11.5px;color:#6b7280"><b>'+d.responses+'</b> responses from '+d.orgs+' orgs'
-      +     (offered ? ' &middot; '+d.dismissed+' said not now' : '')+'</div>'
+      +     (offered ? ' &middot; '+d.dismissed+' closed it' : '')+'</div>'
       + '</div>';
 
     if (!d.responses) {
@@ -21964,7 +21999,7 @@ app.get("/", (req, res) => {
     var head = [];
     if (s) {
       head.push('<b>'+s.responses+'</b> answer'+(s.responses===1?'':'s'));
-      if (s.dismissed) head.push(s.dismissed+' said not now');
+      if (s.dismissed) head.push(s.dismissed+' closed it');
       /* The two scales are never blended here either, and each is absent
          rather than zeroed under the floor — the same rule the cell obeys,
          because the panel it opens must not contradict it. */
@@ -21999,7 +22034,7 @@ app.get("/", (req, res) => {
         + '<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:4px">'
         +   '<div style="font-size:13px;font-weight:700;color:#111827">'+svyEsc(sv.survey.title)+'</div>'
         +   '<div style="font-size:11.5px;color:#6b7280"><b>'+sv.responses+'</b> from this org'
-        +     (offered > sv.responses ? ' &middot; '+sv.dismissed+' said not now' : '')+'</div>'
+        +     (offered > sv.responses ? ' &middot; '+sv.dismissed+' closed it' : '')+'</div>'
         + '</div>';
       html += sv.responses
         ? svyQuestionBlocks(sv)

@@ -1,5 +1,45 @@
 # Project notes for Claude
 
+## THE SURVEY: 113 CLOSED IT, ONE ANSWERED — so it asks less, and one click counts (2026-09-25)
+
+Dan asked whether the report survey ever got answers. Production had been serving
+*"Feedback Requested for Enhanced Reports!"* (`svy_mty7ld5aihq0`) to every org, and
+#reporting-events held exactly ONE `survey-response` — watertown, 2026-09-12, free
+text *"dan is amazing"*, i.e. his own test. The readout said **113** had closed it.
+A six-question card popping on every load (#256) had trained people to reach for
+the x. Dan: *"do 1 and 2"* — one-click rating, and ask less.
+
+- **ONE CLICK IS AN ANSWER.** When the first question is a scale
+  (`rating5`/`stars`/`nps`) the card opens on it ALONE, and clicking a value POSTs
+  it at once with a client `responseId` and `stage: "quick"`. The rest are then
+  offered, all optional, and the follow-up POSTs under the SAME id with
+  `stage: "more"`. Any other first question keeps the full form.
+- **A RESPONSE WITH A `responseId` IS NOT HELD TO THE REQUIRED FLAGS** — the rating
+  is the answer, and refusing it for skipping the follow-up is how a survey gets
+  none. A body without one (every older client) still is. A malformed id is no id.
+- **ONE PERSON, ONE RESPONSE.** `latestSurveyResponses()` keeps the LATEST event per
+  (survey, responseId) — the follow-up carries the rating too — and ALL THREE
+  readers go through it: `surveyReadout`, `buildSurveyScores` and the admin list
+  count. Events without an id are each their own response, exactly as before.
+- **ONCE PER BROWSER SESSION, AFTER 20s OF VISIBLE TIME.** The card marks itself
+  shown in `sessionStorage` when it MOUNTS, so "Not now" means "not this session"
+  rather than "next page". A background tab does not count toward the dwell. The x
+  and an answer still stop it for good (localStorage, unchanged).
+- **Closing the follow-up after rating is not a refusal** — no dismissal is logged.
+- Slack's follow-up line says *"added to their survey answer"*, so a rating and its
+  follow-up do not read as two people. The readout label is **"closed it"**, not
+  "said not now" — since #256 only the x is recorded.
+- `window.__recSurveyDwellMs` is a TEST SEAM for the render check (a 20s wait per
+  case is not affordable) and nothing else.
+
+Guards: `surveys.spec.js` → **124 assertions** (quick POST accepted despite a
+required follow-up, malformed id refused, the pair counted once in the readout,
+the list and the score, the Slack verb). Mutation-tested six ways, all failing by
+name. Nine `survey ·` render cases, three browser-mutation-tested (quick mode off,
+no session mark, no dwell) — each fails exactly the case that names it. The old
+"Not now comes back next load" case is REPLACED by "not back this session", and a
+`svyform` stub mode keeps the required-gate case on the full-form path.
+
 ## THE CAMPGROUND MAP HAS A PHONE LAYOUT (2026-09-23)
 
 Dan: *"build a mobile friendly view, leave the desktop, detect mobile vs desktop

@@ -321,11 +321,24 @@
      how a survey gets closed unread. It sits in the corner, it can be ignored,
      and it never covers the page. */
   var SURVEY_SEEN_KEY = "rec_survey_v1";      // { "<id>": "done" | "no" }
-  /* Dan, 2026-09-23: "can we get a bit more pushy ... pop it now until people
-     close it." Nobody had answered. So the card comes up almost at once and
-     comes back on EVERY page load until it is answered or closed with the x.
-     "Not now" hides it for this page only. Still a corner card, never a modal. */
-  var SURVEY_DELAY_MS = 600;                  // just past first paint
+  /* ASKED LESS, AND ONE CLICK IS AN ANSWER (Dan, 2026-09-25, after 113 closes
+     against one answer). Popping on every load until closed trained people to
+     reach for the x. So:
+       * ONCE PER BROWSER SESSION. Once the card has been shown in a session it
+         is not shown again until the next one, whatever they clicked. The x and
+         an answer still stop it for good (localStorage, as before).
+       * AFTER THEY HAVE SPENT TIME ON THE PAGE. SURVEY_DWELL_MS of VISIBLE time
+         — a background tab does not count — so they have their number before
+         we ask for anything.
+       * A SCALE FIRST QUESTION IS ANSWERED BY CLICKING IT (see surveyMount). */
+  var SURVEY_SESSION_KEY = "rec_survey_session_v1";   // sessionStorage { "<id>": 1 }
+  var SURVEY_DWELL_MS = 20000;
+  // A test seam and nothing else: the render check cannot wait 20s per case.
+  function surveyDwellMs(){
+    var t = Number(window.__recSurveyDwellMs);
+    return isFinite(t) && t >= 0 ? t : SURVEY_DWELL_MS;
+  }
+  var SURVEY_QUICK_TYPES = { rating5: 1, stars: 1, nps: 1 };
   // The org landing page has no second path segment. MUST match
   // SURVEY_ORG_SURFACE in server.js — the spec pins the two together, because
   // two spellings of one surface makes targeting it match nothing, silently.
@@ -340,6 +353,21 @@
       var m = surveySeen(); m[id] = how;
       localStorage.setItem(SURVEY_SEEN_KEY, JSON.stringify(m));
     } catch (_) {}
+  }
+  function surveyShownThisSession(id){
+    try { return !!(JSON.parse(sessionStorage.getItem(SURVEY_SESSION_KEY) || "{}") || {})[id]; }
+    catch (_) { return false; }
+  }
+  function surveyMarkShown(id){
+    try {
+      var m = JSON.parse(sessionStorage.getItem(SURVEY_SESSION_KEY) || "{}") || {};
+      m[id] = 1; sessionStorage.setItem(SURVEY_SESSION_KEY, JSON.stringify(m));
+    } catch (_) {}
+  }
+  // Ties the quick rating and the optional follow-up to ONE response, so the
+  // readout counts a person once however many of the two they sent.
+  function surveyResponseId(){
+    return "r" + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
   }
   function surveyWhere(){
     var parts = (window.location.pathname || "").split("/").filter(Boolean);
@@ -417,7 +445,7 @@
     return e;
   }
 
-  function surveyRenderQuestion(q, state){
+  function surveyRenderQuestion(q, state, onPick){
     var wrap = surveyEl("div", "rec-svy-q");
     wrap.setAttribute("data-svy-q", q.id);
     wrap.setAttribute("data-svy-type", q.type);
@@ -438,6 +466,7 @@
           Array.prototype.forEach.call(row.children, function(c, j){
             c.classList.toggle("on", j < n);
           });
+          if (onPick) onPick(n);
         });
         row.appendChild(b);
       })(i);
@@ -455,6 +484,7 @@
           state[q.id] = n;
           Array.prototype.forEach.call(scale.children, function(c){ c.classList.remove("on"); });
           b.classList.add("on");
+          if (onPick) onPick(n);
         });
         scale.appendChild(b);
       })(n2);
@@ -506,40 +536,86 @@
   function surveyMount(survey, where){
     if (document.querySelector(".rec-svy")) return;
     surveyInjectStyle();
+    surveyMarkShown(survey.id);
+    var qs = survey.questions || [];
+    /* ONE CLICK IS AN ANSWER when the first question is a scale. The card
+       opens on that question alone; picking a value POSTS it at once and the
+       response is kept whether or not they go on. Only then are the rest
+       offered, all optional. Anything else keeps the full form. */
+    var quick = !!(qs[0] && SURVEY_QUICK_TYPES[qs[0].type]);
+    var rid = quick ? surveyResponseId() : null;
+    var answered = false;
     var state = {};
     var card = surveyEl("div", "rec-svy");
     card.setAttribute("data-svy", survey.id);
+    card.setAttribute("data-svy-mode", quick ? "quick" : "form");
     card.setAttribute("role", "form");
     card.setAttribute("aria-label", survey.title);
 
     var hd = surveyEl("div", "rec-svy-hd");
     hd.appendChild(surveyEl("h3", null, survey.title));
     var x = surveyEl("button", "rec-svy-x", "×");
-    x.type = "button"; x.setAttribute("aria-label", "Close and don\u2019t ask again");
-    x.title = "Close and don\u2019t ask again";
+    x.type = "button"; x.setAttribute("aria-label", "Close and don’t ask again");
+    x.title = "Close and don’t ask again";
     hd.appendChild(x);
     card.appendChild(hd);
-    if (survey.intro) card.appendChild(surveyEl("p", "rec-svy-intro", survey.intro));
+    if (survey.intro && !quick) card.appendChild(surveyEl("p", "rec-svy-intro", survey.intro));
 
     var body = surveyEl("div", "rec-svy-body");
-    (survey.questions || []).forEach(function(q){ body.appendChild(surveyRenderQuestion(q, state)); });
-    card.appendChild(body);
-
     var err = surveyEl("div", "rec-svy-err");
     err.style.display = "none";
-    card.appendChild(err);
-
     var ft = surveyEl("div", "rec-svy-ft");
     var later = surveyEl("button", "rec-svy-later", "Not now");
     later.type = "button";
     var send = surveyEl("button", "rec-svy-send", "Send");
     send.type = "button";
     ft.appendChild(later);
-    ft.appendChild(send);
+
+    function showRest(){
+      // The rest, all optional: the rating has already landed.
+      var rest = qs.slice(1);
+      if (!rest.length) { surveyThanks(card); return; }
+      card.setAttribute("data-svy-stage", "more");
+      body.innerHTML = "";
+      body.appendChild(surveyEl("p", "rec-svy-intro", "Thanks! Anything else? (optional)"));
+      rest.forEach(function(q){
+        var qq = Object.assign({}, q, { required: false });
+        body.appendChild(surveyRenderQuestion(qq, state));
+      });
+      later.textContent = "No thanks";
+      if (!send.parentNode) ft.appendChild(send);
+    }
+
+    if (quick) {
+      body.appendChild(surveyRenderQuestion(qs[0], state, function(n){
+        if (answered) return;
+        answered = true;
+        state[qs[0].id] = n;
+        var one = {}; one[qs[0].id] = n;
+        surveyPost(where, { surveyId: survey.id, responseId: rid, stage: "quick", answers: one })
+          .then(function(){
+            // Remembered ONLY on a confirmed send, as before.
+            surveyRemember(survey.id, "done");
+            showRest();
+          })
+          .catch(function(e){
+            answered = false;
+            err.textContent = (e && e.message) || "Send failed. Please try again.";
+            err.style.display = "block";
+          });
+      }));
+    } else {
+      qs.forEach(function(q){ body.appendChild(surveyRenderQuestion(q, state)); });
+      ft.appendChild(send);
+    }
+    card.appendChild(body);
+    card.appendChild(err);
     card.appendChild(ft);
     document.body.appendChild(card);
 
     function dismiss(){
+      // Once the rating is in, closing the follow-up is not a refusal.
+      if (answered) { card.remove(); return; }
       surveyRemember(survey.id, "no");
       if (where.org) {
         fetch("/" + where.org + "/" + where.report + "/api/survey-dismiss" + where.tokenQS, {
@@ -550,13 +626,13 @@
       card.remove();
     }
     x.addEventListener("click", dismiss);
-    // A SNOOZE, not a dismissal: nothing is stored and nothing is reported, so
-    // the card is back on the next page load. Only the x (or an answer) stops it.
-    later.title = "Hide for now \u2014 we\u2019ll ask again on the next page";
+    // A SNOOZE, not a dismissal: nothing is stored and nothing is reported.
+    // The card is already marked shown for this SESSION, so it is back next session.
+    later.title = "Hide for now";
     later.addEventListener("click", function(){ card.remove(); });
 
     send.addEventListener("click", function(){
-      var missing = (survey.questions || []).filter(function(q){
+      var missing = quick ? [] : qs.filter(function(q){
         return q.required && state[q.id] == null;
       });
       if (missing.length) {
@@ -571,26 +647,14 @@
       err.style.display = "none";
       send.disabled = true;
       send.textContent = "Sending…";
-      fetch("/" + where.org + "/" + where.report + "/api/survey" + where.tokenQS, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ surveyId: survey.id, answers: state }),
-      }).then(function(r){
-        return r.json().catch(function(){ return {}; }).then(function(j){
-          if (!r.ok) throw new Error(j.error || ("Send failed (" + r.status + ")"));
-          return j;
-        });
-      }).then(function(){
+      var payload = { surveyId: survey.id, answers: state };
+      if (quick) { payload.responseId = rid; payload.stage = "more"; }
+      surveyPost(where, payload).then(function(){
         // Remembered ONLY on a confirmed send. Marking it done optimistically
         // is how an answer that never landed becomes an answer nobody is ever
         // asked for again.
         surveyRemember(survey.id, "done");
-        card.setAttribute("data-svy-done", "1");
-        card.innerHTML = "";
-        var done = surveyEl("div", "rec-svy-done");
-        done.appendChild(surveyEl("h3", null, "Thank you 🙌"));
-        done.appendChild(surveyEl("p", null, "That goes straight to the Rec team."));
-        card.appendChild(done);
-        setTimeout(function(){ if (card.parentNode) card.remove(); }, 2600);
+        surveyThanks(card);
       }).catch(function(e){
         err.textContent = (e && e.message) || "Send failed. Please try again.";
         err.style.display = "block";
@@ -598,6 +662,42 @@
         send.textContent = "Send";
       });
     });
+  }
+
+  function surveyPost(where, body){
+    return fetch("/" + where.org + "/" + where.report + "/api/survey" + where.tokenQS, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }).then(function(r){
+      return r.json().catch(function(){ return {}; }).then(function(j){
+        if (!r.ok) throw new Error(j.error || ("Send failed (" + r.status + ")"));
+        return j;
+      });
+    });
+  }
+
+  function surveyThanks(card){
+    card.setAttribute("data-svy-done", "1");
+    card.innerHTML = "";
+    var done = surveyEl("div", "rec-svy-done");
+    done.appendChild(surveyEl("h3", null, "Thank you 🙌"));
+    done.appendChild(surveyEl("p", null, "That goes straight to the Rec team."));
+    card.appendChild(done);
+    setTimeout(function(){ if (card.parentNode) card.remove(); }, 2600);
+  }
+
+  // Count only time the page is actually VISIBLE — a background tab is not
+  // somebody reading the report.
+  function surveyAfterDwell(ms, fn){
+    var left = ms, last = Date.now(), timer = null;
+    function tick(){
+      var now = Date.now();
+      if (!document.hidden) left -= (now - last);
+      last = now;
+      if (left <= 0) { clearInterval(timer); fn(); }
+    }
+    if (ms <= 0) { fn(); return; }
+    timer = setInterval(tick, Math.min(500, ms));
   }
 
   function surveyInit(){
@@ -608,10 +708,11 @@
       .then(function(d){
         var s = d && d.survey;
         if (!s || !s.id || !(s.questions || []).length) return;
-        // Asked until answered or closed with the x — both are remembered per
-        // browser. "Not now" stores nothing, so it comes back next load.
+        // Answered or closed with the x — remembered per browser, for good.
         if (surveySeen()[s.id]) return;
-        setTimeout(function(){ surveyMount(s, where); }, SURVEY_DELAY_MS);
+        // Already offered this session — whatever they did, not again today.
+        if (surveyShownThisSession(s.id)) return;
+        surveyAfterDwell(surveyDwellMs(), function(){ surveyMount(s, where); });
       })
       .catch(function(){});
   }
