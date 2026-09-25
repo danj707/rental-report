@@ -343,6 +343,7 @@ const SCORES = new Function("getSurveys", "readEvents", `
   ${liftConst(srv, "SURVEY_CSAT_TOP")}
   ${liftFn(srv, "npsBucket")}
   ${liftFn(srv, "npsScore")}
+  ${liftFn(srv, "latestSurveyResponses")}
   ${liftFn(srv, "buildSurveyScores")}
   return { buildSurveyScores, SURVEY_MIN_FOR_STATS, SURVEY_CSAT_TOP };
 `);
@@ -689,11 +690,36 @@ if (!SKIP_SOURCE) {
     assert.ok(/if \(surveySeen\(\)\[s\.id\]\) return;/.test(widget),
       "being re-asked something you declined is worse than never being asked");
   });
-  /* Dan, 2026-09-23: "pop it now until people close it." */
-  test("the card comes up almost at once, not after a long wait", () => {
-    const m = /var SURVEY_DELAY_MS = (\d+);/.exec(widget);
-    assert.ok(m, "SURVEY_DELAY_MS not found");
-    assert.ok(Number(m[1]) <= 1000, "delay is " + m[1] + "ms — nobody answers a card that has not appeared yet");
+  /* Dan, 2026-09-25, after 113 closes against one answer: ask LESS, and let
+     one click be the answer. Popping on every load trained people to reach
+     for the x. */
+  test("it waits for time on the page rather than popping at once", () => {
+    const m = /var SURVEY_DWELL_MS = (\d+);/.exec(widget);
+    assert.ok(m, "SURVEY_DWELL_MS not found");
+    assert.ok(Number(m[1]) >= 10000, "dwell is " + m[1] + "ms — asking before they have their number is how it gets closed");
+    assert.ok(/if \(!document\.hidden\) left -=/.test(widget), "a background tab must not count as time on the page");
+  });
+  test("it is offered at most ONCE PER SESSION, whatever was clicked", () => {
+    assert.ok(/if \(surveyShownThisSession\(s\.id\)\) return;/.test(widget), "the session gate is missing from surveyInit");
+    const mount = liftFn(widget, "surveyMount");
+    assert.ok(/surveyMarkShown\(survey\.id\)/.test(mount),
+      "the card must mark itself shown when it MOUNTS, or Not now brings it straight back next page");
+    assert.ok(/sessionStorage/.test(liftFn(widget, "surveyMarkShown")), "the per-session mark must live in sessionStorage");
+  });
+  test("a scale first question is answered by CLICKING it, and that POST carries a responseId", () => {
+    const mount = liftFn(widget, "surveyMount");
+    assert.ok(/SURVEY_QUICK_TYPES\[qs\[0\]\.type\]/.test(mount), "the quick mode must key on the FIRST question's type");
+    assert.ok(/surveyPost\(where, \{ surveyId: survey\.id, responseId: rid, stage: "quick"/.test(mount),
+      "clicking the rating must post it at once — or one click is not an answer");
+    assert.ok(/payload\.responseId = rid/.test(mount), "the follow-up must reuse the same responseId or one person counts twice");
+  });
+  test("closing the follow-up after rating is NOT recorded as a refusal", () => {
+    const mount = liftFn(widget, "surveyMount");
+    const i = mount.indexOf("function dismiss()");
+    assert.ok(i > -1);
+    const body = mount.slice(i, mount.indexOf("}", mount.indexOf("if (answered)", i)) + 1);
+    assert.ok(/if \(answered\) \{ card\.remove\(\); return; \}/.test(body),
+      "somebody who rated and then closed the card has answered — counting them as closed it inverts the readout");
   });
   test("\"Not now\" is a snooze: it stores nothing and reports nothing", () => {
     const i = widget.indexOf('later.addEventListener("click"');
@@ -706,9 +732,18 @@ if (!SKIP_SOURCE) {
     assert.ok(/x\.addEventListener\("click", dismiss\)/.test(widget), "the x no longer dismisses");
   });
   test("the widget remembers a send only after the server confirms it", () => {
-    const i = widget.indexOf('surveyRemember(survey.id, "done")');
-    assert.ok(i > widget.indexOf("if (!r.ok) throw new Error"),
-      "marking it done optimistically loses an answer that never landed");
+    const post = liftFn(widget, "surveyPost");
+    assert.ok(/if \(!r\.ok\) throw new Error/.test(post), "surveyPost must reject on a refused send");
+    const mount = liftFn(widget, "surveyMount");
+    const calls = mount.split('surveyRemember(survey.id, "done")').length - 1;
+    assert.ok(calls >= 2, "both the quick rating and the full send must remember the survey");
+    let at = 0;
+    for (let k = 0; k < calls; k++) {
+      at = mount.indexOf('surveyRemember(survey.id, "done")', at + 1);
+      const before = mount.slice(0, at);
+      assert.ok(before.lastIndexOf(".then(function(") > before.lastIndexOf("surveyPost("),
+        "marking it done optimistically loses an answer that never landed");
+    }
   });
   test("the survey card is not a modal — it must never cover the report", () => {
     assert.ok(/\.rec-svy\{position:fixed;right/.test(widget), "the card must be a corner card");
@@ -1101,6 +1136,58 @@ const SURVEY = {
       const a = await req("POST", "/api/admin/surveys/org", { password: PW, org: "fixture-a" });
       assert.strictEqual(a.json.orphaned, 1, "the deleted survey's answers vanished without a word");
       assert.ok(!(a.json.surveys || []).some(s => s.survey.id === survey2.id));
+    });
+
+    /* ══ ONE CLICK IS AN ANSWER (2026-09-25) ══════════════════════════════ */
+    let survey3 = null;
+    await atest("setup: a survey whose second question is also required", async () => {
+      const r = await req("POST", "/api/admin/surveys", { password: PW, status: "live",
+        title: "Quick survey", questions: [
+          { id: "q1", type: "rating5", prompt: "Rate it", required: true },
+          { id: "q2", type: "text", prompt: "Why?", required: true },
+        ] });
+      assert.strictEqual(r.status, 200, r.body.slice(0, 200));
+      survey3 = r.json.survey;
+    });
+    await atest("a one-click rating is accepted though a later question is marked required", async () => {
+      const r = await req("POST", "/fixture-a/facility/api/survey" + TOK,
+        { surveyId: survey3.id, responseId: "rTestQuick01", stage: "quick", answers: { q1: 3 } });
+      assert.strictEqual(r.status, 200, "refusing the rating for skipping a follow-up is how a survey gets no answers: " + r.body.slice(0, 200));
+      const e = events().filter(x => x.event === "survey-response" && x.surveyId === survey3.id).pop();
+      assert.ok(e && e.responseId === "rTestQuick01" && e.stage === "quick", "the response id did not reach the log");
+    });
+    await atest("a malformed responseId is no responseId — the required gate still applies", async () => {
+      const r = await req("POST", "/fixture-a/facility/api/survey" + TOK,
+        { surveyId: survey3.id, responseId: "<script>", answers: { q1: 3 } });
+      assert.strictEqual(r.status, 400);
+    });
+    await atest("the follow-up under the same id is accepted", async () => {
+      const r = await req("POST", "/fixture-a/facility/api/survey" + TOK,
+        { surveyId: survey3.id, responseId: "rTestQuick01", stage: "more", answers: { q1: 3, q2: "QUICK FOLLOW-UP TEXT" } });
+      assert.strictEqual(r.status, 200, r.body.slice(0, 200));
+    });
+    await atest("THE RATING AND ITS FOLLOW-UP ARE ONE PERSON in the readout", async () => {
+      const r = await req("POST", "/api/admin/surveys/responses", { password: PW, id: survey3.id });
+      assert.strictEqual(r.status, 200, r.body.slice(0, 200));
+      assert.strictEqual(r.json.responses, 1, "one person counted twice — the readout must keep the latest event per responseId");
+      const q1 = r.json.questions.find(q => q.id === "q1");
+      assert.strictEqual(q1.dist[3], 1, "the rating was counted " + q1.dist[3] + " times");
+      assert.ok(/QUICK FOLLOW-UP TEXT/.test(r.body), "the follow-up's words are missing");
+    });
+    await atest("...and in the survey list and the per-org score", async () => {
+      const g = await req("GET", "/api/admin/surveys");
+      const s = ((g.json && g.json.surveys) || []).find(x => x.id === survey3.id);
+      assert.ok(s, "the survey is missing from the list");
+      assert.strictEqual(s.responses, 1, "the survey list counts one person twice");
+      const scores = SCORES(() => [survey3], () => events()).buildSurveyScores(null);
+      assert.strictEqual(scores.byOrg["fixture-a"].csatN, 1, "a rating and its follow-up scored twice");
+    });
+    await atest("the follow-up's Slack post says it ADDED to an answer", async () => {
+      for (let i = 0; i < 40 && !slackPosts.some(p => /added to their survey answer/.test(p.text || "")); i++) {
+        await new Promise(r => setTimeout(r, 100));
+      }
+      assert.ok(slackPosts.some(p => /added to their survey answer/.test(p.text || "")),
+        "the second post reads as a second person answering");
     });
 
   } catch (e) {
