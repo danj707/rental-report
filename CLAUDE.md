@@ -57,6 +57,34 @@ speed, and which locations/activities the scrolling page shows.
   boots a server, drives the gate both ways) plus four `calendar ·` render cases.
   Browser-mutation-tested: gear ungated and the present filter removed both fail.
 
+## PINNED FOR NEXT WEEK: A STAGING ENVIRONMENT (Dan, 2026-09-26)
+
+Dan, waiting 25+ minutes for a one-file throwaway preview (PR #262): *"we need
+a faster way to preview updates without waiting for ci on everything"*, then
+*"No we need a staging environment. We will pin that for next week."*
+**Not built.**
+
+**Why previews are slow:** every PR environment copies production's service
+config, including **Wait for CI** (`source.checkSuites: true`). Railway holds
+the deploy until EVERY GitHub Actions check suite on the commit finishes, and a
+PR commit gets two (push + pull_request), each with a ~13-17 min `render` job.
+Measured on #262: validate done in 90s, first render at 17 min, second still
+running.
+
+**The shape to build:** a `staging` environment that is the BASE for PR
+environments, with Wait for CI OFF there and ON in production. Previews then
+deploy in ~3 min; render still runs in CI and still blocks merge. Production
+stays gated. A broken preview build is acceptable — it is a preview.
+
+**CHECK THIS FIRST — previews may be sharing production's database.** PR
+environment `rental-report-pr-262` carries `STORE_DATABASE_URL` and
+`STORE_MODE` (names read via the Railway API; values are redacted to an OAuth
+caller). If those point at production's Postgres, every preview reads AND
+WRITES production config, events and feed cache — and the notes in this file
+saying "each PR preview is a fresh volume / starts with empty flags" are wrong.
+Staging should have its own Postgres, and PR environments should inherit
+staging's, not production's.
+
 ## PINNED: THE SIGNAGE ROADMAP (Dan, 2026-09-26)
 
 Dan, after the present settings shipped: *"so many more configuration options
