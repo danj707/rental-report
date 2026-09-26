@@ -46,6 +46,40 @@ speed, and which locations/activities the scrolling page shows.
   boots a server, drives the gate both ways) plus four `calendar ·` render cases.
   Browser-mutation-tested: gear ungated and the present filter removed both fail.
 
+## PINNED: THE SIGNAGE ROADMAP (Dan, 2026-09-26)
+
+Dan, after the present settings shipped: *"so many more configuration options
+here we can do, but this is a great start for now."* **Not built — planning.**
+Sales-facing write-up: https://app.notion.com/p/3e7f117be00481aa83bbe04059fbc301
+(CX Internal Wiki, for Courtney). Demand is real: the #sales thread
+(C04AQK10YRE, 2026-09-25) says REACH is in almost every RFP, and competitors
+(Active, Civic, RecTrac, RecDesk, MyRec, PerfectMind, Amilia, Dash) all integrate.
+
+**Build ORDER matters: named screens come first**, because every item below it
+is per screen (the gym TV and the pool TV want different highlights and ads).
+Today it is ONE settings record per org in `present-settings.json`.
+
+1. **Multiple links per org** — named screens (`?present=1&screen=aquatics`),
+   each with its own settings. Store shape becomes `{ [org]: { screens: {…} } }`;
+   a link with no `screen` keeps reading today's record so pasted REACH URLs
+   never break.
+2. **Grey out / hide full or closed sections** — the page already has an
+   availability filter, so this is a setting plus a style.
+3. **Highlight specific programs** — pick programs, they get a badge/tint.
+4. **Spotlight** — pause the scroll, enlarge one program, resume. The work is
+   the rules (frequency, dwell, several highlighted at once), not the code.
+5. **Description text / image per section** — FIRST check whether card 17298
+   emits them. If not it is a card push + date-tag flip.
+6. **Bottom banner ad slot** for the Rec ad network — needs the embed format
+   (script / iframe / image+link), rotation rules, and a decision on who approves
+   ads on a public page. Ankur wants us to own this revenue.
+7. **Facility rentals/bookings for the day** on the sign — Chris/Courtney asked
+   for "room rentals/bookings for the day" and the screen shows program sessions
+   only. The Notion page tells Sales not to promise it yet.
+
+Rejected for now: a Google Calendar feed into REACH (loses layout, filters,
+weather and needs a sync) — the hosted URL is strictly better.
+
 ## THE SURVEY: 113 CLOSED IT, ONE ANSWERED — so it asks less, and one click counts (2026-09-25)
 
 Dan asked whether the report survey ever got answers. Production had been serving
