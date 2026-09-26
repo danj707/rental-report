@@ -33,6 +33,14 @@ speed, and which locations/activities the scrolling page shows.
   interactive page's sample rows ("Schedule is updating…" if nothing loaded
   yet). Nothing on the server sets `X-Frame-Options`/CSP, so it frames. The
   "Press Esc" hint hides inside an iframe.
+- **Round 2 (Dan, same day):** no ⟳ Refresh badge on the present view
+  (`report-refresh.js` bails on `present=1`); the org banner is **sticky** while
+  the list scrolls; **weather defaults ON** (off only for an explicit `false`,
+  and it still renders only where the org has coords); and the ⚙ is in the
+  present view itself for a token holder. To make that possible the Present
+  button KEEPS the token for a token holder only, and the present page captures
+  it (`PAGE_TOKEN`) then strips it from the address bar with `replaceState`, so a
+  copied URL still never carries it. The signage link in the panel is unchanged.
 - Slack: `present-settings` (📺), naming what the screen will show.
 - Guards: `scripts/present-settings.spec.js` (20, in CI — lifts the normaliser,
   boots a server, drives the gate both ways) plus four `calendar ·` render cases.

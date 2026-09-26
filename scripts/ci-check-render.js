@@ -3276,22 +3276,32 @@ const CASES = [
     },
     needs: "body[data-ps-link='present=1 token=no week=no']" },
 
-  { name: "calendar · the Present button drops the token",
-    path: "/{org}/calendar",
-    pre: async (page) => {
-      await page.evaluateOnNewDocument(() => { window.open = (u) => { window.__opened = String(u); return null; }; });
-    },
+  /* A token holder's Present button keeps the token (their own preview needs the
+     gear), and the present page then strips it from the address bar, so copying
+     the URL into a signage CMS never carries it. The banner is pinned. */
+  { name: "calendar · a token holder's present view: gear, no token in the URL, pinned banner",
+    path: "/{org}/calendar?present=1",
     act: async (page) => {
-      await page.waitForSelector("#report-ready", { timeout: 20000 });
+      await page.waitForSelector("[data-ps-gear='present']", { timeout: 20000 });
       await page.evaluate(() => {
-        const b = [...document.querySelectorAll(".toolbar button")].find(x => /Present/.test(x.textContent));
-        b.click();
-        const u = new URL(window.__opened);
-        document.body.setAttribute("data-present-open",
-          "present=" + u.searchParams.get("present") + " token=" + (u.searchParams.has("token") ? "yes" : "no"));
+        const h = getComputedStyle(document.querySelector(".report-header"));
+        document.body.setAttribute("data-pv",
+          "token=" + (new URLSearchParams(location.search).has("token") ? "yes" : "no") + " header=" + h.position);
       });
     },
-    needs: "body[data-present-open='present=1 token=no']" },
+    needs: "body[data-pv='token=no header=sticky'] [data-ps-gear='present']" },
+
+  { name: "calendar · no present gear without the org's token",
+    path: "/{org}/calendar?present=1",
+    token: "not-this-orgs-token",
+    needs: "#report-ready",
+    absent: "[data-ps-gear]" },
+
+  /* Weather is ON by default where the org has coords — nobody should have to
+     find a setting to get the local weather on the sign. */
+  { name: "calendar · present weather shows with no saved settings",
+    path: "/{org}/calendar?present=1&_wx=clear",
+    needs: "[data-rh-wx='clear']" },
 
   // A sign whose feed fails must NOT show the sample rows the interactive page
   // falls back to — invented sessions under the org's logo on a lobby screen.

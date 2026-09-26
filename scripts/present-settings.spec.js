@@ -32,8 +32,8 @@ function lift(startMarker, endMarker) {
 const block = lift("const PRESENT_SPEED_MIN", "function presentSettingsFor");
 const norm = new Function(block + "; return normalizePresentSettings;")();
 
-test("defaults: weather off, 0.6 speed, everything shown", () => {
-  assert.deepStrictEqual(norm({}), { weather: false, scrollSpeed: 0.6, locations: [], activities: [] });
+test("defaults: weather on, 0.6 speed, everything shown", () => {
+  assert.deepStrictEqual(norm({}), { weather: true, scrollSpeed: 0.6, locations: [], activities: [] });
 });
 test("a null speed is the default, never 0 (Number(null) is 0 — a stopped screen)", () => {
   assert.strictEqual(norm({ scrollSpeed: null }).scrollSpeed, 0.6);
@@ -43,9 +43,9 @@ test("speed is clamped both ways", () => {
   assert.strictEqual(norm({ scrollSpeed: 0 }).scrollSpeed, 0.2);
   assert.strictEqual(norm({ scrollSpeed: 99 }).scrollSpeed, 3);
 });
-test("weather is on only for a real true", () => {
-  assert.strictEqual(norm({ weather: "yes" }).weather, false);
-  assert.strictEqual(norm({ weather: true }).weather, true);
+test("weather is off only for a real false (it defaults on where the org has coords)", () => {
+  assert.strictEqual(norm({ weather: "yes" }).weather, true);
+  assert.strictEqual(norm({ weather: false }).weather, false);
 });
 test("lists are trimmed, de-duplicated, blanks dropped", () => {
   assert.deepStrictEqual(norm({ locations: [" Pool ", "Pool", "", null, "Gym"] }).locations, ["Pool", "Gym"]);
@@ -74,6 +74,15 @@ test("present mode reads the scroll speed from the settings, not a constant", ()
 });
 test("the present filter only applies in present mode", () => {
   assert.ok(/if\(isPresent&&!presentAllows\(presentCfg,e\)\) return false;/.test(page));
+});
+
+test("a sign carries no Refresh badge", () => {
+  const rr = fs.readFileSync(path.join(ROOT, "public", "report-refresh.js"), "utf8");
+  assert.ok(/present=1\\b\/\.test\(location\.search\)\) return;/.test(rr), "the manual Refresh badge renders on the present view");
+});
+test("present mode strips the token from the address bar", () => {
+  assert.ok(/const PAGE_TOKEN=/.test(page) && /token:q\.get\('token'\)\|\|PAGE_TOKEN/.test(page), "the PUT loses its token once the URL is cleaned");
+  assert.ok(/u\.searchParams\.delete\('token'\); window\.history\.replaceState/.test(page));
 });
 
 /* ── live: the real routes ────────────────────────────────────────────── */

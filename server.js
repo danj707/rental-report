@@ -17086,7 +17086,7 @@ app.get("/:org/ice-calendar", (req, res) => {
    ───────────────────────────────────────────────────────────────────────── */
 const PRESENT_SETTINGS_FILE = () => path.join(DATA_DIR, "present-settings.json");
 const PRESENT_SPEED_MIN = 0.2, PRESENT_SPEED_MAX = 3, PRESENT_SPEED_DEFAULT = 0.6;
-const PRESENT_DEFAULTS = Object.freeze({ weather: false, scrollSpeed: PRESENT_SPEED_DEFAULT, locations: [], activities: [] });
+const PRESENT_DEFAULTS = Object.freeze({ weather: true, scrollSpeed: PRESENT_SPEED_DEFAULT, locations: [], activities: [] });
 
 function presentStringList(v) {
   if (!Array.isArray(v)) return [];
@@ -17105,7 +17105,7 @@ function normalizePresentSettings(raw) {
   if (r.scrollSpeed === null || r.scrollSpeed === "" || !Number.isFinite(speed)) speed = PRESENT_SPEED_DEFAULT;
   speed = Math.min(PRESENT_SPEED_MAX, Math.max(PRESENT_SPEED_MIN, Math.round(speed * 10) / 10));
   return {
-    weather: r.weather === true,
+    weather: r.weather !== false,
     scrollSpeed: speed,
     locations: presentStringList(r.locations),
     activities: presentStringList(r.activities),
