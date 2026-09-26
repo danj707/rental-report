@@ -2042,7 +2042,15 @@ const STUBS = [
      tell the two fetches apart at all; if both answered the same rows, a page
      that fired them concurrently and one that sequenced them would look
      identical. */
-  { match: /\/calendar\/api\/data/, body: (url) => {
+  /* Present-mode settings on the Session Schedule. The PUT is answered as the
+     real route answers a valid token; that the route REFUSES a wrong one is the
+     spec's job (scripts/present-settings.spec.js), since every /api/ request
+     here is answered from STUBS and never reaches the server. */
+  { match: /\/calendar\/api\/present-(settings|state)/, body: () => ({
+      ok: true,
+      settings: { weather: false, scrollSpeed: 0.6, locations: ["Victory Field"], activities: [] },
+      weather: null, weatherAvailable: true }) },
+  { match: /\/calendar\/api\/data/, status: () => (STUB_MODE === "calfail" ? 500 : 200), body: (url) => {
       const u = new URL(url, "http://x");
       const from = u.searchParams.get("start_date") || "";
       const to   = u.searchParams.get("end_date") || "";
@@ -3166,6 +3174,145 @@ const CASES = [
       });
     },
     needs: "body[data-cal-seq='1']" },
+
+  /* ── Present-mode settings (2026-09-26) ─────────────────────────────────
+     The gear is for token holders only: the schedule is PUBLIC, so a resident
+     on the plain link must never see it. Absent, not disabled. */
+  { name: "calendar · present settings gear for a token holder",
+    path: "/{org}/calendar",
+    act: async (page) => {
+      await page.waitForSelector("[data-ps-gear]", { timeout: 20000 });
+      // The lists read the wide 60-day sweep, which carries a third location.
+      await page.waitForFunction(() => document.querySelectorAll("select.filter-sel")[1]
+        && document.querySelectorAll("select.filter-sel")[1].options.length >= 4, { timeout: 30000 });
+      await page.click("[data-ps-gear]");
+      await page.waitForSelector("[data-ps-sheet]", { timeout: 5000 });
+      await page.evaluate(() => {
+        const sheet = document.querySelector("[data-ps-sheet]");
+        document.body.setAttribute("data-ps-seen",
+          "locs=" + document.querySelectorAll("[data-ps-list='locations'] input").length
+          + " acts=" + document.querySelectorAll("[data-ps-list='activities'] input").length
+          + " portal=" + (sheet.closest(".wrap") ? "in-wrap" : "body")
+          + " save=" + (document.querySelector("[data-ps-save]").disabled ? "off" : "on"));
+      });
+    },
+    needs: "body[data-ps-seen='locs=3 acts=3 portal=body save=off'] [data-ps-speed]" },
+
+  { name: "calendar · no present settings without the org's token",
+    path: "/{org}/calendar",
+    token: "not-this-orgs-token",
+    needs: "#report-ready[data-cal-rows='2']",
+    absent: "[data-ps-gear]" },
+
+  // Saving sends the ticked location with the org token — the token is the
+  // credential the route checks, so a PUT without it saves nothing.
+  { name: "calendar · saving present settings sends the choices",
+    path: "/{org}/calendar",
+    pre: async (page) => {
+      await page.evaluateOnNewDocument(() => {
+        window.__psPut = null;
+        const orig = window.fetch;
+        window.fetch = function (input, init) {
+          const u = typeof input === "string" ? input : (input && input.url) || "";
+          if (u.indexOf("/present-settings") !== -1 && init && init.method === "PUT") {
+            window.__psPut = { url: u, body: init.body };
+          }
+          return orig.apply(this, arguments);
+        };
+      });
+    },
+    act: async (page) => {
+      await page.waitForSelector("[data-ps-gear]", { timeout: 20000 });
+      await page.click("[data-ps-gear]");
+      await page.waitForSelector("[data-ps-list='locations'] input", { timeout: 20000 });
+      await page.evaluate(() => {
+        const box = [...document.querySelectorAll("[data-ps-list='locations'] label")]
+          .find(l => l.textContent.indexOf("Victory Field") !== -1);
+        box.querySelector("input").click();
+      });
+      await page.waitForFunction(() => !document.querySelector("[data-ps-save]").disabled, { timeout: 5000 });
+      await page.click("[data-ps-save]");
+      await page.waitForFunction(() => window.__psPut, { timeout: 5000 });
+      await page.evaluate(() => {
+        const p = window.__psPut, b = JSON.parse(p.body).settings;
+        const tok = new URL(p.url, location.origin).searchParams.get("token") ? "1" : "0";
+        document.body.setAttribute("data-ps-put", "token=" + tok + " locs=" + b.locations.join("|"));
+      });
+    },
+    needs: "body[data-ps-put='token=1 locs=Victory Field']" },
+
+  /* Present mode honours the org's saved choices: the location list narrows the
+     scrolling display (2 rows → 1) and the weather sits in the banner. Written
+     to the server's own settings file, because the page reads them on FIRST
+     PAINT — and removed afterwards so no later case inherits them. */
+  { name: "calendar · present mode shows the chosen locations and the weather",
+    path: "/{org}/calendar?present=1&_wx=rain",
+    pre: async (page, { org, dataDir }) => {
+      const fsx = require("fs"), px = require("path");
+      fsx.writeFileSync(px.join(dataDir, "present-settings.json"), JSON.stringify({
+        [org]: { weather: true, scrollSpeed: 1.2, locations: ["Victory Field"], activities: [] } }));
+    },
+    act: async (page, ctx) => {
+      await page.waitForSelector("#report-ready", { timeout: 30000 });
+      try { require("fs").unlinkSync(require("path").join(ctx.dataDir, "present-settings.json")); } catch (_) {}
+    },
+    needs: "#report-ready[data-cal-rows='1']",
+    also: ["[data-rh-wx='rain']"] },
+
+  /* Digital signage (REACH). The Present URL goes into a third-party CMS, so it
+     must never carry the org token — the token unlocks every report the org has. */
+  { name: "calendar · the signage link carries no token",
+    path: "/{org}/calendar",
+    act: async (page) => {
+      await page.waitForSelector("[data-ps-gear]", { timeout: 20000 });
+      await page.click("[data-ps-gear]");
+      await page.waitForSelector("[data-ps-signage]", { timeout: 5000 });
+      await page.evaluate(() => {
+        const u = new URL(document.querySelector("[data-ps-signage]").getAttribute("data-ps-signage"));
+        document.body.setAttribute("data-ps-link",
+          "present=" + u.searchParams.get("present") + " token=" + (u.searchParams.has("token") ? "yes" : "no")
+          + " week=" + (u.searchParams.has("week") ? "yes" : "no"));
+      });
+    },
+    needs: "body[data-ps-link='present=1 token=no week=no']" },
+
+  /* Settings live on the interactive page only (Dan, 2026-09-26: "settings
+     should NOT be showing up on a live link with no token"). The present view
+     strips the token from the address bar, so it carries no gear even when it
+     was opened with one — and the banner is pinned. */
+  { name: "calendar · a present view has no gear, even opened with the token",
+    path: "/{org}/calendar?present=1",
+    act: async (page) => {
+      await page.waitForSelector("#report-ready", { timeout: 30000 });
+      await page.evaluate(() => {
+        const h = getComputedStyle(document.querySelector(".report-header"));
+        document.body.setAttribute("data-pv",
+          "token=" + (new URLSearchParams(location.search).has("token") ? "yes" : "no") + " header=" + h.position);
+      });
+    },
+    needs: "body[data-pv='token=no header=sticky']",
+    absent: "[data-ps-gear]" },
+
+  { name: "calendar · no present gear without the org's token",
+    path: "/{org}/calendar?present=1",
+    token: "not-this-orgs-token",
+    needs: "#report-ready",
+    absent: "[data-ps-gear]" },
+
+  /* Weather is ON by default where the org has coords — nobody should have to
+     find a setting to get the local weather on the sign. */
+  { name: "calendar · present weather shows with no saved settings",
+    path: "/{org}/calendar?present=1&_wx=clear",
+    needs: "[data-rh-wx='clear']" },
+
+  // A sign whose feed fails must NOT show the sample rows the interactive page
+  // falls back to — invented sessions under the org's logo on a lobby screen.
+  { name: "calendar · a failed feed on a sign shows no sample data",
+    path: "/{org}/calendar?present=1",
+    stubMode: "calfail",
+    expectsConsoleError: true,
+    needs: "[data-present-wait]",
+    absent: ".note" },
 
   /* ── The Program Schedule (card 21649) ───────────────────────────────────
      This report shipped with NO render coverage at all, which is the state the
@@ -9266,7 +9413,7 @@ function waitForServer(started) {
            reported as an uncaught error, which reads as the page being broken.
            Same latent gap `.report-header` was added for. */
         await page.waitForSelector(".prompt-panel, .toolbar, .card, .report-header, .rc-shell, .mapwrap", { timeout: PAGE_TIMEOUT_MS });
-        await c.act(page);
+        await c.act(page, { org, dataDir, token });
       }
       try { await page.waitForSelector(c.needs, { timeout: PAGE_TIMEOUT_MS }); found = true; } catch (_) {}
       // `absent` asserts a selector is NOT in the DOM. Needed for the cases that

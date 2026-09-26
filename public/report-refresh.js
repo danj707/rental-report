@@ -17,6 +17,8 @@
 // deferred include is always early enough.
 (function () {
   if (/[?&]_print=1\b/.test(location.search)) return;
+  // A sign has no one to click Refresh, and it re-polls itself every 5 min.
+  if (/[?&]present=1\b/.test(location.search)) return;
 
   var wantRefresh = /[?&](_refresh|_nocache)=1\b/.test(location.search);
   try {

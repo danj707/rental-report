@@ -1,5 +1,96 @@
 # Project notes for Claude
 
+## PRESENT-MODE SETTINGS ON THE SESSION SCHEDULE (2026-09-26)
+
+Dan: *"The program schedule with the present button. Add a settings option that
+only shows when the token is in the url"* — weather in the org banner, scroll
+speed, and which locations/activities the scrolling page shows.
+
+- **The page is `calendar.html` (`/:org/calendar`), and it is PUBLIC**
+  (`PUBLIC_REPORTS`), so the org-token middleware never runs on it. The gate is
+  in the handlers: `presentTokenOk(req, org)`, constant-time against the org's
+  own token. `settingsAdmin` is injected into `__ORG__` and the ⚙ is ABSENT
+  without it — a resident on the plain link never sees it.
+- **Stored per org** (`present-settings.json`), so the lobby TV's URL needs no
+  token. The kiosk polls the PUBLIC `/api/present-state` every 5 min, so a
+  change at a desk reaches the screen without a reload.
+- **Empty location/activity lists mean ALL**, and the narrowing applies in
+  present mode ONLY — the interactive schedule is untouched.
+- **Weather only where the org has coords** (`weatherLib.coordsOf`); the panel
+  disables the toggle and says why otherwise. It reuses `orgWeatherFor`, so the
+  dashboard's cache and the `orgWeather` flag govern it too.
+- **Speed is px/frame, 0.2–3, default 0.6 (the old constant), accumulated into
+  whole pixels** — `scrollBy(0, 0.2)` rounds to nothing in some browsers.
+  `Number(null)` is 0, which would read as "stopped"; the normaliser rejects it.
+- **The `__ORG__` inject now escapes `<`** — the settings carry free-text names
+  on a public page, and a `</script>` in one would end the tag.
+- **Built for REACH digital signage** (its iFrame app loads a URL and refreshes
+  it on a schedule). The settings panel hands over a **signage link**:
+  `/:org/calendar?present=1` — **no token** (it goes into a third-party CMS, and
+  the token opens every report the org has; the Present button strips it too),
+  **no `week`**, so the window ROLLS from today and moves on at midnight, and a
+  **failed refresh keeps the last good schedule** instead of painting the
+  interactive page's sample rows ("Schedule is updating…" if nothing loaded
+  yet). Nothing on the server sets `X-Frame-Options`/CSP, so it frames. The
+  "Press Esc" hint hides inside an iframe.
+- **Round 2 (Dan, same day):** no ⟳ Refresh badge on the present view
+  (`report-refresh.js` bails on `present=1`); the org banner is **sticky** while
+  the list scrolls; **weather defaults ON** (off only for an explicit `false`,
+  and it still renders only where the org has coords); and the ⚙ is in the
+  present view itself for a token holder. To make that possible the Present
+  button KEEPS the token for a token holder only, and the present page captures
+  it (`PAGE_TOKEN`) then strips it from the address bar with `replaceState`, so a
+  copied URL still never carries it. The signage link in the panel is unchanged.
+- **Round 3 (Dan, same day): the ⚙ is OFF the present view again** — *"settings
+  should NOT be showing up on a live link with no token."* The present page
+  strips the token from its address bar, so a gear there sat on a token-free
+  URL. The Present button now always drops the token, and both gears are gated
+  `!isPresent`; settings live on the interactive page (open it with the token).
+  Keeping the token in the present URL was the other option and was refused as
+  a security weakening — that URL is what gets copied into a signage CMS.
+  **Weather now retries every 15s while missing** (for up to 5 min): a cold
+  server answers the first read with null while it fetches behind the reader,
+  and with two replicas each is cold, so the old single 20s retry could miss.
+  A cold poll never blanks a reading already on screen.
+- Slack: `present-settings` (📺), naming what the screen will show.
+- Guards: `scripts/present-settings.spec.js` (20, in CI — lifts the normaliser,
+  boots a server, drives the gate both ways) plus four `calendar ·` render cases.
+  Browser-mutation-tested: gear ungated and the present filter removed both fail.
+
+## PINNED: THE SIGNAGE ROADMAP (Dan, 2026-09-26)
+
+Dan, after the present settings shipped: *"so many more configuration options
+here we can do, but this is a great start for now."* **Not built — planning.**
+Sales-facing write-up: https://app.notion.com/p/3e7f117be00481aa83bbe04059fbc301
+(CX Internal Wiki, for Courtney). Demand is real: the #sales thread
+(C04AQK10YRE, 2026-09-25) says REACH is in almost every RFP, and competitors
+(Active, Civic, RecTrac, RecDesk, MyRec, PerfectMind, Amilia, Dash) all integrate.
+
+**Build ORDER matters: named screens come first**, because every item below it
+is per screen (the gym TV and the pool TV want different highlights and ads).
+Today it is ONE settings record per org in `present-settings.json`.
+
+1. **Multiple links per org** — named screens (`?present=1&screen=aquatics`),
+   each with its own settings. Store shape becomes `{ [org]: { screens: {…} } }`;
+   a link with no `screen` keeps reading today's record so pasted REACH URLs
+   never break.
+2. **Grey out / hide full or closed sections** — the page already has an
+   availability filter, so this is a setting plus a style.
+3. **Highlight specific programs** — pick programs, they get a badge/tint.
+4. **Spotlight** — pause the scroll, enlarge one program, resume. The work is
+   the rules (frequency, dwell, several highlighted at once), not the code.
+5. **Description text / image per section** — FIRST check whether card 17298
+   emits them. If not it is a card push + date-tag flip.
+6. **Bottom banner ad slot** for the Rec ad network — needs the embed format
+   (script / iframe / image+link), rotation rules, and a decision on who approves
+   ads on a public page. Ankur wants us to own this revenue.
+7. **Facility rentals/bookings for the day** on the sign — Chris/Courtney asked
+   for "room rentals/bookings for the day" and the screen shows program sessions
+   only. The Notion page tells Sales not to promise it yet.
+
+Rejected for now: a Google Calendar feed into REACH (loses layout, filters,
+weather and needs a sync) — the hosted URL is strictly better.
+
 ## THE SURVEY: 113 CLOSED IT, ONE ANSWERED — so it asks less, and one click counts (2026-09-25)
 
 Dan asked whether the report survey ever got answers. Production had been serving
