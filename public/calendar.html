@@ -1249,10 +1249,11 @@ function App(){
     const {rows,src,error}=await fetchData(from,to);
     if(PRESENT_URL&&error){
       // Keep whatever is on screen; never paint sample rows on a sign.
-      setSrc(s=>s==='live'?'live':'present-wait'); setLoading(false); setFirstLoadDone(true);
-      return;
+      setSrc(s=>s==='live'?'live':'present-wait');
+    } else {
+      setRows(rows.map(normalizeRow).filter(e=>!isHiddenActivity(e))); setSrc(src); setFetchError(error||'');
     }
-    setRows(rows.map(normalizeRow).filter(e=>!isHiddenActivity(e))); setSrc(src); setFetchError(error||''); setLoading(false);
+    setLoading(false);
     setFirstLoadDone(true);
   },[]);
 
