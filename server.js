@@ -5329,7 +5329,7 @@ setTimeout(() => { checkCardParamTypes().catch(() => {}); }, 150 * 1000).unref?.
 // Inert if the env var is unset. Fire-and-forget — never blocks or breaks logging.
 // To change what pings Slack, edit SLACK_NOTIFY. High-frequency events (view/fetch)
 // are debounced per org+report so Slack isn't a firehose.
-const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "campmap-filter", "campmap-amenity", "pdf", "excel", "print", "summary", "game", "map", "outdoor", "fields", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email", "checkin-loc", "checkin-member", "checkin-failed", "form-open", "epact", "settings-open", "settings-unlock", "settings-locked", "settings-save", "settings-reset", "deadlink", "generate", "wizard-save", "mb-autorenew", "mb-salesmix", "ft-export", "panel-csv", "intel-csv", "intel-window", "wizard-feedback", "roster-open", "report-csv", "survey-response", "insights-listen", "opp-drill", "opp-print", "opp-csv", "backup-failed", "org-synced", "fee-alloc", "inv-count", "inv-receive", "inv-link", "inv-track", "inv-archive", "inv-reorder", "cost-save", "cost-csv", "data-cleared"]);
+const SLACK_NOTIFY = new Set(["created", "org-deleted", "watchdog", "schema-break", "param-drift", "report-down", "campmap-share", "campmap-site", "campmap-book", "campmap-filter", "campmap-amenity", "pdf", "excel", "print", "summary", "game", "map", "outdoor", "fields", "view", "insights", "insights-feedback", "chat-feedback", "feedback", "vote", "update-vote", "munis", "permits", "email", "checkin-loc", "checkin-member", "checkin-failed", "form-open", "epact", "settings-open", "settings-unlock", "settings-locked", "settings-save", "settings-reset", "deadlink", "generate", "wizard-save", "mb-autorenew", "mb-salesmix", "ft-export", "panel-csv", "intel-csv", "intel-window", "wizard-feedback", "roster-open", "report-csv", "survey-response", "insights-listen", "opp-drill", "opp-print", "opp-csv", "backup-failed", "org-synced", "fee-alloc", "inv-count", "inv-receive", "inv-link", "inv-track", "inv-archive", "inv-reorder", "cost-save", "cost-csv", "data-cleared", "present-settings"]);
 const SLACK_DEBOUNCE_MS = { view: 30 * 60 * 1000, fetch: 30 * 60 * 1000,
   // A broken report stays broken. The health check only reports NEW failures,
   // but a flapping card would otherwise post every hour.
@@ -5432,6 +5432,7 @@ const SLACK_EVENT_META = {
   // platform: it is the one number Rec does not hold, so every one of them is
   // somebody deciding this report is worth keeping up to date.
   "cost-save": { emoji: "\u2696\uFE0F", verb: "entered program costs on" },
+  "present-settings": { emoji: "\u{1F4FA}", verb: "changed the present-mode settings on" },
   // Its own branch below prints what was destroyed; this is the fallback.
   "data-cleared": { emoji: "\u2622\uFE0F", verb: "CLEARED ALL DATA on" },
   "cost-csv":  { emoji: "\uD83D\uDCC4", verb: "exported the P&L from" },
@@ -5815,6 +5816,15 @@ function notifySlack(rec) {
       : rec.event === "inv-reorder" ? ` \u2014 ${rec.onHand} left, reorder at ${rec.reorder}${rec.emailed ? " \u00B7 email sent" : " \u00B7 no email address set"}`
       : "";
     text = `${meta.emoji} ${orgName} (\`${rec.org}\`) ${meta.verb} ${what} in *inventory*${detail}`;
+  } else if (rec.event === "present-settings") {
+    // Say WHAT the lobby screen will now show — "changed settings" says nothing.
+    const bits = [
+      `weather ${rec.weather === "on" ? "on" : "off"}`,
+      `scroll ${rec.speed}x`,
+      Number(rec.locations) ? `${rec.locations} location${Number(rec.locations) === 1 ? "" : "s"}` : "all locations",
+      Number(rec.activities) ? `${rec.activities} activit${Number(rec.activities) === 1 ? "y" : "ies"}` : "all activities",
+    ];
+    text = `${meta.emoji} ${orgName} (\`${rec.org}\`) ${meta.verb} the *Session Schedule* \u00B7 ${bits.join(" \u00B7 ")}`;
   } else if (rec.event === "cost-save") {
     // NAME what moved. "Somebody saved costs" is the post that makes a feature
     // look busy and tells nobody anything; the program being costed is the
@@ -17060,6 +17070,99 @@ app.get("/:org/ice-calendar", (req, res) => {
   res.type("html").send(loadEstimateInject(html.replace("</head>", () => inject + "</head>"), req));
 });
 
+/* ── Present-mode settings for the public Session Schedule (2026-09-26) ─────
+   The schedule is a PUBLIC page (PUBLIC_REPORTS), so the org-token middleware
+   never runs on it — which is why the gate is here, in the handlers, and why
+   the settings gear is only rendered when the URL carries the org's OWN token.
+   A resident opening the public link sees no gear and cannot reach the route.
+
+   What the settings decide is what a TV in the lobby shows: whether the org
+   banner carries the local weather, how fast the list scrolls, and which
+   locations and activities are on it. Stored per org, so the kiosk URL itself
+   needs no token — it reads the org's choices when it loads.
+
+   EMPTY LOCATION/ACTIVITY LISTS MEAN "ALL", the rule every multi-select here
+   follows, so an org that never opens the panel sees exactly what it did.
+   ───────────────────────────────────────────────────────────────────────── */
+const PRESENT_SETTINGS_FILE = () => path.join(DATA_DIR, "present-settings.json");
+const PRESENT_SPEED_MIN = 0.2, PRESENT_SPEED_MAX = 3, PRESENT_SPEED_DEFAULT = 0.6;
+const PRESENT_DEFAULTS = Object.freeze({ weather: false, scrollSpeed: PRESENT_SPEED_DEFAULT, locations: [], activities: [] });
+
+function presentStringList(v) {
+  if (!Array.isArray(v)) return [];
+  const seen = new Set();
+  for (const x of v) {
+    const t = String(x == null ? "" : x).trim().slice(0, 200);
+    if (t) seen.add(t);
+    if (seen.size >= 200) break;
+  }
+  return [...seen];
+}
+function normalizePresentSettings(raw) {
+  const r = raw && typeof raw === "object" ? raw : {};
+  let speed = Number(r.scrollSpeed);
+  // Number(null) is 0, which would read as "stop scrolling" — reject it by name.
+  if (r.scrollSpeed === null || r.scrollSpeed === "" || !Number.isFinite(speed)) speed = PRESENT_SPEED_DEFAULT;
+  speed = Math.min(PRESENT_SPEED_MAX, Math.max(PRESENT_SPEED_MIN, Math.round(speed * 10) / 10));
+  return {
+    weather: r.weather === true,
+    scrollSpeed: speed,
+    locations: presentStringList(r.locations),
+    activities: presentStringList(r.activities),
+  };
+}
+function presentSettingsFor(slug) {
+  const store = readJSON(PRESENT_SETTINGS_FILE(), {}) || {};
+  return normalizePresentSettings(store[slug] || PRESENT_DEFAULTS);
+}
+// The org token is the credential for this panel. Constant-time, and the
+// length test comes first because timingSafeEqual THROWS on a mismatch.
+function presentTokenOk(req, org) {
+  const want = String((org && org.token) || "");
+  const got  = String((req.query && req.query.token) || (req.body && req.body.token) || "");
+  if (!want || got.length !== want.length) return false;
+  try { return crypto.timingSafeEqual(Buffer.from(got), Buffer.from(want)); } catch (_) { return false; }
+}
+
+app.get("/:org/calendar/api/present-settings", (req, res) => {
+  const org = ORGS[req.params.org];
+  res.set("Cache-Control", "no-store");
+  if (!org || !presentTokenOk(req, org)) return refuse404(res, { error: "Not found" });
+  res.json({ ok: true, settings: presentSettingsFor(req.params.org), weatherAvailable: !!weatherLib.coordsOf(org) });
+});
+
+app.put("/:org/calendar/api/present-settings", express.json(), (req, res) => {
+  const slug = req.params.org;
+  const org = ORGS[slug];
+  res.set("Cache-Control", "no-store");
+  if (!org || !presentTokenOk(req, org)) return refuse404(res, { error: "Not found" });
+  const settings = normalizePresentSettings(req.body && req.body.settings);
+  const store = readJSON(PRESENT_SETTINGS_FILE(), {}) || {};
+  store[slug] = settings;
+  writeJSON(PRESENT_SETTINGS_FILE(), store);
+  logEvent(slug, "calendar", "present-settings", req, {
+    weather: settings.weather ? "on" : "off",
+    speed: settings.scrollSpeed,
+    locations: settings.locations.length,
+    activities: settings.activities.length,
+  });
+  res.json({ ok: true, settings });
+});
+
+// The kiosk re-reads its settings and weather without a reload, so a change
+// made at a desk reaches the lobby TV on the next poll. Public, because the
+// kiosk URL carries no token — and nothing here is private: the location and
+// activity names are already on the page, and the weather is the sky over the
+// park. Weather is null unless the org switched it ON.
+app.get("/:org/calendar/api/present-state", (req, res) => {
+  const slug = req.params.org;
+  const org = ORGS[slug];
+  res.set("Cache-Control", "no-store");
+  if (!org) return refuse404(res, { error: "Not found" });
+  const settings = presentSettingsFor(slug);
+  res.json({ settings, weather: settings.weather ? orgWeatherFor(slug, req) : null });
+});
+
 app.get("/:org/calendar", (req, res) => {
   const slug = req.params.org;
   const org  = ORGS[slug];
@@ -17073,11 +17176,21 @@ app.get("/:org/calendar", (req, res) => {
     displayName: org.displayName || `${slugTitle} Parks & Recreation`,
     logoUrl: org.logoUrl || '',
     recommendEnabled: RECOMMEND_ENABLED && !!(org.calendar?.mbUuid || SHARED_UUIDS.calendar || org.programs?.mbUuid || SHARED_UUIDS.programs),
+    // Present-mode settings travel on first paint, so a kiosk never flashes the
+    // unfiltered list before narrowing. `settingsAdmin` is true only when the
+    // URL carries this org's own token — the gear is ABSENT otherwise.
+    present: presentSettingsFor(slug),
+    settingsAdmin: presentTokenOk(req, org),
+    weatherAvailable: !!weatherLib.coordsOf(org),
   };
+  if (meta.present.weather) meta.weather = orgWeatherFor(slug, req);
   const fs = require("fs");
   const html = fs.readFileSync(path.join(__dirname, "public", "calendar.html"), "utf-8");
-  const inject = `<script>window.__ORG__=${JSON.stringify(meta)};</script>`;
-  res.type("html").send(html.replace("</head>", inject + "</head>"));
+  // `<` escaped: the settings carry free-text location and activity names, and
+  // a `</script>` inside one would end this tag on a PUBLIC page. And a function
+  // replacement, because a string one expands `$&` in the payload.
+  const inject = `<script>window.__ORG__=${JSON.stringify(meta).replace(/</g, "\\u003c")};</script>`;
+  res.type("html").send(html.replace("</head>", () => inject + "</head>"));
 });
 
 // ── POST /:org/calendar/api/click — track View Session clicks ────────

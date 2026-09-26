@@ -429,6 +429,8 @@ jobs:
       # what stop two people editing two rows from losing each other's work.
       - name: Cost Recovery (the parts sum to 1; on target means inside the band; PATCH keeps both edits)
         run: node scripts/cost-recovery.spec.js
+      - name: Present-mode settings on the Session Schedule
+        run: node scripts/present-settings.spec.js
 
       - name: Clear all data (the typed word is a SERVER gate; both stores go; Slack always posts)
         run: node scripts/clear-all-data.spec.js

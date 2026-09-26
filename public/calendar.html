@@ -211,6 +211,33 @@
   body.present-mode .row .main .su{font-size:14px}
   body.present-mode .row .right{font-size:14px}
   body.present-mode .chip{font-size:12px;padding:1px 8px}
+  /* present-mode settings (token holders only) */
+  .ps-gear{padding:6px 11px}
+  .ps-back{position:fixed;inset:0;background:rgba(17,24,39,.45);z-index:1000;display:flex;align-items:flex-start;justify-content:center;padding:40px 16px;overflow:auto}
+  .ps-sheet{background:#fff;border-radius:12px;box-shadow:0 20px 50px rgba(0,0,0,.25);width:100%;max-width:560px;font-size:14px;color:var(--ink)}
+  .ps-head{display:flex;justify-content:space-between;align-items:center;padding:16px 20px;border-bottom:1px solid var(--line)}
+  .ps-head h2{margin:0;font-size:16px}
+  .ps-head .ps-sub{font-size:12px;color:var(--muted);margin-top:2px}
+  .ps-body{padding:6px 20px 12px}
+  .ps-grp{padding:14px 0;border-bottom:1px solid #f0f0f0}
+  .ps-grp:last-child{border-bottom:none}
+  .ps-grp h3{margin:0 0 8px;font-size:13px;text-transform:uppercase;letter-spacing:.6px;color:#555}
+  .ps-row{display:flex;align-items:center;gap:10px}
+  .ps-note{font-size:12px;color:var(--muted);margin-top:6px}
+  .ps-list{max-height:180px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:6px 10px}
+  .ps-list label{display:flex;align-items:center;gap:8px;padding:3px 0;font-size:13px;cursor:pointer}
+  .ps-links{display:flex;gap:12px;font-size:12px;margin-bottom:6px}
+  .ps-links a{color:var(--accent);cursor:pointer}
+  .ps-foot{display:flex;justify-content:flex-end;align-items:center;gap:10px;padding:14px 20px;border-top:1px solid var(--line)}
+  .ps-foot .ps-msg{flex:1;font-size:12px;color:var(--muted)}
+  .ps-foot .ps-msg.err{color:#b91c1c}
+  .ps-speed{flex:1}
+  .rh-wx{display:inline-flex;align-items:center;gap:8px;font-size:13px;color:#374151;margin-bottom:4px}
+  .rh-wx .rh-wx-icon{font-size:20px;line-height:1}
+  .rh-wx .rh-wx-temp{font-weight:700;font-size:16px}
+  body.present-mode .rh-wx{font-size:17px}
+  body.present-mode .rh-wx .rh-wx-icon{font-size:30px}
+  body.present-mode .rh-wx .rh-wx-temp{font-size:24px}
   body.present-mode .present-status{position:fixed;bottom:12px;right:16px;font-size:11px;color:var(--muted);opacity:.5;z-index:10}
 
   /* Program Finder */
@@ -998,6 +1025,125 @@ function ProgramFinder(){
   </React.Fragment>);
 }
 
+/* ---------- present-mode settings ----------
+   Only rendered for a URL carrying the org's own token (window.__ORG__.settingsAdmin,
+   decided server-side). The route refuses without the token too, so hiding the
+   gear is not the gate — it just keeps a resident from ever seeing it. */
+const PRESENT_SPEED_MIN=0.2, PRESENT_SPEED_MAX=3, PRESENT_SPEED_DEFAULT=0.6;
+const PRESENT_EMPTY={weather:false,scrollSpeed:PRESENT_SPEED_DEFAULT,locations:[],activities:[]};
+function presentCfgOf(c){
+  c=c||{};
+  const sp=Number(c.scrollSpeed);
+  return {
+    weather:c.weather===true,
+    scrollSpeed:Number.isFinite(sp)&&sp>0?sp:PRESENT_SPEED_DEFAULT,
+    locations:Array.isArray(c.locations)?c.locations:[],
+    activities:Array.isArray(c.activities)?c.activities:[],
+  };
+}
+// Empty lists mean ALL, so an org that never opened the panel sees everything.
+function presentAllows(cfg,e){
+  if(cfg.locations.length&&cfg.locations.indexOf(e.location)<0) return false;
+  if(cfg.activities.length){
+    const acts=(e.activity||'').split(',').map(a=>a.trim()).filter(Boolean);
+    if(!acts.some(a=>cfg.activities.indexOf(a)>=0)) return false;
+  }
+  return true;
+}
+function speedLabel(v){
+  const r=v/PRESENT_SPEED_DEFAULT;
+  const word=v<=0.35?'Slow':v<=0.8?'Normal':v<=1.6?'Fast':'Very fast';
+  return word+' ('+(Math.round(r*10)/10)+'x)';
+}
+const WX_EMOJI={clear:'☀️',cloudy:'⛅',overcast:'☁️',fog:'\u{1F32B}️',drizzle:'\u{1F326}️',rain:'\u{1F327}️',snow:'❄️',storm:'⛈️'};
+function wxIcon(w){ if(w.sky==='clear'&&w.night) return '\u{1F319}'; return WX_EMOJI[w.sky]||'☁️'; }
+
+function PresentSettings({cfg,onClose,onSaved,locations,activities}){
+  const [draft,setDraft]=useState(()=>presentCfgOf(cfg));
+  const [saving,setSaving]=useState(false);
+  const [err,setErr]=useState('');
+  const wxOk=!!(window.__ORG__&&window.__ORG__.weatherAvailable);
+  // Anything already saved stays tickable even if this window's feed lacks it,
+  // or an admin could never untick what they ticked last month.
+  const locOpts=[...new Set([...(locations||[]),...draft.locations])].sort();
+  const actOpts=[...new Set([...(activities||[]),...draft.activities])].sort();
+  const dirty=JSON.stringify(draft)!==JSON.stringify(presentCfgOf(cfg));
+  function toggle(key,v){
+    setDraft(d=>{const has=d[key].indexOf(v)>=0;return Object.assign({},d,{[key]:has?d[key].filter(x=>x!==v):d[key].concat([v])});});
+  }
+  async function save(){
+    setSaving(true);setErr('');
+    try{
+      const {org,token}=ctx();
+      const u=new URL('/'+org+'/calendar/api/present-settings',window.location.origin);
+      u.searchParams.set('token',token);
+      const r=await fetch(u.toString(),{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({settings:draft})});
+      const j=await r.json().catch(()=>({}));
+      if(!r.ok||!j.ok) throw new Error(j.error||('Server returned '+r.status));
+      onSaved(presentCfgOf(j.settings));
+      onClose();
+    }catch(e){ setErr('Could not save: '+e.message+'. Nothing was changed.'); }
+    finally{ setSaving(false); }
+  }
+  function list(key,opts,noun){
+    return (
+      <React.Fragment>
+        <div className="ps-links">
+          <a onClick={()=>setDraft(d=>Object.assign({},d,{[key]:[]}))}>Show all</a>
+          <span style={{color:'#999'}}>{draft[key].length?draft[key].length+' selected':'All '+noun+' shown'}</span>
+        </div>
+        <div className="ps-list" data-ps-list={key}>
+          {opts.length===0 ? <div className="ps-note">No {noun} in the loaded schedule yet.</div>
+            : opts.map(o=>(
+              <label key={o}><input type="checkbox" checked={draft[key].indexOf(o)>=0} onChange={()=>toggle(key,o)}/>{o}</label>
+            ))}
+        </div>
+      </React.Fragment>
+    );
+  }
+  return ReactDOM.createPortal(
+    <div className="ps-back" onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
+      <div className="ps-sheet" data-ps-sheet="1" role="dialog" aria-label="Present mode settings">
+        <div className="ps-head">
+          <div><h2>Present mode settings</h2><div className="ps-sub">What the scrolling display shows. Applies to every screen showing this org's schedule.</div></div>
+          <button onClick={onClose} aria-label="Close">{String.fromCodePoint(10005)}</button>
+        </div>
+        <div className="ps-body">
+          <div className="ps-grp">
+            <h3>Weather in the banner</h3>
+            <label className="ps-row" style={{cursor:wxOk?'pointer':'default'}}>
+              <input type="checkbox" data-ps-weather="1" disabled={!wxOk} checked={draft.weather&&wxOk} onChange={e=>setDraft(d=>Object.assign({},d,{weather:e.target.checked}))}/>
+              Show current local weather in the org banner
+            </label>
+            {!wxOk && <div className="ps-note">Not available for this org yet: no park coordinates are on file, and we never guess a location from the org's name.</div>}
+          </div>
+          <div className="ps-grp">
+            <h3>Scrolling speed</h3>
+            <div className="ps-row">
+              <input className="ps-speed" type="range" data-ps-speed="1" min={PRESENT_SPEED_MIN} max={PRESENT_SPEED_MAX} step="0.1" value={draft.scrollSpeed} onChange={e=>setDraft(d=>Object.assign({},d,{scrollSpeed:Number(e.target.value)}))}/>
+              <span style={{minWidth:120,textAlign:'right',fontWeight:600}}>{speedLabel(draft.scrollSpeed)}</span>
+            </div>
+          </div>
+          <div className="ps-grp">
+            <h3>Locations to display</h3>
+            {list('locations',locOpts,'locations')}
+          </div>
+          <div className="ps-grp">
+            <h3>Activities to display</h3>
+            {list('activities',actOpts,'activities')}
+          </div>
+        </div>
+        <div className="ps-foot">
+          <span className={'ps-msg'+(err?' err':'')}>{err || (dirty?'Save applies to the present view on every screen.':'Nothing to save yet.')}</span>
+          <button onClick={onClose}>Cancel</button>
+          <button className="primary" data-ps-save="1" disabled={!dirty||saving} onClick={save}>{saving?'Saving…':'Save'}</button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
 function App(){
   const c=ctx();
   const [weekStart,setWeekStart]=useState(()=>{
@@ -1060,6 +1206,13 @@ function App(){
   const isPresent=urlParams.get('present')==='1';
   const scrollRef=useRef(null);
   const pauseRef=useRef(false);
+  const settingsAdmin=!!(window.__ORG__&&window.__ORG__.settingsAdmin);
+  const [presentCfg,setPresentCfg]=useState(()=>presentCfgOf(window.__ORG__&&window.__ORG__.present));
+  const [wx,setWx]=useState(()=>(window.__ORG__&&window.__ORG__.weather)||null);
+  const [settingsOpen,setSettingsOpen]=useState(false);
+  // Read by the scroll loop every frame, so a new speed applies without a restart.
+  const speedRef=useRef(presentCfg.scrollSpeed);
+  useEffect(()=>{ speedRef.current=presentCfg.scrollSpeed; },[presentCfg.scrollSpeed]);
 
   const load=useCallback(async(ws)=>{
     setLoading(true);
@@ -1141,11 +1294,14 @@ function App(){
     // Auto-refresh data every 5 minutes
     const refreshId=setInterval(()=>{ load(weekStart); },5*60*1000);
     // Auto-scroll
-    const SPEED=0.6; // px per frame
+    // Speed is px per frame, from the org's present settings. Accumulated and
+    // applied in whole pixels: scrollBy(0, 0.2) rounds to nothing in some
+    // browsers, which would make "Slow" read as "stopped".
     const PAUSE_AT_BOTTOM=4000; // ms pause at bottom before looping
     const PAUSE_AT_TOP=2000; // ms pause at top after reset
     let rafId;
     let paused=false;
+    let acc=0;
     const tick=()=>{
       if(!paused){
         const maxScroll=document.documentElement.scrollHeight-window.innerHeight;
@@ -1157,7 +1313,8 @@ function App(){
             setTimeout(()=>{ paused=false; },PAUSE_AT_TOP);
           },PAUSE_AT_BOTTOM);
         } else {
-          window.scrollBy(0,SPEED);
+          acc+=speedRef.current;
+          if(acc>=1){ const n=Math.floor(acc); acc-=n; window.scrollBy(0,n); }
         }
       }
       rafId=requestAnimationFrame(tick);
@@ -1175,6 +1332,29 @@ function App(){
       document.body.classList.remove('present-mode');
     };
   },[isPresent,weekStart]);
+
+  // Present mode re-reads the org's settings and the weather, so a change made
+  // at a desk reaches the lobby screen without anyone touching it. A first
+  // early poll picks up the weather a cold cache could not answer at load.
+  useEffect(()=>{
+    if(!isPresent) return;
+    const {org}=ctx();
+    if(!org) return;
+    let cancelled=false;
+    const poll=async()=>{
+      try{
+        const r=await fetch('/'+org+'/calendar/api/present-state',{cache:'no-store'});
+        if(!r.ok) return;
+        const j=await r.json();
+        if(cancelled) return;
+        if(j.settings) setPresentCfg(presentCfgOf(j.settings));
+        setWx(j.weather||null);
+      }catch(_){}
+    };
+    const first=setTimeout(poll,20000);
+    const id=setInterval(poll,5*60*1000);
+    return ()=>{cancelled=true;clearTimeout(first);clearInterval(id);};
+  },[isPresent]);
 
   const goToDay=(dateISO)=>{ setSelectedDate(dateISO); setView('day'); };
   const goDay=(offset)=>{
@@ -1218,6 +1398,8 @@ function App(){
   },[rows]);
   const locations=allLocations.length>0?allLocations:[...new Set(rows.map(e=>e.location).filter(Boolean))].sort();
   const filtered=useMemo(()=>rows.filter(function(e){
+    // The org's present-mode choices narrow the scrolling display only.
+    if(isPresent&&!presentAllows(presentCfg,e)) return false;
     if(actFilter&&!(e.activity||'').split(',').some(a=>a.trim()===actFilter)) return false;
     if(locFilter&&e.location!==locFilter) return false;
     if(availFilter==='open'&&(e.full||e.closed)) return false;
@@ -1235,7 +1417,7 @@ function App(){
       if(p2.grades.indexOf(gradeFilter)<0) return false;
     }
     return true;
-  }),[rows,actFilter,locFilter,availFilter,ageFilter,gradeFilter]);
+  }),[rows,actFilter,locFilter,availFilter,ageFilter,gradeFilter,isPresent,presentCfg]);
 
   return (
     <div className="wrap">
@@ -1269,6 +1451,7 @@ function App(){
         <span className="grow"></span>
         <button onClick={()=>window.print()}>🖨️ Print</button>
         <button onClick={()=>{const u=new URL(window.location.href);u.searchParams.set('present','1');if(actFilter)u.searchParams.set('activity',actFilter);if(locFilter)u.searchParams.set('location',locFilter);if(availFilter)u.searchParams.set('avail',availFilter);u.searchParams.set('week',fmtISO(weekStart));window.open(u.toString(),'_blank');}}>Present ▶</button>
+        {settingsAdmin && <button className="ps-gear" data-ps-gear="1" title="Present mode settings" aria-label="Present mode settings" onClick={()=>setSettingsOpen(true)}>⚙</button>}
         <select className="filter-sel" value={actFilter} onChange={e=>setActFilter(e.target.value)}>
           <option value="">All Activities</option>
           {activities.map(a=><option key={a} value={a}>{a}</option>)}
@@ -1408,6 +1591,13 @@ function App(){
           </div>
         </div>
         <div className="report-header-right">
+          {isPresent && presentCfg.weather && wx && typeof wx.temp==='number' && (
+            <div className="rh-wx" data-rh-wx={wx.sky} title={wx.label+(wx.hi!=null?' · High '+wx.hi+'° / Low '+wx.lo+'°':'')}>
+              <span className="rh-wx-icon" aria-hidden="true">{wxIcon(wx)}</span>
+              <span className="rh-wx-temp">{Math.round(wx.temp)}°</span>
+              <span>{wx.label}</span>
+            </div>
+          )}
           <div className="rh-meta" style={{fontWeight:600,marginBottom:2}}>{rangeLabel}</div>
         </div>
       </div>
@@ -1420,6 +1610,7 @@ function App(){
         : <ListView events={filtered} onEv={setPopoverEv}/>}
 
       <PopoverCard ev={popoverEv} onClose={()=>setPopoverEv(null)}/>
+      {settingsAdmin && settingsOpen && <PresentSettings cfg={presentCfg} onClose={()=>setSettingsOpen(false)} onSaved={setPresentCfg} locations={locations} activities={activities}/>}
       <ProgramFinder/>
       {src==='sample' && <div className="note">Showing sample data.{fetchError ? ' Reason: '+fetchError+'.' : ''} Check browser console for details. Wire <code>/{'{org}'}/calendar/api/data</code> to go live.</div>}
       {/* Render hooks. `data-cal-rows` is the count in VIEW, which is what a

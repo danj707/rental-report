@@ -1,5 +1,34 @@
 # Project notes for Claude
 
+## PRESENT-MODE SETTINGS ON THE SESSION SCHEDULE (2026-09-26)
+
+Dan: *"The program schedule with the present button. Add a settings option that
+only shows when the token is in the url"* — weather in the org banner, scroll
+speed, and which locations/activities the scrolling page shows.
+
+- **The page is `calendar.html` (`/:org/calendar`), and it is PUBLIC**
+  (`PUBLIC_REPORTS`), so the org-token middleware never runs on it. The gate is
+  in the handlers: `presentTokenOk(req, org)`, constant-time against the org's
+  own token. `settingsAdmin` is injected into `__ORG__` and the ⚙ is ABSENT
+  without it — a resident on the plain link never sees it.
+- **Stored per org** (`present-settings.json`), so the lobby TV's URL needs no
+  token. The kiosk polls the PUBLIC `/api/present-state` every 5 min, so a
+  change at a desk reaches the screen without a reload.
+- **Empty location/activity lists mean ALL**, and the narrowing applies in
+  present mode ONLY — the interactive schedule is untouched.
+- **Weather only where the org has coords** (`weatherLib.coordsOf`); the panel
+  disables the toggle and says why otherwise. It reuses `orgWeatherFor`, so the
+  dashboard's cache and the `orgWeather` flag govern it too.
+- **Speed is px/frame, 0.2–3, default 0.6 (the old constant), accumulated into
+  whole pixels** — `scrollBy(0, 0.2)` rounds to nothing in some browsers.
+  `Number(null)` is 0, which would read as "stopped"; the normaliser rejects it.
+- **The `__ORG__` inject now escapes `<`** — the settings carry free-text names
+  on a public page, and a `</script>` in one would end the tag.
+- Slack: `present-settings` (📺), naming what the screen will show.
+- Guards: `scripts/present-settings.spec.js` (20, in CI — lifts the normaliser,
+  boots a server, drives the gate both ways) plus four `calendar ·` render cases.
+  Browser-mutation-tested: gear ungated and the present filter removed both fail.
+
 ## THE SURVEY: 113 CLOSED IT, ONE ANSWERED — so it asks less, and one click counts (2026-09-25)
 
 Dan asked whether the report survey ever got answers. Production had been serving
