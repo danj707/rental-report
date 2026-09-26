@@ -41,6 +41,17 @@ speed, and which locations/activities the scrolling page shows.
   button KEEPS the token for a token holder only, and the present page captures
   it (`PAGE_TOKEN`) then strips it from the address bar with `replaceState`, so a
   copied URL still never carries it. The signage link in the panel is unchanged.
+- **Round 3 (Dan, same day): the ⚙ is OFF the present view again** — *"settings
+  should NOT be showing up on a live link with no token."* The present page
+  strips the token from its address bar, so a gear there sat on a token-free
+  URL. The Present button now always drops the token, and both gears are gated
+  `!isPresent`; settings live on the interactive page (open it with the token).
+  Keeping the token in the present URL was the other option and was refused as
+  a security weakening — that URL is what gets copied into a signage CMS.
+  **Weather now retries every 15s while missing** (for up to 5 min): a cold
+  server answers the first read with null while it fetches behind the reader,
+  and with two replicas each is cold, so the old single 20s retry could miss.
+  A cold poll never blanks a reading already on screen.
 - Slack: `present-settings` (📺), naming what the screen will show.
 - Guards: `scripts/present-settings.spec.js` (20, in CI — lifts the normaliser,
   boots a server, drives the gate both ways) plus four `calendar ·` render cases.

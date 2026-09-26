@@ -213,8 +213,6 @@
   body.present-mode .chip{font-size:12px;padding:1px 8px}
   /* present-mode settings (token holders only) */
   .ps-gear{padding:6px 11px}
-  .ps-gear-float{position:fixed;top:14px;right:14px;z-index:30;border:1px solid #e5e7eb;background:#fff;border-radius:8px;font-size:18px;cursor:pointer;opacity:.55;box-shadow:0 1px 4px rgba(0,0,0,.08)}
-  .ps-gear-float:hover{opacity:1}
   /* the org banner stays put while the list scrolls under it */
   body.present-mode .report-header{position:sticky;top:0;z-index:20;background:#fff;margin:-24px -40px 18px;padding:18px 40px 12px}
   .ps-back{position:fixed;inset:0;background:rgba(17,24,39,.45);z-index:1000;display:flex;align-items:flex-start;justify-content:center;padding:40px 16px;overflow:auto}
@@ -1398,12 +1396,24 @@ function App(){
         const j=await r.json();
         if(cancelled) return;
         if(j.settings) setPresentCfg(presentCfgOf(j.settings));
-        setWx(j.weather||null);
-      }catch(_){}
+        // Never blank a reading we already have because one poll came back cold.
+        if(j.weather) setWx(j.weather);
+        else if(j.settings&&j.settings.weather===false) setWx(null);
+        return !!j.weather||(j.settings&&j.settings.weather===false);
+      }catch(_){ return false; }
     };
-    const first=setTimeout(poll,20000);
-    const id=setInterval(poll,5*60*1000);
-    return ()=>{cancelled=true;clearTimeout(first);clearInterval(id);};
+    // A cold server answers the first weather read with null while it fetches
+    // behind the reader (two replicas, two cold caches). So poll soon, and keep
+    // polling every 15s while the weather is still missing, for up to 5 minutes,
+    // then settle into the 5-minute cadence.
+    let timer=null, tries=0;
+    const next=(gotWx)=>{
+      if(cancelled) return;
+      const fast=!gotWx&&tries<20;
+      timer=setTimeout(async()=>{ tries++; next(await poll()); }, fast?(tries===0?3000:15000):5*60*1000);
+    };
+    next(!!(window.__ORG__&&window.__ORG__.weather));
+    return ()=>{cancelled=true;clearTimeout(timer);};
   },[isPresent]);
 
   const goToDay=(dateISO)=>{ setSelectedDate(dateISO); setView('day'); };
@@ -1500,8 +1510,8 @@ function App(){
         <span className="range">{rangeLabel}</span>
         <span className="grow"></span>
         <button onClick={()=>window.print()}>🖨️ Print</button>
-        <button onClick={()=>{const u=new URL(window.location.href);if(!settingsAdmin)u.searchParams.delete('token');u.searchParams.set('present','1');if(actFilter)u.searchParams.set('activity',actFilter);if(locFilter)u.searchParams.set('location',locFilter);if(availFilter)u.searchParams.set('avail',availFilter);u.searchParams.set('week',fmtISO(weekStart));window.open(u.toString(),'_blank');}}>Present ▶</button>
-        {settingsAdmin && <button className="ps-gear" data-ps-gear="1" title="Present mode settings" aria-label="Present mode settings" onClick={()=>setSettingsOpen(true)}>⚙</button>}
+        <button onClick={()=>{const u=new URL(window.location.href);u.searchParams.delete('token');u.searchParams.set('present','1');if(actFilter)u.searchParams.set('activity',actFilter);if(locFilter)u.searchParams.set('location',locFilter);if(availFilter)u.searchParams.set('avail',availFilter);u.searchParams.set('week',fmtISO(weekStart));window.open(u.toString(),'_blank');}}>Present ▶</button>
+        {settingsAdmin && !isPresent && <button className="ps-gear" data-ps-gear="1" title="Present mode settings" aria-label="Present mode settings" onClick={()=>setSettingsOpen(true)}>⚙</button>}
         <select className="filter-sel" value={actFilter} onChange={e=>setActFilter(e.target.value)}>
           <option value="">All Activities</option>
           {activities.map(a=><option key={a} value={a}>{a}</option>)}
@@ -1668,7 +1678,6 @@ function App(){
           render case can key on — "a grid rendered" passes just as happily on a
           page handed another report's shape. */}
       {!loading && <div id="report-ready" style={{display:'none'}} data-cal-rows={filtered.length} data-cal-all={rows.length}>ready</div>}
-      {isPresent && settingsAdmin && <button className="ps-gear ps-gear-float" data-ps-gear="present" title="Present mode settings" aria-label="Present mode settings" onClick={()=>setSettingsOpen(true)}>⚙</button>}
       {isPresent && <div className="present-status">Auto-refreshes every 5 min{window.self===window.top?' · Press Esc to exit':''}</div>}
     </div>
   );

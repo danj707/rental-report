@@ -3276,20 +3276,22 @@ const CASES = [
     },
     needs: "body[data-ps-link='present=1 token=no week=no']" },
 
-  /* A token holder's Present button keeps the token (their own preview needs the
-     gear), and the present page then strips it from the address bar, so copying
-     the URL into a signage CMS never carries it. The banner is pinned. */
-  { name: "calendar · a token holder's present view: gear, no token in the URL, pinned banner",
+  /* Settings live on the interactive page only (Dan, 2026-09-26: "settings
+     should NOT be showing up on a live link with no token"). The present view
+     strips the token from the address bar, so it carries no gear even when it
+     was opened with one — and the banner is pinned. */
+  { name: "calendar · a present view has no gear, even opened with the token",
     path: "/{org}/calendar?present=1",
     act: async (page) => {
-      await page.waitForSelector("[data-ps-gear='present']", { timeout: 20000 });
+      await page.waitForSelector("#report-ready", { timeout: 30000 });
       await page.evaluate(() => {
         const h = getComputedStyle(document.querySelector(".report-header"));
         document.body.setAttribute("data-pv",
           "token=" + (new URLSearchParams(location.search).has("token") ? "yes" : "no") + " header=" + h.position);
       });
     },
-    needs: "body[data-pv='token=no header=sticky'] [data-ps-gear='present']" },
+    needs: "body[data-pv='token=no header=sticky']",
+    absent: "[data-ps-gear]" },
 
   { name: "calendar · no present gear without the org's token",
     path: "/{org}/calendar?present=1",

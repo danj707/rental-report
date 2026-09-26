@@ -65,7 +65,7 @@ test("the page's injected config escapes <, since it carries free-text names on 
   assert.ok(/\.replace\(\/<\/g/.test(src.slice(i, i + 120)), "a </script> in a location name ends the tag");
 });
 test("the gear is gated on settingsAdmin, which the server decides", () => {
-  assert.ok(/settingsAdmin && <button className="ps-gear"/.test(page));
+  assert.ok(/settingsAdmin && !isPresent && <button className="ps-gear"/.test(page));
   assert.ok(/settingsAdmin: presentTokenOk\(req, org\)/.test(src));
 });
 test("present mode reads the scroll speed from the settings, not a constant", () => {
@@ -83,6 +83,17 @@ test("a sign carries no Refresh badge", () => {
 test("present mode strips the token from the address bar", () => {
   assert.ok(/const PAGE_TOKEN=/.test(page) && /token:q\.get\('token'\)\|\|PAGE_TOKEN/.test(page), "the PUT loses its token once the URL is cleaned");
   assert.ok(/u\.searchParams\.delete\('token'\); window\.history\.replaceState/.test(page));
+});
+
+test("the present view carries no settings gear", () => {
+  assert.ok(!/data-ps-gear="present"/.test(page), "the gear is back on the present view, where the URL carries no token");
+});
+test("the Present button never carries the token", () => {
+  assert.ok(/u\.searchParams\.delete\('token'\);u\.searchParams\.set\('present','1'\)/.test(page), "the Present button hands the token to the present tab");
+});
+test("present weather retries fast while a cold server has none", () => {
+  assert.ok(/const fast=!gotWx&&tries<20;/.test(page), "the weather waits 5 minutes after a cold first read");
+  assert.ok(/if\(j\.weather\) setWx\(j\.weather\);/.test(page), "a cold poll blanks a weather reading already on screen");
 });
 
 /* ── live: the real routes ────────────────────────────────────────────── */
