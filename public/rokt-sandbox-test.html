@@ -27,7 +27,7 @@
 </head>
 <body>
 <h1>Rokt sandbox probe</h1>
-<div class="sub">Does Rokt return an offer with <b>no customer</b>? Sandbox only, nothing saved.</div>
+<div class="sub">Does Rokt return an offer with <b>no customer</b>, or with a <b>test customer</b>? Sandbox only, nothing saved.</div>
 
 <label for="key">mParticle key (Niagara Falls → Rec Admin → Ad Network)</label>
 <input type="text" id="key" placeholder="us2-…" autocomplete="off" spellcheck="false">
@@ -35,6 +35,12 @@
 <label for="ident">Placement identifier</label>
 <input type="text" id="ident" value="RoktExperience" spellcheck="false">
 <div class="note">If Rec's checkout uses a different identifier, paste it here. A wrong one usually comes back as "no placement".</div>
+
+<label><input type="checkbox" id="fake" checked style="width:auto"> Send a TEST customer (sandbox only)</label>
+<div class="note">Rokt picks offers for a person at checkout. This sends a made-up shopper so we can see whether identity is what was missing. Sandbox only; never do this in production.</div>
+<label for="femail">Test email</label><input type="text" id="femail" value="rokt-sandbox-test@rec.us" spellcheck="false">
+<label for="fzip">Test billing ZIP</label><input type="text" id="fzip" value="14301" spellcheck="false">
+<label for="famt">Test order amount ($)</label><input type="text" id="famt" value="45.00" spellcheck="false">
 
 <button id="run">Run sandbox test</button>
 
@@ -92,7 +98,17 @@
     this.disabled = true;
 
     // Development mode = mParticle sandbox. Never flip this off.
+    var fake = document.getElementById('fake').checked;
+    var femail = document.getElementById('femail').value.trim();
+    var fzip = document.getElementById('fzip').value.trim();
+    var famt = document.getElementById('famt').value.trim();
     window.mParticle = { config: { isDevelopmentMode: true, logLevel: 'verbose' } };
+    if (fake && femail) {
+      window.mParticle.config.identifyRequest = { userIdentities: { email: femail } };
+      window.mParticle.config.identityCallback = function (r) {
+        try { log('IDENTITY', ['identify returned', r && r.getUser && r.getUser() ? r.getUser().getMPID() : r]); } catch (x) {}
+      };
+    }
 
     // Standard mParticle web snippet (v2), forced to https.
     (function(t){window.mParticle=window.mParticle||{};window.mParticle.EventType={Unknown:0,Navigation:1,Location:2,Search:3,Transaction:4,UserContent:5,UserPreference:6,Social:7,Other:8,Media:9};window.mParticle.eCommerce={Cart:{}};window.mParticle.Identity={};window.mParticle.Rokt={};window.mParticle.config=window.mParticle.config||{};window.mParticle.config.rq=[];window.mParticle.config.snippetVersion=2.7;window.mParticle.ready=function(t){window.mParticle.config.rq.push(t)};var e=["endSession","logError","logBaseEvent","logEvent","logForm","logLink","logPageView","setSessionAttribute","setAppName","setAppVersion","setOptOut","setPosition","startNewSession","startTrackingLocation","stopTrackingLocation"];var o=["setCurrencyCode","logCheckout"];var i=["identify","login","logout","modify"];e.forEach(function(t){window.mParticle[t]=n(t)});o.forEach(function(t){window.mParticle.eCommerce[t]=n(t,"eCommerce")});i.forEach(function(t){window.mParticle.Identity[t]=n(t,"Identity")});function n(e,o){return function(){if(o){e=o+"."+e}var t=Array.prototype.slice.call(arguments);t.unshift(e);window.mParticle.config.rq.push(t)}}var mp=document.createElement("script");mp.async=true;mp.src="https://jssdkcdns.mparticle.com/js/v2/"+t+"/mparticle.js?env=1";mp.onerror=function(){log('ERROR',['mParticle SDK failed to load — blocked by an ad blocker or network?'])};document.head.appendChild(mp)})(key);
@@ -104,13 +120,20 @@
         verdict('The SDK loaded but no Rokt module is attached to this key. Nothing to request.');
         return;
       }
-      log('STEP', ['Requesting placement "' + ident + '" with NO customer (sandbox:"true" only)…']);
+      var attrs = { sandbox: 'true' };
+      if (fake) {
+        attrs.email = femail; attrs.firstname = 'Sandbox'; attrs.lastname = 'Tester';
+        attrs.billingzipcode = fzip; attrs.country = 'US'; attrs.amount = famt;
+        attrs.currency = 'USD'; attrs.paymenttype = 'Credit Card';
+        attrs.confirmationref = 'SANDBOX-' + Date.now();
+      }
+      log('STEP', ['Requesting placement "' + ident + '" with ' + (fake ? 'a TEST customer' : 'NO customer'), attrs]);
       var timer = setTimeout(function () {
         verdict('No answer from Rokt after 20s. Read the log below: a 4xx/empty body means no offer without a customer.');
       }, 20000);
       Promise.resolve(mParticle.Rokt.selectPlacements({
         identifier: ident,
-        attributes: { sandbox: 'true' }
+        attributes: attrs
       })).then(function (sel) {
         clearTimeout(timer);
         log('RESULT', ['selectPlacements resolved to a selection handle (this alone does NOT mean an offer).']);
@@ -130,8 +153,8 @@
             log('RESULT', ['placement ' + i, info]);
           });
           finish(pl.length
-            ? 'Rokt chose ' + pl.length + ' placement(s) with no customer. Look for an overlay or the dashed box.'
-            : 'Rokt accepted the request but chose NO placements for an anonymous visitor. Nothing to show on a screen.');
+            ? 'Rokt chose ' + pl.length + ' placement(s) with ' + (fake ? 'a test customer' : 'no customer') + '. Look for an overlay or the dashed box.'
+            : (fake ? 'Rokt chose NO placements even with a test customer. Identity was not the only thing missing (check the placement name).' : 'Rokt accepted the request but chose NO placements for an anonymous visitor. Nothing to show on a screen.'));
         }).catch(function (e) { log('RESULT', ['getPlacements() failed', String(e && e.message || e)]); });
         setTimeout(function () { finish('No placement reported within 15s. Treat this as: no offer for an anonymous visitor.'); }, 15000);
       }).catch(function (err) {
