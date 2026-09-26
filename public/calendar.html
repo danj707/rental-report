@@ -1030,6 +1030,25 @@ function ProgramFinder(){
    decided server-side). The route refuses without the token too, so hiding the
    gear is not the gate — it just keeps a resident from ever seeing it. */
 const PRESENT_SPEED_MIN=0.2, PRESENT_SPEED_MAX=3, PRESENT_SPEED_DEFAULT=0.6;
+/* Digital signage (REACH, 2026-09-26). The Present view is loaded by a sign's
+   iFrame app from a URL typed into a third-party CMS, so three rules:
+   - THE URL NEVER CARRIES THE ORG TOKEN. The token unlocks every report the org
+     has; the Present view needs none of it, because the settings are per org.
+   - WITHOUT a `week` parameter the window ROLLS — today onward, seven days —
+     and moves on at midnight. A sign pinned to the week somebody clicked
+     Present in would show that week forever.
+   - A FAILED REFRESH KEEPS THE LAST GOOD SCHEDULE. The interactive page falls
+     back to sample rows so a developer can see the layout; on a lobby screen
+     that would be invented sessions under the org's own logo. */
+const PRESENT_URL=new URLSearchParams(window.location.search).get('present')==='1';
+const PRESENT_ROLLING=PRESENT_URL&&!new URLSearchParams(window.location.search).get('week');
+function todayMidnight(){const d=new Date();d.setHours(0,0,0,0);return d;}
+function signageUrl(){
+  const {org}=ctx();
+  const u=new URL('/'+org+'/calendar',window.location.origin);
+  u.searchParams.set('present','1');
+  return u.toString();
+}
 const PRESENT_EMPTY={weather:false,scrollSpeed:PRESENT_SPEED_DEFAULT,locations:[],activities:[]};
 function presentCfgOf(c){
   c=c||{};
@@ -1062,6 +1081,7 @@ function PresentSettings({cfg,onClose,onSaved,locations,activities}){
   const [draft,setDraft]=useState(()=>presentCfgOf(cfg));
   const [saving,setSaving]=useState(false);
   const [err,setErr]=useState('');
+  const [copied,setCopied]=useState(false);
   const wxOk=!!(window.__ORG__&&window.__ORG__.weatherAvailable);
   // Anything already saved stays tickable even if this window's feed lacks it,
   // or an admin could never untick what they ticked last month.
@@ -1110,6 +1130,14 @@ function PresentSettings({cfg,onClose,onSaved,locations,activities}){
         </div>
         <div className="ps-body">
           <div className="ps-grp">
+            <h3>Link for digital signage</h3>
+            <div className="ps-row">
+              <input readOnly data-ps-signage={signageUrl()} value={signageUrl()} onFocus={e=>e.target.select()} style={{flex:1,borderRadius:8,fontSize:12}}/>
+              <button onClick={()=>{const v=signageUrl();(navigator.clipboard?navigator.clipboard.writeText(v):Promise.reject()).then(()=>setCopied(true),()=>{});}}>{copied?'Copied':'Copy'}</button>
+            </div>
+            <div className="ps-note">Paste this into your signage player's web page / iFrame app (e.g. REACH). It carries no access token, always shows today onward, and picks up these settings within 5 minutes.</div>
+          </div>
+          <div className="ps-grp">
             <h3>Weather in the banner</h3>
             <label className="ps-row" style={{cursor:wxOk?'pointer':'default'}}>
               <input type="checkbox" data-ps-weather="1" disabled={!wxOk} checked={draft.weather&&wxOk} onChange={e=>setDraft(d=>Object.assign({},d,{weather:e.target.checked}))}/>
@@ -1147,6 +1175,7 @@ function PresentSettings({cfg,onClose,onSaved,locations,activities}){
 function App(){
   const c=ctx();
   const [weekStart,setWeekStart]=useState(()=>{
+    if(PRESENT_ROLLING) return todayMidnight();
     const w=new URLSearchParams(window.location.search).get('week');
     const d=w?new Date(w+'T00:00:00'):new Date();
     return startOfWeek(isNaN(d)?new Date():d);
@@ -1218,6 +1247,11 @@ function App(){
     setLoading(true);
     const from=fmtISO(ws), to=fmtISO(addDays(ws,6));
     const {rows,src,error}=await fetchData(from,to);
+    if(PRESENT_URL&&error){
+      // Keep whatever is on screen; never paint sample rows on a sign.
+      setSrc(s=>s==='live'?'live':'present-wait'); setLoading(false); setFirstLoadDone(true);
+      return;
+    }
     setRows(rows.map(normalizeRow).filter(e=>!isHiddenActivity(e))); setSrc(src); setFetchError(error||''); setLoading(false);
     setFirstLoadDone(true);
   },[]);
@@ -1277,6 +1311,7 @@ function App(){
 
   // Sync filter state → URL so the address bar is always a shareable link
   useEffect(()=>{
+    if(PRESENT_ROLLING) return;
     const u=new URL(window.location.href);
     if(actFilter) u.searchParams.set('activity',actFilter); else u.searchParams.delete('activity');
     if(locFilter) u.searchParams.set('location',locFilter); else u.searchParams.delete('location');
@@ -1292,7 +1327,11 @@ function App(){
     // Force list view
     setView('list');
     // Auto-refresh data every 5 minutes
-    const refreshId=setInterval(()=>{ load(weekStart); },5*60*1000);
+    const refreshId=setInterval(()=>{
+      // A rolling sign moves on at midnight; changing weekStart re-runs the load.
+      if(PRESENT_ROLLING&&fmtISO(todayMidnight())!==fmtISO(weekStart)) setWeekStart(todayMidnight());
+      else load(weekStart);
+    },5*60*1000);
     // Auto-scroll
     // Speed is px per frame, from the org's present settings. Accumulated and
     // applied in whole pixels: scrollBy(0, 0.2) rounds to nothing in some
@@ -1450,7 +1489,7 @@ function App(){
         <span className="range">{rangeLabel}</span>
         <span className="grow"></span>
         <button onClick={()=>window.print()}>🖨️ Print</button>
-        <button onClick={()=>{const u=new URL(window.location.href);u.searchParams.set('present','1');if(actFilter)u.searchParams.set('activity',actFilter);if(locFilter)u.searchParams.set('location',locFilter);if(availFilter)u.searchParams.set('avail',availFilter);u.searchParams.set('week',fmtISO(weekStart));window.open(u.toString(),'_blank');}}>Present ▶</button>
+        <button onClick={()=>{const u=new URL(window.location.href);u.searchParams.delete('token');u.searchParams.set('present','1');if(actFilter)u.searchParams.set('activity',actFilter);if(locFilter)u.searchParams.set('location',locFilter);if(availFilter)u.searchParams.set('avail',availFilter);u.searchParams.set('week',fmtISO(weekStart));window.open(u.toString(),'_blank');}}>Present ▶</button>
         {settingsAdmin && <button className="ps-gear" data-ps-gear="1" title="Present mode settings" aria-label="Present mode settings" onClick={()=>setSettingsOpen(true)}>⚙</button>}
         <select className="filter-sel" value={actFilter} onChange={e=>setActFilter(e.target.value)}>
           <option value="">All Activities</option>
@@ -1603,6 +1642,7 @@ function App(){
       </div>
 
       {loading ? <div className="empty">Loading…</div>
+        : src==='present-wait' ? <div className="empty" data-present-wait="1">Schedule is updating…</div>
         : src==='live' && filtered.length===0 ? <div className="empty-week"><div className="empty-week-icon">📅</div><div className="empty-week-msg">No sessions scheduled</div><div className="empty-week-hint">{view==='day' ? 'Try another day or browse the week view.' : view==='week' ? 'Try the next week or check a different date range.' : 'No upcoming sessions found with current filters.'}</div></div>
         : view==='week' ? <WeekView weekStart={weekStart} events={filtered} onEv={setPopoverEv} onDayClick={goToDay}/>
         : view==='month' ? <MonthView events={filtered} monthDate={monthDate} onMonthChange={goMonth} onEv={setPopoverEv}/>
@@ -1617,7 +1657,7 @@ function App(){
           render case can key on — "a grid rendered" passes just as happily on a
           page handed another report's shape. */}
       {!loading && <div id="report-ready" style={{display:'none'}} data-cal-rows={filtered.length} data-cal-all={rows.length}>ready</div>}
-      {isPresent && <div className="present-status">Auto-refreshes every 5 min · Press Esc to exit</div>}
+      {isPresent && <div className="present-status">Auto-refreshes every 5 min{window.self===window.top?' · Press Esc to exit':''}</div>}
     </div>
   );
 }

@@ -24,6 +24,15 @@ speed, and which locations/activities the scrolling page shows.
   `Number(null)` is 0, which would read as "stopped"; the normaliser rejects it.
 - **The `__ORG__` inject now escapes `<`** — the settings carry free-text names
   on a public page, and a `</script>` in one would end the tag.
+- **Built for REACH digital signage** (its iFrame app loads a URL and refreshes
+  it on a schedule). The settings panel hands over a **signage link**:
+  `/:org/calendar?present=1` — **no token** (it goes into a third-party CMS, and
+  the token opens every report the org has; the Present button strips it too),
+  **no `week`**, so the window ROLLS from today and moves on at midnight, and a
+  **failed refresh keeps the last good schedule** instead of painting the
+  interactive page's sample rows ("Schedule is updating…" if nothing loaded
+  yet). Nothing on the server sets `X-Frame-Options`/CSP, so it frames. The
+  "Press Esc" hint hides inside an iframe.
 - Slack: `present-settings` (📺), naming what the screen will show.
 - Guards: `scripts/present-settings.spec.js` (20, in CI — lifts the normaliser,
   boots a server, drives the gate both ways) plus four `calendar ·` render cases.

@@ -2050,7 +2050,7 @@ const STUBS = [
       ok: true,
       settings: { weather: false, scrollSpeed: 0.6, locations: ["Victory Field"], activities: [] },
       weather: null, weatherAvailable: true }) },
-  { match: /\/calendar\/api\/data/, body: (url) => {
+  { match: /\/calendar\/api\/data/, status: () => (STUB_MODE === "calfail" ? 500 : 200), body: (url) => {
       const u = new URL(url, "http://x");
       const from = u.searchParams.get("start_date") || "";
       const to   = u.searchParams.get("end_date") || "";
@@ -3258,6 +3258,49 @@ const CASES = [
     },
     needs: "#report-ready[data-cal-rows='1']",
     also: ["[data-rh-wx='rain']"] },
+
+  /* Digital signage (REACH). The Present URL goes into a third-party CMS, so it
+     must never carry the org token — the token unlocks every report the org has. */
+  { name: "calendar · the signage link carries no token",
+    path: "/{org}/calendar",
+    act: async (page) => {
+      await page.waitForSelector("[data-ps-gear]", { timeout: 20000 });
+      await page.click("[data-ps-gear]");
+      await page.waitForSelector("[data-ps-signage]", { timeout: 5000 });
+      await page.evaluate(() => {
+        const u = new URL(document.querySelector("[data-ps-signage]").getAttribute("data-ps-signage"));
+        document.body.setAttribute("data-ps-link",
+          "present=" + u.searchParams.get("present") + " token=" + (u.searchParams.has("token") ? "yes" : "no")
+          + " week=" + (u.searchParams.has("week") ? "yes" : "no"));
+      });
+    },
+    needs: "body[data-ps-link='present=1 token=no week=no']" },
+
+  { name: "calendar · the Present button drops the token",
+    path: "/{org}/calendar",
+    pre: async (page) => {
+      await page.evaluateOnNewDocument(() => { window.open = (u) => { window.__opened = String(u); return null; }; });
+    },
+    act: async (page) => {
+      await page.waitForSelector("#report-ready", { timeout: 20000 });
+      await page.evaluate(() => {
+        const b = [...document.querySelectorAll(".toolbar button")].find(x => /Present/.test(x.textContent));
+        b.click();
+        const u = new URL(window.__opened);
+        document.body.setAttribute("data-present-open",
+          "present=" + u.searchParams.get("present") + " token=" + (u.searchParams.has("token") ? "yes" : "no"));
+      });
+    },
+    needs: "body[data-present-open='present=1 token=no']" },
+
+  // A sign whose feed fails must NOT show the sample rows the interactive page
+  // falls back to — invented sessions under the org's logo on a lobby screen.
+  { name: "calendar · a failed feed on a sign shows no sample data",
+    path: "/{org}/calendar?present=1",
+    stubMode: "calfail",
+    expectsConsoleError: true,
+    needs: "[data-present-wait]",
+    absent: ".note" },
 
   /* ── The Program Schedule (card 21649) ───────────────────────────────────
      This report shipped with NO render coverage at all, which is the state the
